@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --vico-primary: #059669;
+  --vico-primary-hover: #047857;
+  --vico-background: #5b7895;
+  --vico-button: #ffffff;
+  --vico-button-hover: #f1f5f9;
+}
+
+body {
+  background-color: var(--vico-background);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  min-height: 100vh;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-content,
+  .print-content * {
+    visibility: visible;
+  }
+  .print-content {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: white;
+  }
+}

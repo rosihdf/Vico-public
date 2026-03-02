@@ -1,0 +1,95 @@
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import type { SyncStatus } from './types'
+import { getPendingCount, runSync } from './lib/syncService'
+import { subscribeToDataChange } from './lib/dataService'
+
+type SyncContextType = {
+  syncStatus: SyncStatus
+  setSyncStatus: (status: SyncStatus) => void
+  syncNow: () => Promise<void>
+  pendingCount: number
+}
+
+const SyncContext = createContext<SyncContextType | null>(null)
+
+const computeStatus = (online: boolean, pending: number): SyncStatus => {
+  if (!online) return 'offline'
+  if (pending > 0) return 'ready'
+  return 'synced'
+}
+
+export const SyncProvider = ({ children }: { children: React.ReactNode }) => {
+  const [online, setOnline] = useState(
+    () => typeof navigator !== 'undefined' && navigator.onLine
+  )
+  const [pendingCount, setPendingCount] = useState(0)
+  const [syncStatus, setSyncStatusState] = useState<SyncStatus>(() =>
+    computeStatus(online, getPendingCount())
+  )
+
+  const refreshStatus = useCallback(() => {
+    const p = getPendingCount()
+    setPendingCount(p)
+    setSyncStatusState(computeStatus(online, p))
+  }, [online])
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setOnline(true)
+      setPendingCount(getPendingCount())
+    }
+    const handleOffline = () => setOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshStatus()
+  }, [online, refreshStatus])
+
+  useEffect(() => {
+    return subscribeToDataChange(refreshStatus)
+  }, [refreshStatus])
+
+  const syncNow = useCallback(async () => {
+    if (!online) return
+    const result = await runSync()
+    setPendingCount(result.pendingCount)
+    setSyncStatusState(computeStatus(true, result.pendingCount))
+  }, [online])
+
+  useEffect(() => {
+    if (!online) return
+    const t = setTimeout(syncNow, 300)
+    return () => clearTimeout(t)
+  }, [online, syncNow])
+
+  const setSyncStatus = useCallback((status: SyncStatus) => {
+    setSyncStatusState(status)
+  }, [])
+
+  return (
+    <SyncContext.Provider
+      value={{
+        syncStatus,
+        setSyncStatus,
+        syncNow,
+        pendingCount,
+      }}
+    >
+      {children}
+    </SyncContext.Provider>
+  )
+}
+
+export const useSync = (): SyncContextType => {
+  const ctx = useContext(SyncContext)
+  if (!ctx) {
+    throw new Error('useSync must be used within SyncProvider')
+  }
+  return ctx
+}
