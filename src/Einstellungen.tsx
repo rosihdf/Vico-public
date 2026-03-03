@@ -22,12 +22,14 @@ const Einstellungen = () => {
   const [componentError, setComponentError] = useState<string | null>(null)
   const [updatingKey, setUpdatingKey] = useState<string | null>(null)
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'current'>('idle')
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; releaseNotes: string[] } | null>(null)
   const [checkEmail, setCheckEmail] = useState('')
   const [checkResult, setCheckResult] = useState<{ email: string; role: string } | null>(null)
   const [isChecking, setIsChecking] = useState(false)
 
   const handleCheckUpdate = async () => {
     setUpdateStatus('checking')
+    setUpdateInfo(null)
     try {
       const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
       const res = await fetch(`${base}/version.json?t=${Date.now()}`, { cache: 'no-store' })
@@ -35,9 +37,11 @@ const Einstellungen = () => {
         setUpdateStatus('idle')
         return
       }
-      const data = (await res.json()) as { version?: string }
+      const data = (await res.json()) as { version?: string; releaseNotes?: string[] }
       const latest = data.version ?? ''
+      const notes = Array.isArray(data.releaseNotes) ? data.releaseNotes : []
       setUpdateStatus(latest && latest !== APP_VERSION ? 'available' : 'current')
+      if (latest && latest !== APP_VERSION) setUpdateInfo({ version: latest, releaseNotes: notes })
       if (latest === APP_VERSION) setTimeout(() => setUpdateStatus('idle'), 3000)
     } catch {
       setUpdateStatus('idle')
@@ -98,13 +102,25 @@ const Einstellungen = () => {
             {updateStatus === 'checking' ? 'Prüfe…' : 'Auf Updates prüfen'}
           </button>
           {updateStatus === 'available' && (
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover border border-slate-700"
-            >
-              Jetzt aktualisieren
-            </button>
+            <div className="mt-3 w-full p-4 bg-slate-50 rounded-lg border border-slate-200">
+              <p className="text-sm font-semibold text-slate-700 mb-2">
+                Version {updateInfo?.version ?? 'neu'} verfügbar
+              </p>
+              {updateInfo?.releaseNotes && updateInfo.releaseNotes.length > 0 && (
+                <ul className="text-sm text-slate-600 list-disc list-inside space-y-1 mb-3">
+                  {updateInfo.releaseNotes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              )}
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover border border-slate-700"
+              >
+                Jetzt aktualisieren
+              </button>
+            </div>
           )}
           {updateStatus === 'current' && (
             <span className="text-sm text-green-600">✓ Aktuell</span>

@@ -175,6 +175,14 @@ git commit -m "Deine Änderung"
 git push
 ```
 
+### Release-Notes & Update-System
+
+- **release-notes.json** im Projektroot: pro Version eine Liste von Änderungen
+- **version.json** wird beim Build erzeugt (Web + Mobile) und enthält `version`, `buildTime`, `releaseNotes`
+- **Web:** Update-Banner erscheint automatisch bei neuer Version; in Einstellungen „Auf Updates prüfen“ mit Release Notes
+- **Mobile:** In Einstellungen „Auf Updates prüfen“ mit Release Notes
+- Bei neuem Release: `package.json` (Web) und `mobile/package.json` + `mobile/app.json` Version erhöhen, `release-notes.json` ergänzen
+
 ---
 
 # 🎯 Ziel der App

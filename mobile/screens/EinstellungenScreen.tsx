@@ -1,10 +1,11 @@
 import React, { useState } from 'react'
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Switch } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Switch, Linking, Platform } from 'react-native'
+import Constants from 'expo-constants'
 import { useSync } from '../contexts/SyncContext'
 import { useAuth } from '../contexts/AuthContext'
 import { useComponentSettings } from '../contexts/ComponentSettingsContext'
 
-const APP_VERSION = '1.0.0'
+const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0'
 
 const SYNC_LABELS: Record<'offline' | 'ready' | 'synced', string> = {
   offline: '🔴 Offline',
@@ -12,11 +13,36 @@ const SYNC_LABELS: Record<'offline' | 'ready' | 'synced', string> = {
   synced: '🔵 Sync',
 }
 
+type VersionInfo = { version?: string; releaseNotes?: string[] }
+
 const EinstellungenScreen = () => {
   const { syncStatus, syncNow, pendingCount } = useSync()
   const { userRole } = useAuth()
   const { settingsList, updateSetting, refresh } = useComponentSettings()
   const [isSyncing, setIsSyncing] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'current'>('idle')
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; releaseNotes: string[] } | null>(null)
+
+  const handleCheckUpdate = async () => {
+    setUpdateStatus('checking')
+    setUpdateInfo(null)
+    try {
+      const base = typeof window !== 'undefined' ? window.location.origin : ''
+      const res = await fetch(`${base}/version.json?t=${Date.now()}`, { cache: 'no-store' })
+      if (!res.ok) {
+        setUpdateStatus('idle')
+        return
+      }
+      const data = (await res.json()) as VersionInfo
+      const latest = data.version ?? ''
+      const notes = Array.isArray(data.releaseNotes) ? data.releaseNotes : []
+      setUpdateStatus(latest && latest !== APP_VERSION ? 'available' : 'current')
+      if (latest && latest !== APP_VERSION) setUpdateInfo({ version: latest, releaseNotes: notes })
+      if (latest === APP_VERSION) setTimeout(() => setUpdateStatus('idle'), 3000)
+    } catch {
+      setUpdateStatus('idle')
+    }
+  }
 
   const handleSyncNow = async () => {
     setIsSyncing(true)
@@ -38,6 +64,46 @@ const EinstellungenScreen = () => {
           <Text style={styles.label}>Rolle</Text>
           <Text style={styles.value}>{userRole === 'admin' ? 'Admin' : userRole === 'leser' ? 'Leser' : 'Mitarbeiter'}</Text>
         </View>
+        <Pressable
+          style={[styles.secondaryButton, updateStatus === 'checking' && styles.buttonDisabled]}
+          onPress={handleCheckUpdate}
+          disabled={updateStatus === 'checking'}
+          accessible
+          accessibilityLabel="Auf Updates prüfen"
+        >
+          <Text style={styles.secondaryButtonText}>
+            {updateStatus === 'checking' ? 'Prüfe…' : 'Auf Updates prüfen'}
+          </Text>
+        </Pressable>
+        {updateStatus === 'current' && (
+          <Text style={styles.currentLabel}>✓ Aktuell</Text>
+        )}
+        {updateStatus === 'available' && updateInfo && (
+          <View style={styles.updateBox}>
+            <Text style={styles.updateTitle}>Version {updateInfo.version} verfügbar</Text>
+            {updateInfo.releaseNotes.length > 0 && (
+              <View style={styles.notesList}>
+                {updateInfo.releaseNotes.map((note, i) => (
+                  <Text key={i} style={styles.noteItem}>• {note}</Text>
+                ))}
+              </View>
+            )}
+            <Pressable
+              style={styles.button}
+              onPress={() => {
+                if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                  window.location.reload()
+                } else {
+                  Linking.openURL(typeof window !== 'undefined' ? window.location.origin : '')
+                }
+              }}
+              accessible
+              accessibilityLabel="Jetzt aktualisieren"
+            >
+              <Text style={styles.buttonText}>Jetzt aktualisieren</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
 
       <View style={styles.section}>
@@ -177,6 +243,36 @@ const styles = StyleSheet.create({
     color: '#475569',
     fontSize: 14,
     fontWeight: '600',
+  },
+  currentLabel: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#059669',
+  },
+  updateBox: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#fef3c7',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+  },
+  updateTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#92400e',
+    marginBottom: 8,
+  },
+  notesList: {
+    marginBottom: 12,
+  },
+  noteItem: {
+    fontSize: 13,
+    color: '#78350f',
+    marginBottom: 4,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 })
 

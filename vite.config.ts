@@ -1,9 +1,19 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 const appVersion = pkg.version ?? '0.0.1'
+
+let releaseNotes: string[] = []
+if (existsSync('./release-notes.json')) {
+  try {
+    const rn = JSON.parse(readFileSync('./release-notes.json', 'utf-8')) as Record<string, string[]>
+    releaseNotes = rn[appVersion] ?? []
+  } catch {
+    // ignore
+  }
+}
 
 export default defineConfig({
   server: {
@@ -19,10 +29,11 @@ export default defineConfig({
     react(),
     {
       name: 'vico-version',
-      generateBundle(_, bundle) {
+      generateBundle() {
         const versionPayload = JSON.stringify({
           version: appVersion,
           buildTime: new Date().toISOString(),
+          releaseNotes,
         })
         this.emitFile({
           type: 'asset',

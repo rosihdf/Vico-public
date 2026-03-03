@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import SyncStatusIndicator from './SyncStatus'
 import Logo from './Logo'
+import UpdateBanner from './UpdateBanner'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
 import { useComponentSettings } from './ComponentSettingsContext'
@@ -62,6 +63,7 @@ const Layout = () => {
 
   return (
     <div className="min-h-screen flex flex-col pb-20">
+      {isAuthenticated && <UpdateBanner />}
       <header className="relative bg-vico-background shadow-md sticky top-0 z-30 flex items-center justify-between gap-2 px-4 h-14 overflow-visible">
         <button
           type="button"

@@ -1,0 +1,12 @@
+{
+  "1.0.0": [
+    "Offline: Wartungsprotokolle (Cache + Outbox)",
+    "Offline: Aufträge (Lesen + Bearbeiten)",
+    "Offline: Objekt-Fotos (Cache + Upload-Outbox)",
+    "Offline: Wartungs-Erinnerungen (Cache)",
+    "Update-System mit Release Notes"
+  ],
+  "0.0.1": [
+    "Initiale Version"
+  ]
+}
