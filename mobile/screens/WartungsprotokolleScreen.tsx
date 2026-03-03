@@ -342,13 +342,30 @@ const WartungsprotokolleScreen = () => {
                   <Pressable
                     style={styles.emailBtn}
                     onPress={() => handleSendEmail(r)}
-                    disabled={!getRecipientEmail() || sendingEmailFor === r.id}
+                    disabled={
+                      !getRecipientEmail() ||
+                      sendingEmailFor === r.id ||
+                      r.synced === false ||
+                      r.id.startsWith('temp-')
+                    }
                     accessible
                     accessibilityLabel="E-Mail senden"
                     accessibilityRole="button"
                   >
-                    <Text style={[styles.emailBtnText, (!getRecipientEmail() || sendingEmailFor === r.id) && { opacity: 0.5 }]}>
-                      {sendingEmailFor === r.id ? 'Sende…' : 'E-Mail'}
+                    <Text
+                      style={[
+                        styles.emailBtnText,
+                        (!getRecipientEmail() ||
+                          sendingEmailFor === r.id ||
+                          r.synced === false ||
+                          r.id.startsWith('temp-')) && { opacity: 0.5 },
+                      ]}
+                    >
+                      {sendingEmailFor === r.id
+                        ? 'Sende…'
+                        : r.synced === false || r.id.startsWith('temp-')
+                          ? 'Wird sync.'
+                          : 'E-Mail'}
                     </Text>
                   </Pressable>
                   <Pressable

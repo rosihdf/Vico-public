@@ -455,11 +455,20 @@ const Wartungsprotokolle = () => {
                       <button
                         type="button"
                         onClick={() => handleSendEmail(r)}
-                        disabled={!getRecipientEmail() || sendingEmailFor === r.id}
+                        disabled={
+                          !getRecipientEmail() ||
+                          sendingEmailFor === r.id ||
+                          r.synced === false ||
+                          r.id.startsWith('temp-')
+                        }
                         className="px-3 py-1.5 text-sm text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         aria-label="E-Mail senden"
                       >
-                        {sendingEmailFor === r.id ? '…' : 'E-Mail'}
+                        {sendingEmailFor === r.id
+                          ? '…'
+                          : r.synced === false || r.id.startsWith('temp-')
+                            ? 'Wird sync.'
+                            : 'E-Mail'}
                       </button>
                       <button
                         type="button"

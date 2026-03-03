@@ -23,7 +23,7 @@ import {
   deleteObject,
   subscribeToDataChange,
   fetchObjectPhotos,
-  getObjectPhotoUrl,
+  getObjectPhotoDisplayUrl,
 } from '../lib/dataService'
 import { getSupabaseErrorMessage } from '../lib/supabaseErrors'
 import ObjectQRCodeModal from '../components/ObjectQRCodeModal'
@@ -523,7 +523,7 @@ const ObjekteScreen = () => {
                     {objectPhotos.map((p) => (
                       <Image
                         key={p.id}
-                        source={{ uri: getObjectPhotoUrl(p.storage_path) }}
+                        source={{ uri: getObjectPhotoDisplayUrl(p) }}
                         style={styles.photoThumb}
                         accessibilityLabel={p.caption || 'Objekt-Foto'}
                       />

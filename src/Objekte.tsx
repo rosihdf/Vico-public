@@ -13,7 +13,7 @@ import {
   fetchObjectPhotos,
   uploadObjectPhoto,
   deleteObjectPhoto,
-  getObjectPhotoUrl,
+  getObjectPhotoDisplayUrl,
 } from './lib/dataService'
 import ObjectQRCodeModal from './ObjectQRCodeModal'
 import { useComponentSettings } from './ComponentSettingsContext'
@@ -649,7 +649,7 @@ const Objekte = () => {
                       {objectPhotos.map((p) => (
                         <div key={p.id} className="relative group">
                           <img
-                            src={getObjectPhotoUrl(p.storage_path)}
+                            src={getObjectPhotoDisplayUrl(p)}
                             alt={p.caption || 'Objekt-Foto'}
                             className="w-20 h-20 object-cover rounded-lg border border-slate-200"
                           />

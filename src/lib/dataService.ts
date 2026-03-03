@@ -17,6 +17,20 @@ import {
   setCachedBvs,
   getCachedObjects,
   setCachedObjects,
+  getCachedMaintenanceReports,
+  setCachedMaintenanceReports,
+  getCachedOrders,
+  setCachedOrders,
+  getCachedObjectPhotos,
+  setCachedObjectPhotos,
+  getObjectPhotoOutbox,
+  addToObjectPhotoOutbox,
+  removeObjectPhotoOutboxItem,
+  getCachedReminders,
+  setCachedReminders,
+  getMaintenanceOutbox,
+  addToMaintenanceOutbox,
+  removeMaintenanceOutboxItem,
   addToOutbox,
 } from './offlineStorage'
 
@@ -142,23 +156,27 @@ export const fetchAllObjects = async (): Promise<Obj[]> => {
   return getCachedObjects() as Obj[]
 }
 
+const mapReminderRow = (row: Record<string, unknown>): MaintenanceReminder => ({
+  object_id: row.object_id as string,
+  customer_id: row.customer_id as string,
+  customer_name: (row.customer_name as string) ?? '',
+  bv_id: row.bv_id as string,
+  bv_name: (row.bv_name as string) ?? '',
+  internal_id: (row.internal_id as string) ?? null,
+  maintenance_interval_months: (row.maintenance_interval_months as number) ?? 0,
+  last_maintenance_date: row.last_maintenance_date ? String(row.last_maintenance_date).slice(0, 10) : null,
+  next_maintenance_date: row.next_maintenance_date ? String(row.next_maintenance_date).slice(0, 10) : null,
+  status: (row.status as MaintenanceReminder['status']) ?? 'ok',
+  days_until_due: row.days_until_due != null ? Number(row.days_until_due) : null,
+})
+
 export const fetchMaintenanceReminders = async (): Promise<MaintenanceReminder[]> => {
-  if (!isOnline()) return []
+  if (!isOnline()) return (getCachedReminders() as MaintenanceReminder[]) ?? []
   const { data, error } = await supabase.rpc('get_maintenance_reminders')
   if (error || !Array.isArray(data)) return []
-  return data.map((row: Record<string, unknown>) => ({
-    object_id: row.object_id as string,
-    customer_id: row.customer_id as string,
-    customer_name: (row.customer_name as string) ?? '',
-    bv_id: row.bv_id as string,
-    bv_name: (row.bv_name as string) ?? '',
-    internal_id: (row.internal_id as string) ?? null,
-    maintenance_interval_months: (row.maintenance_interval_months as number) ?? 0,
-    last_maintenance_date: row.last_maintenance_date ? String(row.last_maintenance_date).slice(0, 10) : null,
-    next_maintenance_date: row.next_maintenance_date ? String(row.next_maintenance_date).slice(0, 10) : null,
-    status: (row.status as MaintenanceReminder['status']) ?? 'ok',
-    days_until_due: row.days_until_due != null ? Number(row.days_until_due) : null,
-  }))
+  const reminders = data.map((row: Record<string, unknown>) => mapReminderRow(row))
+  setCachedReminders(reminders)
+  return reminders
 }
 
 type CustomerPayload = Omit<Customer, 'id' | 'created_at' | 'updated_at'> & {
@@ -327,24 +345,79 @@ export const deleteObject = async (id: string): Promise<{ error: { message: stri
 export const fetchMaintenanceReports = async (
   objectId: string
 ): Promise<MaintenanceReport[]> => {
-  const { data, error } = await supabase
-    .from('maintenance_reports')
-    .select('*')
-    .eq('object_id', objectId)
-    .order('maintenance_date', { ascending: false })
-  if (error) return []
-  return (data ?? []) as MaintenanceReport[]
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('maintenance_reports')
+      .select('*')
+      .eq('object_id', objectId)
+      .order('maintenance_date', { ascending: false })
+    if (!error && data) {
+      setCachedMaintenanceReports(objectId, data)
+      const merged = mergeMaintenanceCacheWithOutbox(objectId, data as MaintenanceReport[])
+      return merged
+    }
+  }
+  const cached = getCachedMaintenanceReports(objectId) as MaintenanceReport[]
+  return mergeMaintenanceCacheWithOutbox(objectId, cached)
+}
+
+const mergeMaintenanceCacheWithOutbox = (
+  objectId: string,
+  cached: MaintenanceReport[]
+): MaintenanceReport[] => {
+  const pending = getMaintenanceOutbox().filter(
+    (item) => (item.reportPayload.object_id as string) === objectId
+  )
+  const pendingReports: MaintenanceReport[] = pending.map((item) => ({
+    id: item.tempId,
+    object_id: objectId,
+    maintenance_date: item.reportPayload.maintenance_date as string,
+    maintenance_time: item.reportPayload.maintenance_time as string | null,
+    technician_id: item.reportPayload.technician_id as string | null,
+    reason: item.reportPayload.reason as MaintenanceReport['reason'],
+    reason_other: item.reportPayload.reason_other as string | null,
+    manufacturer_maintenance_done: item.reportPayload.manufacturer_maintenance_done as boolean,
+    hold_open_checked: item.reportPayload.hold_open_checked as boolean | null,
+    deficiencies_found: item.reportPayload.deficiencies_found as boolean,
+    deficiency_description: item.reportPayload.deficiency_description as string | null,
+    urgency: item.reportPayload.urgency as MaintenanceReport['urgency'],
+    fixed_immediately: item.reportPayload.fixed_immediately as boolean,
+    customer_signature_path: null,
+    technician_signature_path: null,
+    technician_name_printed: item.reportPayload.technician_name_printed as string | null,
+    customer_name_printed: item.reportPayload.customer_name_printed as string | null,
+    pdf_path: null,
+    synced: false,
+    created_at: item.timestamp,
+    updated_at: item.timestamp,
+  }))
+  const all = [...pendingReports, ...cached]
+  all.sort((a, b) => (b.maintenance_date || '').localeCompare(a.maintenance_date || ''))
+  return all
 }
 
 export const fetchMaintenanceReportSmokeDetectors = async (
   reportId: string
 ): Promise<MaintenanceReportSmokeDetector[]> => {
-  const { data, error } = await supabase
-    .from('maintenance_report_smoke_detectors')
-    .select('*')
-    .eq('report_id', reportId)
-  if (error) return []
-  return (data ?? []) as MaintenanceReportSmokeDetector[]
+  const pending = getMaintenanceOutbox().find((item) => item.tempId === reportId)
+  if (pending) {
+    return pending.smokeDetectors.map((sd, idx) => ({
+      id: `temp-sd-${idx}`,
+      report_id: reportId,
+      smoke_detector_label: sd.label,
+      status: sd.status as MaintenanceReportSmokeDetector['status'],
+      created_at: new Date().toISOString(),
+    }))
+  }
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('maintenance_report_smoke_detectors')
+      .select('*')
+      .eq('report_id', reportId)
+    if (error) return []
+    return (data ?? []) as MaintenanceReportSmokeDetector[]
+  }
+  return []
 }
 
 type MaintenanceReportPayload = Omit<
@@ -357,6 +430,18 @@ export const createMaintenanceReport = async (
   smokeDetectors: { label: string; status: MaintenanceReportSmokeDetector['status'] }[]
 ): Promise<{ data: MaintenanceReport | null; error: { message: string } | null }> => {
   const full = { ...payload, updated_at: new Date().toISOString() }
+  if (!isOnline()) {
+    const tempId = `temp-${crypto.randomUUID()}`
+    addToMaintenanceOutbox({ reportPayload: full, smokeDetectors, tempId })
+    const local: MaintenanceReport = {
+      ...full,
+      id: tempId,
+      created_at: full.updated_at ?? new Date().toISOString(),
+      updated_at: full.updated_at ?? new Date().toISOString(),
+    } as MaintenanceReport
+    notifyDataChange()
+    return { data: local, error: null }
+  }
   const { data: report, error } = await supabase
     .from('maintenance_reports')
     .insert(full)
@@ -371,6 +456,9 @@ export const createMaintenanceReport = async (
     }))
     await supabase.from('maintenance_report_smoke_detectors').insert(rows)
   }
+  const cached = getCachedMaintenanceReports(payload.object_id) as MaintenanceReport[]
+  setCachedMaintenanceReports(payload.object_id, [report, ...cached])
+  notifyDataChange()
   return { data: report as MaintenanceReport, error: null }
 }
 
@@ -411,7 +499,20 @@ export const uploadSignatureToStorage = async (
 export const deleteMaintenanceReport = async (
   id: string
 ): Promise<{ error: { message: string } | null }> => {
+  if (id.startsWith('temp-')) {
+    const pending = getMaintenanceOutbox().find((item) => item.tempId === id)
+    if (pending) {
+      removeMaintenanceOutboxItem(pending.id)
+      notifyDataChange()
+      return { error: null }
+    }
+    return { error: { message: 'Offline-Protokoll nicht gefunden' } }
+  }
+  if (!isOnline()) {
+    return { error: { message: 'Offline: Löschen nur bei Verbindung möglich' } }
+  }
   const { error } = await supabase.from('maintenance_reports').delete().eq('id', id)
+  if (!error) notifyDataChange()
   return { error: error ? { message: error.message } : null }
 }
 
@@ -496,24 +597,77 @@ export const sendMaintenanceReportEmail = async (
 
 // --- Object Photos ---
 
+export type ObjectPhotoDisplay = ObjectPhoto & { localDataUrl?: string }
+
 const OBJECT_PHOTOS_BUCKET = 'object-photos'
 
-export const fetchObjectPhotos = async (objectId: string): Promise<ObjectPhoto[]> => {
-  const { data, error } = await supabase
-    .from('object_photos')
-    .select('*')
-    .eq('object_id', objectId)
-    .order('created_at', { ascending: false })
-  if (error) return []
-  return (data ?? []) as ObjectPhoto[]
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      const base64 = result.includes(',') ? result.split(',')[1] : result
+      resolve(base64 ?? '')
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+
+export const fetchObjectPhotos = async (objectId: string): Promise<ObjectPhotoDisplay[]> => {
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('object_photos')
+      .select('*')
+      .eq('object_id', objectId)
+      .order('created_at', { ascending: false })
+    if (error) return []
+    return (data ?? []) as ObjectPhotoDisplay[]
+  }
+  const cached = (getCachedObjectPhotos() as ObjectPhoto[]).filter((p) => p.object_id === objectId)
+  const outbox = getObjectPhotoOutbox().filter((o) => o.object_id === objectId)
+  const pending: ObjectPhotoDisplay[] = outbox.map((o) => ({
+    id: o.tempId,
+    object_id: o.object_id,
+    storage_path: '',
+    caption: o.caption,
+    created_at: o.timestamp,
+    localDataUrl: `data:image/${o.ext === 'jpg' ? 'jpeg' : o.ext};base64,${o.fileBase64}`,
+  }))
+  const merged = [...pending, ...cached]
+  merged.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  return merged
 }
 
 export const uploadObjectPhoto = async (
   objectId: string,
   file: File,
   caption?: string
-): Promise<{ data: ObjectPhoto | null; error: { message: string } | null }> => {
+): Promise<{ data: ObjectPhotoDisplay | null; error: { message: string } | null }> => {
   const ext = file.name.split('.').pop() || 'jpg'
+  if (!isOnline()) {
+    const base64 = await fileToBase64(file)
+    const tempId = `temp-${crypto.randomUUID()}`
+    addToObjectPhotoOutbox({
+      object_id: objectId,
+      tempId,
+      fileBase64: base64,
+      caption: caption?.trim() || null,
+      ext,
+    })
+    notifyDataChange()
+    const localDataUrl = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${base64}`
+    return {
+      data: {
+        id: tempId,
+        object_id: objectId,
+        storage_path: '',
+        caption: caption?.trim() || null,
+        created_at: new Date().toISOString(),
+        localDataUrl,
+      },
+      error: null,
+    }
+  }
   const path = `${objectId}/${crypto.randomUUID()}.${ext}`
   const { error: uploadError } = await supabase.storage
     .from(OBJECT_PHOTOS_BUCKET)
@@ -524,15 +678,37 @@ export const uploadObjectPhoto = async (
     .insert({ object_id: objectId, storage_path: path, caption: caption?.trim() || null })
     .select()
     .single()
-  return { data: photo as ObjectPhoto, error: error ? { message: error.message } : null }
+  return { data: photo as ObjectPhotoDisplay, error: error ? { message: error.message } : null }
 }
 
 export const deleteObjectPhoto = async (
   photoId: string,
   storagePath: string
 ): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) {
+    if (photoId.startsWith('temp-')) {
+      const outbox = getObjectPhotoOutbox()
+      const item = outbox.find((o) => o.tempId === photoId)
+      if (item) removeObjectPhotoOutboxItem(item.id)
+    } else {
+      addToOutbox({
+        table: 'object_photos',
+        action: 'delete',
+        payload: { id: photoId, storage_path: storagePath },
+      })
+      const cached = (getCachedObjectPhotos() as ObjectPhoto[]).filter((p) => p.id !== photoId)
+      setCachedObjectPhotos(cached)
+    }
+    notifyDataChange()
+    return { error: null }
+  }
   await supabase.storage.from(OBJECT_PHOTOS_BUCKET).remove([storagePath])
   const { error } = await supabase.from('object_photos').delete().eq('id', photoId)
+  if (!error) {
+    const cached = (getCachedObjectPhotos() as ObjectPhoto[]).filter((p) => p.id !== photoId)
+    setCachedObjectPhotos(cached)
+    notifyDataChange()
+  }
   return { error: error ? { message: error.message } : null }
 }
 
@@ -543,27 +719,31 @@ export const getObjectPhotoUrl = (storagePath: string): string => {
   return data.publicUrl
 }
 
+export const getObjectPhotoDisplayUrl = (p: ObjectPhotoDisplay): string =>
+  p.localDataUrl ?? getObjectPhotoUrl(p.storage_path)
+
 // --- Aufträge (Orders) ---
 
 export const fetchOrders = async (): Promise<Order[]> => {
-  if (!isOnline()) return []
-  const { data, error } = await supabase
-    .from('orders')
-    .select('*')
-    .order('order_date', { ascending: false })
-  if (error) return []
-  return (data ?? []) as Order[]
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .order('order_date', { ascending: false })
+    if (!error && data) {
+      setCachedOrders(data)
+      return (data ?? []) as Order[]
+    }
+  }
+  return (getCachedOrders() as Order[]).sort(
+    (a, b) => (b.order_date || '').localeCompare(a.order_date || '')
+  )
 }
 
 export const fetchOrdersAssignedTo = async (userId: string): Promise<Order[]> => {
-  if (!isOnline() || !userId) return []
-  const { data, error } = await supabase
-    .from('orders')
-    .select('*')
-    .eq('assigned_to', userId)
-    .order('order_date', { ascending: false })
-  if (error) return []
-  return (data ?? []) as Order[]
+  const all = await fetchOrders()
+  if (!userId) return all
+  return all.filter((o) => o.assigned_to === userId)
 }
 
 type OrderPayload = Omit<Order, 'id' | 'created_at' | 'updated_at'> & { updated_at?: string }
@@ -574,12 +754,26 @@ export const createOrder = async (
 ): Promise<{ data: Order | null; error: { message: string } | null }> => {
   const full = {
     ...payload,
+    id: crypto.randomUUID(),
     object_id: payload.object_id || null,
     assigned_to: 'assigned_to' in payload && payload.assigned_to ? String(payload.assigned_to).trim() || null : null,
     created_by: userId,
+    created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
+  if (!isOnline()) {
+    addToOutbox({ table: 'orders', action: 'insert', payload: full })
+    const cached = getCachedOrders() as Order[]
+    setCachedOrders([full as Order, ...cached])
+    notifyDataChange()
+    return { data: full as Order, error: null }
+  }
   const { data, error } = await supabase.from('orders').insert(full).select().single()
+  if (!error && data) {
+    const cached = getCachedOrders() as Order[]
+    setCachedOrders([data as Order, ...cached])
+    notifyDataChange()
+  }
   return { data: data as Order | null, error: error ? { message: error.message } : null }
 }
 
@@ -587,10 +781,24 @@ export const updateOrderStatus = async (
   id: string,
   status: Order['status']
 ): Promise<{ error: { message: string } | null }> => {
-  const { error } = await supabase
-    .from('orders')
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq('id', id)
+  const updated_at = new Date().toISOString()
+  if (!isOnline()) {
+    addToOutbox({ table: 'orders', action: 'update', payload: { id, status, updated_at } })
+    const cached = (getCachedOrders() as Order[]).map((o) =>
+      o.id === id ? { ...o, status, updated_at } : o
+    )
+    setCachedOrders(cached)
+    notifyDataChange()
+    return { error: null }
+  }
+  const { error } = await supabase.from('orders').update({ status, updated_at }).eq('id', id)
+  if (!error) {
+    const cached = (getCachedOrders() as Order[]).map((o) =>
+      o.id === id ? { ...o, status, updated_at } : o
+    )
+    setCachedOrders(cached)
+    notifyDataChange()
+  }
   return { error: error ? { message: error.message } : null }
 }
 
@@ -598,10 +806,25 @@ export const updateOrderAssignedTo = async (
   id: string,
   assignedTo: string | null
 ): Promise<{ error: { message: string } | null }> => {
-  const { error } = await supabase
-    .from('orders')
-    .update({ assigned_to: assignedTo || null, updated_at: new Date().toISOString() })
-    .eq('id', id)
+  const updated_at = new Date().toISOString()
+  const val = assignedTo || null
+  if (!isOnline()) {
+    addToOutbox({ table: 'orders', action: 'update', payload: { id, assigned_to: val, updated_at } })
+    const cached = (getCachedOrders() as Order[]).map((o) =>
+      o.id === id ? { ...o, assigned_to: val, updated_at } : o
+    )
+    setCachedOrders(cached)
+    notifyDataChange()
+    return { error: null }
+  }
+  const { error } = await supabase.from('orders').update({ assigned_to: val, updated_at }).eq('id', id)
+  if (!error) {
+    const cached = (getCachedOrders() as Order[]).map((o) =>
+      o.id === id ? { ...o, assigned_to: val, updated_at } : o
+    )
+    setCachedOrders(cached)
+    notifyDataChange()
+  }
   return { error: error ? { message: error.message } : null }
 }
 
@@ -609,16 +832,42 @@ export const updateOrderDate = async (
   id: string,
   orderDate: string
 ): Promise<{ error: { message: string } | null }> => {
-  const { error } = await supabase
-    .from('orders')
-    .update({ order_date: orderDate, updated_at: new Date().toISOString() })
-    .eq('id', id)
+  const updated_at = new Date().toISOString()
+  if (!isOnline()) {
+    addToOutbox({ table: 'orders', action: 'update', payload: { id, order_date: orderDate, updated_at } })
+    const cached = (getCachedOrders() as Order[]).map((o) =>
+      o.id === id ? { ...o, order_date: orderDate, updated_at } : o
+    )
+    setCachedOrders(cached)
+    notifyDataChange()
+    return { error: null }
+  }
+  const { error } = await supabase.from('orders').update({ order_date: orderDate, updated_at }).eq('id', id)
+  if (!error) {
+    const cached = (getCachedOrders() as Order[]).map((o) =>
+      o.id === id ? { ...o, order_date: orderDate, updated_at } : o
+    )
+    setCachedOrders(cached)
+    notifyDataChange()
+  }
   return { error: error ? { message: error.message } : null }
 }
 
 export const deleteOrder = async (
   id: string
 ): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) {
+    addToOutbox({ table: 'orders', action: 'delete', payload: { id } })
+    const cached = (getCachedOrders() as Order[]).filter((o) => o.id !== id)
+    setCachedOrders(cached)
+    notifyDataChange()
+    return { error: null }
+  }
   const { error } = await supabase.from('orders').delete().eq('id', id)
+  if (!error) {
+    const cached = (getCachedOrders() as Order[]).filter((o) => o.id !== id)
+    setCachedOrders(cached)
+    notifyDataChange()
+  }
   return { error: error ? { message: error.message } : null }
 }

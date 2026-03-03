@@ -2,6 +2,8 @@
 
 Web- und Mobile-App für Kunden-, BV- und Objektverwaltung mit Wartungsdokumentation.
 
+[![Netlify Status](https://api.netlify.com/api/v1/badges/b2354e82-71db-46a7-b5c0-d30b0e5afdde/deploy-status)](https://app.netlify.com/projects/mobil-vico-test/deploys)
+
 ## Struktur
 
 ```

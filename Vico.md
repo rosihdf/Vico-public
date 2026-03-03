@@ -35,7 +35,7 @@
 3. Neues Repository auf GitHub erstellen (https://github.com/new).
 4. Lokales Repo verbinden und pushen:
    ```bash
-   git remote add origin https://github.com/DEIN-USERNAME/vico.git
+   git remote add origin https://github.com/DEIN-USERNAME/vico-public.git
    git branch -M main
    git push -u origin main
    ```
@@ -68,17 +68,22 @@ Falls abweichend: manuell anpassen. Dann **„Deploy site“** klicken.
 
 ## Schritt 4: Umgebungsvariablen setzen
 
-1. Nach dem ersten Deploy: **Site Settings** (oder **Site configuration** → **Environment variables**) öffnen.
-2. **„Add a variable“** oder **„Add environment variables“** klicken.
-3. Folgende Variablen hinzufügen:
+1. Deine Site in Netlify öffnen (Dashboard → Site auswählen).
+2. In der linken Seitenleiste: **„Site configuration“** oder **„Project configuration“** anklicken.
+3. Darunter **„Environment variables“** wählen.
+4. **„Add a variable“** oder **„Add environment variables“** → **„Add a single variable“** klicken.
+
+   **Alternative Wege:** Oben in der Site: **„Site settings“** → **„Environment variables“** – oder im Tab **„Build & deploy“** → **„Environment“** → **„Environment variables“**.
+
+5. Folgende Variablen hinzufügen:
 
    | Name | Wert |
    |------|------|
    | `VITE_SUPABASE_URL` | Deine Supabase-URL (z. B. aus `.env` oder Supabase Dashboard → Settings → API) |
    | `VITE_SUPABASE_ANON_KEY` | Dein Supabase Anon Key (Supabase Dashboard → Settings → API) |
 
-4. **„Save“** speichern.
-5. **„Trigger deploy“** → **„Deploy site“** ausführen, damit der Build mit den neuen Variablen neu läuft.
+6. **„Save“** speichern.
+7. **„Trigger deploy“** → **„Deploy site“** ausführen, damit der Build mit den neuen Variablen neu läuft.
 
 ---
 
@@ -98,6 +103,65 @@ Falls abweichend: manuell anpassen. Dann **„Deploy site“** klicken.
 1. Netlify-Site im Browser öffnen.
 2. Login testen.
 3. „Passwort vergessen“ testen (Redirect-URL muss in Supabase hinterlegt sein).
+
+---
+
+## ✅ Deployment-Checkliste
+
+| Aufgabe | Status |
+|---------|--------|
+| `netlify.toml` (Build, Redirects, Node 20) | ✅ Konfiguriert |
+| Umgebungsvariablen in Netlify setzen | ✅ Erledigt |
+| Supabase: Site URL + Redirect URLs | ✅ Erledigt |
+| `.env` nicht committen | ✅ In `.gitignore` |
+
+---
+
+## 📋 Netlify: Was noch zu tun ist
+
+### 1. Site mit GitHub verbinden ✅
+- **Netlify** → Add new site → Import an existing project → Deploy with GitHub
+- **Repository:** `rosihdf/Vico-public` auswählen
+- **Deploy site** klicken
+
+### 2. Umgebungsvariablen in Netlify eintragen ✅
+- **Site configuration** → **Environment variables** → **Add a variable** → **Add a single variable**
+- **Werte aus deiner lokalen `.env`** (nicht committen):
+
+  | Key | Wert |
+  |-----|------|
+  | `VITE_SUPABASE_URL` | Deine Supabase-URL (aus `.env`) |
+  | `VITE_SUPABASE_ANON_KEY` | Dein Anon Key (aus `.env`) |
+
+- **Save** → **Trigger deploy** → **Deploy site** (damit der Build mit den Variablen neu läuft)
+
+### 3. Supabase konfigurieren ✅
+- **Netlify-URL** notieren (z. B. `https://vico-xyz.netlify.app`)
+- **Supabase Dashboard** → **Authentication** → **URL Configuration**:
+  - **Site URL:** z. B. `https://vico-xyz.netlify.app`
+  - **Redirect URLs:** `https://vico-xyz.netlify.app/reset-password` hinzufügen
+- **Save** klicken
+
+### 4. Testen ✅
+- Netlify-Site öffnen → Login → „Passwort vergessen“ testen
+
+---
+
+## 📱 Mobile-Version auf Netlify (zweite Site)
+
+Die Mobile-App (Expo Web) kann als **separate Netlify-Site** aus demselben Repo deployed werden:
+
+1. **Netlify** → **Add new site** → **Import an existing project** → **Deploy with GitHub**
+2. **Repository:** `rosihdf/Vico-public` (dasselbe wie die Web-App)
+3. **Build-Einstellungen anpassen:**
+   - **Base directory:** `mobile`
+   - **Build command:** `npm install && npm run build:web` (wird aus `mobile/netlify.toml` gelesen)
+   - **Publish directory:** `dist`
+4. **Umgebungsvariablen** (wie bei der Web-Site):
+   - `EXPO_PUBLIC_SUPABASE_URL` = deine Supabase-URL
+   - `EXPO_PUBLIC_SUPABASE_ANON_KEY` = dein Anon Key
+5. **Deploy site** klicken
+6. **Supabase:** Die neue Mobile-URL in **Redirect URLs** hinzufügen (z. B. `https://vico-mobile-xyz.netlify.app/reset-password`)
 
 ---
 
@@ -345,6 +409,8 @@ Wenn **Ja**:
 
 - Daten lokal speichern
 - Änderungen in Outbox speichern
+- Objekt-Fotos: Cache + Upload-Outbox (Base64), Sync beim nächsten Online
+- Wartungs-Erinnerungen: Cache (RPC-Ergebnis)
 - Status = 🔴 Rot
 
 ## Online
@@ -596,9 +662,10 @@ Pro Objekt speicherbar:
 
 # 🌐 Offline Verhalten
 
-- Wartungsprotokoll komplett offline erstellbar
-- Fotos & Unterschriften lokal speichern
-- PDF wird bei nächster Internetverbindung erzeugt oder synchronisiert
+- **Kunden, BVs, Objekte:** Lesen, Anlegen, Bearbeiten, Löschen (Cache + Outbox)
+- **Wartungsprotokolle:** Lesen (Cache), Anlegen offline (Outbox), Rauchmelder inklusive
+- **Suche:** Durchsuchen von Kunden/BVs/Objekten aus Cache
+- **Sync:** Änderungen werden bei nächster Verbindung automatisch hochgeladen
 - Sync Status:
   - 🔴 Offline
   - 🟢 Bereit
