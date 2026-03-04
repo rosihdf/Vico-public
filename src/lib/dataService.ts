@@ -247,7 +247,7 @@ export const createBv = async (
     const { data, error } = await supabase.from('bvs').insert(full).select().single()
     if (!error && data) {
       const all = getCachedBvs() as BV[]
-      setCachedBvs([...all.filter((b) => b.customer_id !== payload.customer_id), data as BV])
+      setCachedBvs([...all, data as BV])
     }
     return { data: data as BV | null, error: error ? { message: error.message } : null }
   }
@@ -255,7 +255,7 @@ export const createBv = async (
   addToOutbox({ table: 'bvs', action: 'insert', payload: { ...full, id }, tempId: id })
   const local: BV = { ...full, id, created_at: new Date().toISOString(), updated_at: full.updated_at! }
   const all = getCachedBvs() as BV[]
-  setCachedBvs([...all.filter((b) => b.customer_id !== payload.customer_id), local])
+  setCachedBvs([...all, local])
   notifyDataChange()
   return { data: local, error: null }
 }
@@ -300,7 +300,7 @@ export const createObject = async (
     const { data, error } = await supabase.from('objects').insert(full).select().single()
     if (!error && data) {
       const all = getCachedObjects() as Obj[]
-      setCachedObjects([...all.filter((o) => o.bv_id !== payload.bv_id), data as Obj])
+      setCachedObjects([...all, data as Obj])
     }
     return { data: data as Obj | null, error: error ? { message: error.message } : null }
   }
@@ -308,7 +308,7 @@ export const createObject = async (
   addToOutbox({ table: 'objects', action: 'insert', payload: { ...full, id }, tempId: id })
   const local: Obj = { ...full, id, created_at: new Date().toISOString(), updated_at: full.updated_at! }
   const all = getCachedObjects() as Obj[]
-  setCachedObjects([...all.filter((o) => o.bv_id !== payload.bv_id), local])
+  setCachedObjects([...all, local])
   notifyDataChange()
   return { data: local, error: null }
 }
