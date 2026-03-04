@@ -102,7 +102,14 @@ const TabNavigator = () => {
         tabBarStyle: {
           backgroundColor: '#1e293b',
           borderTopColor: '#334155',
-          paddingBottom: Math.max(insets.bottom, 8),
+          height: 49 + Math.max(insets.bottom, 0) + 12,
+          paddingBottom: Math.max(insets.bottom, 0) + 12,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 4,
+        },
+        tabBarLabelStyle: {
+          fontSize: 10,
         },
         tabBarActiveTintColor: '#059669',
         tabBarInactiveTintColor: '#94a3b8',
