@@ -7,6 +7,10 @@ import {
   removeMaintenanceOutboxItem,
   getObjectPhotoOutbox,
   removeObjectPhotoOutboxItem,
+  getMaintenancePhotoOutbox,
+  removeMaintenancePhotoOutboxItem,
+  setCachedMaintenancePhotos,
+  setCachedComponentSettings,
   setCachedCustomers,
   setCachedBvs,
   setCachedObjects,
@@ -21,6 +25,7 @@ import {
 } from './offlineStorage'
 
 const OBJECT_PHOTOS_BUCKET = 'object-photos'
+const MAINTENANCE_PHOTOS_BUCKET = 'maintenance-photos'
 
 export type SyncResult = { success: boolean; pendingCount: number; error?: string }
 
@@ -42,6 +47,9 @@ export const processOutbox = async (): Promise<SyncResult> => {
         if (item.table === 'object_photos' && storage_path) {
           await supabase.storage.from(OBJECT_PHOTOS_BUCKET).remove([storage_path])
         }
+        if (item.table === 'maintenance_report_photos' && storage_path) {
+          await supabase.storage.from(MAINTENANCE_PHOTOS_BUCKET).remove([storage_path])
+        }
         const { error } = await supabase.from(item.table).delete().eq('id', id)
         if (error) throw new Error(error.message)
       }
@@ -58,12 +66,13 @@ export const processOutbox = async (): Promise<SyncResult> => {
 }
 
 export const pullFromServer = async (): Promise<void> => {
-  const [custRes, bvRes, objRes, ordersRes, photosRes] = await Promise.all([
+  const [custRes, bvRes, objRes, ordersRes, photosRes, maintPhotosRes] = await Promise.all([
     supabase.from('customers').select('*').order('name'),
     supabase.from('bvs').select('*').order('name'),
     supabase.from('objects').select('*').order('internal_id'),
     supabase.from('orders').select('*').order('order_date', { ascending: false }),
     supabase.from('object_photos').select('*').order('created_at', { ascending: false }),
+    supabase.from('maintenance_report_photos').select('*'),
   ])
 
   if (!custRes.error) await setCachedCustomers((custRes.data as Customer[]) ?? [])
@@ -71,6 +80,18 @@ export const pullFromServer = async (): Promise<void> => {
   if (!objRes.error) await setCachedObjects((objRes.data as Obj[]) ?? [])
   if (!ordersRes.error) await setCachedOrders((ordersRes.data ?? []) as Order[])
   if (!photosRes.error) await setCachedObjectPhotos((photosRes.data ?? []) as ObjectPhoto[])
+  if (!maintPhotosRes.error) await setCachedMaintenancePhotos((maintPhotosRes.data ?? []) as { id: string; report_id: string; storage_path: string | null; caption: string | null }[])
+  const { data: compSettingsData } = await supabase
+    .from('component_settings')
+    .select('component_key, enabled')
+    .order('sort_order', { ascending: true })
+  if (Array.isArray(compSettingsData)) {
+    const map: Record<string, boolean> = {}
+    compSettingsData.forEach((row: { component_key: string; enabled: boolean }) => {
+      map[row.component_key] = row.enabled
+    })
+    if (Object.keys(map).length > 0) await setCachedComponentSettings(map)
+  }
   const { data: remindersData } = await supabase.rpc('get_maintenance_reminders')
   if (Array.isArray(remindersData)) {
     await setCachedReminders(
@@ -113,6 +134,21 @@ const processMaintenanceOutbox = async (): Promise<SyncResult> => {
           .insert(rows)
         if (sdError) throw new Error(sdError.message)
       }
+      const photoOutbox = getMaintenancePhotoOutbox().filter((p) => p.report_id === item.tempId)
+      for (const photoItem of photoOutbox) {
+        const path = `${report!.id}/${crypto.randomUUID()}.${photoItem.ext}`
+        const binary = Uint8Array.from(atob(photoItem.fileBase64), (c) => c.charCodeAt(0))
+        const blob = new Blob([binary], { type: `image/${photoItem.ext === 'jpg' ? 'jpeg' : photoItem.ext}` })
+        const { error: uploadError } = await supabase.storage
+          .from(MAINTENANCE_PHOTOS_BUCKET)
+          .upload(path, blob, { upsert: false })
+        if (uploadError) throw new Error(uploadError.message)
+        const { error: photoError } = await supabase
+          .from('maintenance_report_photos')
+          .insert({ report_id: report!.id, storage_path: path, caption: photoItem.caption })
+        if (photoError) throw new Error(photoError.message)
+        await removeMaintenancePhotoOutboxItem(photoItem.id)
+      }
       const objectId = item.reportPayload.object_id as string
       const cached = getCachedMaintenanceReports(objectId) as Record<string, unknown>[]
       const filtered = cached.filter((r) => r.id !== item.tempId)
@@ -121,7 +157,7 @@ const processMaintenanceOutbox = async (): Promise<SyncResult> => {
     } catch (err) {
       return {
         success: false,
-        pendingCount: getOutbox().length + getMaintenanceOutbox().length,
+        pendingCount: getOutbox().length + getMaintenanceOutbox().length + getMaintenancePhotoOutbox().length,
         error: err instanceof Error ? err.message : String(err),
       }
     }
@@ -175,4 +211,4 @@ export const runSync = async (): Promise<SyncResult> => {
 }
 
 export const getPendingCount = (): number =>
-  getOutbox().length + getMaintenanceOutbox().length + getObjectPhotoOutbox().length
+  getOutbox().length + getMaintenanceOutbox().length + getObjectPhotoOutbox().length + getMaintenancePhotoOutbox().length

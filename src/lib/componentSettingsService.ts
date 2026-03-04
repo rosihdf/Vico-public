@@ -1,4 +1,7 @@
 import { supabase } from '../supabase'
+import { getCachedComponentSettings, setCachedComponentSettings } from './offlineStorage'
+
+const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
 
 export type ComponentSetting = {
   id: string
@@ -29,6 +32,10 @@ const DEFAULT_SETTINGS: Record<string, boolean> = Object.fromEntries(
 export type UpdateResult = { ok: boolean; error?: string }
 
 export const fetchComponentSettings = async (): Promise<Record<string, boolean>> => {
+  if (!isOnline()) {
+    const cached = getCachedComponentSettings()
+    return Object.keys(cached).length > 0 ? cached : DEFAULT_SETTINGS
+  }
   const { data, error } = await supabase
     .from('component_settings')
     .select('component_key, enabled')
@@ -42,10 +49,23 @@ export const fetchComponentSettings = async (): Promise<Record<string, boolean>>
   data.forEach((row: { component_key: string; enabled: boolean }) => {
     result[row.component_key] = row.enabled
   })
+  setCachedComponentSettings(result)
   return result
 }
 
 export const fetchComponentSettingsFull = async (): Promise<ComponentSetting[]> => {
+  if (!isOnline()) {
+    const cached = getCachedComponentSettings()
+    return DEFAULT_SETTINGS_META.map((m, i) => ({
+      id: `cached-${m.component_key}`,
+      component_key: m.component_key,
+      label: m.label,
+      enabled: cached[m.component_key] ?? m.enabled,
+      sort_order: m.sort_order,
+      created_at: '',
+      updated_at: '',
+    }))
+  }
   const { data, error } = await supabase
     .from('component_settings')
     .select('*')
@@ -62,6 +82,12 @@ export const updateComponentSetting = async (
   const meta = DEFAULT_SETTINGS_META.find((m) => m.component_key === componentKey)
   const now = new Date().toISOString()
 
+  if (!isOnline()) {
+    const cached = getCachedComponentSettings()
+    setCachedComponentSettings({ ...cached, [componentKey]: enabled })
+    return { ok: true }
+  }
+
   const { data: updated, error: updateError } = await supabase
     .from('component_settings')
     .update({ enabled, updated_at: now })
@@ -73,6 +99,7 @@ export const updateComponentSetting = async (
   }
 
   if (updated && updated.length > 0) {
+    setCachedComponentSettings({ ...getCachedComponentSettings(), [componentKey]: enabled })
     return { ok: true }
   }
 
@@ -87,5 +114,6 @@ export const updateComponentSetting = async (
   if (insertError) {
     return { ok: false, error: insertError.message }
   }
+  setCachedComponentSettings({ ...getCachedComponentSettings(), [componentKey]: enabled })
   return { ok: true }
 }

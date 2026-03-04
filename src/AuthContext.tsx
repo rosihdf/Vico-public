@@ -93,7 +93,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       password,
     })
     if (error) {
-      return { success: false, message: error.message }
+      return { success: false, message: getSupabaseErrorMessage(error) }
     }
     if (data.user && data.session) {
       const profile = await fetchProfileSupabase(data.user.id)
@@ -118,7 +118,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       redirectTo,
     })
     if (error) {
-      return { success: false, message: error.message }
+      return { success: false, message: getSupabaseErrorMessage(error) }
     }
     return {
       success: true,
@@ -133,7 +133,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) {
-      return { success: false, message: error.message }
+      return { success: false, message: getSupabaseErrorMessage(error) }
     }
     return { success: true, message: 'Passwort wurde geändert.' }
   }, [])

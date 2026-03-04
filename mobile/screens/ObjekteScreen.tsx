@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   View,
   Text,
@@ -75,7 +75,7 @@ const ObjekteScreen = () => {
   const [bv, setBv] = useState<BV | null>(null)
   const [objects, setObjects] = useState<Obj[]>([])
   const [searchQuery, setSearchQuery] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formData, setFormData] = useState<ObjectFormData>(INITIAL_FORM)
@@ -85,7 +85,11 @@ const ObjekteScreen = () => {
   const [objectPhotos, setObjectPhotos] = useState<ObjectPhoto[]>([])
 
   const loadData = useCallback(async () => {
-    if (!customerId || !bvId) return
+    if (!customerId || !bvId) {
+      setIsLoading(false)
+      return
+    }
+    setIsLoading(true)
     const [cust, bvData, objData] = await Promise.all([
       fetchCustomer(customerId),
       fetchBv(bvId),
@@ -94,7 +98,7 @@ const ObjekteScreen = () => {
     setCustomer((cust ?? null) as Customer | null)
     setBv((bvData ?? null) as BV | null)
     setObjects((objData ?? []) as Obj[])
-    setLoading(false)
+    setIsLoading(false)
   }, [customerId, bvId])
 
   useEffect(() => {
@@ -107,10 +111,14 @@ const ObjekteScreen = () => {
     return subscribeToDataChange(loadData)
   }, [loadData])
 
-  const filteredObjects = objects.filter(
-    (o) =>
-      (o.internal_id ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (o.room ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredObjects = useMemo(
+    () =>
+      objects.filter(
+        (o) =>
+          (o.internal_id ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (o.room ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+      ),
+    [objects, searchQuery]
   )
 
   const handleOpenCreate = () => {
@@ -297,10 +305,11 @@ const ObjekteScreen = () => {
     )
   }
 
-  if (loading || !customer || !bv) {
+  if (isLoading || !customer || !bv) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { gap: 12 }]}>
         <ActivityIndicator size="large" color="#059669" />
+        <Text style={styles.loadingText}>Lade Objekte…</Text>
       </View>
     )
   }
@@ -585,6 +594,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#334155',
   },
   error: {
     color: '#dc2626',

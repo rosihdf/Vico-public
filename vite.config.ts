@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 const appVersion = pkg.version ?? '0.0.1'
@@ -27,6 +28,22 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg'],
+      manifest: {
+        name: 'Vico Türen & Tore',
+        short_name: 'Vico',
+        description: 'Wartungs- und Mängeldokumentation für Türen und Tore',
+        theme_color: '#5b7895',
+        background_color: '#5b7895',
+        display: 'standalone',
+        start_url: '/',
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      },
+    }),
     {
       name: 'vico-version',
       generateBundle() {

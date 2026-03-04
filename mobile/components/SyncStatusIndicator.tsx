@@ -16,7 +16,7 @@ const STATUS_COLORS: Record<SyncStatus, string> = {
 
 const STATUS_LABELS: Record<SyncStatus, string> = {
   offline: 'Offline',
-  ready: 'Ready',
+  ready: 'Bereit',
   synced: 'Sync',
 }
 
@@ -30,20 +30,29 @@ const SyncStatusIndicator = ({
       ? `${STATUS_LABELS[status]} (${pendingCount})`
       : STATUS_LABELS[status]
 
+  const isOffline = status === 'offline'
   const content = (
     <>
       <View style={styles.dot} />
       <Text style={styles.label}>{displayLabel}</Text>
     </>
   )
+  const containerStyle = [
+    styles.container,
+    { backgroundColor: STATUS_COLORS[status] },
+    isOffline && styles.offlinePulse,
+  ]
+  const a11yLabel = isOffline
+    ? `Sync-Status: ${displayLabel}. App arbeitet offline. Änderungen werden lokal gespeichert.`
+    : `Sync-Status: ${displayLabel}${onPress ? '. Tippen zum Synchronisieren' : ''}`
 
   if (onPress) {
     return (
       <Pressable
         onPress={onPress}
-        style={[styles.container, { backgroundColor: STATUS_COLORS[status] }]}
+        style={containerStyle}
         accessible
-        accessibilityLabel={`Sync-Status: ${displayLabel}. Tippen zum Synchronisieren`}
+        accessibilityLabel={a11yLabel}
         accessibilityRole="button"
       >
         {content}
@@ -52,11 +61,7 @@ const SyncStatusIndicator = ({
   }
 
   return (
-    <View
-      style={[styles.container, { backgroundColor: STATUS_COLORS[status] }]}
-      accessible
-      accessibilityLabel={`Sync-Status: ${displayLabel}`}
-    >
+    <View style={containerStyle} accessible accessibilityLabel={a11yLabel}>
       {content}
     </View>
   )
@@ -70,6 +75,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
+  },
+  offlinePulse: {
+    opacity: 0.95,
   },
   dot: {
     width: 8,

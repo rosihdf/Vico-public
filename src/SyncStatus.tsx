@@ -13,7 +13,7 @@ const STATUS_COLORS: Record<SyncStatus, string> = {
 
 const STATUS_LABELS: Record<SyncStatus, string> = {
   offline: 'Offline',
-  ready: 'Ready',
+  ready: 'Bereit',
   synced: 'Sync',
 }
 
@@ -22,14 +22,16 @@ const SyncStatusIndicator = ({ status, pendingCount = 0 }: SyncStatusProps) => {
     status === 'ready' && pendingCount > 0
       ? `${STATUS_LABELS[status]} (${pendingCount})`
       : STATUS_LABELS[status]
+  const isOffline = status === 'offline'
 
   return (
     <div
       role="status"
-      className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 min-w-[4.5rem] text-white text-sm font-medium shadow-md"
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 min-w-[4.5rem] text-white text-sm font-medium shadow-md ${isOffline ? 'ring-2 ring-white/50 animate-pulse' : ''}`}
       style={{ backgroundColor: STATUS_COLORS[status] }}
-      aria-label={`Sync-Status: ${displayLabel}`}
+      aria-label={`Sync-Status: ${displayLabel}${isOffline ? '. App arbeitet offline.' : ''}`}
       tabIndex={0}
+      title={isOffline ? 'Keine Verbindung – Änderungen werden lokal gespeichert und beim nächsten Online-Sync hochgeladen.' : undefined}
     >
       <span
         className="w-2 h-2 rounded-full shrink-0"

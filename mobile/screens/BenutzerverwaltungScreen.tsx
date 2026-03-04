@@ -72,7 +72,7 @@ const BenutzerverwaltungScreen = () => {
       loadProfiles()
       setRoleSelectProfile(null)
     } else {
-      Alert.alert('Fehler', error.message)
+      Alert.alert('Fehler', getSupabaseErrorMessage(error))
     }
   }
 

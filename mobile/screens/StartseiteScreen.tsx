@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useAuth } from '../contexts/AuthContext'
@@ -69,7 +69,7 @@ const getWeekDates = () => {
   const start = new Date(today)
   start.setDate(today.getDate() - start.getDay() + 1)
   const dates: string[] = []
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 7; i++) {
     const d = new Date(start)
     d.setDate(start.getDate() + i)
     dates.push(d.toISOString().slice(0, 10))
@@ -77,20 +77,25 @@ const getWeekDates = () => {
   return dates
 }
 
+const DAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+
 const StartseiteScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<StartStackParamList, 'Startseite'>>()
   const { user } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [reminders, setReminders] = useState<MaintenanceReminder[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   const loadData = useCallback(async () => {
     if (!user?.id) {
       setProfile(null)
       setOrders([])
       setReminders([])
+      setIsLoading(false)
       return
     }
+    setIsLoading(true)
     const [profileData, ords, reminderData] = await Promise.all([
       fetchMyProfile(user.id),
       fetchOrdersAssignedTo(user.id),
@@ -99,6 +104,7 @@ const StartseiteScreen = () => {
     setProfile(profileData ?? null)
     setOrders(ords ?? [])
     setReminders(reminderData ?? [])
+    setIsLoading(false)
   }, [user?.id])
 
   useEffect(() => {
@@ -109,6 +115,15 @@ const StartseiteScreen = () => {
     const unsub = subscribeToOrderChanges(loadData)
     return unsub
   }, [loadData])
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#fff" />
+        <Text style={styles.loadingText}>Lade Dashboard…</Text>
+      </View>
+    )
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -128,7 +143,6 @@ const StartseiteScreen = () => {
               )
               const dayNum = new Date(d + 'T12:00:00').getDate()
               const isToday = d === new Date().toISOString().slice(0, 10)
-              const dayNames = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
               return (
                 <View
                   key={d}
@@ -137,7 +151,7 @@ const StartseiteScreen = () => {
                     isToday && styles.weekDayToday,
                   ]}
                 >
-                  <Text style={styles.weekDayName}>{dayNames[i]}</Text>
+                  <Text style={styles.weekDayName}>{DAY_NAMES[i]}</Text>
                   <Text style={styles.weekDayNum}>{dayNum}</Text>
                   {dayOrders.length > 0 && (
                     <View style={styles.weekDayStatusList}>
@@ -253,6 +267,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#5b7895',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#334155',
   },
   content: {
     padding: 24,

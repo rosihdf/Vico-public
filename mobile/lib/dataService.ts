@@ -26,6 +26,11 @@ import {
   getObjectPhotoOutbox,
   addToObjectPhotoOutbox,
   removeObjectPhotoOutboxItem,
+  getCachedMaintenancePhotos,
+  setCachedMaintenancePhotos,
+  getMaintenancePhotoOutbox,
+  addToMaintenancePhotoOutbox,
+  removeMaintenancePhotoOutboxItem,
   getCachedReminders,
   setCachedReminders,
   getMaintenanceOutbox,
@@ -420,15 +425,32 @@ export const fetchMaintenanceReportSmokeDetectors = async (
   return []
 }
 
+export type MaintenanceReportPhotoDisplay = MaintenanceReportPhoto & { localDataUrl?: string }
+
 export const fetchMaintenanceReportPhotos = async (
   reportId: string
-): Promise<MaintenanceReportPhoto[]> => {
-  const { data, error } = await supabase
-    .from('maintenance_report_photos')
-    .select('*')
-    .eq('report_id', reportId)
-  if (error) return []
-  return (data ?? []) as MaintenanceReportPhoto[]
+): Promise<MaintenanceReportPhotoDisplay[]> => {
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('maintenance_report_photos')
+      .select('*')
+      .eq('report_id', reportId)
+    if (error) return []
+    return (data ?? []) as MaintenanceReportPhotoDisplay[]
+  }
+  const cached = (getCachedMaintenancePhotos() as MaintenanceReportPhoto[]).filter(
+    (p) => p.report_id === reportId
+  )
+  const outbox = getMaintenancePhotoOutbox().filter((o) => o.report_id === reportId)
+  const pending: MaintenanceReportPhotoDisplay[] = outbox.map((o) => ({
+    id: o.tempId,
+    report_id: o.report_id,
+    storage_path: null,
+    caption: o.caption,
+    created_at: o.timestamp,
+    localDataUrl: `data:image/${o.ext === 'jpg' ? 'jpeg' : o.ext};base64,${o.fileBase64}`,
+  }))
+  return [...pending, ...cached]
 }
 
 const MAINTENANCE_PHOTOS_BUCKET = 'maintenance-photos'

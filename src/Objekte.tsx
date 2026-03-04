@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
@@ -149,10 +149,14 @@ const Objekte = () => {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [showForm])
 
-  const filteredObjects = objects.filter(
-    (o) =>
-      (o.internal_id ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (o.room ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredObjects = useMemo(
+    () =>
+      objects.filter(
+        (o) =>
+          (o.internal_id ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (o.room ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+      ),
+    [objects, searchQuery]
   )
 
   const handleOpenCreate = () => {
@@ -357,7 +361,10 @@ const Objekte = () => {
       </div>
 
       {isLoading ? (
-        <p className="text-slate-600">Lade Objekte...</p>
+        <div className="flex flex-col items-center justify-center py-12 gap-3">
+          <div className="w-8 h-8 border-2 border-vico-primary border-t-transparent rounded-full animate-spin" role="status" aria-label="Lade Objekte" />
+          <p className="text-slate-600 text-sm">Lade Objekte…</p>
+        </div>
       ) : filteredObjects.length === 0 ? (
         <p className="text-slate-600 py-8 text-center">
           {searchQuery ? 'Keine Objekte gefunden.' : 'Noch keine Objekte angelegt.'}
@@ -392,10 +399,20 @@ const Objekte = () => {
                 </button>
                 {canEdit && (
                   <>
-                    <button type="button" onClick={() => handleOpenEdit(obj)} className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(obj)}
+                      className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50"
+                      aria-label={`Objekt ${obj.internal_id || obj.id} bearbeiten`}
+                    >
                       Bearbeiten
                     </button>
-                    <button type="button" onClick={() => handleDelete(obj.id)} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(obj.id)}
+                      className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                      aria-label={`Objekt ${obj.internal_id || obj.id} löschen`}
+                    >
                       Löschen
                     </button>
                   </>

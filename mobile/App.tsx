@@ -6,6 +6,7 @@ import { NavigationContainer } from '@react-navigation/native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 
 import { ErrorBoundary } from './components/ErrorBoundary'
+import OfflineBanner from './components/OfflineBanner'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { SyncProvider } from './contexts/SyncContext'
 import { ComponentSettingsProvider } from './contexts/ComponentSettingsContext'
@@ -19,22 +20,37 @@ const AppContent = () => {
 
   if (pendingPasswordReset && isAuthenticated) {
     return (
-      <ResetPasswordScreen onComplete={clearPendingPasswordReset} />
+      <View style={styles.appContent}>
+        <OfflineBanner />
+        <View style={styles.nav}>
+          <ResetPasswordScreen onComplete={clearPendingPasswordReset} />
+        </View>
+      </View>
     )
   }
 
   if (!isAuthenticated) {
     return (
-      <LoginScreen onLoginSuccess={() => {}} />
+      <View style={styles.appContent}>
+        <OfflineBanner />
+        <View style={styles.nav}>
+          <LoginScreen onLoginSuccess={() => {}} />
+        </View>
+      </View>
     )
   }
 
   return (
-    <NavigationContainer>
-      <OrderNotificationProvider>
-        <DrawerNavigator />
-      </OrderNotificationProvider>
-    </NavigationContainer>
+    <View style={styles.appContent}>
+      <OfflineBanner />
+      <View style={styles.nav}>
+        <NavigationContainer>
+          <OrderNotificationProvider>
+            <DrawerNavigator />
+          </OrderNotificationProvider>
+        </NavigationContainer>
+      </View>
+    </View>
   )
 }
 
@@ -61,5 +77,11 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#5b7895',
+  },
+  appContent: {
+    flex: 1,
+  },
+  nav: {
+    flex: 1,
   },
 })

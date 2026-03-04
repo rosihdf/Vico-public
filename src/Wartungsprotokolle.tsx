@@ -82,7 +82,7 @@ const Wartungsprotokolle = () => {
   const [reportDetails, setReportDetails] = useState<
     Record<
       string,
-      { smokeDetectors: { label: string; status: SmokeDetectorStatus }[]; photos: { id: string; storage_path: string | null; caption: string | null }[] }
+      { smokeDetectors: { label: string; status: SmokeDetectorStatus }[]; photos: { id: string; storage_path: string | null; caption: string | null; localDataUrl?: string }[] }
     >
   >({})
   const [photoFiles, setPhotoFiles] = useState<File[]>([])
@@ -111,7 +111,7 @@ const Wartungsprotokolle = () => {
 
     const details: Record<
       string,
-      { smokeDetectors: { label: string; status: SmokeDetectorStatus }[]; photos: { id: string; storage_path: string | null; caption: string | null }[] }
+      { smokeDetectors: { label: string; status: SmokeDetectorStatus }[]; photos: { id: string; storage_path: string | null; caption: string | null; localDataUrl?: string }[] }
     > = {}
     for (const r of reportData ?? []) {
       const [sds, photos] = await Promise.all([
@@ -120,7 +120,12 @@ const Wartungsprotokolle = () => {
       ])
       details[r.id] = {
         smokeDetectors: sds.map((sd) => ({ label: sd.smoke_detector_label, status: sd.status })),
-        photos: photos.map((p) => ({ id: p.id, storage_path: p.storage_path, caption: p.caption })),
+        photos: photos.map((p) => ({
+          id: p.id,
+          storage_path: p.storage_path,
+          caption: p.caption,
+          localDataUrl: (p as { localDataUrl?: string }).localDataUrl,
+        })),
       }
     }
     setReportDetails(details)
@@ -422,7 +427,10 @@ const Wartungsprotokolle = () => {
                       {details.photos.map((p) => (
                         <div key={p.id} className="relative group">
                           <img
-                            src={p.storage_path ? getMaintenancePhotoUrl(p.storage_path) : ''}
+                            src={
+                              (p as { localDataUrl?: string }).localDataUrl ??
+                              (p.storage_path ? getMaintenancePhotoUrl(p.storage_path) : '')
+                            }
                             alt={p.caption || 'Foto'}
                             className="w-12 h-12 object-cover rounded border border-slate-200"
                           />

@@ -16,7 +16,7 @@ const SYNC_LABELS: Record<'offline' | 'ready' | 'synced', string> = {
 type VersionInfo = { version?: string; releaseNotes?: string[] }
 
 const EinstellungenScreen = () => {
-  const { syncStatus, syncNow, pendingCount } = useSync()
+  const { syncStatus, syncNow, pendingCount, lastSyncError, clearSyncError } = useSync()
   const { userRole } = useAuth()
   const { settingsList, updateSetting, refresh } = useComponentSettings()
   const [isSyncing, setIsSyncing] = useState(false)
@@ -36,8 +36,8 @@ const EinstellungenScreen = () => {
       const data = (await res.json()) as VersionInfo
       const latest = data.version ?? ''
       const notes = Array.isArray(data.releaseNotes) ? data.releaseNotes : []
+      setUpdateInfo({ version: latest, releaseNotes: notes })
       setUpdateStatus(latest && latest !== APP_VERSION ? 'available' : 'current')
-      if (latest && latest !== APP_VERSION) setUpdateInfo({ version: latest, releaseNotes: notes })
       if (latest === APP_VERSION) setTimeout(() => setUpdateStatus('idle'), 3000)
     } catch {
       setUpdateStatus('idle')
@@ -75,12 +75,26 @@ const EinstellungenScreen = () => {
             {updateStatus === 'checking' ? 'Prüfe…' : 'Auf Updates prüfen'}
           </Text>
         </Pressable>
-        {updateStatus === 'current' && (
+        {updateStatus === 'current' && updateInfo && (
+          <View style={styles.currentBox}>
+            <Text style={styles.currentBoxTitle}>Version {updateInfo.version} – ✓ Aktuell</Text>
+            {updateInfo.releaseNotes.length > 0 ? (
+              <View style={styles.notesList}>
+                {updateInfo.releaseNotes.map((note, i) => (
+                  <Text key={i} style={[styles.noteItem, { color: '#166534' }]}>• {note}</Text>
+                ))}
+              </View>
+            ) : (
+              <Text style={[styles.noteItem, { color: '#166534' }]}>Keine Release Notes vorhanden.</Text>
+            )}
+          </View>
+        )}
+        {updateStatus === 'current' && !updateInfo && (
           <Text style={styles.currentLabel}>✓ Aktuell</Text>
         )}
         {updateStatus === 'available' && updateInfo && (
           <View style={styles.updateBox}>
-            <Text style={styles.updateTitle}>Version {updateInfo.version} verfügbar</Text>
+            <Text style={styles.updateTitle}>Eine neue Version steht zur Verfügung (Version {updateInfo.version})</Text>
             {updateInfo.releaseNotes.length > 0 && (
               <View style={styles.notesList}>
                 {updateInfo.releaseNotes.map((note, i) => (
@@ -116,6 +130,16 @@ const EinstellungenScreen = () => {
           <View style={styles.row}>
             <Text style={styles.label}>Ausstehend</Text>
             <Text style={styles.value}>{pendingCount}</Text>
+          </View>
+        )}
+        {lastSyncError && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorTitle}>Sync-Fehler</Text>
+            <Text style={styles.errorText}>{lastSyncError}</Text>
+            <Text style={styles.errorHint}>Möglicher Konflikt: Server-Daten wurden zwischenzeitlich geändert.</Text>
+            <Pressable onPress={clearSyncError} accessible accessibilityLabel="Meldung schließen">
+              <Text style={styles.errorDismiss}>Meldung schließen</Text>
+            </Pressable>
           </View>
         )}
         <Pressable
@@ -249,6 +273,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#059669',
   },
+  currentBox: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  currentBoxTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#166534',
+    marginBottom: 8,
+  },
   updateBox: {
     marginTop: 12,
     padding: 12,
@@ -271,8 +309,34 @@ const styles = StyleSheet.create({
     color: '#78350f',
     marginBottom: 4,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  errorBox: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#fef2f2',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  errorTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#991b1b',
+    marginBottom: 4,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#b91c1c',
+    marginBottom: 4,
+  },
+  errorHint: {
+    fontSize: 12,
+    color: '#dc2626',
+    marginBottom: 8,
+  },
+  errorDismiss: {
+    fontSize: 14,
+    color: '#b91c1c',
+    textDecorationLine: 'underline',
   },
 })
 

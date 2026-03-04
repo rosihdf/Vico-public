@@ -18,6 +18,8 @@ type SyncContextType = {
   setSyncStatus: (status: SyncStatus) => void
   syncNow: () => Promise<void>
   pendingCount: number
+  lastSyncError: string | null
+  clearSyncError: () => void
 }
 
 const SyncContext = createContext<SyncContextType | null>(null)
@@ -31,6 +33,7 @@ const deriveStatus = (isOnline: boolean, pending: number): SyncStatus => {
 export const SyncProvider = ({ children }: { children: React.ReactNode }) => {
   const [isConnected, setIsConnected] = useState(true)
   const [pendingCount, setPendingCountState] = useState(0)
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null)
   const [syncStatus, setSyncStatusState] = useState<SyncStatus>('synced')
   const [isInitialized, setIsInitialized] = useState(false)
 
@@ -83,16 +86,21 @@ export const SyncProvider = ({ children }: { children: React.ReactNode }) => {
     setSyncStatusState(deriveStatus(isConnected, pendingCount))
   }, [isConnected, pendingCount])
 
-  const setSyncStatus = (status: SyncStatus) => setSyncStatusState(status)
-  const syncNow = async () => {
+  const setSyncStatus = useCallback((status: SyncStatus) => setSyncStatusState(status), [])
+  const clearSyncError = useCallback(() => setLastSyncError(null), [])
+  const syncNow = useCallback(async () => {
     if (!isConnected) return
+    setLastSyncError(null)
     setSyncStatusState('ready')
     const result = await runSync()
     refreshPending()
     if (result.success) {
       setSyncStatusState(deriveStatus(isConnected, result.pendingCount))
+    } else if (result.error) {
+      setLastSyncError(result.error)
+      setSyncStatusState(deriveStatus(isConnected, result.pendingCount))
     }
-  }
+  }, [isConnected, refreshPending])
 
   return (
     <SyncContext.Provider
@@ -101,6 +109,8 @@ export const SyncProvider = ({ children }: { children: React.ReactNode }) => {
         setSyncStatus,
         syncNow,
         pendingCount,
+        lastSyncError,
+        clearSyncError,
       }}
     >
       {children}

@@ -26,6 +26,11 @@ import {
   getObjectPhotoOutbox,
   addToObjectPhotoOutbox,
   removeObjectPhotoOutboxItem,
+  getCachedMaintenancePhotos,
+  setCachedMaintenancePhotos,
+  getMaintenancePhotoOutbox,
+  addToMaintenancePhotoOutbox,
+  removeMaintenancePhotoOutboxItem,
   getCachedReminders,
   setCachedReminders,
   getMaintenanceOutbox,
@@ -516,15 +521,44 @@ export const deleteMaintenanceReport = async (
   return { error: error ? { message: error.message } : null }
 }
 
+export type MaintenanceReportPhotoDisplay = MaintenanceReportPhoto & { localDataUrl?: string }
+
+const fileToBase64Maintenance = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      const base64 = result.includes(',') ? result.split(',')[1] : result
+      resolve(base64 ?? '')
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+
 export const fetchMaintenanceReportPhotos = async (
   reportId: string
-): Promise<MaintenanceReportPhoto[]> => {
-  const { data, error } = await supabase
-    .from('maintenance_report_photos')
-    .select('*')
-    .eq('report_id', reportId)
-  if (error) return []
-  return (data ?? []) as MaintenanceReportPhoto[]
+): Promise<MaintenanceReportPhotoDisplay[]> => {
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('maintenance_report_photos')
+      .select('*')
+      .eq('report_id', reportId)
+    if (error) return []
+    return (data ?? []) as MaintenanceReportPhotoDisplay[]
+  }
+  const cached = (getCachedMaintenancePhotos() as MaintenanceReportPhoto[]).filter(
+    (p) => p.report_id === reportId
+  )
+  const outbox = getMaintenancePhotoOutbox().filter((o) => o.report_id === reportId)
+  const pending: MaintenanceReportPhotoDisplay[] = outbox.map((o) => ({
+    id: o.tempId,
+    report_id: o.report_id,
+    storage_path: null,
+    caption: o.caption,
+    created_at: o.timestamp,
+    localDataUrl: `data:image/${o.ext === 'jpg' ? 'jpeg' : o.ext};base64,${o.fileBase64}`,
+  }))
+  return [...pending, ...cached]
 }
 
 const MAINTENANCE_PHOTOS_BUCKET = 'maintenance-photos'
@@ -533,8 +567,32 @@ export const uploadMaintenancePhoto = async (
   reportId: string,
   file: File,
   caption?: string
-): Promise<{ data: MaintenanceReportPhoto | null; error: { message: string } | null }> => {
+): Promise<{ data: MaintenanceReportPhotoDisplay | null; error: { message: string } | null }> => {
   const ext = file.name.split('.').pop() || 'jpg'
+  if (!isOnline()) {
+    const base64 = await fileToBase64Maintenance(file)
+    const tempId = `temp-${crypto.randomUUID()}`
+    addToMaintenancePhotoOutbox({
+      report_id: reportId,
+      tempId,
+      fileBase64: base64,
+      caption: caption?.trim() || null,
+      ext,
+    })
+    notifyDataChange()
+    const localDataUrl = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${base64}`
+    return {
+      data: {
+        id: tempId,
+        report_id: reportId,
+        storage_path: null,
+        caption: caption?.trim() || null,
+        created_at: new Date().toISOString(),
+        localDataUrl,
+      },
+      error: null,
+    }
+  }
   const path = `${reportId}/${crypto.randomUUID()}.${ext}`
   const { error: uploadError } = await supabase.storage
     .from(MAINTENANCE_PHOTOS_BUCKET)
@@ -545,7 +603,7 @@ export const uploadMaintenancePhoto = async (
     .insert({ report_id: reportId, storage_path: path, caption: caption?.trim() || null })
     .select()
     .single()
-  return { data: photo as MaintenanceReportPhoto, error: error ? { message: error.message } : null }
+  return { data: photo as MaintenanceReportPhotoDisplay, error: error ? { message: error.message } : null }
 }
 
 export const getMaintenancePhotoUrl = (storagePath: string): string => {
@@ -555,10 +613,32 @@ export const getMaintenancePhotoUrl = (storagePath: string): string => {
   return data.publicUrl
 }
 
+export const getMaintenancePhotoDisplayUrl = (p: MaintenanceReportPhotoDisplay): string =>
+  p.localDataUrl ?? (p.storage_path ? getMaintenancePhotoUrl(p.storage_path) : '')
+
 export const deleteMaintenancePhoto = async (
   photoId: string,
   storagePath: string | null
 ): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) {
+    if (photoId.startsWith('temp-')) {
+      const outbox = getMaintenancePhotoOutbox()
+      const item = outbox.find((o) => o.tempId === photoId)
+      if (item) removeMaintenancePhotoOutboxItem(item.id)
+    } else {
+      addToOutbox({
+        table: 'maintenance_report_photos',
+        action: 'delete',
+        payload: { id: photoId, storage_path: storagePath },
+      })
+      const cached = (getCachedMaintenancePhotos() as MaintenanceReportPhoto[]).filter(
+        (p) => p.id !== photoId
+      )
+      setCachedMaintenancePhotos(cached)
+    }
+    notifyDataChange()
+    return { error: null }
+  }
   if (storagePath) {
     await supabase.storage.from(MAINTENANCE_PHOTOS_BUCKET).remove([storagePath])
   }
@@ -566,6 +646,13 @@ export const deleteMaintenancePhoto = async (
     .from('maintenance_report_photos')
     .delete()
     .eq('id', photoId)
+  if (!error) {
+    const cached = (getCachedMaintenancePhotos() as MaintenanceReportPhoto[]).filter(
+      (p) => p.id !== photoId
+    )
+    setCachedMaintenancePhotos(cached)
+    notifyDataChange()
+  }
   return { error: error ? { message: error.message } : null }
 }
 

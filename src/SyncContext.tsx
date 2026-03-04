@@ -8,6 +8,8 @@ type SyncContextType = {
   setSyncStatus: (status: SyncStatus) => void
   syncNow: () => Promise<void>
   pendingCount: number
+  lastSyncError: string | null
+  clearSyncError: () => void
 }
 
 const SyncContext = createContext<SyncContextType | null>(null)
@@ -23,6 +25,7 @@ export const SyncProvider = ({ children }: { children: React.ReactNode }) => {
     () => typeof navigator !== 'undefined' && navigator.onLine
   )
   const [pendingCount, setPendingCount] = useState(0)
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null)
   const [syncStatus, setSyncStatusState] = useState<SyncStatus>(() =>
     computeStatus(online, getPendingCount())
   )
@@ -57,10 +60,14 @@ export const SyncProvider = ({ children }: { children: React.ReactNode }) => {
 
   const syncNow = useCallback(async () => {
     if (!online) return
+    setLastSyncError(null)
     const result = await runSync()
     setPendingCount(result.pendingCount)
     setSyncStatusState(computeStatus(true, result.pendingCount))
+    if (result.error) setLastSyncError(result.error)
   }, [online])
+
+  const clearSyncError = useCallback(() => setLastSyncError(null), [])
 
   useEffect(() => {
     if (!online) return
@@ -79,6 +86,8 @@ export const SyncProvider = ({ children }: { children: React.ReactNode }) => {
         setSyncStatus,
         syncNow,
         pendingCount,
+        lastSyncError,
+        clearSyncError,
       }}
     >
       {children}

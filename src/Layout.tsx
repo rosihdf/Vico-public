@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import SyncStatusIndicator from './SyncStatus'
 import Logo from './Logo'
-import UpdateBanner from './UpdateBanner'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
 import { useComponentSettings } from './ComponentSettingsContext'
@@ -61,9 +60,19 @@ const Layout = () => {
       : []),
   ]
 
+  const isOffline = syncStatus === 'offline'
+
   return (
-    <div className="min-h-screen flex flex-col pb-20">
-      {isAuthenticated && <UpdateBanner />}
+    <div className="min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))]">
+      {isOffline && (
+        <div
+          role="status"
+          className="bg-amber-500 text-white text-center py-2 px-4 text-sm font-medium"
+          aria-live="polite"
+        >
+          Offline – Änderungen werden lokal gespeichert und beim nächsten Sync hochgeladen.
+        </div>
+      )}
       <header className="relative bg-vico-background shadow-md sticky top-0 z-30 flex items-center justify-between gap-2 px-4 h-14 overflow-visible">
         <button
           type="button"
@@ -151,7 +160,7 @@ const Layout = () => {
 
       {/* Bottom Navigation */}
       <nav
-        className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-30"
+        className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-30 pb-[env(safe-area-inset-bottom)]"
         aria-label="Bottom Navigation"
       >
         <div className="flex justify-around items-center h-16">

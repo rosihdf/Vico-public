@@ -4,6 +4,7 @@ const CACHE_PREFIX = 'vico-cache-'
 const OUTBOX_KEY = 'vico-outbox'
 const MAINTENANCE_OUTBOX_KEY = 'vico-outbox-maintenance'
 const OBJECT_PHOTO_OUTBOX_KEY = 'vico-outbox-object-photos'
+const MAINTENANCE_PHOTO_OUTBOX_KEY = 'vico-outbox-maintenance-photos'
 const CACHE_KEYS = {
   customers: `${CACHE_PREFIX}customers`,
   bvs: `${CACHE_PREFIX}bvs`,
@@ -11,14 +12,16 @@ const CACHE_KEYS = {
   maintenanceReports: `${CACHE_PREFIX}maintenance-reports`,
   orders: `${CACHE_PREFIX}orders`,
   objectPhotos: `${CACHE_PREFIX}object-photos`,
+  maintenancePhotos: `${CACHE_PREFIX}maintenance-photos`,
   reminders: `${CACHE_PREFIX}reminders`,
+  componentSettings: `${CACHE_PREFIX}component-settings`,
 } as const
 
 export type OutboxAction = 'insert' | 'update' | 'delete'
 
 export type OutboxItem = {
   id: string
-  table: 'customers' | 'bvs' | 'objects' | 'orders' | 'object_photos'
+  table: 'customers' | 'bvs' | 'objects' | 'orders' | 'object_photos' | 'maintenance_report_photos'
   action: OutboxAction
   payload: Record<string, unknown>
   tempId?: string
@@ -64,10 +67,13 @@ export const initOfflineStorage = async (): Promise<void> => {
       CACHE_KEYS.maintenanceReports,
       CACHE_KEYS.orders,
       CACHE_KEYS.objectPhotos,
+      CACHE_KEYS.maintenancePhotos,
       CACHE_KEYS.reminders,
+      CACHE_KEYS.componentSettings,
       OUTBOX_KEY,
       MAINTENANCE_OUTBOX_KEY,
       OBJECT_PHOTO_OUTBOX_KEY,
+      MAINTENANCE_PHOTO_OUTBOX_KEY,
     ]
     const values = await AsyncStorage.multiGet(keys)
     values.forEach(([key, val]) => {
@@ -158,11 +164,62 @@ export const removeObjectPhotoOutboxItem = async (id: string): Promise<void> => 
   await setObjectPhotoOutbox(getObjectPhotoOutbox().filter((i) => i.id !== id))
 }
 
+export type MaintenancePhotoOutboxItem = {
+  id: string
+  report_id: string
+  tempId: string
+  fileBase64: string
+  caption: string | null
+  ext: string
+  timestamp: string
+}
+
+export const getMaintenancePhotoOutbox = (): MaintenancePhotoOutboxItem[] =>
+  safeJsonParse<MaintenancePhotoOutboxItem[]>(MAINTENANCE_PHOTO_OUTBOX_KEY, [])
+const setMaintenancePhotoOutbox = async (items: MaintenancePhotoOutboxItem[]): Promise<void> => {
+  const str = JSON.stringify(items)
+  memoryCache[MAINTENANCE_PHOTO_OUTBOX_KEY] = str
+  await persist(MAINTENANCE_PHOTO_OUTBOX_KEY, str)
+}
+
+export const addToMaintenancePhotoOutbox = async (
+  item: Omit<MaintenancePhotoOutboxItem, 'id' | 'timestamp'>
+): Promise<MaintenancePhotoOutboxItem> => {
+  const full: MaintenancePhotoOutboxItem = {
+    ...item,
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+  }
+  const box = getMaintenancePhotoOutbox()
+  box.push(full)
+  await setMaintenancePhotoOutbox(box)
+  return full
+}
+
+export const removeMaintenancePhotoOutboxItem = async (id: string): Promise<void> => {
+  await setMaintenancePhotoOutbox(getMaintenancePhotoOutbox().filter((i) => i.id !== id))
+}
+
+export const getCachedMaintenancePhotos = () => safeJsonParse<unknown[]>(CACHE_KEYS.maintenancePhotos, [])
+export const setCachedMaintenancePhotos = async (data: unknown[]): Promise<void> => {
+  const str = JSON.stringify(data)
+  memoryCache[CACHE_KEYS.maintenancePhotos] = str
+  await persist(CACHE_KEYS.maintenancePhotos, str)
+}
+
 export const getCachedReminders = () => safeJsonParse<unknown[]>(CACHE_KEYS.reminders, [])
 export const setCachedReminders = async (data: unknown[]): Promise<void> => {
   const str = JSON.stringify(data)
   memoryCache[CACHE_KEYS.reminders] = str
   await persist(CACHE_KEYS.reminders, str)
+}
+
+export const getCachedComponentSettings = () =>
+  safeJsonParse<Record<string, boolean>>(CACHE_KEYS.componentSettings, {})
+export const setCachedComponentSettings = async (data: Record<string, boolean>): Promise<void> => {
+  const str = JSON.stringify(data)
+  memoryCache[CACHE_KEYS.componentSettings] = str
+  await persist(CACHE_KEYS.componentSettings, str)
 }
 
 export const setCachedMaintenanceReports = async (

@@ -2,6 +2,7 @@ const CACHE_PREFIX = 'vico-cache-'
 const OUTBOX_KEY = 'vico-outbox'
 const MAINTENANCE_OUTBOX_KEY = 'vico-outbox-maintenance'
 const OBJECT_PHOTO_OUTBOX_KEY = 'vico-outbox-object-photos'
+const MAINTENANCE_PHOTO_OUTBOX_KEY = 'vico-outbox-maintenance-photos'
 const CACHE_KEYS = {
   customers: `${CACHE_PREFIX}customers`,
   bvs: `${CACHE_PREFIX}bvs`,
@@ -9,14 +10,16 @@ const CACHE_KEYS = {
   maintenanceReports: `${CACHE_PREFIX}maintenance-reports`,
   orders: `${CACHE_PREFIX}orders`,
   objectPhotos: `${CACHE_PREFIX}object-photos`,
+  maintenancePhotos: `${CACHE_PREFIX}maintenance-photos`,
   reminders: `${CACHE_PREFIX}reminders`,
+  componentSettings: `${CACHE_PREFIX}component-settings`,
 } as const
 
 export type OutboxAction = 'insert' | 'update' | 'delete'
 
 export type OutboxItem = {
   id: string
-  table: 'customers' | 'bvs' | 'objects' | 'orders' | 'object_photos'
+  table: 'customers' | 'bvs' | 'objects' | 'orders' | 'object_photos' | 'maintenance_report_photos' | 'component_settings'
   action: OutboxAction
   payload: Record<string, unknown>
   tempId?: string
@@ -94,8 +97,47 @@ export const removeObjectPhotoOutboxItem = (id: string) => {
   setObjectPhotoOutbox(getObjectPhotoOutbox().filter((i) => i.id !== id))
 }
 
+export type MaintenancePhotoOutboxItem = {
+  id: string
+  report_id: string
+  tempId: string
+  fileBase64: string
+  caption: string | null
+  ext: string
+  timestamp: string
+}
+
+export const getMaintenancePhotoOutbox = (): MaintenancePhotoOutboxItem[] =>
+  safeJsonParse<MaintenancePhotoOutboxItem[]>(MAINTENANCE_PHOTO_OUTBOX_KEY, [])
+const setMaintenancePhotoOutbox = (items: MaintenancePhotoOutboxItem[]) =>
+  safeJsonSet(MAINTENANCE_PHOTO_OUTBOX_KEY, items)
+
+export const addToMaintenancePhotoOutbox = (item: Omit<MaintenancePhotoOutboxItem, 'id' | 'timestamp'>) => {
+  const full: MaintenancePhotoOutboxItem = {
+    ...item,
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+  }
+  const box = getMaintenancePhotoOutbox()
+  box.push(full)
+  setMaintenancePhotoOutbox(box)
+  return full
+}
+
+export const removeMaintenancePhotoOutboxItem = (id: string) => {
+  setMaintenancePhotoOutbox(getMaintenancePhotoOutbox().filter((i) => i.id !== id))
+}
+
+export const getCachedMaintenancePhotos = () => safeJsonParse<unknown[]>(CACHE_KEYS.maintenancePhotos, [])
+export const setCachedMaintenancePhotos = (data: unknown[]) => safeJsonSet(CACHE_KEYS.maintenancePhotos, data)
+
 export const getCachedReminders = () => safeJsonParse<unknown[]>(CACHE_KEYS.reminders, [])
 export const setCachedReminders = (data: unknown[]) => safeJsonSet(CACHE_KEYS.reminders, data)
+
+export const getCachedComponentSettings = () =>
+  safeJsonParse<Record<string, boolean>>(CACHE_KEYS.componentSettings, {})
+export const setCachedComponentSettings = (data: Record<string, boolean>) =>
+  safeJsonSet(CACHE_KEYS.componentSettings, data)
 
 export const getCachedMaintenanceReports = (objectId: string): unknown[] => {
   const map = safeJsonParse<Record<string, unknown[]>>(CACHE_KEYS.maintenanceReports, {})

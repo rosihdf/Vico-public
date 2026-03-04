@@ -15,7 +15,7 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
 }
 
 const Einstellungen = () => {
-  const { syncStatus, setSyncStatus, syncNow, pendingCount } = useSync()
+  const { syncStatus, setSyncStatus, syncNow, pendingCount, lastSyncError, clearSyncError } = useSync()
   const { userRole, refreshUserRole } = useAuth()
   const { settingsList, updateSetting, refresh } = useComponentSettings()
   const [isSyncing, setIsSyncing] = useState(false)
@@ -40,8 +40,8 @@ const Einstellungen = () => {
       const data = (await res.json()) as { version?: string; releaseNotes?: string[] }
       const latest = data.version ?? ''
       const notes = Array.isArray(data.releaseNotes) ? data.releaseNotes : []
+      setUpdateInfo({ version: latest, releaseNotes: notes })
       setUpdateStatus(latest && latest !== APP_VERSION ? 'available' : 'current')
-      if (latest && latest !== APP_VERSION) setUpdateInfo({ version: latest, releaseNotes: notes })
       if (latest === APP_VERSION) setTimeout(() => setUpdateStatus('idle'), 3000)
     } catch {
       setUpdateStatus('idle')
@@ -102,12 +102,12 @@ const Einstellungen = () => {
             {updateStatus === 'checking' ? 'Prüfe…' : 'Auf Updates prüfen'}
           </button>
           {updateStatus === 'available' && (
-            <div className="mt-3 w-full p-4 bg-slate-50 rounded-lg border border-slate-200">
-              <p className="text-sm font-semibold text-slate-700 mb-2">
-                Version {updateInfo?.version ?? 'neu'} verfügbar
+            <div className="mt-3 w-full p-4 bg-amber-50 rounded-lg border border-amber-200">
+              <p className="text-sm font-semibold text-amber-900 mb-2">
+                Eine neue Version steht zur Verfügung (Version {updateInfo?.version ?? 'neu'})
               </p>
               {updateInfo?.releaseNotes && updateInfo.releaseNotes.length > 0 && (
-                <ul className="text-sm text-slate-600 list-disc list-inside space-y-1 mb-3">
+                <ul className="text-sm text-amber-800 list-disc list-inside space-y-1 mb-3">
                   {updateInfo.releaseNotes.map((note, i) => (
                     <li key={i}>{note}</li>
                   ))}
@@ -122,7 +122,23 @@ const Einstellungen = () => {
               </button>
             </div>
           )}
-          {updateStatus === 'current' && (
+          {updateStatus === 'current' && updateInfo && (
+            <div className="mt-3 w-full p-4 bg-slate-50 rounded-lg border border-slate-200">
+              <p className="text-sm font-semibold text-slate-700 mb-2">
+                Version {updateInfo.version} – ✓ Aktuell
+              </p>
+              {updateInfo.releaseNotes.length > 0 ? (
+                <ul className="text-sm text-slate-600 list-disc list-inside space-y-1">
+                  {updateInfo.releaseNotes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-500">Keine Release Notes vorhanden.</p>
+              )}
+            </div>
+          )}
+          {updateStatus === 'current' && !updateInfo && (
             <span className="text-sm text-green-600">✓ Aktuell</span>
           )}
         </div>
@@ -146,6 +162,20 @@ const Einstellungen = () => {
             {SYNC_LABELS[syncStatus]}
           </span>
         </div>
+        {lastSyncError && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-800 font-medium">Sync-Fehler</p>
+            <p className="text-sm text-red-700 mt-1">{lastSyncError}</p>
+            <p className="text-xs text-red-600 mt-2">Möglicher Konflikt: Server-Daten wurden zwischenzeitlich geändert. Nach Pull werden lokale Änderungen überschrieben (Last-Write-Wins).</p>
+            <button
+              type="button"
+              onClick={clearSyncError}
+              className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+            >
+              Meldung schließen
+            </button>
+          </div>
+        )}
         <button
           type="button"
           onClick={handleSyncNow}

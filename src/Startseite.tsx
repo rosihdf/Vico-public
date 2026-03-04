@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import Logo from './Logo'
 import { useAuth } from './AuthContext'
@@ -112,10 +112,19 @@ const Startseite = () => {
     return unsub
   }, [loadData])
 
-  const getCustomerName = (id: string) => customers.find((c) => c.id === id)?.name ?? '-'
-  const getBvName = (id: string) => allBvs.find((b) => b.id === id)?.name ?? '-'
+  const getCustomerName = useCallback(
+    (id: string) => customers.find((c) => c.id === id)?.name ?? '-',
+    [customers]
+  )
+  const getBvName = useCallback(
+    (id: string) => allBvs.find((b) => b.id === id)?.name ?? '-',
+    [allBvs]
+  )
 
-  const activeOrders = assignedOrders.filter((o) => o.status !== 'erledigt' && o.status !== 'storniert')
+  const activeOrders = useMemo(
+    () => assignedOrders.filter((o) => o.status !== 'erledigt' && o.status !== 'storniert'),
+    [assignedOrders]
+  )
   const weekDates = getWeekDates()
   const ordersByWeekDay: Record<string, Order[]> = {}
   weekDates.forEach((d) => {

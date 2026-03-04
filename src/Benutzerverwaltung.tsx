@@ -143,7 +143,7 @@ const Benutzerverwaltung = () => {
       await loadProfiles()
       window.dispatchEvent(new CustomEvent('vico-profiles-changed'))
     } else {
-      setFormError(error.message)
+      setFormError(getSupabaseErrorMessage(error))
     }
   }
 
