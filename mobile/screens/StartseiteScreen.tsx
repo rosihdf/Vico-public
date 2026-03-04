@@ -67,7 +67,8 @@ const formatOrderDate = (isoDate: string) => {
 const getWeekDates = () => {
   const today = new Date()
   const start = new Date(today)
-  start.setDate(today.getDate() - start.getDay() + 1)
+  const daysFromMonday = today.getDay() === 0 ? 6 : today.getDay() - 1
+  start.setDate(today.getDate() - daysFromMonday)
   const dates: string[] = []
   for (let i = 0; i < 7; i++) {
     const d = new Date(start)
@@ -306,13 +307,13 @@ const styles = StyleSheet.create({
   },
   weekGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+    flexWrap: 'nowrap',
+    gap: 4,
     marginBottom: 12,
   },
   weekDay: {
     flex: 1,
-    minWidth: '13%',
+    minWidth: 0,
     backgroundColor: '#f8fafc',
     borderRadius: 8,
     padding: 8,

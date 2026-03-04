@@ -1,6 +1,9 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "Vico",
+    "extra": {
+      "updateCheckUrl": "https://vico-app.netlify.app"
+    },
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",

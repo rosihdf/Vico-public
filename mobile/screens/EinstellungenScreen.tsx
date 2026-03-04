@@ -27,7 +27,10 @@ const EinstellungenScreen = () => {
     setUpdateStatus('checking')
     setUpdateInfo(null)
     try {
-      const base = typeof window !== 'undefined' ? window.location.origin : ''
+      const base =
+        typeof window !== 'undefined' && window.location?.origin?.startsWith('http')
+          ? window.location.origin
+          : Constants.expoConfig?.extra?.updateCheckUrl ?? 'https://vico-app.netlify.app'
       const res = await fetch(`${base}/version.json?t=${Date.now()}`, { cache: 'no-store' })
       if (!res.ok) {
         setUpdateStatus('idle')

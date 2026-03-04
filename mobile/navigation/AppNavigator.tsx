@@ -1,5 +1,6 @@
 import React from 'react'
 import { View, StyleSheet, Pressable } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { createDrawerNavigator } from '@react-navigation/drawer'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
@@ -89,6 +90,7 @@ const TAB_SCREENS = [
 const TabNavigator = () => {
   const { logout } = useAuth()
   const { isEnabled } = useComponentSettings()
+  const insets = useSafeAreaInsets()
 
   const enabledTabs = TAB_SCREENS.filter((t) => isEnabled(t.key))
   const tabsToShow = enabledTabs.length > 0 ? enabledTabs : [TAB_SCREENS[0]]
@@ -100,6 +102,7 @@ const TabNavigator = () => {
         tabBarStyle: {
           backgroundColor: '#1e293b',
           borderTopColor: '#334155',
+          paddingBottom: Math.max(insets.bottom, 8),
         },
         tabBarActiveTintColor: '#059669',
         tabBarInactiveTintColor: '#94a3b8',
