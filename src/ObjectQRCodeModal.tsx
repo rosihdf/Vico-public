@@ -17,7 +17,7 @@ type ObjectQRCodeModalProps = {
 
 const getObjectUrl = (customerId: string, bvId: string, objectId: string): string => {
   const base = (window.location.origin + (import.meta.env.BASE_URL || '/')).replace(/\/$/, '')
-  return `${base}/kunden/${customerId}/bvs/${bvId}/objekte?objectId=${objectId}`
+  return `${base}/kunden?customerId=${customerId}&bvId=${bvId}&objectId=${objectId}`
 }
 
 const isWebBluetoothSupported = (): boolean =>

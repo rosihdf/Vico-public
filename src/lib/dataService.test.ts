@@ -1,0 +1,177 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+vi.mock('../supabase', () => ({
+  supabase: {
+    from: vi.fn(),
+    rpc: vi.fn(),
+  },
+}))
+
+vi.mock('./offlineStorage', () => ({
+  getCachedCustomers: vi.fn(() => []),
+  setCachedCustomers: vi.fn(),
+  getCachedBvs: vi.fn(() => []),
+  setCachedBvs: vi.fn(),
+  getCachedObjects: vi.fn(() => []),
+  setCachedObjects: vi.fn(),
+  getCachedMaintenanceReports: vi.fn(() => []),
+  setCachedMaintenanceReports: vi.fn(),
+  getCachedOrders: vi.fn(() => []),
+  setCachedOrders: vi.fn(),
+  getCachedObjectPhotos: vi.fn(() => []),
+  setCachedObjectPhotos: vi.fn(),
+  getObjectPhotoOutbox: vi.fn(() => []),
+  addToObjectPhotoOutbox: vi.fn(),
+  removeObjectPhotoOutboxItem: vi.fn(),
+  getCachedMaintenancePhotos: vi.fn(() => []),
+  setCachedMaintenancePhotos: vi.fn(),
+  getMaintenancePhotoOutbox: vi.fn(() => []),
+  addToMaintenancePhotoOutbox: vi.fn(),
+  removeMaintenancePhotoOutboxItem: vi.fn(),
+  getCachedReminders: vi.fn(() => []),
+  setCachedReminders: vi.fn(),
+  getMaintenanceOutbox: vi.fn(() => []),
+  addToMaintenanceOutbox: vi.fn(),
+  removeMaintenanceOutboxItem: vi.fn(),
+  addToOutbox: vi.fn(),
+}))
+
+import {
+  subscribeToDataChange,
+  notifyDataChange,
+  fetchCustomers,
+  fetchCustomer,
+  fetchBvs,
+  fetchObjects,
+  fetchMaintenanceReminders,
+  fetchAuditLog,
+} from './dataService'
+import * as offlineStorage from './offlineStorage'
+
+describe('dataService', () => {
+  beforeEach(() => {
+    notifyDataChange()
+  })
+
+  describe('subscribeToDataChange / notifyDataChange', () => {
+    it('ruft alle registrierten Listener auf', () => {
+      const fn1 = vi.fn()
+      const fn2 = vi.fn()
+      const unsub1 = subscribeToDataChange(fn1)
+      const unsub2 = subscribeToDataChange(fn2)
+
+      notifyDataChange()
+
+      expect(fn1).toHaveBeenCalledTimes(1)
+      expect(fn2).toHaveBeenCalledTimes(1)
+      unsub1()
+      unsub2()
+    })
+
+    it('entfernt Listener nach unsubscribe', () => {
+      const fn = vi.fn()
+      const unsub = subscribeToDataChange(fn)
+      unsub()
+
+      notifyDataChange()
+
+      expect(fn).not.toHaveBeenCalled()
+    })
+
+    it('ruft verbleibende Listener weiterhin auf nach unsubscribe', () => {
+      const fn1 = vi.fn()
+      const fn2 = vi.fn()
+      const unsub1 = subscribeToDataChange(fn1)
+      const unsub2 = subscribeToDataChange(fn2)
+      unsub1()
+
+      notifyDataChange()
+
+      expect(fn1).not.toHaveBeenCalled()
+      expect(fn2).toHaveBeenCalledTimes(1)
+      unsub2()
+    })
+  })
+
+  describe('Offline-Fallback (Cache)', () => {
+    const originalNavigator = globalThis.navigator
+
+    beforeEach(() => {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { ...originalNavigator, onLine: false },
+        writable: true,
+      })
+    })
+
+    afterEach(() => {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: originalNavigator,
+        writable: true,
+      })
+    })
+
+    it('fetchCustomers gibt Cache zurück wenn offline', async () => {
+      const cached = [{ id: 'c1', name: 'Kunde A' }] as never[]
+      vi.mocked(offlineStorage.getCachedCustomers).mockReturnValue(cached)
+
+      const result = await fetchCustomers()
+
+      expect(result).toEqual(cached)
+    })
+
+    it('fetchCustomer gibt Eintrag aus Cache oder null wenn offline', async () => {
+      const cached = [
+        { id: 'c1', name: 'Kunde A' },
+        { id: 'c2', name: 'Kunde B' },
+      ] as never[]
+      vi.mocked(offlineStorage.getCachedCustomers).mockReturnValue(cached)
+
+      expect(await fetchCustomer('c1')).toEqual({ id: 'c1', name: 'Kunde A' })
+      expect(await fetchCustomer('c2')).toEqual({ id: 'c2', name: 'Kunde B' })
+      expect(await fetchCustomer('c99')).toBeNull()
+    })
+
+    it('fetchBvs filtert Cache nach customerId wenn offline', async () => {
+      const cached = [
+        { id: 'b1', customer_id: 'c1', name: 'BV 1' },
+        { id: 'b2', customer_id: 'c1', name: 'BV 2' },
+        { id: 'b3', customer_id: 'c2', name: 'BV 3' },
+      ] as never[]
+      vi.mocked(offlineStorage.getCachedBvs).mockReturnValue(cached)
+
+      const result = await fetchBvs('c1')
+
+      expect(result).toHaveLength(2)
+      expect(result.map((b) => b.id)).toEqual(['b1', 'b2'])
+    })
+
+    it('fetchObjects filtert Cache nach bvId wenn offline', async () => {
+      const cached = [
+        { id: 'o1', bv_id: 'b1', name: null, internal_id: 'T-1' },
+        { id: 'o2', bv_id: 'b1', name: null, internal_id: 'T-2' },
+        { id: 'o3', bv_id: 'b2', name: null, internal_id: 'T-3' },
+      ] as never[]
+      vi.mocked(offlineStorage.getCachedObjects).mockReturnValue(cached)
+
+      const result = await fetchObjects('b1')
+
+      expect(result).toHaveLength(2)
+      expect(result.map((o) => o.id)).toEqual(['o1', 'o2'])
+    })
+
+    it('fetchMaintenanceReminders gibt Cache zurück wenn offline', async () => {
+      const cached = [{ object_id: 'o1', status: 'ok' }] as never[]
+      vi.mocked(offlineStorage.getCachedReminders).mockReturnValue(cached)
+
+      const result = await fetchMaintenanceReminders()
+
+      expect(result).toEqual(cached)
+    })
+
+    it('fetchAuditLog gibt leeres Array zurück wenn offline', async () => {
+      const result = await fetchAuditLog()
+
+      expect(result).toEqual([])
+    })
+  })
+})

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { useToast } from './ToastContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import {
   fetchOrders,
@@ -49,8 +50,9 @@ const INITIAL_FORM = {
 
 const AuftragAnlegen = () => {
   const { user, userRole } = useAuth()
+  const { showError } = useToast()
   const canAssign = userRole === 'admin'
-  const canEdit = userRole !== 'leser'
+  const canEdit = userRole === 'admin' || userRole === 'mitarbeiter'
   const [orders, setOrders] = useState<Order[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -130,6 +132,7 @@ const AuftragAnlegen = () => {
 
   const getCustomerName = (id: string) => customers.find((c) => c.id === id)?.name ?? '-'
   const getBvName = (id: string) => allBvs.find((b) => b.id === id)?.name ?? '-'
+  const profilesAssignable = profiles.filter((p) => p.role !== 'demo')
   const getProfileLabel = (id: string | null) => {
     if (!id) return '-'
     const p = profiles.find((p) => p.id === id)
@@ -187,7 +190,9 @@ const AuftragAnlegen = () => {
     const { data, error } = await createOrder(payload, user?.id ?? null)
     setIsSaving(false)
     if (error) {
-      setFormError(getSupabaseErrorMessage(error))
+      const msg = getSupabaseErrorMessage(error)
+      setFormError(msg)
+      showError(msg)
       return
     }
     if (data) {
@@ -198,23 +203,27 @@ const AuftragAnlegen = () => {
 
   const handleStatusChange = async (order: Order, newStatus: OrderStatus) => {
     const { error } = await updateOrderStatus(order.id, newStatus)
-    if (!error) loadData()
+    if (error) showError(getSupabaseErrorMessage(error))
+    else loadData()
   }
 
   const handleAssignmentChange = async (order: Order, assignedTo: string) => {
     const { error } = await updateOrderAssignedTo(order.id, assignedTo.trim() || null)
-    if (!error) loadData()
+    if (error) showError(getSupabaseErrorMessage(error))
+    else loadData()
   }
 
   const handleDateChange = async (order: Order, newDate: string) => {
     const { error } = await updateOrderDate(order.id, newDate)
-    if (!error) loadData()
+    if (error) showError(getSupabaseErrorMessage(error))
+    else loadData()
   }
 
   const handleDelete = async (order: Order) => {
     if (!window.confirm(`Auftrag am ${order.order_date} wirklich löschen?`)) return
     const { error } = await deleteOrder(order.id)
-    if (!error) loadData()
+    if (error) showError(getSupabaseErrorMessage(error))
+    else loadData()
   }
 
   const displayOrders =
@@ -322,14 +331,14 @@ const AuftragAnlegen = () => {
               <div className="flex flex-wrap gap-2">
                 {canAssign && (
                   <select
-                    value={o.assigned_to ?? ''}
+                    value={profilesAssignable.some((p) => p.id === o.assigned_to) ? o.assigned_to ?? '' : ''}
                     onChange={(e) => handleAssignmentChange(o, e.target.value)}
                     className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg min-w-[140px]"
                     title="Nutzer zuweisen"
                     aria-label="Nutzer zuweisen"
                   >
                     <option value="">— Zuweisen —</option>
-                    {profiles.map((p) => (
+                    {profilesAssignable.map((p) => (
                       <option key={p.id} value={p.id}>
                         {getProfileDisplayName(p)}
                         {(p.first_name || p.last_name) && p.email ? ` (${p.email})` : ''}
@@ -368,7 +377,7 @@ const AuftragAnlegen = () => {
                   </>
                 )}
                 <Link
-                  to={`/kunden/${o.customer_id}/bvs/${o.bv_id}/objekte${o.object_id ? `?objectId=${o.object_id}` : ''}`}
+                  to={o.object_id ? `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}&objectId=${o.object_id}` : `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}`}
                   className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50"
                 >
                   Objekte
@@ -467,7 +476,7 @@ const AuftragAnlegen = () => {
                     aria-label="Nutzer zuweisen"
                   >
                     <option value="">— Keine Zuweisung —</option>
-                    {profiles.map((p) => (
+                    {profilesAssignable.map((p) => (
                       <option key={p.id} value={p.id}>
                         {getProfileDisplayName(p)}
                         {(p.first_name || p.last_name) && p.email ? ` (${p.email})` : ''}

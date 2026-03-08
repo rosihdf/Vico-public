@@ -4,9 +4,10 @@ import { Html5Qrcode } from 'html5-qrcode'
 import { supabase } from './supabase'
 
 const OBJEKTE_PATH_REGEX = /\/kunden\/([a-f0-9-]+)\/bvs\/([a-f0-9-]+)\/objekte(\?.*)?$/i
+const BVS_PATH_REGEX = /\/kunden\/([a-f0-9-]+)\/bvs\/?$/i
 const UUID_REGEX = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
 
-const parseScannedContent = (raw: string): { path: string } | { customerId: string; bvId: string; objectId?: string } | null => {
+const parseScannedContent = (raw: string): { path: string } | { customerId: string; bvId?: string; objectId?: string } | null => {
   const trimmed = raw.trim()
   if (!trimmed) return null
 
@@ -15,21 +16,37 @@ const parseScannedContent = (raw: string): { path: string } | { customerId: stri
   try {
     if (trimmed.startsWith('http')) {
       const url = new URL(trimmed)
-      const match = url.pathname.match(OBJEKTE_PATH_REGEX)
-      if (match) {
-        const [, customerId, bvId] = match
+      const pathMatch = url.pathname.match(OBJEKTE_PATH_REGEX)
+      if (pathMatch) {
+        const [, customerId, bvId] = pathMatch
         const objectId = url.searchParams.get('objectId') ?? undefined
         return { customerId, bvId, objectId }
+      }
+      if (url.pathname === '/kunden' || url.pathname.endsWith('/kunden')) {
+        const customerId = url.searchParams.get('customerId')
+        const bvId = url.searchParams.get('bvId') ?? undefined
+        const objectId = url.searchParams.get('objectId') ?? undefined
+        if (customerId) return { customerId, bvId, objectId }
+      }
+      const bvsMatch = url.pathname.match(BVS_PATH_REGEX)
+      if (bvsMatch) {
+        const [, customerId] = bvsMatch
+        return { customerId, bvId: undefined, objectId: undefined }
       }
     }
   } catch {
     // Keine gültige URL
   }
 
-  const relativeMatch = pathForMatch.match(OBJEKTE_PATH_REGEX)
-  if (relativeMatch) {
-    const [, customerId, bvId] = relativeMatch
+  const objMatch = pathForMatch.match(OBJEKTE_PATH_REGEX)
+  if (objMatch) {
+    const [, customerId, bvId] = objMatch
     return { customerId, bvId }
+  }
+  const bvsMatch = pathForMatch.match(BVS_PATH_REGEX)
+  if (bvsMatch) {
+    const [, customerId] = bvsMatch
+    return { customerId, bvId: undefined }
   }
 
   return { path: trimmed }
@@ -72,7 +89,7 @@ const Scan = () => {
           if (byInternalId) {
             const { data: bv } = await supabase.from('bvs').select('customer_id').eq('id', byInternalId.bv_id).single()
             if (bv) {
-              navigate(`/kunden/${bv.customer_id}/bvs/${byInternalId.bv_id}/objekte?objectId=${byInternalId.id}`)
+              navigate(`/kunden?customerId=${bv.customer_id}&bvId=${byInternalId.bv_id}&objectId=${byInternalId.id}`)
               return
             }
           }
@@ -81,7 +98,7 @@ const Scan = () => {
         }
         const { data: bv } = await supabase.from('bvs').select('customer_id').eq('id', obj.bv_id).single()
         if (bv) {
-          navigate(`/kunden/${bv.customer_id}/bvs/${obj.bv_id}/objekte?objectId=${obj.id}`)
+          navigate(`/kunden?customerId=${bv.customer_id}&bvId=${obj.bv_id}&objectId=${obj.id}`)
         } else {
           setMessage('Objekt-Kontext nicht gefunden.')
         }
@@ -92,10 +109,11 @@ const Scan = () => {
     }
 
     const { customerId, bvId, objectId } = parsed
-    const target = objectId
-      ? `/kunden/${customerId}/bvs/${bvId}/objekte?objectId=${objectId}`
-      : `/kunden/${customerId}/bvs/${bvId}/objekte`
-    navigate(target)
+    const params = new URLSearchParams()
+    params.set('customerId', customerId)
+    if (bvId) params.set('bvId', bvId)
+    if (objectId) params.set('objectId', objectId)
+    navigate(`/kunden?${params.toString()}`)
   }
 
   const handleStartScan = async () => {

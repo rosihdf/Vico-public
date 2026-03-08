@@ -4,7 +4,7 @@ export const getSupabaseErrorMessage = (error: { message: string; code?: string 
     return 'Ungültiger API-Key. Bitte prüfen: 1) Projekt im Supabase-Dashboard → könnte pausiert sein („Restore“ klicken), 2) Anon-Key unter Project Settings → API kopieren, 3) .env aktualisieren und Dev-Server neu starten.'
   }
   if (msg.includes('could not find the table') || msg.includes('schema cache')) {
-    return 'Tabelle fehlt. Bitte supabase-complete.sql im Supabase-Dashboard (SQL Editor) ausführen. Siehe Einstellungen → Datenbank einrichten.'
+    return 'Tabelle fehlt. Bitte supabase-complete.sql im Supabase-Dashboard (SQL Editor) ausführen. Siehe Vico.md.'
   }
   if (msg.includes('row-level security') || msg.includes('violates')) {
     return 'RLS-Fehler: Bist du eingeloggt? Ohne Login geht es nicht. Falls ja: Einstellungen öffnen → „RLS-Fix kopieren“ → Supabase SQL Editor → einfügen → Run.'

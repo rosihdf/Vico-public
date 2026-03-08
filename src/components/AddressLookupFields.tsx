@@ -29,6 +29,9 @@ const useDebounce = <T,>(value: T, delay: number): T => {
   return debouncedValue
 }
 
+const inputClass =
+  'w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary'
+
 export const AddressLookupFields = ({
   street,
   houseNumber,
@@ -52,9 +55,9 @@ export const AddressLookupFields = ({
   const [showStreetSuggestions, setShowStreetSuggestions] = useState(false)
   const [isStreetLoading, setIsStreetLoading] = useState(false)
   const streetInputRef = useRef<HTMLInputElement>(null)
-  const suggestionsRef = useRef<HTMLUListElement>(null)
 
   const debouncedStreet = useDebounce(street, 400)
+  const plzReady = postalCode.replace(/\D/g, '').trim().length === 5
 
   const handlePlzBlur = useCallback(async () => {
     const clean = postalCode.replace(/\D/g, '').trim()
@@ -62,23 +65,14 @@ export const AddressLookupFields = ({
     setIsPlzLoading(true)
     try {
       const result = await lookupPlz(clean)
-      if (result) onCityChange(result.placeName)
+      if (result) onCityChange(result)
     } finally {
       setIsPlzLoading(false)
     }
-  }, [postalCode, city, onCityChange])
-
-  const plzReady = postalCode.replace(/\D/g, '').trim().length === 5
-  const cityReady = city.trim().length > 0
-  const streetSearchReady = plzReady && cityReady
+  }, [postalCode, onCityChange])
 
   useEffect(() => {
-    if (debouncedStreet.length < 1) {
-      setStreetSuggestions([])
-      setShowStreetSuggestions(false)
-      return
-    }
-    if (!streetSearchReady) {
+    if (debouncedStreet.length < 1 || !plzReady) {
       setStreetSuggestions([])
       setShowStreetSuggestions(false)
       return
@@ -87,11 +81,10 @@ export const AddressLookupFields = ({
     const run = async () => {
       setIsStreetLoading(true)
       try {
-        const results = await searchStreets(debouncedStreet, postalCode, city)
+        const results = await searchStreets(debouncedStreet, postalCode)
         if (!cancelled) {
-          const streets = results.map((r) => r.street)
-          setStreetSuggestions(streets)
-          setShowStreetSuggestions(streets.length > 0)
+          setStreetSuggestions(results)
+          setShowStreetSuggestions(results.length > 0)
         }
       } finally {
         if (!cancelled) setIsStreetLoading(false)
@@ -101,7 +94,7 @@ export const AddressLookupFields = ({
     return () => {
       cancelled = true
     }
-  }, [debouncedStreet, streetSearchReady, postalCode, city])
+  }, [debouncedStreet, plzReady, postalCode])
 
   const handleStreetSelect = useCallback(
     (s: string) => {
@@ -112,16 +105,9 @@ export const AddressLookupFields = ({
     [onStreetChange]
   )
 
-  const handleStreetFocus = useCallback(() => {
-    if (streetSuggestions.length > 0) setShowStreetSuggestions(true)
-  }, [streetSuggestions.length])
-
   const handleStreetBlur = useCallback(() => {
     setTimeout(() => setShowStreetSuggestions(false), 200)
   }, [])
-
-  const inputClass =
-    'w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary'
 
   return (
     <>
@@ -140,6 +126,7 @@ export const AddressLookupFields = ({
             onBlur={handlePlzBlur}
             className={inputClass}
             placeholder="12345"
+            aria-label={postalCodeLabel}
           />
           {isPlzLoading && (
             <p className="mt-1 text-xs text-slate-500">Ort wird ermittelt…</p>
@@ -155,7 +142,8 @@ export const AddressLookupFields = ({
             value={city}
             onChange={(e) => onCityChange(e.target.value)}
             className={inputClass}
-            placeholder="Wird aus PLZ ermittelt"
+            placeholder={plzReady ? 'Wird aus PLZ ermittelt' : 'Zuerst PLZ eingeben'}
+            aria-label={cityLabel}
           />
         </div>
       </div>
@@ -170,21 +158,22 @@ export const AddressLookupFields = ({
             type="text"
             value={street}
             onChange={(e) => onStreetChange(e.target.value)}
-            onFocus={handleStreetFocus}
             onBlur={handleStreetBlur}
             className={inputClass}
             autoComplete="street-address"
             placeholder={
-              !streetSearchReady
+              !plzReady
                 ? 'Zuerst PLZ eingeben'
-                : streetSuggestions.length > 0
-                  ? 'Tippen für Vorschläge…'
-                  : 'Min. 1 Buchstabe'
+                : 'Min. 1 Buchstabe für Vorschläge'
             }
+            aria-label={streetLabel}
+            aria-autocomplete="list"
+            aria-controls={showStreetSuggestions ? 'street-suggestions' : undefined}
+            aria-expanded={showStreetSuggestions}
           />
           {showStreetSuggestions && streetSuggestions.length > 0 && (
             <ul
-              ref={suggestionsRef}
+              id="street-suggestions"
               className="absolute z-[100] mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
               role="listbox"
             >
@@ -224,6 +213,7 @@ export const AddressLookupFields = ({
             value={houseNumber}
             onChange={(e) => onHouseNumberChange(e.target.value)}
             className={inputClass}
+            aria-label={houseNumberLabel}
           />
         </div>
       </div>

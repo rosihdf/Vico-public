@@ -7,10 +7,12 @@ import { fetchProfiles, updateProfileRole, updateProfileName, getProfileDisplayN
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import type { Profile } from './lib/userService'
 
-const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'leser', string> = {
+const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo', string> = {
   admin: 'Admin',
   mitarbeiter: 'Mitarbeiter',
+  operator: 'Operator',
   leser: 'Leser',
+  demo: 'Demo (24h-Löschung)',
 }
 
 const Benutzerverwaltung = () => {
@@ -131,7 +133,7 @@ const Benutzerverwaltung = () => {
   const isLastAdmin = (p: Profile) =>
     p.role === 'admin' && profiles.filter((x) => x.role === 'admin').length === 1
 
-  const handleRoleChange = async (profile: Profile, newRole: 'admin' | 'mitarbeiter' | 'leser') => {
+  const handleRoleChange = async (profile: Profile, newRole: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo') => {
     if (newRole === profile.role) return
     if (isLastAdmin(profile)) return
     setFormError(null)
@@ -224,7 +226,7 @@ const Benutzerverwaltung = () => {
               </div>
               <select
                 value={p.role}
-                onChange={(e) => handleRoleChange(p, e.target.value as 'admin' | 'mitarbeiter' | 'leser')}
+                onChange={(e) => handleRoleChange(p, e.target.value as 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo')}
                 disabled={updatingId === p.id || isLastAdmin(p)}
                 className="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 bg-white disabled:opacity-50 min-w-[140px]"
                 aria-label={`Rolle von ${getProfileDisplayName(p)} ändern`}

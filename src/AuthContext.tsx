@@ -3,7 +3,7 @@ import { supabase, setRememberMe } from './supabase'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import type { User, Session } from '@supabase/supabase-js'
 
-type UserRole = 'admin' | 'mitarbeiter' | 'leser'
+type UserRole = 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo'
 
 type Profile = {
   id: string
@@ -30,7 +30,7 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 const fetchProfileSupabase = async (userId: string): Promise<Profile | null> => {
   const { data: roleData, error: roleError } = await supabase.rpc('get_my_role')
-  if (!roleError && roleData != null && (roleData === 'admin' || roleData === 'mitarbeiter' || roleData === 'leser')) {
+  if (!roleError && roleData != null && (roleData === 'admin' || roleData === 'mitarbeiter' || roleData === 'operator' || roleData === 'leser' || roleData === 'demo')) {
     return { id: userId, email: null, role: roleData as UserRole }
   }
   const { data, error } = await supabase

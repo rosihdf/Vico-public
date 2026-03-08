@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { useToast } from './ToastContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import {
   fetchCustomer,
@@ -20,7 +21,6 @@ import {
 } from './lib/dataService'
 import SignatureField from './SignatureField'
 import { useAuth } from './AuthContext'
-import { generateMaintenancePdf } from './lib/generateMaintenancePdf'
 import { getObjectDisplayName } from './lib/objectUtils'
 import type {
   Object as Obj,
@@ -75,7 +75,8 @@ const Wartungsprotokolle = () => {
     objectId: string
   }>()
   const { user, userRole } = useAuth()
-  const canEdit = userRole !== 'leser'
+  const { showError } = useToast()
+  const canEdit = userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'operator'
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [bv, setBv] = useState<BV | null>(null)
   const [object, setObject] = useState<Obj | null>(null)
@@ -95,6 +96,7 @@ const Wartungsprotokolle = () => {
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [sendingEmailFor, setSendingEmailFor] = useState<string | null>(null)
+  const [expandedPhotoUrl, setExpandedPhotoUrl] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     if (!customerId || !bvId || !objectId) return
@@ -212,7 +214,9 @@ const Wartungsprotokolle = () => {
 
     const { data, error } = await createMaintenanceReport(payload, smokeDetectors)
     if (error) {
-      setFormError(getSupabaseErrorMessage(error))
+      const msg = getSupabaseErrorMessage(error)
+      setFormError(msg)
+      showError(msg)
       setIsSaving(false)
       return
     }
@@ -244,7 +248,8 @@ const Wartungsprotokolle = () => {
   const handleDelete = async (id: string) => {
     if (!window.confirm('Wartungsprotokoll wirklich löschen?')) return
     const { error } = await deleteMaintenanceReport(id)
-    if (!error) loadData()
+    if (error) showError(getSupabaseErrorMessage(error))
+    else loadData()
   }
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -260,12 +265,14 @@ const Wartungsprotokolle = () => {
 
   const handleDeletePhoto = async (reportId: string, photoId: string, storagePath: string | null) => {
     const { error } = await deleteMaintenancePhoto(photoId, storagePath)
-    if (!error) loadData()
+    if (error) showError(getSupabaseErrorMessage(error))
+    else loadData()
   }
 
   const handleDownloadPdf = async (r: MaintenanceReport) => {
     const details = reportDetails[r.id]
     if (!customer || !bv || !object) return
+    const { generateMaintenancePdf } = await import('./lib/generateMaintenancePdf')
     const blob = await generateMaintenancePdf({
       report: r,
       customer,
@@ -299,6 +306,7 @@ const Wartungsprotokolle = () => {
     if (!customer || !bv || !object) return
     setSendingEmailFor(r.id)
     try {
+      const { generateMaintenancePdf } = await import('./lib/generateMaintenancePdf')
       const details = reportDetails[r.id]
       const blob = await generateMaintenancePdf({
         report: r,
@@ -358,12 +366,12 @@ const Wartungsprotokolle = () => {
           Kunden
         </Link>
         <span>/</span>
-        <Link to={`/kunden/${customerId}/bvs`} className="hover:text-slate-800">
+        <Link to={`/kunden?customerId=${customerId}`} className="hover:text-slate-800">
           {customer.name}
         </Link>
         <span>/</span>
         <Link
-          to={`/kunden/${customerId}/bvs/${bvId}/objekte`}
+          to={`/kunden?customerId=${customerId}&bvId=${bvId}`}
           className="hover:text-slate-800"
         >
           {bv.name}
@@ -425,16 +433,23 @@ const Wartungsprotokolle = () => {
                   )}
                   {details?.photos?.length ? (
                     <div className="flex flex-wrap gap-1 mt-2">
-                      {details.photos.map((p) => (
+                      {details.photos.map((p) => {
+                        const photoUrl = (p as { localDataUrl?: string }).localDataUrl ?? (p.storage_path ? getMaintenancePhotoUrl(p.storage_path) : '')
+                        if (!photoUrl) return null
+                        return (
                         <div key={p.id} className="relative group">
-                          <img
-                            src={
-                              (p as { localDataUrl?: string }).localDataUrl ??
-                              (p.storage_path ? getMaintenancePhotoUrl(p.storage_path) : '')
-                            }
-                            alt={p.caption || 'Foto'}
-                            className="w-12 h-12 object-cover rounded border border-slate-200"
-                          />
+                          <button
+                            type="button"
+                            onClick={() => setExpandedPhotoUrl(photoUrl)}
+                            className="block w-12 h-12 rounded border border-slate-200 overflow-hidden focus:outline-none focus:ring-2 focus:ring-vico-primary cursor-zoom-in"
+                            aria-label="Foto vergrößern"
+                          >
+                            <img
+                              src={photoUrl}
+                              alt={p.caption || 'Foto'}
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
                           {canEdit && (
                             <button
                               type="button"
@@ -446,7 +461,7 @@ const Wartungsprotokolle = () => {
                             </button>
                           )}
                         </div>
-                      ))}
+                      )})}
                     </div>
                   ) : null}
                 </div>
@@ -770,6 +785,23 @@ const Wartungsprotokolle = () => {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {expandedPhotoUrl && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setExpandedPhotoUrl(null)}
+          onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') setExpandedPhotoUrl(null) }}
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-zoom-out"
+          aria-label="Foto schließen"
+        >
+          <img
+            src={expandedPhotoUrl}
+            alt="Foto vergrößert"
+            className="max-w-full max-h-full object-contain rounded-lg shadow-xl"
+          />
         </div>
       )}
     </div>

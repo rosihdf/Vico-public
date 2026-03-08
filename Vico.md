@@ -1,730 +1,242 @@
-# 📱 App: Vico Türen & Tore
+# Vico – Türen & Tore
 
-## 🛠 Tech Stack
-
-- **Web-App:** Vite + React + TypeScript (TailwindCSS)  
-- **Mobile-App:** Expo + React Native (in `/mobile`)  
-- **Backend / DB:** Supabase (Auth, Database, Storage)  
-- **Hosting Web:** Netlify  
-- **Plattformen:** iOS, Android, Browser (WebApp)
-
-### Zwei Build-Ziele
-
-1. **Web (Vite):** `npm run dev` – Entwicklungs-Server für Browser  
-2. **Mobile (Expo):** `npm run mobile` – Expo-Dev-Server für iOS/Android/Web  
-   - `npm run mobile:web` – Im Browser testen  
-   - `npm run mobile:ios` – iOS-Simulator  
-   - `npm run mobile:android` – Android-Emulator  
-   - `npm run mobile:url` – Dev-URL anzeigen (wenn QR-Code im Terminal nicht erscheint)
-
-**QR-Code nicht sichtbar?** `npm run mobile` zeigt die Dev-URL automatisch. Zusätzlich: `npm run mobile:url` – dann URL bei https://qr.expo.dev einfügen oder in Expo Go unter „Enter URL manually“ eingeben.  
+Wartungs- und Mängeldokumentation für Türen und Tore. Stand: Februar 2025.
 
 ---
 
-# 🌐 Netlify Deployment – Schritt für Schritt
+## Inhaltsverzeichnis
 
-## Schritt 1: Git-Repository vorbereiten
-
-1. Terminal im Projektordner öffnen.
-2. Falls noch kein Git-Repo existiert:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   ```
-3. Neues Repository auf GitHub erstellen (https://github.com/new).
-4. Lokales Repo verbinden und pushen:
-   ```bash
-   git remote add origin https://github.com/DEIN-USERNAME/vico-public.git
-   git branch -M main
-   git push -u origin main
-   ```
+1. [Quick Start](#1-quick-start)
+2. [Architektur](#2-architektur)
+3. [Features](#3-features)
+4. [Datenbank](#4-datenbank)
+5. [Deployment](#5-deployment)
+6. [Projektstand](#6-projektstand)
+7. [Roadmap](#7-roadmap)
+8. [Projektstruktur](#8-projektstruktur)
 
 ---
 
-## Schritt 2: Netlify-Account und Site erstellen
+## 1. Quick Start
 
-1. Zu **https://app.netlify.com** gehen.
-2. Mit GitHub einloggen (falls noch nicht geschehen).
-3. Auf **„Add new site“** → **„Import an existing project“** klicken.
-4. **„Deploy with GitHub“** wählen.
-5. GitHub-Zugriff autorisieren, falls gefragt.
-6. Das **Vico-Repository** aus der Liste auswählen.
-7. Auf **„Configure Netlify“** klicken.
+### Tech Stack
 
----
+| Bereich | Technologie |
+|--------|-------------|
+| Web-App | Vite + React + TypeScript (TailwindCSS) |
+| Backend | Supabase (Auth, Database, Storage) |
+| Hosting | Netlify |
 
-## Schritt 3: Build-Einstellungen prüfen
+### Befehle
 
-Die Werte aus `netlify.toml` werden automatisch übernommen. Prüfen:
-
-- **Branch to deploy:** `main` (oder dein Standard-Branch)
-- **Build command:** `npm run build`
-- **Publish directory:** `dist`
-
-Falls abweichend: manuell anpassen. Dann **„Deploy site“** klicken.
+| Ziel | Befehl |
+|------|--------|
+| Web Dev | `npm run dev` |
+| Web Dev (Netzwerk) | `npm run dev -- --host` |
+| Web Build | `npm run build` |
+| Tests | `npm run test` / `npm run test:run` |
+| Lint | `npm run lint` |
 
 ---
 
-## Schritt 4: Umgebungsvariablen setzen
+## 2. Architektur
 
-1. Deine Site in Netlify öffnen (Dashboard → Site auswählen).
-2. In der linken Seitenleiste: **„Site configuration“** oder **„Project configuration“** anklicken.
-3. Darunter **„Environment variables“** wählen.
-4. **„Add a variable“** oder **„Add environment variables“** → **„Add a single variable“** klicken.
+### Datenmodell
 
-   **Alternative Wege:** Oben in der Site: **„Site settings“** → **„Environment variables“** – oder im Tab **„Build & deploy“** → **„Environment“** → **„Environment variables“**.
-
-5. Folgende Variablen hinzufügen:
-
-   | Name | Wert |
-   |------|------|
-   | `VITE_SUPABASE_URL` | Deine Supabase-URL (z. B. aus `.env` oder Supabase Dashboard → Settings → API) |
-   | `VITE_SUPABASE_ANON_KEY` | Dein Supabase Anon Key (Supabase Dashboard → Settings → API) |
-
-6. **„Save“** speichern.
-7. **„Trigger deploy“** → **„Deploy site“** ausführen, damit der Build mit den neuen Variablen neu läuft.
-
----
-
-## Schritt 5: Supabase für die Netlify-URL konfigurieren
-
-1. Netlify-Site-URL notieren (z. B. `https://vico-xyz.netlify.app`).
-2. **Supabase Dashboard** öffnen → **Authentication** → **URL Configuration**.
-3. Eintragen:
-   - **Site URL:** `https://deine-site.netlify.app`
-   - **Redirect URLs:** `https://deine-site.netlify.app/reset-password` hinzufügen (für Passwort vergessen).
-4. **Save** klicken.
-
----
-
-## Schritt 6: Testen
-
-1. Netlify-Site im Browser öffnen.
-2. Login testen.
-3. „Passwort vergessen“ testen (Redirect-URL muss in Supabase hinterlegt sein).
-
----
-
-## ✅ Deployment-Checkliste
-
-| Aufgabe | Status |
-|---------|--------|
-| `netlify.toml` (Build, Redirects, Node 20) | ✅ Konfiguriert |
-| Umgebungsvariablen in Netlify setzen | ✅ Erledigt |
-| Supabase: Site URL + Redirect URLs | ✅ Erledigt |
-| `.env` nicht committen | ✅ In `.gitignore` |
-
----
-
-## 📋 Netlify: Was noch zu tun ist
-
-### 1. Site mit GitHub verbinden ✅
-- **Netlify** → Add new site → Import an existing project → Deploy with GitHub
-- **Repository:** `rosihdf/Vico-public` auswählen
-- **Deploy site** klicken
-
-### 2. Umgebungsvariablen in Netlify eintragen ✅
-- **Site configuration** → **Environment variables** → **Add a variable** → **Add a single variable**
-- **Werte aus deiner lokalen `.env`** (nicht committen):
-
-  | Key | Wert |
-  |-----|------|
-  | `VITE_SUPABASE_URL` | Deine Supabase-URL (aus `.env`) |
-  | `VITE_SUPABASE_ANON_KEY` | Dein Anon Key (aus `.env`) |
-
-- **Save** → **Trigger deploy** → **Deploy site** (damit der Build mit den Variablen neu läuft)
-
-### 3. Supabase konfigurieren ✅
-- **Netlify-URL** notieren (z. B. `https://vico-xyz.netlify.app`)
-- **Supabase Dashboard** → **Authentication** → **URL Configuration**:
-  - **Site URL:** z. B. `https://vico-xyz.netlify.app`
-  - **Redirect URLs:** `https://vico-xyz.netlify.app/reset-password` hinzufügen
-- **Save** klicken
-
-### 4. Testen ✅
-- Netlify-Site öffnen → Login → „Passwort vergessen“ testen
-
----
-
-## 📱 Mobile-Version auf Netlify (zweite Site)
-
-Die Mobile-App (Expo Web) kann als **separate Netlify-Site** aus demselben Repo deployed werden:
-
-1. **Netlify** → **Add new site** → **Import an existing project** → **Deploy with GitHub**
-2. **Repository:** `rosihdf/Vico-public` (dasselbe wie die Web-App)
-3. **Build-Einstellungen anpassen:**
-   - **Base directory:** `mobile`
-   - **Build command:** `npm install && npm run build:web` (wird aus `mobile/netlify.toml` gelesen)
-   - **Publish directory:** `dist`
-4. **Umgebungsvariablen** (wie bei der Web-Site):
-   - `EXPO_PUBLIC_SUPABASE_URL` = deine Supabase-URL
-   - `EXPO_PUBLIC_SUPABASE_ANON_KEY` = dein Anon Key
-5. **Deploy site** klicken
-6. **Supabase:** Die neue Mobile-URL in **Redirect URLs** hinzufügen (z. B. `https://vico-mobile-xyz.netlify.app/reset-password`)
-
----
-
-## Spätere Updates
-
-Bei jedem Push auf `main` baut Netlify automatisch neu:
-
-```bash
-git add .
-git commit -m "Deine Änderung"
-git push
+```
+Kunde → BV → Objekt → Wartungsprotokolle
 ```
 
-### Release-Notes & Update-System
+### Routen
 
-- **release-notes.json** im Projektroot: pro Version eine Liste von Änderungen
-- **version.json** wird beim Build erzeugt (Web + Mobile) und enthält `version`, `buildTime`, `releaseNotes`
-- **Web:** Update-Banner erscheint automatisch bei neuer Version; in Einstellungen „Auf Updates prüfen“ mit Release Notes
-- **Mobile:** In Einstellungen „Auf Updates prüfen“ mit Release Notes
-- Bei neuem Release: `package.json` (Web) und `mobile/package.json` + `mobile/app.json` Version erhöhen, `release-notes.json` ergänzen
+| Pfad | Komponente |
+|------|------------|
+| `/` | Startseite (Dashboard) |
+| `/kunden` | Kunden |
+| `/kunden/:id/bvs` | BVs |
+| `/kunden/:id/bvs/:bvId/objekte` | Objekte |
+| `/kunden/.../objekte/:objectId/wartung` | Wartungsprotokolle |
+| `/suche` | Suche |
+| `/auftrag` | Auftrag anlegen |
+| `/scan` | QR-Scan |
+| `/historie` | Historie (Admin) |
+| `/einstellungen` | Einstellungen |
+| `/benutzerverwaltung` | Benutzerverwaltung (Admin) |
+| `/profil` | Profil |
 
----
+### Rollen
 
-# 🎯 Ziel der App
-
-- Kunden, BV und Objekte verwalten  
-- Wartungs- & Mängeldokumentation inkl. Fotos  
-- QR-Code pro Objekt (Erstellen + Drucken via Bluetooth)  
-- Offline arbeiten  
-- Automatische Synchronisation bei Internet  
-- Sync-Status Anzeige:
-  - 🔴 Rot = Offline
-  - 🟢 Grün = Ready
-  - 🔵 Blau = Synchronisiert
-
----
-
-# 👥 Rollen & Rechte
-
-## Rollen
-
-- **Admin**
-- **Mitarbeiter**
-- **Leser** (nur lesen)
-
-## Rechte
-
-### Admin
-- Benutzerverwaltung
-- Rechtevergabe
-- Datenimport
-- Vollzugriff auf alle Daten
-
-### Mitarbeiter
-- Kunden / BV / Objekte bearbeiten
-- Wartungen & Fotos erfassen
-- Aufträge bearbeiten
-- Kein Benutzer-Management
-
-### Leser
-- Alle Daten lesen (Kunden, BV, Objekte, Aufträge, Wartungsprotokolle)
-- Kein Anlegen, Bearbeiten oder Löschen
+| Rolle | Rechte |
+|-------|--------|
+| **Admin** | Vollzugriff, Benutzerverwaltung, Historie |
+| **Mitarbeiter** | CRUD Stammdaten + Aufträge (außer Löschen von Kunden, BVs, Objekten; BV anlegen nur Admin) |
+| **Operator** | Nur Wartungsprotokolle schreiben, Stammdaten/Aufträge lesen |
+| **Leser** | Nur lesen |
 
 ---
 
-# 🧭 Navigation
+## 3. Features
 
-## 🍔 Seitenmenü (Hamburger)
+### Kunden & BVs
 
-- Dashboard
-- Kunden
-- Suche
-- Einstellungen
-- Ausloggen
+- Adressfelder (PLZ, Ort, Straße, Hausnummer)
+- BVs unter Kunden ausklappbar
+- Objekte unter BVs ausklappbar
 
-## 📌 Bottom Menü
+### Objekte
 
-- Start
-- Scan (QR)
-- (Optional z. B. Aufträge / Neu)
-- Login / Logout
-- Mein Profil
+- Stammdaten, Art, Technik, Schließmittel, Feststellanlage, Rauchmelder
+- Fotos, QR-Code (Druck via Bluetooth)
 
-## Global sichtbar
+### Wartungsprotokolle
 
-- Logo im Header
-- Sync-Status-Indikator
+- Prüfgrund, Herstellerwartung, Feststellanlage, Rauchmelder
+- Mängel, Fotos, Unterschriften
+- PDF-Export, E-Mail-Versand
 
----
+### Offline & Sync
 
-# 🔐 Login
-
-- Benutzer (E-Mail oder Username)
-- Passwort
-- Optional: Passwort vergessen
+- Lokale Speicherung, Outbox
+- Sync-Status: Offline, Ready, Synchronisiert
 
 ---
 
-# ⚙️ Einstellungen
+## 4. Datenbank (Supabase)
 
-- Benutzerverwaltung (nur Admin)
-- App-Version
-- Sync-Einstellungen (optional)
+### Tabellen
 
----
+- profiles, customers, bvs, objects
+- object_photos, maintenance_reports, maintenance_report_photos, maintenance_report_smoke_detectors
+- orders, component_settings, audit_log
 
-# 👤 Benutzerverwaltung (Admin)
+### Indizes
 
-- Neuen Benutzer anlegen
-- Benutzer verwalten
-- Benutzerrechte:
-  - Admin
-  - Mitarbeiter
+- bvs(customer_id), objects(bv_id)
+- maintenance_reports(object_id), maintenance_reports(object_id, maintenance_date)
+- orders(order_date, assigned_to, customer_id, bv_id)
+- component_settings(sort_order), audit_log(created_at)
 
----
+### Schema
 
-# 🏢 Kundenverwaltung
-
-## Funktionen
-
-- Kundenliste
-- Suche
-- Kunde neu anlegen
-
-## Kunde anlegen
-
-- Name
-- Straße
-- PLZ
-- Ort
-- E-Mail
-- Telefon
-- Ansprechpartner
-  - Name
-  - E-Mail
-  - Telefon
-- Wartungsbericht per E-Mail (Toggle Ja/Nein)
-- Wartungsbericht E-Mail-Adresse
+`supabase-complete.sql` im Supabase SQL Editor ausführen (idempotent). Enthält Rollen (admin, mitarbeiter, operator, leser), RLS, RPCs, Audit-Trigger.
 
 ---
 
-# 🏬 BV-Verwaltung (pro Kunde)
+## 5. Deployment (Netlify)
 
-## Funktionen
+1. **Git:** Repo mit GitHub verbinden
+2. **Netlify:** Add site → Deploy with GitHub
+3. **Build:** `npm run build`, Publish: `dist`
+4. **Env:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+5. **Supabase:** Site URL + Redirect URLs (`/reset-password`)
 
-- BV-Liste
-- Suche
-- BV neu anlegen
+### Release
 
-## BV anlegen
+- `release-notes.json` pro Version
+- `version.json` beim Build
+- Update-Banner bei neuer Version
 
-- Name
-- Straße
-- PLZ
-- Ort
-- E-Mail
-- Telefon
-- Ansprechpartner
-  - Name
-  - E-Mail
-  - Telefon
-- Wartungsbericht per E-Mail (Toggle)
-- Wartungsbericht E-Mail-Adresse
-- Daten aus Kundenverwaltung übernehmen (Toggle)
+### Supabase Keep-Alive (Free-Tier)
 
----
+Supabase pausiert Free-Tier-Projekte nach 7 Tagen Inaktivität. Das GitHub-Actions-Workflow `.github/workflows/supabase-keepalive.yml` führt Mo + Do um 9:00 UTC eine einfache DB-Abfrage aus.
 
-# 🚪 Objekt (pro BV)
+**Einrichtung:** GitHub Repo → Settings → Secrets and variables → Actions:
 
-## Stammdaten
+| Secret | Beschreibung |
+|--------|--------------|
+| `SUPABASE_URL` | Projekt-URL (z.B. `https://xxx.supabase.co`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-Role-Key (Supabase Dashboard → Settings → API) |
 
-- Interne ID (nicht änderbar)
-- Tür Position
-- Interne Türnummer
-- Etage
-- Raum
+Manueller Start: Actions → Supabase Keep-Alive → Run workflow.
 
-## Art
+### Demo-Account (24h-Löschung)
 
-- Tür (Checkbox)
-- Sektionaltor (Checkbox)
-- Schiebetor (Checkbox)
-- Freitext
-
-## Technische Daten
-
-- Flügelanzahl
-- Hersteller
-- Baujahr
-
-## Schließmittel
-
-- Hersteller
-- Typ
-
-## Feststellanlage (Toggle Ja/Nein)
-
-Wenn **Ja**:
-
-- Hersteller
-- Typ
-- Zulassungsnummer
-- Abnahme am
-
-## Rauchmelder
-
-- Anzahl
-- Dynamische Felder:
-  - RM1 Baujahr
-  - RM2 Baujahr
-  - RM3 Baujahr
-  - usw.
-
-## Weitere Angaben
-
-- Panikfunktion
-- Weiteres Zubehör
-- Wartung nach Herstellerangaben durchgeführt (Toggle)
-- Feststellanlage Wartung nach Herstellerangaben (nur sichtbar wenn vorhanden)
-
-## Dokumentation
-
-- Vorhandene Mängel (Textfeld)
-- Checkliste Mängel
-- Fotos hochladen
-- Bemerkungen
+- **Rolle "demo"**: Admin weist in Benutzerverwaltung zu.
+- Demo-Benutzer sehen nur eigene Daten (Kunden mit `demo_user_id`).
+- Beim Anlegen von Kunden wird automatisch `demo_user_id` gesetzt (Trigger).
+- **Löschung**: GitHub Actions `.github/workflows/cleanup-demo-data.yml` läuft täglich 4:00 UTC, ruft RPC `cleanup_demo_customers_older_than_24h()` auf.
+- Gleiche Secrets wie Keep-Alive.
 
 ---
 
-# 🔍 QR-Code Funktion
+## 6. Projektstand
 
-## Scan
+### Implementierte Features
 
-- QR-Code scannen
-- Objekt direkt öffnen
+| Feature | Status |
+|---------|--------|
+| versionUtils | ✅ `isNewerVersion()` |
+| UpdateBanner | ✅ Layout, Version-Check |
+| objectUtils | ✅ `getObjectDisplayName()` |
+| Objekt-Anzeige | ✅ Suche, Auftrag, Wartung, PDF, QR, Startseite, Wartungsstatus (Ampel) in Kundenübersicht |
+| Rechte | ✅ Kunden/BVs/Objekte löschen nur Admin, BV anlegen nur Admin, Demo-Rolle (24h-Löschung) |
+| Web-App-Test-Checkliste | ✅ 45 Punkte, `npm run generate-checklist-webapp`, Button in Einstellungen |
+| Historie | ✅ Audit-Log, Route `/historie` |
+| Adressuche | ✅ OpenPLZ API: PLZ→Ort, Straßen unter PLZ |
+| Fehlerbehandlung | ✅ ToastContext für Supabase-Fehler |
+| Types | ✅ Aufgeteilt in `types/*.ts` |
+| Indizes | ✅ orders, maintenance_reports, component_settings |
+| Code-Splitting | ✅ Wartungsprotokolle (generateMaintenancePdf), Objekte (ObjectQRCodeModal) |
+| Unit-Tests | ✅ 17 Tests: versionUtils, objectUtils, dataService |
+| npm audit | ✅ 0 Schwachstellen |
+| ESLint | ✅ Konfiguriert |
+| CI/CD | ✅ GitHub Actions: Lint, Test, Build bei Push/PR |
 
-## QR-Code erstellen
+### Abgeschlossen
 
-- QR-Code generieren
-- Layout mit:
-  - Logo
-  - Kunde
-  - BV
-  - Objekt
-  - Interne ID
-- Druck via Bluetooth
-
----
-
-# 🌐 Offline & Auto-Sync
-
-## Offline
-
-- Daten lokal speichern
-- Änderungen in Outbox speichern
-- Objekt-Fotos: Cache + Upload-Outbox (Base64), Sync beim nächsten Online
-- Wartungs-Erinnerungen: Cache (RPC-Ergebnis)
-- Status = 🔴 Rot
-
-## Online
-
-- Outbox an Server senden
-- Änderungen vom Server abrufen
-- Konfliktlösung: "Last Write Wins"
-- Status:
-  - 🟢 Grün = Keine offenen Änderungen
-  - 🔵 Blau = Synchronisiert
+| # | Thema | Status |
+|---|-------|--------|
+| 1 | Supabase-Schema | ✅ supabase-complete.sql (Rolle Operator, RLS, RPCs) |
+| 4 | Code-Splitting | ✅ Wartungsprotokolle, Objekte, Route-Komponenten (lazy) |
+| 6 | Unit-Tests | ✅ 17 Tests |
+| 8 | Audit-Log | ✅ Trigger für alle relevanten Tabellen |
 
 ---
 
-# 🗄 Datenbank Struktur (Supabase)
+## 7. Roadmap
 
-## Tabellen
+### Geplant
 
-- profiles (User + Rolle)
-- customers
-- bvs (mit customer_id)
-- objects (mit bv_id)
-- object_smoke_detectors
-- object_photos
-- object_checklist_items
-- optional:
-  - orders
-  - reminders
-  - messages
+- DSGVO, Lizenzmodell
+- Kundenportal für Wartungsberichte
 
-## Storage
+### Geplante Verbesserungen
 
-- Bucket: object-photos
+1. ~~**Kundenübersicht/Objekte – Wartungsstatus anzeigen**~~ ✅ (Ampelfarben: rot=überfällig, gelb=bald fällig, grün=ok)
 
----
+2. ~~**Erweiterte Vico Web App Test-Checkliste erstellen**~~ ✅
 
-# 💬 Message System
+3. ~~**Objekte-ID im Formular**~~ ✅
 
-- Push-Nachrichten
-- Erinnerungen (z. B. Wartung fällig)
-- Interne Nachrichten (Messenger)
+4. ~~**Rauchmelder Jahresauswahl**~~ ✅
+
+5. ~~**Objekt-Feldnamen in der Kundenübersicht**~~ ✅
+
+6. ~~**Demo-Account mit 24h-Löschung**~~ ✅ (Rolle "demo", RLS, RPC cleanup_demo_customers_older_than_24h, GitHub Actions)
+
+7. ~~**Benutzeranleitung erstellen**~~ ✅ (BENUTZERANLEITUNG.md)
+
+8. ~~**Supabase-Inaktivierung vermeiden**~~ ✅ (GitHub Actions Keep-Alive: `.github/workflows/supabase-keepalive.yml`)
 
 ---
 
-# 🚀 MVP Empfehlung
-
-## MVP 1
-
-- Login + Rollen
-- Kunden → BV → Objekt CRUD
-- QR-Scan
-- Fotos
-- Offline-Speicherung
-- Auto-Sync
-- Sync-Status Anzeige
-
-## MVP 2
-
-- QR-Druck
-- Wartungsbericht als PDF per E-Mail
-- Strukturierte Checkliste
-- Datenimport (CSV/Excel)
-- Erinnerungsfunktion
-- Messenger
-
----
-
-# 📂 Struktur
-
-Kunde  
-└── BV  
-  └── Objekt  
-
----
-# 📝 Erweiterung: Wartungsprotokoll
-
----
-
-# 📌 Wartungsprotokoll (pro Objekt)
-
-Das Wartungsprotokoll wird einem **Objekt** zugeordnet und dokumentiert jede durchgeführte Wartung.
-
-Struktur:
-
-Kunde  
-└── BV  
-  └── Objekt  
-    └── Wartungsprotokolle  
-
----
-
-# 🧾 Wartungsprotokoll – Übersicht
-
-## Funktionen
-
-- Liste aller Wartungen pro Objekt
-- Suche / Filter (Datum, Mitarbeiter, Status)
-- Neues Wartungsprotokoll anlegen
-- PDF erstellen
-- Per E-Mail versenden
-- Unterschrift erfassen
-- Fotos hinzufügen
-
----
-
-# ➕ Neues Wartungsprotokoll anlegen
-
-## Allgemeine Daten
-
-- Datum der Wartung (automatisch + editierbar)
-- Uhrzeit
-- Mitarbeiter (automatisch aus Login)
-- Prüfgrund:
-  - Regelwartung
-  - Reparatur
-  - Nachprüfung
-  - Sonstiges (Textfeld)
-
----
-
-## 🔍 Prüfpunkte
-
-### Wartung nach Herstellerangaben durchgeführt
-- Toggle Ja/Nein
-
-### Feststellanlage geprüft
-- Toggle Ja/Nein
-- Nur sichtbar wenn Feststellanlage vorhanden
-
-### Rauchmelder geprüft
-- Automatische Anzeige aller RM (RM1, RM2, …)
-- Status pro Rauchmelder:
-  - OK
-  - Defekt
-  - Ersetzt
-
----
-
-## ⚠️ Mängel
-
-- Neue Mängel festgestellt (Ja/Nein)
-- Beschreibung (Textfeld)
-- Dringlichkeit:
-  - Niedrig
-  - Mittel
-  - Hoch
-- Sofort behoben? (Toggle)
-- Foto hinzufügen
-
----
-
-## 📸 Fotos
-
-- Mehrere Fotos möglich
-- Lokal speichern (Offline)
-- Automatische Synchronisierung
-
----
-
-## 🖊 Unterschrift
-
-- Techniker Unterschrift (Touchfeld)
-- Kunde Unterschrift (Touchfeld)
-- Optional: Name in Druckschrift
-
----
-
-## 📧 Versand
-
-Wenn im Kunden/BV aktiviert:
-
-- Wartungsbericht per E-Mail senden (automatisch)
-- Empfänger:
-  - Hinterlegte Wartungsbericht E-Mail
-  - Optional weitere E-Mail-Adresse
-
----
-
-# 📄 PDF Wartungsbericht
-
-Inhalt:
-
-- Logo
-- Kundendaten
-- BV-Daten
-- Objektdaten
-- Prüfergebnis
-- Mängelliste
-- Fotos
-- Unterschriften
-- Datum & Uhrzeit
-
-PDF wird:
-- Lokal erzeugt
-- In Supabase Storage gespeichert
-- Optional per E-Mail versendet
-
----
-
-# 🗄 Datenbank Erweiterung (Supabase)
-
-Neue Tabellen:
-
-## maintenance_reports
-- id (UUID)
-- object_id
-- created_at
-- maintenance_date
-- technician_id
-- reason
-- manufacturer_maintenance_done (boolean)
-- deficiencies_found (boolean)
-- deficiency_description
-- urgency
-- fixed_immediately (boolean)
-- customer_signature_path
-- technician_signature_path
-- pdf_path
-- synced (boolean)
-
----
-
-## maintenance_report_photos
-- id
-- report_id
-- storage_path
-- caption
-- created_at
-
----
-
-## maintenance_report_smoke_detectors
-- id
-- report_id
-- smoke_detector_label (RM1, RM2…)
-- status (OK / Defekt / Ersetzt)
-
----
-
-# 🔔 Erweiterung Erinnerungsfunktion
-
-Pro Objekt speicherbar:
-
-- Wartungsintervall (z. B. 12 Monate)
-- Letzte Wartung
-- Nächste Wartung automatisch berechnen
-- Push-Benachrichtigung bei Fälligkeit
-
----
-
-# 🌐 Offline Verhalten
-
-- **Kunden, BVs, Objekte:** Lesen, Anlegen, Bearbeiten, Löschen (Cache + Outbox)
-- **Wartungsprotokolle:** Lesen (Cache), Anlegen offline (Outbox), Rauchmelder inklusive
-- **Suche:** Durchsuchen von Kunden/BVs/Objekten aus Cache
-- **Sync:** Änderungen werden bei nächster Verbindung automatisch hochgeladen
-- Sync Status:
-  - 🔴 Offline
-  - 🟢 Bereit
-  - 🔵 Synchronisiert
-
----
-
-# 📧 E-Mail-Versand (Wartungsprotokoll)
-
-Für den E-Mail-Versand wird eine Supabase Edge Function und Resend genutzt:
-
-1. **Resend-Account:** https://resend.com – API Key erstellen
-2. **Supabase Secrets setzen:** Project Settings → Edge Functions → Secrets
-   - `RESEND_API_KEY`: API Key von Resend
-   - `RESEND_FROM` (optional): Absender, z. B. `Vico <info@ihredomain.de>`
-3. **Edge Function deployen:**
-   ```bash
-   supabase functions deploy send-maintenance-report
-   ```
-4. **E-Mail-Adresse:** Unter Kunde oder BV muss „E-Mail für Wartungsprotokoll“ ausgefüllt sein.
-
----
-
-# 🔑 Passwort vergessen
-
-1. **Login:** Link „Passwort vergessen?“ → E-Mail eingeben → Supabase sendet Reset-Link.
-2. **Redirect URLs:** In Supabase Dashboard → Authentication → URL Configuration:
-   - **Site URL:** z. B. `https://ihredomain.de`
-   - **Redirect URLs:** z. B. `https://ihredomain.de/reset-password` und `vico://reset-password`
-3. **Mobile Deep Link:** Das Schema `vico` ist in `app.json` hinterlegt. Der Link aus der E-Mail führt zu `vico://reset-password` und öffnet die App.
-
----
-
-# 🚀 Erweiterung MVP Plan
-
-## MVP 2 Ergänzung
-
-- Wartungsprotokoll erstellen
-- PDF Export
-- E-Mail Versand
-- Unterschrift
-- Erinnerungsfunktion
-
-
-Rechteverwaltung für untergeordnete rollen 
-Monteuerbericht
-Wartungsberichte im Archiv ablegen, Kundenstruktur
-Kundenportal für wartungsberichte 
-
-ladezeiten optimieren
-DSVGO
-Rolle Operator
-Lizenzmodell
-
+## 8. Projektstruktur
+
+```
+Vico/
+├── src/
+│   ├── components/     # AddressLookupFields, OrderCalendar, ObjectFormModal
+│   ├── lib/            # dataService, offlineStorage, Utils, PDF-Generierung
+│   ├── types/          # TypeScript-Typen (customer, bv, object, order, maintenance)
+│   └── *.tsx           # Seiten, Layout, Auth, Context
+├── public/             # Favicon, Logo, Checkliste-PDF, version.json (Dev-Fallback)
+├── scripts/            # generate-checklist-webapp-pdf.mjs
+├── supabase/           # Edge Functions (send-maintenance-report)
+├── supabase-complete.sql
+├── Vico.md
+├── BENUTZERANLEITUNG.md
+├── netlify.toml
+├── .github/workflows/ci.yml
+├── .npmrc
+└── eslint.config.js
+```

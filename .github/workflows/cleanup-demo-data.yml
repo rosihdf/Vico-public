@@ -1,0 +1,52 @@
+# Löscht Demo-Kundendaten älter als 24 Stunden.
+# Läuft täglich um 4:00 UTC.
+# Ruft RPC cleanup_demo_customers_older_than_24h() auf.
+#
+# GitHub Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+name: Cleanup Demo Data
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Supabase client
+        run: npm install @supabase/supabase-js --no-save --legacy-peer-deps
+
+      - name: Cleanup Demo-Daten (24h+)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node -e "
+          (async () => {
+            const { createClient } = require('@supabase/supabase-js');
+            const url = process.env.SUPABASE_URL;
+            const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+            if (!url || !key) {
+              console.error('Fehlende Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY');
+              process.exit(1);
+            }
+            const supabase = createClient(url, key);
+            const { data, error } = await supabase.rpc('cleanup_demo_customers_older_than_24h');
+            if (error) {
+              console.error('Fehler:', error.message);
+              process.exit(1);
+            }
+            const cnt = data?.deleted_count ?? 0;
+            console.log('Demo-Cleanup: ' + cnt + ' Kunden gelöscht');
+          })();
+          "

@@ -1,0 +1,52 @@
+# Hält das Supabase-Projekt aktiv (Free-Tier pausiert nach 7 Tagen Inaktivität).
+# Läuft Mo + Do um 9:00 UTC – reicht, um die 7-Tage-Frist zu unterbieten.
+#
+# GitHub Secrets erforderlich:
+#   SUPABASE_URL          – Projekt-URL (z.B. https://xxx.supabase.co)
+#   SUPABASE_SERVICE_ROLE_KEY – Service-Role-Key (Supabase Dashboard → Settings → API)
+
+name: Supabase Keep-Alive
+
+on:
+  schedule:
+    - cron: '0 9 * * 1,4'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Supabase client
+        run: npm install @supabase/supabase-js --no-save --legacy-peer-deps
+
+      - name: Ping Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node -e "
+          (async () => {
+            const { createClient } = require('@supabase/supabase-js');
+            const url = process.env.SUPABASE_URL;
+            const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+            if (!url || !key) {
+              console.error('Fehlende Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY');
+              process.exit(1);
+            }
+            const supabase = createClient(url, key);
+            const { error } = await supabase.from('profiles').select('id').limit(1);
+            if (error) {
+              console.error('Ping fehlgeschlagen:', error.message);
+              process.exit(1);
+            }
+            console.log('Supabase Keep-Alive erfolgreich');
+          })();
+          "

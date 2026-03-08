@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { useToast } from './ToastContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import {
   fetchCustomers,
@@ -12,12 +13,18 @@ import {
   updateBv,
   deleteBv,
   fetchObjects,
+  fetchMaintenanceReminders,
   subscribeToDataChange,
 } from './lib/dataService'
 import { useComponentSettings } from './ComponentSettingsContext'
-import { getObjectDisplayName } from './lib/objectUtils'
+import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
 import { AddressLookupFields } from './components/AddressLookupFields'
+import { lazy, Suspense } from 'react'
+import ObjectFormModal from './components/ObjectFormModal'
 import type { Customer, CustomerFormData, BV, BVFormData } from './types'
+import type { MaintenanceReminder } from './types'
+
+const ObjectQRCodeModal = lazy(() => import('./ObjectQRCodeModal'))
 import type { Object as Obj } from './types'
 
 const INITIAL_CUSTOMER_FORM: CustomerFormData = {
@@ -52,10 +59,13 @@ const INITIAL_BV_FORM: BVFormData = {
 }
 
 const Kunden = () => {
+  const [searchParams, setSearchParams] = useSearchParams()
   const { userRole } = useAuth()
+  const { showError } = useToast()
   const { isEnabled } = useComponentSettings()
-  const canEdit = userRole !== 'leser'
-  const canCreateBv = userRole === 'admin'
+  const canEdit = userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'demo'
+  const canDelete = userRole === 'admin' || userRole === 'demo'
+  const canCreateBv = userRole === 'admin' || userRole === 'demo'
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -79,11 +89,26 @@ const Kunden = () => {
   const [bvFormData, setBvFormData] = useState<BVFormData>(INITIAL_BV_FORM)
   const [bvFormError, setBvFormError] = useState<string | null>(null)
   const [isBvSaving, setIsBvSaving] = useState(false)
+  const [editingObject, setEditingObject] = useState<Obj | null>(null)
+  const [editingObjectBvId, setEditingObjectBvId] = useState<string | null>(null)
+  const [qrObject, setQrObject] = useState<{ obj: Obj; customerId: string; bvId: string; customerName: string; bvName: string } | null>(null)
+  const [showNeuDropdown, setShowNeuDropdown] = useState(false)
+  const [maintenanceReminders, setMaintenanceReminders] = useState<MaintenanceReminder[]>([])
+
+  const remindersByObjectId = useMemo(() => {
+    const map = new Map<string, MaintenanceReminder>()
+    maintenanceReminders.forEach((r) => map.set(r.object_id, r))
+    return map
+  }, [maintenanceReminders])
 
   const loadCustomers = useCallback(async () => {
     setIsLoading(true)
-    const data = await fetchCustomers()
-    setCustomers(data ?? [])
+    const [customerData, reminderData] = await Promise.all([
+      fetchCustomers(),
+      fetchMaintenanceReminders(),
+    ])
+    setCustomers(customerData ?? [])
+    setMaintenanceReminders(reminderData ?? [])
     setIsLoading(false)
   }, [])
 
@@ -94,6 +119,57 @@ const Kunden = () => {
   useEffect(() => {
     return subscribeToDataChange(loadCustomers)
   }, [loadCustomers])
+
+  const urlCustomerId = searchParams.get('customerId')
+  const urlBvId = searchParams.get('bvId')
+  const urlObjectId = searchParams.get('objectId')
+
+  useEffect(() => {
+    if (!urlCustomerId || !customers.length) return
+    let cancelled = false
+    const expandAndOpen = async () => {
+      setExpandedCustomerId(urlCustomerId)
+      setExpandedBvId(null)
+      setExpandedObjects([])
+      setIsBvsLoading(true)
+      const bvsData = await fetchBvs(urlCustomerId)
+      if (cancelled) return
+      setExpandedBvs(bvsData ?? [])
+      setIsBvsLoading(false)
+      if (!urlBvId) return
+      const bv = (bvsData ?? []).find((b) => b.id === urlBvId)
+      if (!bv) return
+      setExpandedBvId(urlBvId)
+      setIsObjectsLoading(true)
+      const objData = await fetchObjects(urlBvId)
+      if (cancelled) return
+      setExpandedObjects(objData ?? [])
+      setIsObjectsLoading(false)
+      if (urlObjectId) {
+        const obj = (objData ?? []).find((o) => o.id === urlObjectId)
+        if (obj) {
+          setEditingObject(obj)
+          setEditingObjectBvId(urlBvId)
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev)
+            next.delete('customerId')
+            next.delete('bvId')
+            next.delete('objectId')
+            return next
+          }, { replace: true })
+        }
+      }
+    }
+    expandAndOpen()
+    return () => { cancelled = true }
+  }, [urlCustomerId, urlBvId, urlObjectId, customers.length, setSearchParams])
+
+  useEffect(() => {
+    if (!showNeuDropdown) return
+    const handleClickOutside = () => setShowNeuDropdown(false)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [showNeuDropdown])
 
   useEffect(() => {
     if (!showForm && !showBvForm) return
@@ -107,9 +183,46 @@ const Kunden = () => {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [showForm, showBvForm])
 
-  const filteredCustomers = customers.filter((c) =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const searchLower = searchQuery.trim().toLowerCase()
+  const matchStr = (v: string | null | undefined) =>
+    (v ?? '').toLowerCase().includes(searchLower)
+  const filteredCustomers = searchLower
+    ? customers.filter((c) =>
+        matchStr(c.name) ||
+        matchStr(c.street) ||
+        matchStr(c.house_number) ||
+        matchStr(c.postal_code) ||
+        matchStr(c.city) ||
+        matchStr(c.email) ||
+        matchStr(c.phone) ||
+        matchStr(c.contact_name) ||
+        matchStr(c.contact_email) ||
+        matchStr(c.contact_phone)
+      )
+    : customers
+
+  const filteredBvs = searchLower && expandedBvs.length > 0
+    ? expandedBvs.filter((b) =>
+        matchStr(b.name) ||
+        matchStr(b.street) ||
+        matchStr(b.house_number) ||
+        matchStr(b.postal_code) ||
+        matchStr(b.city) ||
+        matchStr(b.email) ||
+        matchStr(b.phone) ||
+        matchStr(b.contact_name)
+      )
+    : expandedBvs
+
+  const filteredObjects = searchLower && expandedObjects.length > 0
+    ? expandedObjects.filter((o) =>
+        matchStr(o.name) ||
+        matchStr(o.internal_id) ||
+        matchStr(o.room) ||
+        matchStr(o.floor) ||
+        matchStr(o.manufacturer)
+      )
+    : expandedObjects
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value)
@@ -183,7 +296,9 @@ const Kunden = () => {
     if (editingId) {
       const { error } = await updateCustomer(editingId, payload)
       if (error) {
-        setFormError(getSupabaseErrorMessage(error))
+        const msg = getSupabaseErrorMessage(error)
+        setFormError(msg)
+        showError(msg)
       } else {
         handleCloseForm()
         loadCustomers()
@@ -191,7 +306,9 @@ const Kunden = () => {
     } else {
       const { data, error } = await createCustomer(payload)
       if (error) {
-        setFormError(getSupabaseErrorMessage(error))
+        const msg = getSupabaseErrorMessage(error)
+        setFormError(msg)
+        showError(msg)
       } else if (data) {
         handleCloseForm()
         loadCustomers()
@@ -203,7 +320,9 @@ const Kunden = () => {
   const handleDelete = async (id: string) => {
     if (!window.confirm('Kunden wirklich löschen?')) return
     const { error } = await deleteCustomer(id)
-    if (!error) {
+    if (error) {
+      showError(getSupabaseErrorMessage(error))
+    } else {
       if (expandedCustomerId === id) {
         setExpandedCustomerId(null)
         setExpandedBvs([])
@@ -345,7 +464,9 @@ const Kunden = () => {
     if (bvEditingId) {
       const { error } = await updateBv(bvEditingId, payload)
       if (error) {
-        setBvFormError(getSupabaseErrorMessage(error))
+        const msg = getSupabaseErrorMessage(error)
+        setBvFormError(msg)
+        showError(msg)
       } else {
         handleCloseBvForm()
         reloadExpandedBvs()
@@ -353,7 +474,9 @@ const Kunden = () => {
     } else {
       const { error } = await createBv(payload)
       if (error) {
-        setBvFormError(getSupabaseErrorMessage(error))
+        const msg = getSupabaseErrorMessage(error)
+        setBvFormError(msg)
+        showError(msg)
       } else {
         handleCloseBvForm()
         reloadExpandedBvs()
@@ -365,7 +488,9 @@ const Kunden = () => {
   const handleBvDelete = async (id: string) => {
     if (!window.confirm('BV wirklich löschen?')) return
     const { error } = await deleteBv(id)
-    if (!error) {
+    if (error) {
+      showError(getSupabaseErrorMessage(error))
+    } else {
       if (expandedBvId === id) {
         setExpandedBvId(null)
         setExpandedObjects([])
@@ -400,20 +525,76 @@ const Kunden = () => {
         <div className="flex gap-2">
           <input
             type="search"
-            placeholder="Kunden suchen..."
+            placeholder="Name, Ort, Adresse, Kontakt…"
             value={searchQuery}
             onChange={handleSearchChange}
             className="flex-1 sm:w-48 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary"
             aria-label="Kunden suchen"
           />
           {canEdit && (
-            <button
-              type="button"
-              onClick={handleOpenCreate}
-              className="px-4 py-2.5 min-h-[40px] bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
-            >
-              + Neu
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowNeuDropdown((v) => !v) }}
+                className="px-4 py-2.5 min-h-[40px] bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300 flex items-center gap-1"
+                aria-expanded={showNeuDropdown}
+                aria-haspopup="true"
+                aria-label="Neu anlegen"
+              >
+                + Neu
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showNeuDropdown && (
+                <div
+                  className="absolute right-0 mt-1 w-48 bg-white rounded-lg border border-slate-200 shadow-lg py-1 z-40"
+                  role="menu"
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setShowNeuDropdown(false); handleOpenCreate() }}
+                    className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                    role="menuitem"
+                  >
+                    Neuer Kunde
+                  </button>
+                  {canCreateBv && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowNeuDropdown(false)
+                        if (expandedCustomerId) handleOpenBvCreate()
+                      }}
+                      disabled={!expandedCustomerId}
+                      className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      role="menuitem"
+                      title={!expandedCustomerId ? 'Kunde zuerst ausklappen' : undefined}
+                    >
+                      Neues BV
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowNeuDropdown(false)
+                      if (expandedCustomerId && expandedBvId) {
+                        setEditingObject(null)
+                        setEditingObjectBvId(expandedBvId)
+                      }
+                    }}
+                    disabled={!expandedCustomerId || !expandedBvId}
+                    className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    role="menuitem"
+                    title={!expandedCustomerId || !expandedBvId ? 'Kunde und BV zuerst ausklappen' : undefined}
+                  >
+                    Neues Objekt
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -464,8 +645,7 @@ const Kunden = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {canEdit && (
-                      <>
+{canEdit && (
                         <span
                           role="button"
                           tabIndex={0}
@@ -476,6 +656,8 @@ const Kunden = () => {
                         >
                           Bearbeiten
                         </span>
+                    )}
+                    {canDelete && (
                         <span
                           role="button"
                           tabIndex={0}
@@ -486,7 +668,6 @@ const Kunden = () => {
                         >
                           Löschen
                         </span>
-                      </>
                     )}
                   </div>
                 </button>
@@ -495,9 +676,11 @@ const Kunden = () => {
                   <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
                     {isBvsLoading ? (
                       <p className="text-sm text-slate-500 py-2">Lade BVs...</p>
-                    ) : expandedBvs.length === 0 ? (
+                    ) : filteredBvs.length === 0 ? (
                       <div className="py-4 flex flex-col items-start gap-3">
-                        <p className="text-sm text-slate-500">Noch keine BVs angelegt.</p>
+                        <p className="text-sm text-slate-500">
+                          {searchLower && expandedBvs.length > 0 ? 'Keine BVs gefunden.' : 'Noch keine BVs angelegt.'}
+                        </p>
                         {canCreateBv && (
                           <button
                             type="button"
@@ -511,7 +694,7 @@ const Kunden = () => {
                     ) : (
                       <>
                         <ul className="space-y-2">
-                          {expandedBvs.map((bv) => {
+                          {filteredBvs.map((bv) => {
                             const isBvExpanded = expandedBvId === bv.id
                             return (
                               <li
@@ -550,7 +733,6 @@ const Kunden = () => {
                                   </div>
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     {canEdit && (
-                                      <>
                                         <span
                                           role="button"
                                           tabIndex={0}
@@ -561,6 +743,8 @@ const Kunden = () => {
                                         >
                                           Bearbeiten
                                         </span>
+                                    )}
+                                    {canDelete && (
                                         <span
                                           role="button"
                                           tabIndex={0}
@@ -571,7 +755,6 @@ const Kunden = () => {
                                         >
                                           Löschen
                                         </span>
-                                      </>
                                     )}
                                   </div>
                                 </button>
@@ -580,33 +763,73 @@ const Kunden = () => {
                                   <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
                                     {isObjectsLoading ? (
                                       <p className="text-xs text-slate-500 py-2">Lade Objekte...</p>
-                                    ) : expandedObjects.length === 0 ? (
+                                    ) : filteredObjects.length === 0 ? (
                                       <div className="py-3 flex flex-col items-start gap-3">
-                                        <p className="text-xs text-slate-500">Noch keine Objekte angelegt.</p>
+                                        <p className="text-xs text-slate-500">
+                                          {searchLower && expandedObjects.length > 0 ? 'Keine Objekte gefunden.' : 'Noch keine Objekte angelegt.'}
+                                        </p>
                                         {canEdit && (
-                                          <Link
-                                            to={`/kunden/${customer.id}/bvs/${bv.id}/objekte`}
+                                          <button
+                                            type="button"
+                                            onClick={() => { setEditingObject(null); setEditingObjectBvId(bv.id) }}
                                             className="px-4 py-2.5 min-h-[40px] inline-flex items-center text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
                                           >
                                             + Objekt anlegen
-                                          </Link>
+                                          </button>
                                         )}
                                       </div>
                                     ) : (
                                       <>
                                         <ul className="space-y-1.5">
-                                          {expandedObjects.map((obj) => (
+                                          {filteredObjects.map((obj) => (
                                             <li
                                               key={obj.id}
                                               className="bg-white rounded border border-slate-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
                                             >
-                                              <div className="min-w-0">
-                                                <p className="font-medium text-slate-600 text-xs">{getObjectDisplayName(obj)}</p>
-                                                <p className="text-[11px] text-slate-500">
-                                                  {[obj.room, obj.floor].filter(Boolean).join(' · ') || obj.manufacturer || '–'}
-                                                </p>
+                                              <div className="min-w-0 flex items-center gap-2">
+                                                {(() => {
+                                                  const reminder = remindersByObjectId.get(obj.id)
+                                                  const status = reminder?.status
+                                                  const title = reminder
+                                                    ? status === 'overdue'
+                                                      ? `Überfällig (seit ${reminder.days_until_due != null ? Math.abs(reminder.days_until_due) : '?'} Tagen)`
+                                                      : status === 'due_soon'
+                                                        ? `Bald fällig (in ${reminder.days_until_due ?? '?'} Tagen)`
+                                                        : 'Wartung in Ordnung'
+                                                    : 'Kein Wartungsintervall'
+                                                  const dotClass = status
+                                                    ? status === 'overdue'
+                                                      ? 'bg-red-500'
+                                                      : status === 'due_soon'
+                                                        ? 'bg-amber-500'
+                                                        : 'bg-green-500'
+                                                    : 'bg-slate-200 border border-slate-300'
+                                                  return (
+                                                    <span
+                                                      className={`shrink-0 w-2.5 h-2.5 rounded-full ${dotClass}`}
+                                                      title={title}
+                                                      aria-label={title}
+                                                    />
+                                                  )
+                                                })()}
+                                                <div>
+                                                  <p className="font-medium text-slate-600 text-xs">{getObjectDisplayName(obj)}</p>
+                                                  <p className="text-[11px] text-slate-500">
+                                                    {formatObjectRoomFloor(obj)}
+                                                  </p>
+                                                </div>
                                               </div>
                                               <div className="flex flex-wrap gap-1">
+                                                {canEdit && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); setEditingObject(obj); setEditingObjectBvId(bv.id) }}
+                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                                    aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
+                                                  >
+                                                    Bearbeiten
+                                                  </button>
+                                                )}
                                                 {isEnabled('wartungsprotokolle') && (
                                                   <Link
                                                     to={`/kunden/${customer.id}/bvs/${bv.id}/objekte/${obj.id}/wartung`}
@@ -615,23 +838,29 @@ const Kunden = () => {
                                                     Wartung
                                                   </Link>
                                                 )}
-                                                <Link
-                                                  to={`/kunden/${customer.id}/bvs/${bv.id}/objekte?objectId=${obj.id}`}
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setQrObject({ obj, customerId: customer.id, bvId: bv.id, customerName: customer.name, bvName: bv.name })
+                                                  }}
                                                   className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                                  aria-label="QR-Code anzeigen"
                                                 >
-                                                  Details
-                                                </Link>
+                                                  QR-Code
+                                                </button>
                                               </div>
                                             </li>
                                           ))}
                                         </ul>
                                         {canEdit && (
-                                          <Link
-                                            to={`/kunden/${customer.id}/bvs/${bv.id}/objekte`}
+                                          <button
+                                            type="button"
+                                            onClick={() => { setEditingObject(null); setEditingObjectBvId(bv.id) }}
                                             className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
                                           >
                                             + Objekt anlegen
-                                          </Link>
+                                          </button>
                                         )}
                                       </>
                                     )}
@@ -658,6 +887,34 @@ const Kunden = () => {
             )
           })}
         </ul>
+      )}
+
+      {qrObject && (
+        <Suspense fallback={null}>
+          <ObjectQRCodeModal
+            object={qrObject.obj}
+            customerName={qrObject.customerName}
+            bvName={qrObject.bvName}
+            customerId={qrObject.customerId}
+            bvId={qrObject.bvId}
+            onClose={() => setQrObject(null)}
+          />
+        </Suspense>
+      )}
+
+      {editingObjectBvId && (
+        <ObjectFormModal
+          bvId={editingObjectBvId}
+          object={editingObject}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onClose={() => { setEditingObject(null); setEditingObjectBvId(null) }}
+          onSuccess={() => {
+            reloadExpandedObjects()
+            setEditingObject(null)
+            setEditingObjectBvId(null)
+          }}
+        />
       )}
 
       {/* Kunde Formular Modal */}

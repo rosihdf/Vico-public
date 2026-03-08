@@ -5,9 +5,10 @@ import { fetchMyProfile, updateProfileName, getProfileDisplayName } from './lib/
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import type { Profile } from './lib/userService'
 
-const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'leser', string> = {
+const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser', string> = {
   admin: 'Admin',
   mitarbeiter: 'Mitarbeiter',
+  operator: 'Operator',
   leser: 'Leser',
 }
 

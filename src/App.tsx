@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { ToastProvider } from './ToastContext'
 import { SyncProvider } from './SyncContext'
 import { ComponentSettingsProvider } from './ComponentSettingsContext'
 import { AuthProvider } from './AuthContext'
@@ -10,8 +11,8 @@ import ComponentGuard from './ComponentGuard'
 
 const Startseite = lazy(() => import('./Startseite'))
 const Kunden = lazy(() => import('./Kunden'))
-const BVs = lazy(() => import('./BVs'))
-const Objekte = lazy(() => import('./Objekte'))
+const BVRedirect = lazy(() => import('./BVRedirect'))
+const ObjectRedirect = lazy(() => import('./ObjectRedirect'))
 const Wartungsprotokolle = lazy(() => import('./Wartungsprotokolle'))
 const Suche = lazy(() => import('./Suche'))
 const Einstellungen = lazy(() => import('./Einstellungen'))
@@ -32,6 +33,7 @@ const PageFallback = () => (
 const App = () => {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#5b7895' }}>
+    <ToastProvider>
     <AuthProvider>
       <AuthLoader>
         <SyncProvider>
@@ -41,8 +43,8 @@ const App = () => {
               <Route path="/" element={<Layout />}>
                 <Route index element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="dashboard"><ProtectedRoute><Startseite /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><Kunden /></ProtectedRoute></ComponentGuard></Suspense>} />
-                <Route path="kunden/:customerId/bvs" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><BVs /></ProtectedRoute></ComponentGuard></Suspense>} />
-                <Route path="kunden/:customerId/bvs/:bvId/objekte" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><Objekte /></ProtectedRoute></ComponentGuard></Suspense>} />
+                <Route path="kunden/:customerId/bvs" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><BVRedirect /></ProtectedRoute></ComponentGuard></Suspense>} />
+                <Route path="kunden/:customerId/bvs/:bvId/objekte" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><ObjectRedirect /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden/:customerId/bvs/:bvId/objekte/:objectId/wartung" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="wartungsprotokolle"><ProtectedRoute><Wartungsprotokolle /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="suche" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="suche"><ProtectedRoute><Suche /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="einstellungen" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="einstellungen"><ProtectedRoute><Einstellungen /></ProtectedRoute></ComponentGuard></Suspense>} />
@@ -60,6 +62,7 @@ const App = () => {
         </SyncProvider>
       </AuthLoader>
     </AuthProvider>
+    </ToastProvider>
     </div>
   )
 }

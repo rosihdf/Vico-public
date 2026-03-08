@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchCustomers, fetchAllBvs, fetchAllObjects } from './lib/dataService'
-import { getObjectDisplayName } from './lib/objectUtils'
+import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
 import type { Customer, BV, Object as Obj } from './types'
 
 const matchQuery = (text: string | null, q: string): boolean => {
@@ -91,12 +91,13 @@ const Suche = () => {
       const b = bvList.find((b) => b.id === o.bv_id)
       const cust = b ? custList.find((c) => c.id === b.customer_id) : null
       if (!b || !cust) continue
+      const matchName = matchQuery(o.name, q)
       const matchId = matchQuery(o.internal_id, q)
       const matchRoom = matchQuery(o.room, q)
       const matchFloor = matchQuery(o.floor, q)
       const matchManufacturer = matchQuery(o.manufacturer, q)
       const matchBuildYear = matchQuery(o.build_year, q)
-      if (matchId || matchRoom || matchFloor || matchManufacturer || matchBuildYear) {
+      if (matchName || matchId || matchRoom || matchFloor || matchManufacturer || matchBuildYear) {
         out.push({
           type: 'object',
           object: o,
@@ -145,7 +146,7 @@ const Suche = () => {
                 return (
                   <li key={`cust-${r.customer.id}`}>
                     <Link
-                      to={`/kunden/${r.customerId}/bvs`}
+                      to={`/kunden?customerId=${r.customerId}`}
                       className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
                     >
                       <span className="text-xs font-medium text-slate-500 uppercase">Kunde</span>
@@ -168,7 +169,7 @@ const Suche = () => {
                 return (
                   <li key={`bv-${r.bv.id}`}>
                     <Link
-                      to={`/kunden/${r.customerId}/bvs/${r.bvId}/objekte`}
+                      to={`/kunden?customerId=${r.customerId}&bvId=${r.bvId}`}
                       className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
                     >
                       <span className="text-xs font-medium text-slate-500 uppercase">BV</span>
@@ -191,7 +192,7 @@ const Suche = () => {
               return (
                 <li key={`obj-${r.object.id}`}>
                   <Link
-                    to={`/kunden/${r.customerId}/bvs/${r.bvId}/objekte?objectId=${r.objectId}`}
+                    to={`/kunden?customerId=${r.customerId}&bvId=${r.bvId}&objectId=${r.objectId}`}
                     className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
                   >
                     <span className="text-xs font-medium text-slate-500 uppercase">Objekt</span>
@@ -199,7 +200,7 @@ const Suche = () => {
                       {getObjectDisplayName(r.object)}
                     </p>
                     <p className="text-sm text-slate-500">
-                      {[r.object.room, r.object.floor].filter(Boolean).join(' · ') || r.object.manufacturer || r.bv.name}
+                      {formatObjectRoomFloor(r.object) !== '–' ? formatObjectRoomFloor(r.object) : r.bv.name}
                     </p>
                     <p className="text-xs text-slate-400">{r.customer.name} → {r.bv.name}</p>
                   </Link>

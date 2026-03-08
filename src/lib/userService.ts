@@ -5,7 +5,7 @@ export type Profile = {
   email: string | null
   first_name: string | null
   last_name: string | null
-  role: 'admin' | 'mitarbeiter' | 'leser'
+  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo'
   created_at?: string
   updated_at?: string
 }
@@ -45,7 +45,7 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
       email: row.email,
       first_name: row.first_name ?? null,
       last_name: row.last_name ?? null,
-      role: (row.role === 'admin' ? 'admin' : row.role === 'leser' ? 'leser' : 'mitarbeiter') as Profile['role'],
+      role: (row.role === 'admin' ? 'admin' : row.role === 'leser' ? 'leser' : row.role === 'operator' ? 'operator' : row.role === 'demo' ? 'demo' : 'mitarbeiter') as Profile['role'],
     }))
   }
   const { data, error } = await supabase
@@ -58,7 +58,7 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
 
 export const updateProfileRoleByEmail = async (
   email: string,
-  role: 'admin' | 'mitarbeiter' | 'leser'
+  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo'
 ): Promise<{ error: { message: string } | null }> => {
   const profile = await fetchProfileByEmail(email)
   if (!profile) return { error: { message: 'Benutzer nicht gefunden.' } }
@@ -67,7 +67,7 @@ export const updateProfileRoleByEmail = async (
 
 export const updateProfileRole = async (
   profileId: string,
-  role: 'admin' | 'mitarbeiter' | 'leser'
+  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo'
 ): Promise<{ error: { message: string } | null }> => {
   const { error } = await supabase
     .from('profiles')

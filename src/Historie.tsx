@@ -9,12 +9,17 @@ const TABLE_LABELS: Record<string, string> = {
   orders: 'Aufträge',
   profiles: 'Profile',
   maintenance_reports: 'Wartungsprotokolle',
+  maintenance_report_photos: 'Wartungsfotos',
+  maintenance_report_smoke_detectors: 'Rauchmelder',
 }
 
 const ACTION_LABELS: Record<string, string> = {
   INSERT: 'Angelegt',
+  insert: 'Angelegt',
   UPDATE: 'Geändert',
+  update: 'Geändert',
   DELETE: 'Gelöscht',
+  delete: 'Gelöscht',
 }
 
 const formatDate = (iso: string) => {
@@ -97,9 +102,9 @@ const Historie = () => {
                     <td className="py-2 px-4">
                       <span
                         className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                          e.action === 'INSERT'
+                          (e.action === 'INSERT' || e.action === 'insert')
                             ? 'bg-green-100 text-green-800'
-                            : e.action === 'UPDATE'
+                            : (e.action === 'UPDATE' || e.action === 'update')
                               ? 'bg-blue-100 text-blue-800'
                               : 'bg-red-100 text-red-800'
                         }`}

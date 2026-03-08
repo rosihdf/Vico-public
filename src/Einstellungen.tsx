@@ -4,6 +4,7 @@ import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
 import { useComponentSettings } from './ComponentSettingsContext'
 import { fetchProfileByEmail } from './lib/userService'
+import { downloadWebAppChecklist } from './lib/downloadChecklist'
 import type { SyncStatus } from './types'
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.1'
@@ -71,6 +72,45 @@ const Einstellungen = () => {
     <div className="p-4 max-w-xl">
       <h2 className="text-xl font-bold text-slate-800 mb-6">Einstellungen</h2>
 
+      {/* Benutzeranleitung */}
+      <section
+        className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
+        aria-labelledby="anleitung-heading"
+      >
+        <h3 id="anleitung-heading" className="text-sm font-semibold text-slate-700 mb-3">
+          Benutzeranleitung
+        </h3>
+        <button
+          type="button"
+          onClick={() => window.open('/BENUTZERANLEITUNG.md', '_blank', 'noopener,noreferrer')}
+          className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+          aria-label="Benutzeranleitung öffnen"
+        >
+          Benutzeranleitung öffnen
+        </button>
+      </section>
+
+      {/* Checklisten */}
+      <section
+        className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
+        aria-labelledby="checklisten-heading"
+      >
+        <h3 id="checklisten-heading" className="text-sm font-semibold text-slate-700 mb-3">
+          Checklisten
+        </h3>
+        <p className="text-sm text-slate-600 mb-3">
+          Web-App-Test-Checkliste als PDF erstellen und herunterladen.
+        </p>
+        <button
+          type="button"
+          onClick={downloadWebAppChecklist}
+          className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+          aria-label="Web-App-Test-Checkliste herunterladen"
+        >
+          Web-App-Test-Checkliste
+        </button>
+      </section>
+
       {/* App */}
       <section
         className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
@@ -82,7 +122,7 @@ const Einstellungen = () => {
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-slate-600">Version {APP_VERSION}</span>
           <span className="text-slate-600">
-            Rolle: <strong>{userRole === 'admin' ? 'Admin' : userRole === 'leser' ? 'Leser' : 'Mitarbeiter'}</strong>
+            Rolle: <strong>{userRole === 'admin' ? 'Admin' : userRole === 'leser' ? 'Leser' : userRole === 'operator' ? 'Operator' : userRole === 'demo' ? 'Demo' : 'Mitarbeiter'}</strong>
           </span>
           <button
             type="button"
@@ -206,28 +246,6 @@ const Einstellungen = () => {
         </div>
       </section>
 
-      {/* Datenbank einrichten */}
-      <section
-        className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
-        aria-labelledby="datenbank-heading"
-      >
-        <h3 id="datenbank-heading" className="text-sm font-semibold text-slate-700 mb-3">
-          Datenbank einrichten
-        </h3>
-        <p className="text-sm text-slate-600 mb-2">
-          Fehlt eine Tabelle? Führen Sie <code className="px-1 py-0.5 rounded bg-slate-100 text-slate-700">supabase-complete.sql</code> im Supabase-Dashboard (SQL Editor) aus.
-        </p>
-        <ol className="text-sm text-slate-600 list-decimal list-inside space-y-1 mb-4">
-          <li>Supabase-Dashboard öffnen</li>
-          <li>SQL Editor auswählen</li>
-          <li>Inhalt von <code className="px-1 py-0.5 rounded bg-slate-100">supabase-complete.sql</code> einfügen</li>
-          <li>Run ausführen</li>
-        </ol>
-        <p className="text-xs text-slate-500">
-          Die Datei liegt im Projektordner: <code className="px-1 py-0.5 rounded bg-slate-100">supabase-complete.sql</code>
-        </p>
-      </section>
-
       {/* Komponenten aktivieren/deaktivieren (Admin) */}
       {userRole === 'admin' && (
         <section
@@ -238,7 +256,7 @@ const Einstellungen = () => {
             Komponenten
           </h3>
           <p className="text-sm text-slate-600 mb-3">
-            Aktivieren oder deaktivieren Sie einzelne Bereiche der App (Web + Mobile).
+            Aktivieren oder deaktivieren Sie einzelne Bereiche der App.
           </p>
           {componentError && (
             <p className="mb-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg" role="alert">

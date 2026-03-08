@@ -196,7 +196,7 @@ const Startseite = () => {
               return (
               <li key={r.object_id}>
                 <Link
-                  to={`/kunden/${r.customer_id}/bvs/${r.bv_id}/objekte?objectId=${r.object_id}`}
+                  to={`/kunden?customerId=${r.customer_id}&bvId=${r.bv_id}&objectId=${r.object_id}`}
                   className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50 transition-colors"
                 >
                   <p className="font-medium text-slate-800">
@@ -243,7 +243,7 @@ const Startseite = () => {
               {activeOrders.map((o) => (
                 <li key={o.id}>
                   <Link
-                    to={`/kunden/${o.customer_id}/bvs/${o.bv_id}/objekte${o.object_id ? `?objectId=${o.object_id}` : ''}`}
+                    to={o.object_id ? `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}&objectId=${o.object_id}` : `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}`}
                     className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50 transition-colors"
                   >
                     <p className="font-medium text-slate-800">
