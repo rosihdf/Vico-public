@@ -723,5 +723,8 @@ Monteuerbericht
 Wartungsberichte im Archiv ablegen, Kundenstruktur
 Kundenportal für wartungsberichte 
 
-
+ladezeiten optimieren
+DSVGO
+Rolle Operator
+Lizenzmodell
 

@@ -30,6 +30,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      devOptions: { enabled: false },
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'Vico Türen & Tore',
@@ -42,6 +43,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        skipWaiting: true,
+        clientsClaim: true,
       },
     }),
     {

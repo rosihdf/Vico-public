@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
+import { AddressLookupFields } from './components/AddressLookupFields'
 import {
   fetchCustomer,
   fetchBvs,
@@ -15,6 +16,7 @@ import type { BV, BVFormData, Customer } from './types'
 const INITIAL_FORM: BVFormData = {
   name: '',
   street: '',
+  house_number: '',
   postal_code: '',
   city: '',
   email: '',
@@ -84,6 +86,7 @@ const BVs = () => {
     setFormData((prev) => ({
       ...prev,
       street: customer.street ?? '',
+      house_number: customer.house_number ?? '',
       postal_code: customer.postal_code ?? '',
       city: customer.city ?? '',
       email: customer.email ?? '',
@@ -108,6 +111,7 @@ const BVs = () => {
     setFormData({
       name: bv.name,
       street: bv.street ?? '',
+      house_number: bv.house_number ?? '',
       postal_code: bv.postal_code ?? '',
       city: bv.city ?? '',
       email: bv.email ?? '',
@@ -147,6 +151,7 @@ const BVs = () => {
       ? {
           ...formData,
           street: customer.street ?? '',
+          house_number: customer.house_number ?? '',
           postal_code: customer.postal_code ?? '',
           city: customer.city ?? '',
           email: customer.email ?? '',
@@ -164,6 +169,7 @@ const BVs = () => {
       customer_id: customerId,
       name: data.name.trim(),
       street: data.street.trim() || null,
+      house_number: data.house_number.trim() || null,
       postal_code: data.postal_code.trim() || null,
       city: data.city.trim() || null,
       email: data.email.trim() || null,
@@ -269,9 +275,14 @@ const BVs = () => {
             >
               <div>
                 <p className="font-medium text-slate-800">{bv.name}</p>
-                {(bv.city || bv.postal_code) && (
+                {(bv.street || bv.house_number || bv.postal_code || bv.city) && (
                   <p className="text-sm text-slate-500">
-                    {[bv.postal_code, bv.city].filter(Boolean).join(' ')}
+                    {[
+                      [bv.street, bv.house_number].filter(Boolean).join(' '),
+                      [bv.postal_code, bv.city].filter(Boolean).join(' '),
+                    ]
+                      .filter(Boolean)
+                      .join(', ')}
                   </p>
                 )}
               </div>
@@ -355,44 +366,20 @@ const BVs = () => {
                   required
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="bv-street" className="block text-sm font-medium text-slate-700 mb-1">
-                    Straße
-                  </label>
-                  <input
-                    id="bv-street"
-                    type="text"
-                    value={formData.street}
-                    onChange={(e) => handleFormChange('street', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="bv-postal_code" className="block text-sm font-medium text-slate-700 mb-1">
-                    PLZ
-                  </label>
-                  <input
-                    id="bv-postal_code"
-                    type="text"
-                    value={formData.postal_code}
-                    onChange={(e) => handleFormChange('postal_code', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="bv-city" className="block text-sm font-medium text-slate-700 mb-1">
-                  Ort
-                </label>
-                <input
-                  id="bv-city"
-                  type="text"
-                  value={formData.city}
-                  onChange={(e) => handleFormChange('city', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                />
-              </div>
+              <AddressLookupFields
+                street={formData.street}
+                houseNumber={formData.house_number}
+                postalCode={formData.postal_code}
+                city={formData.city}
+                onStreetChange={(v) => handleFormChange('street', v)}
+                onHouseNumberChange={(v) => handleFormChange('house_number', v)}
+                onPostalCodeChange={(v) => handleFormChange('postal_code', v)}
+                onCityChange={(v) => handleFormChange('city', v)}
+                streetId="bv-street"
+                houseNumberId="bv-house_number"
+                postalCodeId="bv-postal_code"
+                cityId="bv-city"
+              />
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="bv-email" className="block text-sm font-medium text-slate-700 mb-1">

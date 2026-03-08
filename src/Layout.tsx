@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import SyncStatusIndicator from './SyncStatus'
 import Logo from './Logo'
+import UpdateBanner from './UpdateBanner'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
 import { useComponentSettings } from './ComponentSettingsContext'
@@ -44,6 +45,7 @@ const Layout = () => {
     ...(isEnabled('suche') ? [{ to: '/suche', label: 'Suche' }] : []),
     ...(isEnabled('auftrag') ? [{ to: '/auftrag', label: 'Auftrag' }] : []),
     ...(userRole === 'admin' && isEnabled('benutzerverwaltung') ? [{ to: '/benutzerverwaltung', label: 'Benutzerverwaltung' }] : []),
+    ...(userRole === 'admin' ? [{ to: '/historie', label: 'Historie' }] : []),
     ...(isEnabled('einstellungen') ? [{ to: '/einstellungen', label: 'Einstellungen' }] : []),
   ]
 
@@ -61,9 +63,21 @@ const Layout = () => {
   ]
 
   const isOffline = syncStatus === 'offline'
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/reset-password'
+
+  if (isAuthPage) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <main className="flex-1 overflow-auto">
+          <Outlet />
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))]">
+      <UpdateBanner />
       {isOffline && (
         <div
           role="status"

@@ -59,17 +59,17 @@ const formatStatusSummaryCompact = (
     const s = o.status ?? 'offen'
     counts[s] = (counts[s] ?? 0) + 1
   })
-  const labels: Record<OrderStatus, string> = {
+  const abbrev: Record<OrderStatus, string> = {
     offen: 'offen',
-    in_bearbeitung: 'in Bearbeitung',
-    erledigt: 'erledigt',
-    storniert: 'storniert',
+    in_bearbeitung: 'i.B.',
+    erledigt: 'erl.',
+    storniert: 'storn.',
   }
   const result: { status: OrderStatus; text: string }[] = []
   ;(['offen', 'in_bearbeitung', 'erledigt', 'storniert'] as OrderStatus[]).forEach(
     (s) => {
       const n = counts[s]
-      if (n > 0) result.push({ status: s, text: `${n} ${labels[s]}` })
+      if (n > 0) result.push({ status: s, text: `${n} ${abbrev[s]}` })
     }
   )
   return result
@@ -87,7 +87,7 @@ type OrderCalendarProps = {
 }
 
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
-const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
 
 const formatDate = (d: Date) => {
   const y = d.getFullYear()

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchCustomers, fetchAllBvs, fetchAllObjects } from './lib/dataService'
+import { getObjectDisplayName } from './lib/objectUtils'
 import type { Customer, BV, Object as Obj } from './types'
 
 const matchQuery = (text: string | null, q: string): boolean => {
@@ -68,7 +69,8 @@ const Suche = () => {
       const matchName = matchQuery(c.name, q)
       const matchCity = matchQuery(c.city, q)
       const matchStreet = matchQuery(c.street, q)
-      if (matchName || matchCity || matchStreet) {
+      const matchHouseNumber = matchQuery(c.house_number, q)
+      if (matchName || matchCity || matchStreet || matchHouseNumber) {
         out.push({ type: 'customer', customer: c, customerId: c.id })
       }
     }
@@ -79,7 +81,8 @@ const Suche = () => {
       const matchName = matchQuery(b.name, q)
       const matchCity = matchQuery(b.city, q)
       const matchStreet = matchQuery(b.street, q)
-      if (matchName || matchCity || matchStreet) {
+      const matchHouseNumber = matchQuery(b.house_number, q)
+      if (matchName || matchCity || matchStreet || matchHouseNumber) {
         out.push({ type: 'bv', bv: b, customer: cust, customerId: cust.id, bvId: b.id })
       }
     }
@@ -147,9 +150,14 @@ const Suche = () => {
                     >
                       <span className="text-xs font-medium text-slate-500 uppercase">Kunde</span>
                       <p className="font-medium text-slate-800">{r.customer.name}</p>
-                      {(r.customer.city || r.customer.street) && (
+                      {(r.customer.city || r.customer.street || r.customer.house_number) && (
                         <p className="text-sm text-slate-500">
-                          {[r.customer.street, r.customer.city].filter(Boolean).join(', ')}
+                          {[
+                            [r.customer.street, r.customer.house_number].filter(Boolean).join(' '),
+                            r.customer.city,
+                          ]
+                            .filter(Boolean)
+                            .join(', ')}
                         </p>
                       )}
                     </Link>
@@ -166,6 +174,16 @@ const Suche = () => {
                       <span className="text-xs font-medium text-slate-500 uppercase">BV</span>
                       <p className="font-medium text-slate-800">{r.bv.name}</p>
                       <p className="text-sm text-slate-500">{r.customer.name}</p>
+                      {(r.bv.street || r.bv.house_number || r.bv.city) && (
+                        <p className="text-xs text-slate-400">
+                          {[
+                            [r.bv.street, r.bv.house_number].filter(Boolean).join(' '),
+                            r.bv.city,
+                          ]
+                            .filter(Boolean)
+                            .join(', ')}
+                        </p>
+                      )}
                     </Link>
                   </li>
                 )
@@ -178,7 +196,7 @@ const Suche = () => {
                   >
                     <span className="text-xs font-medium text-slate-500 uppercase">Objekt</span>
                     <p className="font-medium text-slate-800">
-                      {r.object.internal_id || r.object.id}
+                      {getObjectDisplayName(r.object)}
                     </p>
                     <p className="text-sm text-slate-500">
                       {[r.object.room, r.object.floor].filter(Boolean).join(' · ') || r.object.manufacturer || r.bv.name}

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import Logo from './Logo'
 import { useAuth } from './AuthContext'
 import { fetchMyProfile, getProfileDisplayName, type Profile } from './lib/userService'
 import { fetchOrdersAssignedTo, fetchCustomers, fetchAllBvs, fetchMaintenanceReminders } from './lib/dataService'
+import { getObjectDisplayName } from './lib/objectUtils'
 import { subscribeToOrderChanges } from './lib/orderRealtime'
 import type { Order, Customer, BV, OrderType, OrderStatus, MaintenanceReminder } from './types'
 
@@ -41,17 +41,17 @@ const formatDayStatusSummaryLines = (
     const s = o.status ?? 'offen'
     counts[s] = (counts[s] ?? 0) + 1
   })
-  const labels: Record<OrderStatus, string> = {
+  const abbrev: Record<OrderStatus, string> = {
     offen: 'offen',
-    in_bearbeitung: 'in Bearbeitung',
-    erledigt: 'erledigt',
-    storniert: 'storniert',
+    in_bearbeitung: 'i.B.',
+    erledigt: 'erl.',
+    storniert: 'storn.',
   }
   const result: { status: OrderStatus; text: string }[] = []
   ;(['offen', 'in_bearbeitung', 'erledigt', 'storniert'] as OrderStatus[]).forEach(
     (s) => {
       const n = counts[s]
-      if (n > 0) result.push({ status: s, text: `${n} ${labels[s]}` })
+      if (n > 0) result.push({ status: s, text: `${n} ${abbrev[s]}` })
     }
   )
   return result
@@ -134,7 +134,6 @@ const Startseite = () => {
 
   return (
     <div className="p-4">
-      <Logo variant="full" className="mb-6" />
       <h2 className="text-xl font-bold text-slate-800">Dashboard</h2>
       <p className="mt-2 text-slate-600">
         {profile
@@ -192,7 +191,9 @@ const Startseite = () => {
             Wartung fällig / Erinnerungen
           </h3>
           <ul className="space-y-2" aria-label="Wartungserinnerungen">
-            {reminders.map((r) => (
+            {reminders.map((r) => {
+              const objName = getObjectDisplayName(r)
+              return (
               <li key={r.object_id}>
                 <Link
                   to={`/kunden/${r.customer_id}/bvs/${r.bv_id}/objekte?objectId=${r.object_id}`}
@@ -200,7 +201,9 @@ const Startseite = () => {
                 >
                   <p className="font-medium text-slate-800">
                     {r.customer_name} → {r.bv_name}
-                    {r.internal_id && <span className="text-slate-600 font-normal"> · {r.internal_id}</span>}
+                    {objName !== '–' && (
+                      <span className="text-slate-600 font-normal"> · {objName}</span>
+                    )}
                   </p>
                   <p className="text-sm text-slate-600 mt-1">
                     {r.status === 'overdue' ? (
@@ -219,7 +222,7 @@ const Startseite = () => {
                   </p>
                 </Link>
               </li>
-            ))}
+            )})}
           </ul>
         </section>
       )}

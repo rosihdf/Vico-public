@@ -17,6 +17,7 @@ import {
 import { subscribeToOrderChanges } from './lib/orderRealtime'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { fetchProfiles, getProfileDisplayName } from './lib/userService'
+import { getObjectDisplayName } from './lib/objectUtils'
 import { OrderCalendar } from './components/OrderCalendar'
 import type { Order, Customer, BV, Object as Obj, OrderType, OrderStatus } from './types'
 import type { Profile } from './lib/userService'
@@ -448,7 +449,7 @@ const AuftragAnlegen = () => {
                   <option value="">— Keins —</option>
                   {objects.map((obj) => (
                     <option key={obj.id} value={obj.id}>
-                      {obj.internal_id ?? obj.room ?? obj.id.slice(0, 8)}
+                      {getObjectDisplayName(obj)}
                     </option>
                   ))}
                 </select>

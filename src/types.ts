@@ -4,6 +4,7 @@ export type Customer = {
   id: string
   name: string
   street: string | null
+  house_number: string | null
   postal_code: string | null
   city: string | null
   email: string | null
@@ -20,6 +21,7 @@ export type Customer = {
 export type CustomerFormData = {
   name: string
   street: string
+  house_number: string
   postal_code: string
   city: string
   email: string
@@ -36,6 +38,7 @@ export type BV = {
   customer_id: string
   name: string
   street: string | null
+  house_number: string | null
   postal_code: string | null
   city: string | null
   email: string | null
@@ -52,6 +55,7 @@ export type BV = {
 export type BVFormData = {
   name: string
   street: string
+  house_number: string
   postal_code: string
   city: string
   email: string

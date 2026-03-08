@@ -185,7 +185,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     supabase.auth
       .getSession()
-      .then(({ data: { session } }) => initSupabaseAuth(session))
+      .then(async ({ data: { session } }) => {
+        await initSupabaseAuth(session)
+      })
       .catch(() => {
         setUser(null)
         setUserRole(null)

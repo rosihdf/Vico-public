@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { getObjectDisplayName } from './lib/objectUtils'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import {
   fetchCustomer,
@@ -55,6 +56,7 @@ const Objekte = () => {
   const { userRole } = useAuth()
   const { isEnabled } = useComponentSettings()
   const canEdit = userRole !== 'leser'
+  const canDelete = userRole === 'admin'
   const [searchParams, setSearchParams] = useSearchParams()
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [bv, setBv] = useState<BV | null>(null)
@@ -374,7 +376,7 @@ const Objekte = () => {
           {filteredObjects.map((obj) => (
             <li key={obj.id} className="bg-white rounded-lg border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <p className="font-medium text-slate-800">{obj.internal_id || '–'}</p>
+                <p className="font-medium text-slate-800">{getObjectDisplayName(obj)}</p>
                 <p className="text-sm text-slate-500">
                   {[obj.room, obj.floor].filter(Boolean).join(' · ') || obj.manufacturer || '–'}
                 </p>
@@ -403,18 +405,20 @@ const Objekte = () => {
                       type="button"
                       onClick={() => handleOpenEdit(obj)}
                       className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50"
-                      aria-label={`Objekt ${obj.internal_id || obj.id} bearbeiten`}
+                      aria-label={`Objekt ${getObjectDisplayName(obj)} bearbeiten`}
                     >
                       Bearbeiten
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(obj.id)}
-                      className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
-                      aria-label={`Objekt ${obj.internal_id || obj.id} löschen`}
-                    >
-                      Löschen
-                    </button>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(obj.id)}
+                        className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                        aria-label={`Objekt ${getObjectDisplayName(obj)} löschen`}
+                      >
+                        Löschen
+                      </button>
+                    )}
                   </>
                 )}
               </div>

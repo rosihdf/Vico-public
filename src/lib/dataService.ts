@@ -184,6 +184,31 @@ export const fetchMaintenanceReminders = async (): Promise<MaintenanceReminder[]
   return reminders
 }
 
+export type AuditLogEntry = {
+  id: string
+  user_id: string | null
+  user_email: string | null
+  action: string
+  table_name: string
+  record_id: string | null
+  created_at: string
+}
+
+export const fetchAuditLog = async (limit = 200): Promise<AuditLogEntry[]> => {
+  if (!isOnline()) return []
+  const { data, error } = await supabase.rpc('get_audit_log', { limit_rows: limit })
+  if (error || !Array.isArray(data)) return []
+  return data.map((row: Record<string, unknown>) => ({
+    id: row.id as string,
+    user_id: (row.user_id as string) ?? null,
+    user_email: (row.user_email as string) ?? null,
+    action: (row.action as string) ?? '',
+    table_name: (row.table_name as string) ?? '',
+    record_id: (row.record_id as string) ?? null,
+    created_at: row.created_at ? new Date(row.created_at as string).toISOString() : '',
+  }))
+}
+
 type CustomerPayload = Omit<Customer, 'id' | 'created_at' | 'updated_at'> & {
   updated_at?: string
 }

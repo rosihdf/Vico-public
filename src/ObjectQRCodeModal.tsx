@@ -4,6 +4,7 @@ import WebBluetoothReceiptPrinter from '@point-of-sale/webbluetooth-receipt-prin
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder'
 const LOGO_SRC = '/logo_vico.png'
 import type { Object as Obj } from './types'
+import { getObjectDisplayName } from './lib/objectUtils'
 
 type ObjectQRCodeModalProps = {
   object: Obj
@@ -35,8 +36,8 @@ const ObjectQRCodeModal = ({
   const [btMessage, setBtMessage] = useState<string>('')
 
   const url = getObjectUrl(customerId, bvId, object.id)
-  const internalId = object.internal_id || object.id.slice(0, 8)
-  const roomInfo = object.room ? ` · ${object.room}` : ''
+  const displayName = getObjectDisplayName(object)
+  const roomInfo = object.internal_id?.trim() && object.room ? ` · ${object.room}` : ''
 
   const handlePrint = () => {
     window.print()
@@ -67,11 +68,11 @@ const ObjectQRCodeModal = ({
           .newline()
           .line(customerName)
           .line(bvName)
-          .line(`ID: ${internalId}${roomInfo}`)
+          .line(`ID: ${displayName}${roomInfo}`)
           .newline()
           .qrcode(url, { size: 6, model: 2, errorlevel: 'm' })
           .newline()
-          .line(internalId)
+          .line(displayName)
           .newline(2)
           .encode()
         printer.print(data).then(() => {
@@ -96,7 +97,7 @@ const ObjectQRCodeModal = ({
       setBtStatus('error')
       setBtMessage('Verbindung abgebrochen oder fehlgeschlagen.')
     })
-  }, [url, customerName, bvName, internalId, roomInfo])
+  }, [url, customerName, bvName, displayName, roomInfo])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
@@ -127,7 +128,7 @@ const ObjectQRCodeModal = ({
         <div className="p-4 flex flex-col items-center">
           <h3 className="text-lg font-bold text-slate-800 mb-2">QR-Code</h3>
           <p className="text-sm text-slate-600 mb-3 truncate w-full text-center">
-            {internalId}
+            {displayName}
           </p>
           <div
             ref={printRef}
@@ -145,7 +146,7 @@ const ObjectQRCodeModal = ({
               aria-hidden
             />
             <p className="mt-3 text-sm font-medium text-slate-800">
-              {internalId}
+              {displayName}
             </p>
             <p className="text-xs text-slate-500">
               {customerName} · {bvName}

@@ -21,6 +21,7 @@ import {
 import SignatureField from './SignatureField'
 import { useAuth } from './AuthContext'
 import { generateMaintenancePdf } from './lib/generateMaintenancePdf'
+import { getObjectDisplayName } from './lib/objectUtils'
 import type {
   Object as Obj,
   Customer,
@@ -278,7 +279,7 @@ const Wartungsprotokolle = () => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `Wartungsprotokoll_${r.maintenance_date}_${object.internal_id || r.id}.pdf`
+    a.download = `Wartungsprotokoll_${r.maintenance_date}_${getObjectDisplayName(object)}.pdf`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -318,8 +319,8 @@ const Wartungsprotokolle = () => {
         alert('PDF konnte nicht hochgeladen werden.')
         return
       }
-      const filename = `Wartungsprotokoll_${r.maintenance_date}_${object.internal_id || r.id}.pdf`
-      const subject = `Wartungsprotokoll ${object.internal_id ?? 'Objekt'} – ${r.maintenance_date}`
+      const filename = `Wartungsprotokoll_${r.maintenance_date}_${getObjectDisplayName(object)}.pdf`
+      const subject = `Wartungsprotokoll ${getObjectDisplayName(object)} – ${r.maintenance_date}`
       const { error: sendError } = await sendMaintenanceReportEmail(path, recipient, subject, filename)
       if (sendError) {
         alert(`E-Mail konnte nicht gesendet werden: ${sendError.message}`)
@@ -369,7 +370,7 @@ const Wartungsprotokolle = () => {
         </Link>
         <span>/</span>
         <span className="font-medium text-slate-800">
-          Wartung {object ? `· ${object.internal_id ?? 'Objekt'}` : ''}
+          Wartung {object ? `· ${getObjectDisplayName(object)}` : ''}
         </span>
       </div>
 

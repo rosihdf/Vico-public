@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf'
 import { getMaintenancePhotoUrl } from './dataService'
+import { getObjectDisplayName } from './objectUtils'
 import type {
   MaintenanceReport,
   Customer,
@@ -93,11 +94,16 @@ export const generateMaintenancePdf = async (
   if (bv.name && bv.name !== customer.name) {
     addText(`Betreuungsverantwortlich: ${bv.name}`, { fontSize: 10 })
   }
-  const addr = [bv.street, [bv.postal_code, bv.city].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+  const addr = [
+    [bv.street, bv.house_number].filter(Boolean).join(' '),
+    [bv.postal_code, bv.city].filter(Boolean).join(' '),
+  ]
+    .filter(Boolean)
+    .join(', ')
   if (addr) addText(addr, { fontSize: 9 })
   y += 4
 
-  addText(`Objekt: ${object.internal_id ?? '–'}`, { fontSize: 10, fontStyle: 'bold' })
+  addText(`Objekt: ${getObjectDisplayName(object)}`, { fontSize: 10, fontStyle: 'bold' })
   if (object.door_position) addText(`Türposition: ${object.door_position}`)
   if (object.room) addText(`Raum: ${object.room}`)
   y += 4

@@ -16,6 +16,7 @@ const Wartungsprotokolle = lazy(() => import('./Wartungsprotokolle'))
 const Suche = lazy(() => import('./Suche'))
 const Einstellungen = lazy(() => import('./Einstellungen'))
 const Benutzerverwaltung = lazy(() => import('./Benutzerverwaltung'))
+const Historie = lazy(() => import('./Historie'))
 const Scan = lazy(() => import('./Scan'))
 const AuftragAnlegen = lazy(() => import('./AuftragAnlegen'))
 const Login = lazy(() => import('./Login'))
@@ -38,19 +39,20 @@ const App = () => {
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Layout />}>
-                <Route index element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="dashboard"><Startseite /></ComponentGuard></Suspense>} />
+                <Route index element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="dashboard"><ProtectedRoute><Startseite /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><Kunden /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden/:customerId/bvs" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><BVs /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden/:customerId/bvs/:bvId/objekte" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><Objekte /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden/:customerId/bvs/:bvId/objekte/:objectId/wartung" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="wartungsprotokolle"><ProtectedRoute><Wartungsprotokolle /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="suche" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="suche"><ProtectedRoute><Suche /></ProtectedRoute></ComponentGuard></Suspense>} />
-                <Route path="einstellungen" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="einstellungen"><Einstellungen /></ComponentGuard></Suspense>} />
+                <Route path="einstellungen" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="einstellungen"><ProtectedRoute><Einstellungen /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="benutzerverwaltung" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="benutzerverwaltung"><ProtectedRoute><Benutzerverwaltung /></ProtectedRoute></ComponentGuard></Suspense>} />
-                <Route path="scan" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="scan"><Scan /></ComponentGuard></Suspense>} />
+                <Route path="historie" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><Historie /></ProtectedRoute></Suspense>} />
+                <Route path="scan" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="scan"><ProtectedRoute><Scan /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="auftrag" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="auftrag"><ProtectedRoute><AuftragAnlegen /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="login" element={<Suspense fallback={<PageFallback />}><Login /></Suspense>} />
                 <Route path="reset-password" element={<Suspense fallback={<PageFallback />}><ResetPassword /></Suspense>} />
-                <Route path="profil" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="profil"><Profil /></ComponentGuard></Suspense>} />
+                <Route path="profil" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="profil"><ProtectedRoute><Profil /></ProtectedRoute></ComponentGuard></Suspense>} />
               </Route>
             </Routes>
         </BrowserRouter>
