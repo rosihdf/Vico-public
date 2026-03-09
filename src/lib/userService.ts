@@ -1,14 +1,21 @@
 import { supabase } from '../supabase'
 
+export type ProfileRole = 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
+
 export type Profile = {
   id: string
   email: string | null
   first_name: string | null
   last_name: string | null
-  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
+  role: ProfileRole
   created_at?: string
   updated_at?: string
 }
+
+const VALID_ROLES: ProfileRole[] = ['admin', 'mitarbeiter', 'operator', 'leser', 'demo', 'kunde']
+
+export const parseRole = (role: string): ProfileRole =>
+  (VALID_ROLES.includes(role as ProfileRole) ? role : 'mitarbeiter') as ProfileRole
 
 export const getProfileDisplayName = (p: Profile): string => {
   if (p.first_name || p.last_name) {
@@ -45,7 +52,7 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
       email: row.email,
       first_name: row.first_name ?? null,
       last_name: row.last_name ?? null,
-      role: (row.role === 'admin' ? 'admin' : row.role === 'leser' ? 'leser' : row.role === 'operator' ? 'operator' : row.role === 'demo' ? 'demo' : 'mitarbeiter') as Profile['role'],
+      role: parseRole(row.role ?? ''),
     }))
   }
   const { data, error } = await supabase

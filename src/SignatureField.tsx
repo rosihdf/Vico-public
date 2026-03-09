@@ -10,7 +10,7 @@ type SignatureFieldProps = {
   onPrintedNameChange?: (name: string) => void
 }
 
-const SignatureField = ({ label, value, onChange, disabled, printedName, onPrintedNameChange }: SignatureFieldProps) => {
+const SignatureField = ({ label, value: _value, onChange, disabled, printedName, onPrintedNameChange }: SignatureFieldProps) => {
   const padRef = useRef<SignatureCanvas>(null)
 
   const handleClear = useCallback(() => {

@@ -21,6 +21,8 @@ import { fetchProfiles, getProfileDisplayName } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
 import { OrderCalendar } from './components/OrderCalendar'
 import { LoadingSpinner } from './components/LoadingSpinner'
+import ConfirmDialog from './components/ConfirmDialog'
+import EmptyState from './components/EmptyState'
 import type { Order, Customer, BV, Object as Obj, OrderType, OrderStatus } from './types'
 import type { Profile } from './lib/userService'
 
@@ -63,11 +65,18 @@ const AuftragAnlegen = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
+  const [archiveMode, setArchiveMode] = useState<'active' | 'archive'>('active')
   const [calendarMonth, setCalendarMonth] = useState(() => new Date())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [formData, setFormData] = useState(INITIAL_FORM)
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  }>({ open: false, title: '', message: '', onConfirm: () => {} })
 
   const loadData = useCallback(async () => {
     setIsLoading(true)
@@ -133,7 +142,7 @@ const AuftragAnlegen = () => {
 
   const getCustomerName = (id: string) => customers.find((c) => c.id === id)?.name ?? '-'
   const getBvName = (id: string) => allBvs.find((b) => b.id === id)?.name ?? '-'
-  const profilesAssignable = profiles.filter((p) => p.role !== 'demo')
+  const profilesAssignable = profiles.filter((p) => p.role !== 'demo' && p.role !== 'kunde')
   const getProfileLabel = (id: string | null) => {
     if (!id) return '-'
     const p = profiles.find((p) => p.id === id)
@@ -221,18 +230,23 @@ const AuftragAnlegen = () => {
   }
 
   const handleDelete = async (order: Order) => {
-    if (!window.confirm(`Auftrag am ${order.order_date} wirklich löschen?`)) return
     const { error } = await deleteOrder(order.id)
     if (error) showError(getSupabaseErrorMessage(error))
     else loadData()
   }
 
-  const displayOrders =
+  const statusFilter = archiveMode === 'active'
+    ? (o: Order) => o.status === 'offen' || o.status === 'in_bearbeitung'
+    : (o: Order) => o.status === 'erledigt' || o.status === 'storniert'
+
+  const filteredByRole =
     userRole === 'admin' || userRole === 'leser'
       ? orders
       : user
         ? orders.filter((o) => o.assigned_to === user.id)
         : []
+
+  const displayOrders = filteredByRole.filter(statusFilter)
   const ordersWithNames = displayOrders.map((o) => ({
     ...o,
     customerName: getCustomerName(o.customer_id),
@@ -252,7 +266,23 @@ const AuftragAnlegen = () => {
     <div className="p-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <h2 className="text-xl font-bold text-slate-800">Aufträge</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <div className="flex rounded-lg border border-slate-300 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setArchiveMode('active')}
+              className={`px-3 py-2 text-sm font-medium ${archiveMode === 'active' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              Aktive
+            </button>
+            <button
+              type="button"
+              onClick={() => setArchiveMode('archive')}
+              className={`px-3 py-2 text-sm font-medium ${archiveMode === 'archive' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              Archiv
+            </button>
+          </div>
           <div className="flex rounded-lg border border-slate-300 overflow-hidden">
             <button
               type="button"
@@ -269,7 +299,7 @@ const AuftragAnlegen = () => {
               Kalender
             </button>
           </div>
-          {canEdit && (
+          {canEdit && archiveMode === 'active' && (
             <button
               type="button"
               onClick={handleOpenCreate}
@@ -298,9 +328,11 @@ const AuftragAnlegen = () => {
       {viewMode === 'list' && (isLoading ? (
         <LoadingSpinner message="Lade Aufträge…" className="py-8" />
       ) : displayOrders.length === 0 ? (
-        <div className="p-6 bg-white rounded-xl border border-slate-200 text-center text-slate-600">
-          Noch keine Aufträge. Klicke auf „Auftrag anlegen“.
-        </div>
+        <EmptyState
+          title={archiveMode === 'archive' ? 'Keine archivierten Aufträge.' : 'Noch keine Aufträge.'}
+          description={archiveMode === 'active' ? 'Klicke auf „Auftrag anlegen“, um zu starten.' : 'Erledigte und stornierte Aufträge erscheinen hier.'}
+          className="py-8"
+        />
       ) : (
         <ul className="space-y-2">
           {ordersWithNames.map((o) => (
@@ -330,7 +362,7 @@ const AuftragAnlegen = () => {
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                {canAssign && (
+                {canAssign && archiveMode === 'active' && (
                   <select
                     value={profilesAssignable.some((p) => p.id === o.assigned_to) ? o.assigned_to ?? '' : ''}
                     onChange={(e) => handleAssignmentChange(o, e.target.value)}
@@ -347,7 +379,7 @@ const AuftragAnlegen = () => {
                     ))}
                   </select>
                 )}
-                {canEdit && (
+                {canEdit && archiveMode === 'active' && (
                   <>
                     <input
                       type="date"
@@ -368,14 +400,26 @@ const AuftragAnlegen = () => {
                         </option>
                       ))}
                     </select>
-                    <button
+                  </>
+                )}
+                {canEdit && (
+                  <button
                       type="button"
-                      onClick={() => handleDelete(o)}
+                      onClick={() =>
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Auftrag löschen',
+                          message: `Auftrag am ${o.order_date} wirklich löschen?`,
+                          onConfirm: () => {
+                            setConfirmDialog((c) => ({ ...c, open: false }))
+                            handleDelete(o)
+                          },
+                        })
+                      }
                       className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
                     >
                       Löschen
                     </button>
-                  </>
                 )}
                 <Link
                   to={o.object_id ? `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}&objectId=${o.object_id}` : `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}`}
@@ -388,6 +432,16 @@ const AuftragAnlegen = () => {
           ))}
         </ul>
       ))}
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel="Löschen"
+        variant="danger"
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog((c) => ({ ...c, open: false }))}
+      />
 
       {showForm && (
         <div

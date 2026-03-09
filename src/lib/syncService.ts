@@ -187,7 +187,7 @@ const processObjectPhotoOutbox = async (): Promise<SyncResult> => {
         .from(OBJECT_PHOTOS_BUCKET)
         .upload(path, blob, { upsert: false })
       if (uploadError) throw new Error(uploadError.message)
-      const { data: photo, error } = await supabase
+      const { error } = await supabase
         .from('object_photos')
         .insert({
           object_id: item.object_id,

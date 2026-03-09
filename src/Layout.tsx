@@ -79,6 +79,12 @@ const Layout = () => {
 
   return (
     <div className="min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))]">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-white focus:dark:bg-slate-800 focus:rounded-lg focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+      >
+        Zum Inhalt springen
+      </a>
       <UpdateBanner />
       {license?.expired && userRole === 'admin' && (
         <div
@@ -188,7 +194,7 @@ const Layout = () => {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-900">
+      <main id="main-content" className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-900" tabIndex={-1}>
         <Outlet />
       </main>
 

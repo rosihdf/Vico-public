@@ -56,7 +56,7 @@ export const fetchComponentSettings = async (): Promise<Record<string, boolean>>
 export const fetchComponentSettingsFull = async (): Promise<ComponentSetting[]> => {
   if (!isOnline()) {
     const cached = getCachedComponentSettings()
-    return DEFAULT_SETTINGS_META.map((m, i) => ({
+    return DEFAULT_SETTINGS_META.map((m) => ({
       id: `cached-${m.component_key}`,
       component_key: m.component_key,
       label: m.label,

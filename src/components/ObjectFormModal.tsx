@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useToast } from '../ToastContext'
+import ConfirmDialog from './ConfirmDialog'
 import { getSupabaseErrorMessage } from '../supabaseErrors'
 import {
   createObject,
@@ -111,6 +112,10 @@ const ObjectFormModal = ({
   const [objectPhotos, setObjectPhotos] = useState<ObjectPhoto[]>([])
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [expandedPhoto, setExpandedPhoto] = useState<ObjectPhoto | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    photo: ObjectPhoto | null
+  }>({ open: false, photo: null })
   const editingId = object?.id ?? null
 
   useEffect(() => {
@@ -221,7 +226,6 @@ const ObjectFormModal = ({
   }
 
   const handlePhotoDelete = async (photo: ObjectPhoto) => {
-    if (!window.confirm('Foto wirklich löschen?')) return
     const { error } = await deleteObjectPhoto(photo.id, photo.storage_path)
     if (error) {
       showError(getSupabaseErrorMessage(error))
@@ -505,6 +509,7 @@ const ObjectFormModal = ({
                         >
                           <img
                             src={getObjectPhotoDisplayUrl(p)}
+                            loading="lazy"
                             alt={p.caption || 'Objekt-Foto'}
                             className="w-full h-full object-cover"
                           />
@@ -512,7 +517,9 @@ const ObjectFormModal = ({
                         {canDelete && (
                           <button
                             type="button"
-                            onClick={() => handlePhotoDelete(p)}
+                            onClick={() =>
+                              setConfirmDialog({ open: true, photo: p })
+                            }
                             className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                             aria-label="Foto löschen"
                           >
@@ -546,6 +553,21 @@ const ObjectFormModal = ({
           </form>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Foto löschen"
+        message="Foto wirklich löschen?"
+        confirmLabel="Löschen"
+        variant="danger"
+        onConfirm={() => {
+          if (confirmDialog.photo) {
+            handlePhotoDelete(confirmDialog.photo)
+            setConfirmDialog({ open: false, photo: null })
+          }
+        }}
+        onCancel={() => setConfirmDialog({ open: false, photo: null })}
+      />
 
       {expandedPhoto && (
         <div

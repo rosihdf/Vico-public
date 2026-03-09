@@ -1,5 +1,5 @@
-export const getSupabaseErrorMessage = (error: { message: string; code?: string }): string => {
-  const msg = error.message?.toLowerCase() ?? ''
+export const getSupabaseErrorMessage = (error: unknown): string => {
+  const msg = (error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String((error as { message?: unknown }).message) : String(error))?.toLowerCase() ?? ''
   if (msg.includes('invalid api key') || msg.includes('api key')) {
     return 'Ungültiger API-Key. Bitte prüfen: 1) Projekt im Supabase-Dashboard → könnte pausiert sein („Restore“ klicken), 2) Anon-Key unter Project Settings → API kopieren, 3) .env aktualisieren und Dev-Server neu starten.'
   }
@@ -18,5 +18,5 @@ export const getSupabaseErrorMessage = (error: { message: string; code?: string 
   if (msg.includes('invalid login credentials') || msg.includes('email not confirmed')) {
     return 'Ungültige Anmeldedaten oder E-Mail noch nicht bestätigt. Bei E-Mail-Bestätigung: Posteingang prüfen. Passwort vergessen? → Link unten nutzen.'
   }
-  return error.message
+  return error instanceof Error ? error.message : typeof error === 'object' && error && 'message' in error ? String((error as { message?: unknown }).message) : String(error)
 }

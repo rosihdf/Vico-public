@@ -372,20 +372,28 @@ create policy "Mitarbeiter/Admin can insert orders" on public.orders for insert 
 create policy "Mitarbeiter/Admin can update orders" on public.orders for update using (auth.uid() is not null and public.can_write_master_data());
 create policy "Mitarbeiter/Admin can delete orders" on public.orders for delete using (auth.uid() is not null and public.can_write_master_data());
 
--- Demo-Benutzer dürfen keinen Aufträgen zugewiesen werden
-create or replace function public.check_order_assigned_to_not_demo()
+-- Demo- und Portal-Benutzer dürfen keinen Aufträgen zugewiesen werden
+drop function if exists public.check_order_assigned_to_not_demo() cascade;
+create or replace function public.check_order_assigned_to_valid_role()
 returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  target_role text;
 begin
-  if new.assigned_to is not null and exists (select 1 from public.profiles where id = new.assigned_to and role = 'demo') then
+  if new.assigned_to is null then return new; end if;
+  select role into target_role from public.profiles where id = new.assigned_to limit 1;
+  if target_role = 'demo' then
     raise exception 'Demo-Benutzer können keinen Aufträgen zugewiesen werden.';
+  end if;
+  if target_role = 'kunde' then
+    raise exception 'Portal-Benutzer können keinen Aufträgen zugewiesen werden.';
   end if;
   return new;
 end;
 $$;
 drop trigger if exists check_order_assigned_to_not_demo on public.orders;
-create trigger check_order_assigned_to_not_demo
+create trigger check_order_assigned_to_valid_role
   before insert or update of assigned_to on public.orders
-  for each row execute function public.check_order_assigned_to_not_demo();
+  for each row execute function public.check_order_assigned_to_valid_role();
 
 create table if not exists public.component_settings (
   id uuid default gen_random_uuid() primary key,

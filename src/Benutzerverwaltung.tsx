@@ -5,6 +5,7 @@ import { getSupabaseErrorMessage } from './supabaseErrors'
 import { supabase } from './supabase'
 import { fetchProfiles, updateProfileRole, updateProfileName, getProfileDisplayName } from './lib/userService'
 import { LoadingSpinner } from './components/LoadingSpinner'
+import PortalBadge from './components/PortalBadge'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { useLicense } from './LicenseContext'
 import { checkCanInviteUser } from './lib/licenseService'
@@ -19,10 +20,15 @@ const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo
   kunde: 'Kunde (Portal)',
 }
 
+const APP_ROLES = ['admin', 'mitarbeiter', 'operator', 'leser', 'demo'] as const
+const PORTAL_ROLES = ['kunde'] as const
+
+const isAppUser = (p: Profile) => APP_ROLES.includes(p.role as (typeof APP_ROLES)[number])
+
 const Benutzerverwaltung = () => {
   const navigate = useNavigate()
   const { userRole, signUp, logout } = useAuth()
-  const { license } = useLicense()
+  useLicense()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -204,53 +210,94 @@ const Benutzerverwaltung = () => {
               {formError}
             </p>
           )}
-          <ul className="mt-4 space-y-2" aria-label="Benutzerliste">
-          {profiles.map((p) => (
-            <li
-              key={p.id}
-              className="flex flex-wrap items-center justify-between gap-2 p-3 bg-white rounded-lg border border-slate-200"
-            >
-                <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-slate-800">
-                    {getProfileDisplayName(p)}
-                    {(p.first_name || p.last_name) && p.email && (
-                      <span className="text-slate-400 font-normal"> ({p.email})</span>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditName(p)}
-                    className="text-xs text-vico-primary hover:underline"
-                    aria-label="Name bearbeiten"
+
+          {(() => {
+            const appProfiles = profiles.filter(isAppUser)
+            const portalProfiles = profiles.filter((p) => !isAppUser(p))
+
+            const renderUserList = (
+              list: Profile[],
+              availableRoles: readonly string[],
+              canChangeRole: boolean
+            ) => (
+              <ul className="space-y-2" aria-label="Benutzerliste">
+                {list.map((p) => (
+                  <li
+                    key={p.id}
+                    className="flex flex-wrap items-center justify-between gap-2 p-3 bg-white rounded-lg border border-slate-200"
                   >
-                    bearbeiten
-                  </button>
-                </div>
-                {(p.first_name || p.last_name) && p.email && (
-                  <span className="text-sm text-slate-500">{p.email}</span>
-                )}
-                <span className="ml-2 text-sm text-slate-500">
-                  {ROLE_LABELS[p.role]}
-                </span>
-              </div>
-              <select
-                value={p.role}
-                onChange={(e) => handleRoleChange(p, e.target.value as 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde')}
-                disabled={updatingId === p.id || isLastAdmin(p)}
-                className="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 bg-white disabled:opacity-50 min-w-[140px]"
-                aria-label={`Rolle von ${getProfileDisplayName(p)} ändern`}
-                title={isLastAdmin(p) ? 'Letzter Admin – Rolle kann nicht geändert werden' : 'Rolle'}
-              >
-                {(Object.entries(ROLE_LABELS) as [keyof typeof ROLE_LABELS, string][]).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-slate-800">
+                          {getProfileDisplayName(p)}
+                          {(p.first_name || p.last_name) && p.email && (
+                            <span className="text-slate-400 font-normal"> ({p.email})</span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditName(p)}
+                          className="text-xs text-vico-primary hover:underline"
+                          aria-label="Name bearbeiten"
+                        >
+                          bearbeiten
+                        </button>
+                      </div>
+                      <span className="ml-2 text-sm text-slate-500 flex items-center gap-1.5">
+                        {ROLE_LABELS[p.role]}
+                        {!isAppUser(p) && <PortalBadge />}
+                      </span>
+                    </div>
+                    {canChangeRole ? (
+                      <select
+                        value={p.role}
+                        onChange={(e) => handleRoleChange(p, e.target.value as 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde')}
+                        disabled={updatingId === p.id || isLastAdmin(p)}
+                        className="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 bg-white disabled:opacity-50 min-w-[140px]"
+                        aria-label={`Rolle von ${getProfileDisplayName(p)} ändern`}
+                        title={isLastAdmin(p) ? 'Letzter Admin – Rolle kann nicht geändert werden' : 'Rolle'}
+                      >
+                        {(Object.entries(ROLE_LABELS) as [keyof typeof ROLE_LABELS, string][])
+                          .filter(([value]) => availableRoles.includes(value))
+                          .map(([value, label]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                      </select>
+                    ) : (
+                      <span className="px-3 py-1.5 text-sm text-slate-600 min-w-[140px]">
+                        {ROLE_LABELS[p.role]}
+                      </span>
+                    )}
+                  </li>
                 ))}
-              </select>
-            </li>
-          ))}
-        </ul>
+              </ul>
+            )
+
+            return (
+              <div className="mt-4 space-y-6">
+                <section>
+                  <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                    App-Benutzer ({appProfiles.length})
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-2">
+                    Zugriff auf die Vico Web-App (Admin, Mitarbeiter, Operator, Leser, Demo)
+                  </p>
+                  {renderUserList(appProfiles, APP_ROLES, true)}
+                </section>
+                <section>
+                  <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                    Portal-Benutzer ({portalProfiles.length})
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-2">
+                    Zugriff auf das Kundenportal (Wartungsberichte). Rollen werden über die Kundenverwaltung gesetzt.
+                  </p>
+                  {renderUserList(portalProfiles, PORTAL_ROLES, false)}
+                </section>
+              </div>
+            )
+          })()}
         </>
       )}
 

@@ -3,18 +3,9 @@ import { Link } from 'react-router-dom'
 import { requestMagicLink } from '../lib/portalService'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../ThemeContext'
-import type { Theme } from '../ThemeContext'
-
-const THEME_ORDER: Theme[] = ['light', 'dark', 'system']
 
 const Login = () => {
-  const { theme, setTheme, resolvedTheme } = useTheme()
-
-  const handleThemeCycle = () => {
-    const idx = THEME_ORDER.indexOf(theme)
-    const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length]
-    setTheme(next)
-  }
+  const { resolvedTheme, cycleTheme } = useTheme()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [mode, setMode] = useState<'magic' | 'password'>('magic')
@@ -271,9 +262,9 @@ const Login = () => {
         <div className="flex items-center justify-center gap-2 text-xs text-slate-400 dark:text-slate-500 mt-6">
           <button
             type="button"
-            onClick={handleThemeCycle}
+            onClick={cycleTheme}
             className="hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-            aria-label={`Darstellung wechseln (aktuell: ${theme})`}
+            aria-label="Darstellung wechseln"
           >
             {resolvedTheme === 'dark' ? '☀️' : '🌙'}
           </button>

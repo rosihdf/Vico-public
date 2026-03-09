@@ -29,7 +29,7 @@ class ErrorBoundary extends Component<Props, State> {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-vico-button text-slate-800 dark:text-slate-200 rounded-lg hover:bg-vico-button-hover border border-slate-300 dark:border-slate-600"
+              className="px-4 py-2 bg-vico-primary text-white rounded-lg hover:bg-vico-primary-hover"
             >
               Seite neu laden
             </button>

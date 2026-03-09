@@ -35,10 +35,16 @@ const applyThemeToDom = (resolved: 'light' | 'dark') => {
   }
 }
 
+const THEME_ORDER: Theme[] = ['light', 'dark', 'system']
+
+const getNextTheme = (current: Theme): Theme =>
+  THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length]
+
 type ThemeContextValue = {
   theme: Theme
   resolvedTheme: 'light' | 'dark'
   setTheme: (theme: Theme) => void
+  cycleTheme: () => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -61,6 +67,10 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     applyThemeToDom(resolved)
   }, [])
 
+  const cycleTheme = useCallback(() => {
+    setTheme(getNextTheme(theme))
+  }, [theme, setTheme])
+
   useEffect(() => {
     const resolved = getResolvedTheme(theme)
     setResolvedTheme(resolved)
@@ -76,7 +86,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   }, [theme])
 
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, cycleTheme }}>
       {children}
     </ThemeContext.Provider>
   )

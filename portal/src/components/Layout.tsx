@@ -19,17 +19,9 @@ const navLinkClass = (active: boolean) =>
     active ? 'bg-white/25 font-medium' : 'hover:bg-white/15'
   }`
 
-const THEME_ORDER: Theme[] = ['light', 'dark', 'system']
-
 const Layout = ({ user, onLogout }: LayoutProps) => {
   const location = useLocation()
-  const { theme, setTheme, resolvedTheme } = useTheme()
-
-  const handleThemeCycle = () => {
-    const idx = THEME_ORDER.indexOf(theme)
-    const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length]
-    setTheme(next)
-  }
+  const { theme, resolvedTheme, cycleTheme } = useTheme()
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
@@ -65,7 +57,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={handleThemeCycle}
+              onClick={cycleTheme}
               className="p-1.5 rounded-lg hover:bg-white/15 transition-colors"
               aria-label={`Darstellung: ${THEME_LABELS[theme]}`}
               title={`Darstellung (${THEME_LABELS[theme]}). Klicken zum Wechseln.`}

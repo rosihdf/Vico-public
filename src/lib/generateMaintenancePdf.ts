@@ -78,7 +78,6 @@ export const generateMaintenancePdf = async (
   const margin = 15
   let y = margin
   const lineH = 6
-  const smallLineH = 5
 
   const addText = (text: string, opts?: { fontSize?: number; fontStyle?: string }) => {
     doc.setFontSize(opts?.fontSize ?? 10)

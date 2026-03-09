@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { fetchPortalUsers, invitePortalUser, deletePortalUser } from '../lib/dataService'
 import type { PortalUser } from '../lib/dataService'
 import { useToast } from '../ToastContext'
+import ConfirmDialog from './ConfirmDialog'
 
 type PortalInviteSectionProps = {
   customerId: string
@@ -15,6 +16,12 @@ const PortalInviteSection = ({ customerId, customerName }: PortalInviteSectionPr
   const [email, setEmail] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  }>({ open: false, title: '', message: '', onConfirm: () => {} })
 
   const loadPortalUsers = useCallback(async () => {
     setIsLoading(true)
@@ -43,7 +50,6 @@ const PortalInviteSection = ({ customerId, customerName }: PortalInviteSectionPr
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Portal-Zugang wirklich entfernen?')) return
     const { error } = await deletePortalUser(id)
     if (error) {
       showError(error.message)
@@ -130,7 +136,17 @@ const PortalInviteSection = ({ customerId, customerName }: PortalInviteSectionPr
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleDelete(pu.id)}
+                    onClick={() =>
+                      setConfirmDialog({
+                        open: true,
+                        title: 'Portal-Zugang entfernen',
+                        message: 'Portal-Zugang wirklich entfernen?',
+                        onConfirm: () => {
+                          setConfirmDialog((c) => ({ ...c, open: false }))
+                          handleDelete(pu.id)
+                        },
+                      })
+                    }
                     className="shrink-0 px-2 py-1 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50"
                     aria-label={`${pu.email} entfernen`}
                   >
@@ -142,6 +158,16 @@ const PortalInviteSection = ({ customerId, customerName }: PortalInviteSectionPr
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel="Entfernen"
+        variant="danger"
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog((c) => ({ ...c, open: false }))}
+      />
     </div>
   )
 }

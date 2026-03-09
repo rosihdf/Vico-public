@@ -6,6 +6,15 @@ import Login from './pages/Login'
 import Lizenz from './pages/Lizenz'
 import Layout from './components/Layout'
 
+const AUTH_TIMEOUT_MS = 12000
+const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
+  Promise.race([
+    p,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Zeitüberschreitung')), AUTH_TIMEOUT_MS)
+    ),
+  ])
+
 const App = () => {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -19,14 +28,6 @@ const App = () => {
   }, [])
 
   const initAuth = useCallback(async () => {
-    const timeoutMs = 12000
-    const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
-      Promise.race([
-        p,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Zeitüberschreitung')), timeoutMs)
-        ),
-      ])
     try {
       const { data: { session } } = await withTimeout(supabase.auth.getSession())
       const u = session?.user ?? null
@@ -55,14 +56,6 @@ const App = () => {
   useEffect(() => {
     initAuth()
 
-    const timeoutMs = 12000
-    const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
-      Promise.race([
-        p,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Zeitüberschreitung')), timeoutMs)
-        ),
-      ])
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         const u = session?.user ?? null

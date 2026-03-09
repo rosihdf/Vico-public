@@ -22,6 +22,9 @@ import {
 import SignatureField from './SignatureField'
 import { useAuth } from './AuthContext'
 import { LoadingSpinner } from './components/LoadingSpinner'
+import ConfirmDialog from './components/ConfirmDialog'
+import EmptyState from './components/EmptyState'
+import { fetchMyProfile, getProfileDisplayName } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
 import type {
   Object as Obj,
@@ -98,6 +101,10 @@ const Wartungsprotokolle = () => {
   const [isSaving, setIsSaving] = useState(false)
   const [sendingEmailFor, setSendingEmailFor] = useState<string | null>(null)
   const [expandedPhotoUrl, setExpandedPhotoUrl] = useState<string | null>(null)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    reportId: string | null
+  }>({ open: false, reportId: null })
 
   const loadData = useCallback(async () => {
     if (!customerId || !bvId || !objectId) return
@@ -140,15 +147,23 @@ const Wartungsprotokolle = () => {
     loadData()
   }, [loadData])
 
-  const handleOpenCreate = () => {
+  const handleOpenCreate = async () => {
     const smokeCount = object?.smoke_detector_count ?? 0
     setPhotoFiles([])
     setTechnicianSignature(null)
     setCustomerSignature(null)
+
+    let technicianName = ''
+    if (user?.id) {
+      const profile = await fetchMyProfile(user.id)
+      if (profile) technicianName = getProfileDisplayName(profile)
+    }
+
     setFormData({
       ...INITIAL_FORM,
       maintenance_date: new Date().toISOString().slice(0, 10),
       maintenance_time: new Date().toTimeString().slice(0, 5),
+      technician_name_printed: technicianName,
       smoke_detector_statuses: Array.from({ length: smokeCount }, (_, i) => ({
         label: `RM${i + 1}`,
         status: 'ok' as SmokeDetectorStatus,
@@ -247,7 +262,6 @@ const Wartungsprotokolle = () => {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Wartungsprotokoll wirklich löschen?')) return
     const { error } = await deleteMaintenanceReport(id)
     if (error) showError(getSupabaseErrorMessage(error))
     else loadData()
@@ -264,7 +278,7 @@ const Wartungsprotokolle = () => {
     setPhotoFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const handleDeletePhoto = async (reportId: string, photoId: string, storagePath: string | null) => {
+  const handleDeletePhoto = async (_reportId: string, photoId: string, storagePath: string | null) => {
     const { error } = await deleteMaintenancePhoto(photoId, storagePath)
     if (error) showError(getSupabaseErrorMessage(error))
     else loadData()
@@ -398,9 +412,11 @@ const Wartungsprotokolle = () => {
       </div>
 
       {reports.length === 0 ? (
-        <p className="text-slate-600 py-8 text-center">
-          Noch keine Wartungsprotokolle angelegt.
-        </p>
+        <EmptyState
+          title="Noch keine Wartungsprotokolle angelegt."
+          description={canEdit ? 'Klicken Sie auf „+ Neues Protokoll“, um zu starten.' : undefined}
+          className="py-8"
+        />
       ) : (
         <ul className="space-y-2">
           {reports.map((r) => {
@@ -449,6 +465,7 @@ const Wartungsprotokolle = () => {
                               src={photoUrl}
                               alt={p.caption || 'Foto'}
                               className="w-full h-full object-cover"
+                              loading="lazy"
                             />
                           </button>
                           {canEdit && (
@@ -497,7 +514,9 @@ const Wartungsprotokolle = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDelete(r.id)}
+                        onClick={() =>
+                          setConfirmDialog({ open: true, reportId: r.id })
+                        }
                         className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
                         aria-label="Protokoll löschen"
                       >
@@ -511,6 +530,21 @@ const Wartungsprotokolle = () => {
           })}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Wartungsprotokoll löschen"
+        message="Wartungsprotokoll wirklich löschen?"
+        confirmLabel="Löschen"
+        variant="danger"
+        onConfirm={() => {
+          if (confirmDialog.reportId) {
+            handleDelete(confirmDialog.reportId)
+            setConfirmDialog({ open: false, reportId: null })
+          }
+        }}
+        onCancel={() => setConfirmDialog({ open: false, reportId: null })}
+      />
 
       {showForm && (
         <div

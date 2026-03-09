@@ -22,14 +22,14 @@ class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError && this.state.error) {
       return (
-        <div className="min-h-screen bg-slate-100 dark:bg-slate-900 p-8 flex items-center justify-center">
-          <div className="max-w-md bg-white dark:bg-slate-800 rounded-lg shadow p-6 border border-slate-200 dark:border-slate-700">
-            <h1 className="text-lg font-bold text-red-600 dark:text-red-400 mb-2">Fehler</h1>
-            <p className="text-slate-700 dark:text-slate-300 mb-4">{this.state.error.message}</p>
+        <div className="min-h-screen bg-slate-100 p-8 flex items-center justify-center">
+          <div className="max-w-md bg-white rounded-lg shadow p-6 border border-slate-200">
+            <h1 className="text-lg font-bold text-red-600 mb-2">Fehler</h1>
+            <p className="text-slate-700 mb-4">{this.state.error.message}</p>
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-vico-button text-slate-800 dark:text-slate-200 rounded-lg hover:bg-vico-button-hover border border-slate-300 dark:border-slate-600"
+              className="px-4 py-2 bg-vico-primary text-white rounded-lg hover:bg-vico-primary-hover"
             >
               Seite neu laden
             </button>

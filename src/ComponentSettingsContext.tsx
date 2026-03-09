@@ -88,7 +88,6 @@ export const ComponentSettingsProvider = ({
           created_at: '',
           updated_at: '',
         }))
-        const found = base.find((s) => s.component_key === key)
         return base.map((s) =>
           s.component_key === key ? { ...s, enabled, updated_at: new Date().toISOString() } : s
         )

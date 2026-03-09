@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useToast } from './ToastContext'
@@ -21,10 +21,11 @@ import { useLicense } from './LicenseContext'
 import { checkCanCreateCustomer } from './lib/licenseService'
 import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
 import { AddressLookupFields } from './components/AddressLookupFields'
-import { lazy, Suspense } from 'react'
 import ObjectFormModal from './components/ObjectFormModal'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalInviteSection from './components/PortalInviteSection'
+import ConfirmDialog from './components/ConfirmDialog'
+import EmptyState from './components/EmptyState'
 import type { Customer, CustomerFormData, BV, BVFormData } from './types'
 import type { MaintenanceReminder } from './types'
 
@@ -67,7 +68,7 @@ const Kunden = () => {
   const { userRole } = useAuth()
   const { showError } = useToast()
   const { isEnabled } = useComponentSettings()
-  const { license } = useLicense()
+  useLicense()
   const canEdit = userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'demo'
   const canDelete = userRole === 'admin' || userRole === 'demo'
   const canCreateBv = userRole === 'admin' || userRole === 'demo'
@@ -99,6 +100,12 @@ const Kunden = () => {
   const [qrObject, setQrObject] = useState<{ obj: Obj; customerId: string; bvId: string; customerName: string; bvName: string } | null>(null)
   const [showNeuDropdown, setShowNeuDropdown] = useState(false)
   const [maintenanceReminders, setMaintenanceReminders] = useState<MaintenanceReminder[]>([])
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    title: string
+    message: string
+    onConfirm: () => void
+  }>({ open: false, title: '', message: '', onConfirm: () => {} })
 
   const remindersByObjectId = useMemo(() => {
     const map = new Map<string, MaintenanceReminder>()
@@ -328,7 +335,6 @@ const Kunden = () => {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Kunden wirklich löschen?')) return
     const { error } = await deleteCustomer(id)
     if (error) {
       showError(getSupabaseErrorMessage(error))
@@ -496,7 +502,6 @@ const Kunden = () => {
   }
 
   const handleBvDelete = async (id: string) => {
-    if (!window.confirm('BV wirklich löschen?')) return
     const { error } = await deleteBv(id)
     if (error) {
       showError(getSupabaseErrorMessage(error))
@@ -612,9 +617,11 @@ const Kunden = () => {
       {isLoading ? (
         <LoadingSpinner message="Lade Kunden…" className="py-8" />
       ) : filteredCustomers.length === 0 ? (
-        <p className="text-slate-600 py-8 text-center">
-          {searchQuery ? 'Keine Kunden gefunden.' : 'Noch keine Kunden angelegt.'}
-        </p>
+        <EmptyState
+          title={searchQuery ? 'Keine Kunden gefunden.' : 'Noch keine Kunden angelegt.'}
+          description={!searchQuery ? 'Klicken Sie auf „+ Neu“ → „Neuer Kunde“, um zu starten.' : undefined}
+          className="py-8"
+        />
       ) : (
         <ul className="space-y-2">
           {filteredCustomers.map((customer) => {
@@ -671,8 +678,33 @@ const Kunden = () => {
                         <span
                           role="button"
                           tabIndex={0}
-                          onClick={(e) => { e.stopPropagation(); handleDelete(customer.id) }}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); handleDelete(customer.id) } }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setConfirmDialog({
+                              open: true,
+                              title: 'Kunde löschen',
+                              message: 'Kunden wirklich löschen?',
+                              onConfirm: () => {
+                                setConfirmDialog((c) => ({ ...c, open: false }))
+                                handleDelete(customer.id)
+                              },
+                            })
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.stopPropagation()
+                              e.preventDefault()
+                              setConfirmDialog({
+                                open: true,
+                                title: 'Kunde löschen',
+                                message: 'Kunden wirklich löschen?',
+                                onConfirm: () => {
+                                  setConfirmDialog((c) => ({ ...c, open: false }))
+                                  handleDelete(customer.id)
+                                },
+                              })
+                            }
+                          }}
                           className="px-3 py-2 text-sm min-h-[36px] inline-flex items-center text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
                           aria-label={`${customer.name} löschen`}
                         >
@@ -688,9 +720,10 @@ const Kunden = () => {
                       <LoadingSpinner message="Lade BVs…" size="sm" className="py-2" />
                     ) : filteredBvs.length === 0 ? (
                       <div className="py-4 flex flex-col items-start gap-3">
-                        <p className="text-sm text-slate-500">
-                          {searchLower && expandedBvs.length > 0 ? 'Keine BVs gefunden.' : 'Noch keine BVs angelegt.'}
-                        </p>
+                        <EmptyState
+                          title={searchLower && expandedBvs.length > 0 ? 'Keine BVs gefunden.' : 'Noch keine BVs angelegt.'}
+                          className="py-2 items-start"
+                        />
                         {canCreateBv && (
                           <button
                             type="button"
@@ -758,8 +791,33 @@ const Kunden = () => {
                                         <span
                                           role="button"
                                           tabIndex={0}
-                                          onClick={(e) => { e.stopPropagation(); handleBvDelete(bv.id) }}
-                                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); handleBvDelete(bv.id) } }}
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            setConfirmDialog({
+                                              open: true,
+                                              title: 'BV löschen',
+                                              message: 'BV wirklich löschen?',
+                                              onConfirm: () => {
+                                                setConfirmDialog((c) => ({ ...c, open: false }))
+                                                handleBvDelete(bv.id)
+                                              },
+                                            })
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                              e.stopPropagation()
+                                              e.preventDefault()
+                                              setConfirmDialog({
+                                                open: true,
+                                                title: 'BV löschen',
+                                                message: 'BV wirklich löschen?',
+                                                onConfirm: () => {
+                                                  setConfirmDialog((c) => ({ ...c, open: false }))
+                                                  handleBvDelete(bv.id)
+                                                },
+                                              })
+                                            }
+                                          }}
                                           className="px-3 py-1.5 text-sm min-h-[32px] inline-flex items-center text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
                                           aria-label={`${bv.name} löschen`}
                                         >
@@ -775,9 +833,10 @@ const Kunden = () => {
                                       <LoadingSpinner message="Lade Objekte…" size="sm" className="py-2" />
                                     ) : filteredObjects.length === 0 ? (
                                       <div className="py-3 flex flex-col items-start gap-3">
-                                        <p className="text-xs text-slate-500">
-                                          {searchLower && expandedObjects.length > 0 ? 'Keine Objekte gefunden.' : 'Noch keine Objekte angelegt.'}
-                                        </p>
+                                        <EmptyState
+                                          title={searchLower && expandedObjects.length > 0 ? 'Keine Objekte gefunden.' : 'Noch keine Objekte angelegt.'}
+                                          className="py-2 items-start"
+                                        />
                                         {canEdit && (
                                           <button
                                             type="button"
@@ -901,6 +960,16 @@ const Kunden = () => {
           })}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel="Löschen"
+        variant="danger"
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog((c) => ({ ...c, open: false }))}
+      />
 
       {qrObject && (
         <Suspense fallback={null}>
