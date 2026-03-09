@@ -4,6 +4,7 @@ import { ToastProvider } from './ToastContext'
 import { ThemeProvider } from './ThemeContext'
 import { SyncProvider } from './SyncContext'
 import { ComponentSettingsProvider } from './ComponentSettingsContext'
+import { LicenseProvider } from './LicenseContext'
 import { AuthProvider } from './AuthContext'
 import AuthLoader from './AuthLoader'
 import Layout from './Layout'
@@ -37,6 +38,7 @@ const App = () => {
     <ThemeProvider>
     <AuthProvider>
       <AuthLoader>
+        <LicenseProvider>
         <SyncProvider>
           <ComponentSettingsProvider>
           <BrowserRouter>
@@ -61,6 +63,7 @@ const App = () => {
         </BrowserRouter>
           </ComponentSettingsProvider>
         </SyncProvider>
+        </LicenseProvider>
       </AuthLoader>
     </AuthProvider>
     </ThemeProvider>

@@ -493,6 +493,11 @@ export const createMaintenanceReport = async (
   const cached = getCachedMaintenanceReports(payload.object_id) as MaintenanceReport[]
   setCachedMaintenanceReports(payload.object_id, [report, ...cached])
   notifyDataChange()
+
+  supabase.functions.invoke('notify-portal-on-report', {
+    body: { report_id: report.id },
+  }).catch(() => { /* fire-and-forget */ })
+
   return { data: report as MaintenanceReport, error: null }
 }
 

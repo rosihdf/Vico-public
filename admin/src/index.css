@@ -2,10 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --vico-primary: #5b7895;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -19,9 +15,4 @@ body {
   -webkit-font-smoothing: antialiased;
   background-color: #f8fafc;
   font-family: system-ui, -apple-system, sans-serif;
-}
-
-html.dark body,
-html[data-theme="dark"] body {
-  background-color: #0f172a;
 }

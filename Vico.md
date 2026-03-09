@@ -115,7 +115,7 @@ Kunde → BV → Objekt → Wartungsprotokolle
 
 - profiles, customers, bvs, objects
 - object_photos, maintenance_reports, maintenance_report_photos, maintenance_report_smoke_detectors
-- orders, component_settings, audit_log
+- orders, component_settings, audit_log, license
 - customer_portal_users (Kundenportal: Verknüpfung Auth-User ↔ Kunden)
 
 ### Indizes
@@ -138,6 +138,8 @@ Kunde → BV → Objekt → Wartungsprotokolle
 3. **Build:** `npm run build`, Publish: `dist`
 4. **Env:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 5. **Supabase:** Site URL + Redirect URLs (`/reset-password`)
+
+**Lizenz-Admin** (`admin/`): Separates Netlify-Site, Root: `admin/`, Build: `npm run build`, Publish: `dist`. Subdomain z.B. `admin.vico-tueren.de`. Gleiche Env-Variablen wie Haupt-App. Nur Admins (Rolle `admin`) haben Zugriff.
 
 ### Release
 
@@ -210,28 +212,34 @@ Manueller Start: Actions → Supabase Keep-Alive → Run workflow.
 ### Geplant
 
 - ~~DSGVO~~ ✅ (Kundenportal: Datenschutzerklärung, Impressum, Einwilligung beim Login)
-- Lizenzmodell
+- ~~Lizenzmodell~~ ✅ (Option A – Minimal: `license`-Tabelle, RPCs `get_license_status`/`check_can_create_customer`/`check_can_invite_user`, LicenseContext, Limits in Kunden- und Benutzerverwaltung, Lizenz-Status in Einstellungen)
 - ~~Kundenportal für Wartungsberichte~~ ✅ (Separates Portal unter `portal/`, Rolle "kunde", Magic Link + Einladung, RLS)
+
+### Offene Aufgaben
+
+- **Secrets prüfen** – Supabase Edge Functions: RESEND_API_KEY, RESEND_FROM, PORTAL_URL (für notify-portal-on-report)
 
 ### Geplante Verbesserungen
 
-1. ~~**Kundenübersicht/Objekte – Wartungsstatus anzeigen**~~ ✅ (Ampelfarben: rot=überfällig, gelb=bald fällig, grün=ok)
+1. ~~**E-Mail-Benachrichtigung bei neuem Wartungsbericht**~~ ✅ (Edge Function `notify-portal-on-report`, Resend)
+2. ~~**Portal: Dunkelmodus**~~ ✅ (ThemeContext, Hell/Dunkel/System-Toggle; Tailwind `darkMode: ['selector', '[data-theme="dark"]']` für korrekten Theme-Wechsel)
+3. ~~**Kundenübersicht/Objekte – Wartungsstatus anzeigen**~~ ✅ (Ampelfarben: rot=überfällig, gelb=bald fällig, grün=ok)
 
-2. ~~**Erweiterte Vico Web App Test-Checkliste erstellen**~~ ✅
+4. ~~**Erweiterte Vico Web App Test-Checkliste erstellen**~~ ✅
 
-3. ~~**Objekte-ID im Formular**~~ ✅
+5. ~~**Objekte-ID im Formular**~~ ✅
 
-4. ~~**Rauchmelder Jahresauswahl**~~ ✅
+6. ~~**Rauchmelder Jahresauswahl**~~ ✅
 
-5. ~~**Objekt-Feldnamen in der Kundenübersicht**~~ ✅
+7. ~~**Objekt-Feldnamen in der Kundenübersicht**~~ ✅
 
-6. ~~**Demo-Account mit 24h-Löschung**~~ ✅ (Rolle "demo", RLS, RPC cleanup_demo_customers_older_than_24h, GitHub Actions)
+8. ~~**Demo-Account mit 24h-Löschung**~~ ✅ (Rolle "demo", RLS, RPC cleanup_demo_customers_older_than_24h, GitHub Actions)
 
-7. ~~**Benutzeranleitung erstellen**~~ ✅ (BENUTZERANLEITUNG.md)
+9. ~~**Benutzeranleitung erstellen**~~ ✅ (BENUTZERANLEITUNG.md)
 
-8. ~~**Supabase-Inaktivierung vermeiden**~~ ✅ (GitHub Actions Keep-Alive: `.github/workflows/supabase-keepalive.yml`)
+10. ~~**Supabase-Inaktivierung vermeiden**~~ ✅ (GitHub Actions Keep-Alive: `.github/workflows/supabase-keepalive.yml`)
 
-9. ~~**PWA-Build-Fehler beheben**~~ ✅ (vite-plugin-pwa 0.19 → 1.2.0 für Vite 7)
+11. ~~**PWA-Build-Fehler beheben**~~ ✅ (vite-plugin-pwa 0.19 → 1.2.0 für Vite 7)
 
 ---
 
@@ -241,19 +249,26 @@ Manueller Start: Actions → Supabase Keep-Alive → Run workflow.
 Vico/
 ├── src/
 │   ├── components/     # AddressLookupFields, LoadingSpinner, OrderCalendar, ObjectFormModal, PortalInviteSection
-│   ├── lib/            # dataService, offlineStorage, Utils, PDF-Generierung
+│   ├── lib/            # dataService, offlineStorage, licenseService, Utils, PDF-Generierung
 │   ├── types/          # TypeScript-Typen (customer, bv, object, order, maintenance)
-│   └── *.tsx           # Seiten, Layout, Auth, ThemeContext, ToastContext, Context
+│   └── *.tsx           # Seiten, Layout, Auth, ThemeContext, LicenseContext, ToastContext, Context
 ├── portal/             # Kundenportal (separates Vite-Projekt)
 │   ├── src/
-│   │   ├── pages/      # Login, AuthCallback, Berichte, Datenschutz, Impressum
+│   │   ├── pages/      # Login, AuthCallback, Berichte, MeineDaten, Datenschutz, Impressum
 │   │   ├── components/ # Layout
 │   │   └── lib/        # supabase, portalService
 │   ├── public/
 │   └── netlify.toml
+├── admin/              # Lizenz-Admin (separates Vite-Projekt, nur für Admins)
+│   ├── src/
+│   │   ├── pages/      # Login, Lizenz
+│   │   ├── components/ # Layout
+│   │   └── lib/        # supabase, licenseService
+│   ├── public/
+│   └── netlify.toml
 ├── public/             # Favicon, Logo, Checkliste-PDF, version.json (Dev-Fallback)
 ├── scripts/            # generate-checklist-webapp-pdf.mjs
-├── supabase/           # Edge Functions (send-maintenance-report, invite-portal-user, request-portal-magic-link)
+├── supabase/           # Edge Functions (send-maintenance-report, invite-portal-user, request-portal-magic-link, notify-portal-on-report)
 ├── supabase-complete.sql
 ├── Vico.md
 ├── BENUTZERANLEITUNG.md

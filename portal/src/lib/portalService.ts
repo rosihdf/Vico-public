@@ -39,11 +39,44 @@ export const getPortalPdfPath = async (reportId: string): Promise<string | null>
   return data as string
 }
 
-export const getPortalPdfUrl = (pdfPath: string): string => {
-  const { data } = supabase.storage
+/** Zeitlich begrenzte, signierte URL für sicheren PDF-Zugriff (5 Min. gültig). */
+export const getPortalPdfSignedUrl = async (pdfPath: string): Promise<string | null> => {
+  const { data, error } = await supabase.storage
     .from('maintenance-photos')
-    .getPublicUrl(pdfPath)
-  return data.publicUrl
+    .createSignedUrl(pdfPath, 300)
+  if (error || !data?.signedUrl) return null
+  return data.signedUrl
+}
+
+export type PortalUserData = {
+  email: string
+  customer_names: string[]
+}
+
+export const fetchPortalUserData = async (userId: string): Promise<PortalUserData | null> => {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', userId)
+    .single()
+
+  const { data: portalEntries } = await supabase
+    .from('customer_portal_users')
+    .select('customer_id, customers(name)')
+    .eq('user_id', userId)
+
+  const customerNames = (portalEntries ?? []).flatMap((e) => {
+    const c = e.customers as { name: string } | { name: string }[] | null
+    if (!c) return []
+    const names = Array.isArray(c) ? c : [c]
+    return names.map((n) => n?.name).filter((n): n is string => Boolean(n))
+  })
+
+  if (!profile) return null
+  return {
+    email: profile.email ?? '',
+    customer_names: [...new Set(customerNames)],
+  }
 }
 
 export const requestMagicLink = async (

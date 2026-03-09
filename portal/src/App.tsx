@@ -5,6 +5,7 @@ import type { User } from '@supabase/supabase-js'
 import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
 import Berichte from './pages/Berichte'
+import MeineDaten from './pages/MeineDaten'
 import Datenschutz from './pages/Datenschutz'
 import Impressum from './pages/Impressum'
 import Layout from './components/Layout'
@@ -44,10 +45,10 @@ const App = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-vico-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-slate-500">Lade Kundenportal…</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Lade Vico Türen & Tore Kundenportal…</p>
         </div>
       </div>
     )
@@ -67,6 +68,7 @@ const App = () => {
         }>
           <Route index element={<Navigate to="/berichte" replace />} />
           <Route path="berichte" element={<Berichte user={user} />} />
+          <Route path="meine-daten" element={<MeineDaten user={user} />} />
         </Route>
         <Route path="*" element={<Navigate to={user ? '/berichte' : '/login'} replace />} />
       </Routes>

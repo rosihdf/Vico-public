@@ -6,6 +6,8 @@ import { supabase } from './supabase'
 import { fetchProfiles, updateProfileRole, updateProfileName, getProfileDisplayName } from './lib/userService'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
+import { useLicense } from './LicenseContext'
+import { checkCanInviteUser } from './lib/licenseService'
 import type { Profile } from './lib/userService'
 
 const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde', string> = {
@@ -20,6 +22,7 @@ const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo
 const Benutzerverwaltung = () => {
   const navigate = useNavigate()
   const { userRole, signUp, logout } = useAuth()
+  const { license } = useLicense()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -51,7 +54,12 @@ const Benutzerverwaltung = () => {
     return unsub
   }, [loadProfiles])
 
-  const handleOpenCreate = () => {
+  const handleOpenCreate = async () => {
+    const allowed = await checkCanInviteUser()
+    if (!allowed) {
+      setFormError('Benutzer-Limit erreicht. Bitte Lizenz upgraden, um weitere Benutzer einzuladen.')
+      return
+    }
     setNewEmail('')
     setNewPassword('')
     setNewFirstName('')

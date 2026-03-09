@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
+import { useLicense } from './LicenseContext'
 import { useTheme } from './ThemeContext'
 import { useComponentSettings } from './ComponentSettingsContext'
 import type { Theme } from './ThemeContext'
 import { fetchProfileByEmail } from './lib/userService'
 import { downloadWebAppChecklist } from './lib/downloadChecklist'
+import { formatLicenseDate, isLimitReached } from './lib/licenseService'
 import type { SyncStatus } from './types'
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.1'
@@ -26,6 +28,7 @@ const THEME_LABELS: Record<Theme, string> = {
 const Einstellungen = () => {
   const { syncStatus, setSyncStatus, syncNow, pendingCount, lastSyncError, clearSyncError } = useSync()
   const { userRole, refreshUserRole } = useAuth()
+  const { license, refresh: refreshLicense } = useLicense()
   const { theme, setTheme } = useTheme()
   const { settingsList, updateSetting, refresh } = useComponentSettings()
   const [isSyncing, setIsSyncing] = useState(false)
@@ -338,6 +341,63 @@ const Einstellungen = () => {
             }}
             className="mt-3 px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
             aria-label="Einstellungen neu laden"
+          >
+            Neu laden
+          </button>
+        </section>
+      )}
+
+      {/* Lizenz (Admin) */}
+      {userRole === 'admin' && license && (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+          aria-labelledby="lizenz-heading"
+        >
+          <h3 id="lizenz-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+            Lizenz
+          </h3>
+          {license.expired && (
+            <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg" role="alert">
+              <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                Lizenz abgelaufen seit {formatLicenseDate(license.valid_until)}
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-400 mt-1">
+                Einige Funktionen sind eingeschränkt. Bitte Lizenz verlängern.
+              </p>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="text-slate-500 dark:text-slate-400">Tier</div>
+            <div className="text-slate-800 dark:text-slate-100 font-medium capitalize">{license.tier}</div>
+
+            <div className="text-slate-500 dark:text-slate-400">Gültig bis</div>
+            <div className="text-slate-800 dark:text-slate-100 font-medium">{formatLicenseDate(license.valid_until)}</div>
+
+            <div className="text-slate-500 dark:text-slate-400">Kunden</div>
+            <div className={`font-medium ${isLimitReached(license.current_customers, license.max_customers) ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}>
+              {license.current_customers} / {license.max_customers ?? '∞'}
+            </div>
+
+            <div className="text-slate-500 dark:text-slate-400">Benutzer</div>
+            <div className={`font-medium ${isLimitReached(license.current_users, license.max_users) ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}>
+              {license.current_users} / {license.max_users ?? '∞'}
+            </div>
+
+            <div className="text-slate-500 dark:text-slate-400">Kundenportal</div>
+            <div className="text-slate-800 dark:text-slate-100 font-medium">
+              {license.features?.kundenportal ? '✓ Aktiv' : '✗ Nicht enthalten'}
+            </div>
+
+            <div className="text-slate-500 dark:text-slate-400">Historie</div>
+            <div className="text-slate-800 dark:text-slate-100 font-medium">
+              {license.features?.historie ? '✓ Aktiv' : '✗ Nicht enthalten'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={refreshLicense}
+            className="mt-3 px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+            aria-label="Lizenz-Status neu laden"
           >
             Neu laden
           </button>

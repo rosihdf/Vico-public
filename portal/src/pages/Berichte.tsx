@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { fetchPortalReports, getPortalPdfUrl, getPortalPdfPath } from '../lib/portalService'
+import { fetchPortalReports, getPortalPdfSignedUrl, getPortalPdfPath } from '../lib/portalService'
 import type { PortalReport } from '../lib/portalService'
 
 type BerichteProps = {
@@ -65,7 +65,11 @@ const Berichte = ({ user }: BerichteProps) => {
         alert('PDF nicht verfügbar.')
         return
       }
-      const url = getPortalPdfUrl(pdfPath)
+      const url = await getPortalPdfSignedUrl(pdfPath)
+      if (!url) {
+        alert('PDF nicht verfügbar.')
+        return
+      }
       window.open(url, '_blank')
     } catch {
       alert('Fehler beim Laden des PDFs.')
@@ -95,7 +99,7 @@ const Berichte = ({ user }: BerichteProps) => {
       <div className="flex items-center justify-center py-16">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-vico-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-slate-500">Lade Wartungsberichte…</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Lade Wartungsberichte…</p>
         </div>
       </div>
     )
@@ -105,8 +109,8 @@ const Berichte = ({ user }: BerichteProps) => {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Wartungsberichte</h2>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Wartungsberichte</h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             {reports.length} {reports.length === 1 ? 'Bericht' : 'Berichte'} verfügbar
           </p>
         </div>
@@ -115,17 +119,17 @@ const Berichte = ({ user }: BerichteProps) => {
           placeholder="Suchen…"
           value={searchQuery}
           onChange={handleSearchChange}
-          className="sm:w-64 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary"
+          className="sm:w-64 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-vico-primary"
           aria-label="Berichte durchsuchen"
         />
       </div>
 
       {filteredReports.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-          <svg className="w-12 h-12 text-slate-300 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="text-center py-16 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+          <svg className="w-12 h-12 text-slate-300 dark:text-slate-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <p className="text-slate-500">
+          <p className="text-slate-500 dark:text-slate-400">
             {searchQuery ? 'Keine Berichte gefunden.' : 'Noch keine Wartungsberichte vorhanden.'}
           </p>
         </div>
@@ -139,7 +143,7 @@ const Berichte = ({ user }: BerichteProps) => {
             return (
               <li
                 key={report.report_id}
-                className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
               >
                 <button
                   type="button"
@@ -150,7 +154,7 @@ const Berichte = ({ user }: BerichteProps) => {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-slate-800">
+                      <span className="font-semibold text-slate-800 dark:text-slate-100">
                         {formatDate(report.maintenance_date)}
                       </span>
                       {report.reason && (
@@ -164,7 +168,7 @@ const Berichte = ({ user }: BerichteProps) => {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-slate-500 mt-0.5">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
                       {report.customer_name} – {report.bv_name} – {objectLabel}
                       {locationParts.length > 0 && (
                         <span className="text-slate-400"> ({locationParts.join(', ')})</span>
@@ -203,19 +207,19 @@ const Berichte = ({ user }: BerichteProps) => {
                 </button>
 
                 {isExpanded && (
-                  <div className="border-t border-slate-100 px-4 py-4 bg-slate-50">
+                  <div className="border-t border-slate-100 dark:border-slate-700 px-4 py-4 bg-slate-50 dark:bg-slate-700/50">
                     <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
                       <div>
-                        <dt className="text-slate-500 font-medium">Kunde</dt>
-                        <dd className="text-slate-800">{report.customer_name ?? '–'}</dd>
+                        <dt className="text-slate-500 dark:text-slate-400 font-medium">Kunde</dt>
+                        <dd className="text-slate-800 dark:text-slate-100">{report.customer_name ?? '–'}</dd>
                       </div>
                       <div>
-                        <dt className="text-slate-500 font-medium">BV</dt>
-                        <dd className="text-slate-800">{report.bv_name ?? '–'}</dd>
+                        <dt className="text-slate-500 dark:text-slate-400 font-medium">BV</dt>
+                        <dd className="text-slate-800 dark:text-slate-100">{report.bv_name ?? '–'}</dd>
                       </div>
                       <div>
-                        <dt className="text-slate-500 font-medium">Objekt</dt>
-                        <dd className="text-slate-800">
+                        <dt className="text-slate-500 dark:text-slate-400 font-medium">Objekt</dt>
+                        <dd className="text-slate-800 dark:text-slate-100">
                           {objectLabel}
                           {locationParts.length > 0 && (
                             <span className="text-slate-500"> ({locationParts.join(', ')})</span>
@@ -223,8 +227,8 @@ const Berichte = ({ user }: BerichteProps) => {
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-500 font-medium">Prüfgrund</dt>
-                        <dd className="text-slate-800">
+                        <dt className="text-slate-500 dark:text-slate-400 font-medium">Prüfgrund</dt>
+                        <dd className="text-slate-800 dark:text-slate-100">
                           {report.reason ? (REASON_LABELS[report.reason] ?? report.reason) : '–'}
                           {report.reason === 'sonstiges' && report.reason_other && (
                             <span className="text-slate-500"> ({report.reason_other})</span>
@@ -232,18 +236,18 @@ const Berichte = ({ user }: BerichteProps) => {
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-slate-500 font-medium">Herstellerwartung</dt>
-                        <dd className="text-slate-800">{report.manufacturer_maintenance_done ? 'Ja' : 'Nein'}</dd>
+                        <dt className="text-slate-500 dark:text-slate-400 font-medium">Herstellerwartung</dt>
+                        <dd className="text-slate-800 dark:text-slate-100">{report.manufacturer_maintenance_done ? 'Ja' : 'Nein'}</dd>
                       </div>
                       {report.hold_open_checked !== null && (
                         <div>
-                          <dt className="text-slate-500 font-medium">Feststellanlage geprüft</dt>
-                          <dd className="text-slate-800">{report.hold_open_checked ? 'Ja' : 'Nein'}</dd>
+                          <dt className="text-slate-500 dark:text-slate-400 font-medium">Feststellanlage geprüft</dt>
+                          <dd className="text-slate-800 dark:text-slate-100">{report.hold_open_checked ? 'Ja' : 'Nein'}</dd>
                         </div>
                       )}
                       <div className="sm:col-span-2">
-                        <dt className="text-slate-500 font-medium">Mängel</dt>
-                        <dd className="text-slate-800">
+                        <dt className="text-slate-500 dark:text-slate-400 font-medium">Mängel</dt>
+                        <dd className="text-slate-800 dark:text-slate-100">
                           {report.deficiencies_found ? (
                             <div>
                               <span className="text-red-600 font-medium">Ja</span>

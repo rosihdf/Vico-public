@@ -1,9 +1,8 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: ['selector', '[data-theme="dark"]'],
   content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}',
   ],
   theme: {
     extend: {
@@ -11,7 +10,6 @@ export default {
         vico: {
           primary: '#5b7895',
           'primary-hover': '#4a6478',
-          'primary-light': '#e8eef3',
         },
       },
     },

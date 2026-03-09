@@ -5,11 +5,13 @@ import Logo from './Logo'
 import UpdateBanner from './UpdateBanner'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
+import { useLicense } from './LicenseContext'
 import { useComponentSettings } from './ComponentSettingsContext'
 
 const Layout = () => {
   const { syncStatus, pendingCount } = useSync()
   const { isAuthenticated, logout, userRole } = useAuth()
+  const { license } = useLicense()
   const { isEnabled } = useComponentSettings()
   const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -78,6 +80,15 @@ const Layout = () => {
   return (
     <div className="min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))]">
       <UpdateBanner />
+      {license?.expired && userRole === 'admin' && (
+        <div
+          role="alert"
+          className="bg-red-100 dark:bg-red-900/40 text-red-900 dark:text-red-200 text-center py-2 px-4 text-sm font-medium border-b border-red-200 dark:border-red-700"
+          aria-live="polite"
+        >
+          Lizenz abgelaufen – einige Funktionen sind eingeschränkt. Bitte Lizenz verlängern.
+        </div>
+      )}
       {userRole === 'demo' && (
         <div
           role="status"

@@ -9,6 +9,7 @@
 --   3. Wartung: Maintenance Reports, Photos, Smoke Detectors
 --   4. Aufträge, Component Settings, Audit Log
 --   5. RPC Functions (get_my_role, get_all_profiles_for_admin, get_audit_log, get_maintenance_reminders)
+--   5b. Lizenzmodell (license, get_license_status, check_can_create_customer, check_can_invite_user)
 --   6. Kundenportal (customer_portal_users, Rolle 'kunde', Helper, RLS)
 --   7. Storage Buckets
 --   8. Indizes, Realtime
@@ -516,6 +517,99 @@ begin
 end;
 $$;
 grant execute on function public.cleanup_demo_customers_older_than_24h() to authenticated;
+
+-- =============================================================================
+-- 5b. LIZENZMODELL
+-- =============================================================================
+
+create table if not exists public.license (
+  id uuid primary key default gen_random_uuid(),
+  tier text not null default 'professional',
+  valid_until date,
+  max_customers int,
+  max_users int,
+  features jsonb default '{}'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.license enable row level security;
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'license' loop
+    execute format('drop policy if exists %I on public.license', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated users can read license" on public.license for select using (auth.uid() is not null);
+create policy "Admins can manage license" on public.license for all using (public.is_admin());
+
+insert into public.license (tier, valid_until, max_customers, max_users, features)
+select 'professional', '2026-12-31'::date, 50, 10, '{"kundenportal": true, "historie": true}'::jsonb
+where not exists (select 1 from public.license);
+
+drop function if exists public.get_license_status();
+create or replace function public.get_license_status()
+returns jsonb language plpgsql security definer set search_path = public stable as $$
+declare
+  lic record;
+  customer_count bigint;
+  user_count bigint;
+  is_expired boolean;
+begin
+  select * into lic from public.license limit 1;
+  if lic is null then
+    return jsonb_build_object('tier', 'none', 'valid', false);
+  end if;
+  select count(*) into customer_count from public.customers where demo_user_id is null;
+  select count(*) into user_count from public.profiles where role not in ('demo', 'kunde');
+  is_expired := lic.valid_until is not null and lic.valid_until < current_date;
+  return jsonb_build_object(
+    'tier', lic.tier,
+    'valid_until', lic.valid_until,
+    'max_customers', lic.max_customers,
+    'max_users', lic.max_users,
+    'current_customers', customer_count,
+    'current_users', user_count,
+    'features', lic.features,
+    'valid', not is_expired,
+    'expired', is_expired
+  );
+end;
+$$;
+grant execute on function public.get_license_status() to authenticated;
+
+drop function if exists public.check_can_create_customer();
+create or replace function public.check_can_create_customer()
+returns boolean language plpgsql security definer set search_path = public stable as $$
+declare
+  lic record;
+  cnt bigint;
+begin
+  select * into lic from public.license limit 1;
+  if lic is null then return true; end if;
+  if lic.valid_until is not null and lic.valid_until < current_date then return false; end if;
+  if lic.max_customers is null then return true; end if;
+  select count(*) into cnt from public.customers where demo_user_id is null;
+  return cnt < lic.max_customers;
+end;
+$$;
+grant execute on function public.check_can_create_customer() to authenticated;
+
+drop function if exists public.check_can_invite_user();
+create or replace function public.check_can_invite_user()
+returns boolean language plpgsql security definer set search_path = public stable as $$
+declare
+  lic record;
+  cnt bigint;
+begin
+  select * into lic from public.license limit 1;
+  if lic is null then return true; end if;
+  if lic.valid_until is not null and lic.valid_until < current_date then return false; end if;
+  if lic.max_users is null then return true; end if;
+  select count(*) into cnt from public.profiles where role not in ('demo', 'kunde');
+  return cnt < lic.max_users;
+end;
+$$;
+grant execute on function public.check_can_invite_user() to authenticated;
 
 -- =============================================================================
 -- 6. KUNDENPORTAL

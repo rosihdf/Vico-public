@@ -5,10 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="theme-color" content="#5b7895" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Vico Kundenportal</title>
+    <title>Vico Türen & Tore Kundenportal</title>
   </head>
-  <body style="margin: 0; min-height: 100vh; background-color: #f8fafc;">
-    <div id="root" style="min-height: 100vh;">Lade Kundenportal...</div>
+  <body style="margin: 0; min-height: 100vh;">
+    <div id="root" style="min-height: 100vh;">Lade Vico Türen & Tore Kundenportal...</div>
+    <script>
+      (function() {
+        var s = localStorage.getItem('vico-portal-theme');
+        var d = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var r = s === 'dark' ? 'dark' : s === 'light' ? 'light' : s === 'system' ? (d ? 'dark' : 'light') : 'light';
+        var html = document.documentElement;
+        html.classList.remove('light', 'dark');
+        html.classList.add(r);
+        html.setAttribute('data-theme', r);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

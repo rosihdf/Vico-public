@@ -1,9 +1,20 @@
 import { Link } from 'react-router-dom'
+import { useTheme } from '../ThemeContext'
+import type { Theme } from '../ThemeContext'
+
+const THEME_ORDER: Theme[] = ['light', 'dark', 'system']
 
 const Datenschutz = () => {
+  const { theme, setTheme, resolvedTheme } = useTheme()
+
+  const handleThemeCycle = () => {
+    const idx = THEME_ORDER.indexOf(theme)
+    const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length]
+    setTheme(next)
+  }
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 px-4 py-10">
-      <article className="w-full max-w-2xl mx-auto bg-white rounded-xl shadow-lg border border-slate-200 p-6 sm:p-10">
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 px-4 py-10">
+      <article className="w-full max-w-2xl mx-auto bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 p-6 sm:p-10">
         <Link
           to="/"
           className="inline-flex items-center gap-1 text-sm text-vico-primary hover:underline mb-6"
@@ -15,11 +26,11 @@ const Datenschutz = () => {
           Zurück
         </Link>
 
-        <h1 className="text-2xl font-bold text-slate-800 mb-6">Datenschutzerklärung</h1>
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-6">Datenschutzerklärung</h1>
 
-        <section className="space-y-6 text-sm text-slate-700 leading-relaxed">
+        <section className="space-y-6 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">1. Verantwortlicher</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">1. Verantwortlicher</h2>
             <p>
               Vico Türen &amp; Tore GmbH<br />
               Malmsheimer Straße 57–59<br />
@@ -29,7 +40,7 @@ const Datenschutz = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">2. Erhobene Daten</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">2. Erhobene Daten</h2>
             <p>
               Im Rahmen der Nutzung dieses Kundenportals werden folgende personenbezogene Daten verarbeitet:
             </p>
@@ -41,7 +52,7 @@ const Datenschutz = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">3. Zweck der Verarbeitung</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">3. Zweck der Verarbeitung</h2>
             <ul className="list-disc pl-5 space-y-1">
               <li>Authentifizierung und Zugangssteuerung</li>
               <li>Bereitstellung der Wartungsberichte für berechtigte Kunden</li>
@@ -50,7 +61,7 @@ const Datenschutz = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">4. Rechtsgrundlage</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">4. Rechtsgrundlage</h2>
             <p>
               Die Verarbeitung erfolgt auf Grundlage von Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung)
               sowie Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an der sicheren Bereitstellung
@@ -59,7 +70,7 @@ const Datenschutz = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">5. Speicherdauer</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">5. Speicherdauer</h2>
             <p>
               Das Session-Token wird im Browser gespeichert und bei Abmeldung gelöscht. Magic Links
               sind einmalig nutzbar und verfallen automatisch. Ihre E-Mail-Adresse wird gespeichert,
@@ -69,7 +80,7 @@ const Datenschutz = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">6. Empfänger und Auftragsverarbeiter</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">6. Empfänger und Auftragsverarbeiter</h2>
             <ul className="list-disc pl-5 space-y-1">
               <li>
                 <strong>Supabase Inc.</strong> – Backend-Dienst (Authentifizierung, Datenbank, Dateispeicher).
@@ -85,7 +96,7 @@ const Datenschutz = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">7. Cookies und lokale Speicherung</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">7. Cookies und lokale Speicherung</h2>
             <p>
               Dieses Portal verwendet <strong>keine Cookies von Drittanbietern</strong>, keine
               Analytics- und keine Tracking-Dienste. Für die Authentifizierung wird ein Session-Token
@@ -95,7 +106,7 @@ const Datenschutz = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">8. Ihre Rechte</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">8. Ihre Rechte</h2>
             <p>Sie haben gemäß DSGVO folgende Rechte:</p>
             <ul className="list-disc pl-5 mt-2 space-y-1">
               <li><strong>Auskunft</strong> (Art. 15) – Welche Daten über Sie gespeichert sind</li>
@@ -111,7 +122,7 @@ const Datenschutz = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">9. Beschwerderecht</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">9. Beschwerderecht</h2>
             <p>
               Sie haben das Recht, sich bei einer Datenschutz-Aufsichtsbehörde zu beschweren,
               wenn Sie der Ansicht sind, dass die Verarbeitung Ihrer Daten gegen die DSGVO verstößt.
@@ -119,15 +130,31 @@ const Datenschutz = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">10. Automatisierte Entscheidungsfindung</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">10. Automatisierte Entscheidungsfindung</h2>
             <p>
               Es findet keine automatisierte Entscheidungsfindung oder Profilbildung statt.
             </p>
           </div>
         </section>
 
-        <p className="text-xs text-slate-400 mt-8">Stand: März 2026</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-8">Stand: März 2026</p>
       </article>
+      <div className="flex items-center justify-center gap-2 text-xs text-slate-400 dark:text-slate-500 mt-8">
+        <button
+          type="button"
+          onClick={handleThemeCycle}
+          className="hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+          aria-label={`Darstellung wechseln (aktuell: ${theme})`}
+        >
+          {resolvedTheme === 'dark' ? '☀️' : '🌙'}
+        </button>
+        <span>·</span>
+        <Link to="/impressum" className="hover:text-slate-600 dark:hover:text-slate-300 transition-colors" tabIndex={0}>
+          Impressum
+        </Link>
+        <span>·</span>
+        <span>Vico Türen & Tore</span>
+      </div>
     </div>
   )
 }

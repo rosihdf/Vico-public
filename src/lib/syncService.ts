@@ -161,6 +161,10 @@ const processMaintenanceOutbox = async (): Promise<SyncResult> => {
       const filtered = cached.filter((r) => r.id !== item.tempId)
       setCachedMaintenanceReports(objectId, [report, ...filtered])
       removeMaintenanceOutboxItem(item.id)
+
+      supabase.functions.invoke('notify-portal-on-report', {
+        body: { report_id: report.id },
+      }).catch(() => { /* fire-and-forget */ })
     } catch (err) {
       return {
         success: false,

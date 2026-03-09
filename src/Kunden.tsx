@@ -17,6 +17,8 @@ import {
   subscribeToDataChange,
 } from './lib/dataService'
 import { useComponentSettings } from './ComponentSettingsContext'
+import { useLicense } from './LicenseContext'
+import { checkCanCreateCustomer } from './lib/licenseService'
 import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
 import { AddressLookupFields } from './components/AddressLookupFields'
 import { lazy, Suspense } from 'react'
@@ -65,6 +67,7 @@ const Kunden = () => {
   const { userRole } = useAuth()
   const { showError } = useToast()
   const { isEnabled } = useComponentSettings()
+  const { license } = useLicense()
   const canEdit = userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'demo'
   const canDelete = userRole === 'admin' || userRole === 'demo'
   const canCreateBv = userRole === 'admin' || userRole === 'demo'
@@ -232,7 +235,12 @@ const Kunden = () => {
 
   // --- Customer CRUD ---
 
-  const handleOpenCreate = () => {
+  const handleOpenCreate = async () => {
+    const allowed = await checkCanCreateCustomer()
+    if (!allowed) {
+      showError('Kunden-Limit erreicht. Bitte Lizenz upgraden, um weitere Kunden anzulegen.')
+      return
+    }
     setFormData(INITIAL_CUSTOMER_FORM)
     setEditingId(null)
     setFormError(null)
