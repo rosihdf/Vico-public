@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext'
 import { fetchMyProfile, getProfileDisplayName, type Profile } from './lib/userService'
 import { fetchOrdersAssignedTo, fetchCustomers, fetchAllBvs, fetchMaintenanceReminders } from './lib/dataService'
 import { getObjectDisplayName } from './lib/objectUtils'
+import { LoadingSpinner } from './components/LoadingSpinner'
 import { subscribeToOrderChanges } from './lib/orderRealtime'
 import type { Order, Customer, BV, OrderType, OrderStatus, MaintenanceReminder } from './types'
 
@@ -134,8 +135,8 @@ const Startseite = () => {
 
   return (
     <div className="p-4">
-      <h2 className="text-xl font-bold text-slate-800">Dashboard</h2>
-      <p className="mt-2 text-slate-600">
+      <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Dashboard</h2>
+      <p className="mt-2 text-slate-600 dark:text-slate-400">
         {profile
           ? `Hallo, ${getProfileDisplayName(profile)}! Willkommen bei Vico Türen & Tore.`
           : 'Willkommen bei Vico Türen & Tore.'}
@@ -154,12 +155,12 @@ const Startseite = () => {
               return (
                 <div
                   key={d}
-                  className={`bg-white rounded-lg border p-2 text-center ${
-                    isToday ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'
+                  className={`bg-white dark:bg-slate-800 rounded-lg border p-2 text-center ${
+                    isToday ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200 dark:border-slate-600'
                   }`}
                 >
-                  <div className="text-xs text-slate-500">{dayNames[i]}</div>
-                  <div className="text-lg font-semibold text-slate-800">{dayNum}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">{dayNames[i]}</div>
+                  <div className="text-lg font-semibold text-slate-800 dark:text-slate-100">{dayNum}</div>
                   {dayOrders.length > 0 && (
                     <div className="text-xs font-medium mt-1 flex flex-col items-center gap-0.5">
                       {formatDayStatusSummaryLines(dayOrders).map(({ status, text }) => (
@@ -187,25 +188,31 @@ const Startseite = () => {
 
       {user && reminders.length > 0 && (
         <section className="mt-6" aria-labelledby="wartung-faellig-heading">
-          <h3 id="wartung-faellig-heading" className="text-lg font-semibold text-slate-800 mb-3">
+          <h3 id="wartung-faellig-heading" className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">
             Wartung fällig / Erinnerungen
           </h3>
           <ul className="space-y-2" aria-label="Wartungserinnerungen">
             {reminders.map((r) => {
-              const objName = getObjectDisplayName(r)
+              const objName = getObjectDisplayName({
+                name: r.object_name,
+                internal_id: r.internal_id,
+                room: r.object_room,
+                floor: r.object_floor,
+                manufacturer: r.object_manufacturer,
+              })
               return (
               <li key={r.object_id}>
                 <Link
                   to={`/kunden?customerId=${r.customer_id}&bvId=${r.bv_id}&objectId=${r.object_id}`}
-                  className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50 transition-colors"
+                  className="block bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                 >
-                  <p className="font-medium text-slate-800">
+                  <p className="font-medium text-slate-800 dark:text-slate-100">
                     {r.customer_name} → {r.bv_name}
                     {objName !== '–' && (
-                      <span className="text-slate-600 font-normal"> · {objName}</span>
+                      <span className="text-slate-600 dark:text-slate-400 font-normal"> · {objName}</span>
                     )}
                   </p>
-                  <p className="text-sm text-slate-600 mt-1">
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                     {r.status === 'overdue' ? (
                       <span className="text-red-600 font-medium">
                         Überfällig
@@ -229,13 +236,13 @@ const Startseite = () => {
 
       {user && (
         <section className="mt-6" aria-labelledby="meine-auftraege-heading">
-          <h3 id="meine-auftraege-heading" className="text-lg font-semibold text-slate-800 mb-3">
+          <h3 id="meine-auftraege-heading" className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">
             Meine zugewiesenen Aufträge
           </h3>
           {isLoading ? (
-            <p className="text-slate-600">Lade Aufträge…</p>
+            <LoadingSpinner message="Lade Aufträge…" size="sm" className="py-4" />
           ) : activeOrders.length === 0 ? (
-            <div className="p-6 bg-white rounded-xl border border-slate-200 text-center text-slate-600">
+            <div className="p-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 text-center text-slate-600 dark:text-slate-400">
               Keine Aufträge zugewiesen.
             </div>
           ) : (
@@ -244,12 +251,12 @@ const Startseite = () => {
                 <li key={o.id}>
                   <Link
                     to={o.object_id ? `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}&objectId=${o.object_id}` : `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}`}
-                    className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50 transition-colors"
+                    className="block bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                   >
-                    <p className="font-medium text-slate-800">
+                    <p className="font-medium text-slate-800 dark:text-slate-100">
                       {getCustomerName(o.customer_id)} → {getBvName(o.bv_id)}
                     </p>
-                    <p className="text-sm text-slate-600 mt-1">
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                       {o.order_date} · {ORDER_TYPE_LABELS[o.order_type]} ·{' '}
                       <span
                         className={
@@ -257,14 +264,14 @@ const Startseite = () => {
                             ? 'text-amber-600'
                             : o.status === 'in_bearbeitung'
                               ? 'text-blue-600'
-                              : 'text-slate-600'
+                              : 'text-slate-600 dark:text-slate-400'
                         }
                       >
                         {ORDER_STATUS_LABELS[o.status]}
                       </span>
                     </p>
                     {o.description && (
-                      <p className="text-sm text-slate-500 mt-1 truncate">{o.description}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-500 mt-1 truncate">{o.description}</p>
                     )}
                   </Link>
                 </li>

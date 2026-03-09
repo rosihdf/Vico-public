@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { ToastProvider } from './ToastContext'
+import { ThemeProvider } from './ThemeContext'
 import { SyncProvider } from './SyncContext'
 import { ComponentSettingsProvider } from './ComponentSettingsContext'
 import { AuthProvider } from './AuthContext'
@@ -8,6 +9,7 @@ import AuthLoader from './AuthLoader'
 import Layout from './Layout'
 import ProtectedRoute from './ProtectedRoute'
 import ComponentGuard from './ComponentGuard'
+import { LoadingSpinner } from './components/LoadingSpinner'
 
 const Startseite = lazy(() => import('./Startseite'))
 const Kunden = lazy(() => import('./Kunden'))
@@ -25,15 +27,14 @@ const ResetPassword = lazy(() => import('./ResetPassword'))
 const Profil = lazy(() => import('./Profil'))
 
 const PageFallback = () => (
-  <div className="p-8 flex justify-center items-center min-h-[200px]">
-    <span className="text-slate-600">Lade…</span>
-  </div>
+  <LoadingSpinner message="Lade…" size="lg" className="p-8 min-h-[200px]" />
 )
 
 const App = () => {
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#5b7895' }}>
+    <div className="min-h-screen bg-[#5b7895] dark:bg-slate-900 transition-colors">
     <ToastProvider>
+    <ThemeProvider>
     <AuthProvider>
       <AuthLoader>
         <SyncProvider>
@@ -62,6 +63,7 @@ const App = () => {
         </SyncProvider>
       </AuthLoader>
     </AuthProvider>
+    </ThemeProvider>
     </ToastProvider>
     </div>
   )

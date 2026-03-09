@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
+import { useTheme } from './ThemeContext'
 import { useComponentSettings } from './ComponentSettingsContext'
+import type { Theme } from './ThemeContext'
 import { fetchProfileByEmail } from './lib/userService'
 import { downloadWebAppChecklist } from './lib/downloadChecklist'
 import type { SyncStatus } from './types'
@@ -15,9 +17,16 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
   synced: '🔵 Synchronisiert',
 }
 
+const THEME_LABELS: Record<Theme, string> = {
+  light: 'Hell',
+  dark: 'Dunkel',
+  system: 'System',
+}
+
 const Einstellungen = () => {
   const { syncStatus, setSyncStatus, syncNow, pendingCount, lastSyncError, clearSyncError } = useSync()
   const { userRole, refreshUserRole } = useAuth()
+  const { theme, setTheme } = useTheme()
   const { settingsList, updateSetting, refresh } = useComponentSettings()
   const [isSyncing, setIsSyncing] = useState(false)
   const [componentError, setComponentError] = useState<string | null>(null)
@@ -70,20 +79,51 @@ const Einstellungen = () => {
 
   return (
     <div className="p-4 max-w-xl">
-      <h2 className="text-xl font-bold text-slate-800 mb-6">Einstellungen</h2>
+      <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">Einstellungen</h2>
+
+      {/* Darstellung */}
+      <section
+        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+        aria-labelledby="darstellung-heading"
+      >
+        <h3 id="darstellung-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+          Darstellung
+        </h3>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+          Farbschema der App anpassen.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {(['light', 'dark', 'system'] as Theme[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTheme(t)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                theme === t
+                  ? 'bg-vico-primary text-white'
+                  : 'border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+              }`}
+              aria-pressed={theme === t}
+              aria-label={`${THEME_LABELS[t]} auswählen`}
+            >
+              {THEME_LABELS[t]}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* Benutzeranleitung */}
       <section
-        className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
+        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
         aria-labelledby="anleitung-heading"
       >
-        <h3 id="anleitung-heading" className="text-sm font-semibold text-slate-700 mb-3">
+        <h3 id="anleitung-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
           Benutzeranleitung
         </h3>
         <button
           type="button"
           onClick={() => window.open('/BENUTZERANLEITUNG.md', '_blank', 'noopener,noreferrer')}
-          className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+          className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
           aria-label="Benutzeranleitung öffnen"
         >
           Benutzeranleitung öffnen
@@ -92,19 +132,19 @@ const Einstellungen = () => {
 
       {/* Checklisten */}
       <section
-        className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
+        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
         aria-labelledby="checklisten-heading"
       >
-        <h3 id="checklisten-heading" className="text-sm font-semibold text-slate-700 mb-3">
+        <h3 id="checklisten-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
           Checklisten
         </h3>
-        <p className="text-sm text-slate-600 mb-3">
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
           Web-App-Test-Checkliste als PDF erstellen und herunterladen.
         </p>
         <button
           type="button"
           onClick={downloadWebAppChecklist}
-          className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+          className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
           aria-label="Web-App-Test-Checkliste herunterladen"
         >
           Web-App-Test-Checkliste
@@ -113,21 +153,21 @@ const Einstellungen = () => {
 
       {/* App */}
       <section
-        className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
+        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
         aria-labelledby="app-heading"
       >
-        <h3 id="app-heading" className="text-sm font-semibold text-slate-700 mb-3">
+        <h3 id="app-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
           App
         </h3>
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-slate-600">Version {APP_VERSION}</span>
-          <span className="text-slate-600">
+          <span className="text-slate-600 dark:text-slate-400">Version {APP_VERSION}</span>
+          <span className="text-slate-600 dark:text-slate-400">
             Rolle: <strong>{userRole === 'admin' ? 'Admin' : userRole === 'leser' ? 'Leser' : userRole === 'operator' ? 'Operator' : userRole === 'demo' ? 'Demo' : 'Mitarbeiter'}</strong>
           </span>
           <button
             type="button"
             onClick={() => refreshUserRole()}
-            className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+            className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
             aria-label="Rolle vom Server neu laden"
           >
             Rolle neu laden
@@ -136,7 +176,7 @@ const Einstellungen = () => {
             type="button"
             onClick={handleCheckUpdate}
             disabled={updateStatus === 'checking'}
-            className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
             aria-label="Auf Updates prüfen"
           >
             {updateStatus === 'checking' ? 'Prüfe…' : 'Auf Updates prüfen'}
@@ -186,19 +226,19 @@ const Einstellungen = () => {
 
       {/* Sync */}
       <section
-        className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
+        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
         aria-labelledby="sync-heading"
       >
-        <h3 id="sync-heading" className="text-sm font-semibold text-slate-700 mb-3">
+        <h3 id="sync-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
           Synchronisation
         </h3>
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-slate-600">
+          <span className="text-slate-600 dark:text-slate-400">
             {pendingCount > 0
               ? `${pendingCount} Änderung(en) ausstehend`
               : 'Alles synchronisiert'}
           </span>
-          <span className="px-2 py-0.5 rounded text-sm bg-slate-100 text-slate-600">
+          <span className="px-2 py-0.5 rounded text-sm bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
             {SYNC_LABELS[syncStatus]}
           </span>
         </div>
@@ -249,13 +289,13 @@ const Einstellungen = () => {
       {/* Komponenten aktivieren/deaktivieren (Admin) */}
       {userRole === 'admin' && (
         <section
-          className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
           aria-labelledby="komponenten-heading"
         >
-          <h3 id="komponenten-heading" className="text-sm font-semibold text-slate-700 mb-3">
+          <h3 id="komponenten-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
             Komponenten
           </h3>
-          <p className="text-sm text-slate-600 mb-3">
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
             Aktivieren oder deaktivieren Sie einzelne Bereiche der App.
           </p>
           {componentError && (
@@ -267,9 +307,9 @@ const Einstellungen = () => {
             {settingsList.map((item) => (
               <label
                 key={item.id}
-                className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 last:border-0 cursor-pointer"
+                className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 dark:border-slate-600 last:border-0 cursor-pointer"
               >
-                <span className="text-sm text-slate-700">{item.label}</span>
+                <span className="text-sm text-slate-700 dark:text-slate-200">{item.label}</span>
                 <input
                   type="checkbox"
                   checked={item.enabled}
@@ -296,7 +336,7 @@ const Einstellungen = () => {
               setComponentError(null)
               refresh()
             }}
-            className="mt-3 px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50"
+            className="mt-3 px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
             aria-label="Einstellungen neu laden"
           >
             Neu laden
@@ -307,10 +347,10 @@ const Einstellungen = () => {
       {/* Benutzerverwaltung (Admin) */}
       {userRole === 'admin' && (
         <section
-          className="mb-6 p-4 bg-white rounded-xl border border-slate-200 shadow-sm"
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
           aria-labelledby="benutzer-heading"
         >
-          <h3 id="benutzer-heading" className="text-sm font-semibold text-slate-700 mb-3">
+          <h3 id="benutzer-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
             Benutzerverwaltung
           </h3>
           <Link
@@ -320,28 +360,28 @@ const Einstellungen = () => {
             Benutzer verwalten →
           </Link>
 
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <p className="text-xs text-slate-500 mb-2">Benutzer-Rolle prüfen</p>
+          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-600">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Benutzer-Rolle prüfen</p>
             <div className="flex gap-2">
               <input
                 type="email"
                 value={checkEmail}
                 onChange={(e) => setCheckEmail(e.target.value)}
                 placeholder="E-Mail eingeben"
-                className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm"
+                className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm"
                 aria-label="E-Mail zum Prüfen"
               />
               <button
                 type="button"
                 onClick={handleCheckUser}
                 disabled={isChecking}
-                className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
               >
                 {isChecking ? '…' : 'Prüfen'}
               </button>
             </div>
             {checkResult && (
-              <p className="mt-2 text-sm text-slate-600">
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
                 <strong>{checkResult.email}</strong> → {checkResult.role}
               </p>
             )}

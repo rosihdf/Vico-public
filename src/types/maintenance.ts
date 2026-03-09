@@ -9,6 +9,10 @@ export type MaintenanceReminder = {
   bv_id: string
   bv_name: string
   internal_id: string | null
+  object_name?: string | null
+  object_room?: string | null
+  object_floor?: string | null
+  object_manufacturer?: string | null
   maintenance_interval_months: number
   last_maintenance_date: string | null
   next_maintenance_date: string | null

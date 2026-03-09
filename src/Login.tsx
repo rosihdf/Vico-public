@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { useToast } from './ToastContext'
 import { getRememberMe } from './supabase'
 import Logo from './Logo'
 
 const Login = () => {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [rememberMe, setRememberMeState] = useState(true)
   const [showRegister, setShowRegister] = useState(false)
   const [showForgotPassword, setShowForgotPassword] = useState(false)
@@ -17,6 +19,7 @@ const Login = () => {
   const [registerPassword, setRegisterPassword] = useState('')
   const [registerMessage, setRegisterMessage] = useState<string | null>(null)
   const { login, signUp, resetPasswordForEmail, loginError } = useAuth()
+  const { showError } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
   const stateMessage = (location.state as { message?: string } | null)?.message
@@ -27,9 +30,16 @@ const Login = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const success = await login(identifier, password, rememberMe)
-    if (success) {
-      navigate('/')
+    setIsSubmitting(true)
+    try {
+      const result = await login(identifier, password, rememberMe)
+      if (result.success) {
+        navigate('/')
+      } else if (result.message) {
+        showError(result.message)
+      }
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -72,9 +82,9 @@ const Login = () => {
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm p-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-lg">
         <Logo variant="login" />
-        <h2 className="text-xl font-bold text-slate-800 mb-6">
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">
           {showForgotPassword ? 'Passwort zurücksetzen' : showRegister ? 'Konto anlegen' : 'Anmelden'}
         </h2>
 
@@ -180,18 +190,18 @@ const Login = () => {
           <div>
             <label
               htmlFor="identifier"
-              className="block text-sm font-medium text-slate-700 mb-1"
+              className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1"
             >
-              E-Mail oder Benutzername
+              E-Mail
             </label>
             <input
               id="identifier"
-              type="text"
+              type="email"
               value={identifier}
               onChange={handleIdentifierChange}
               autoComplete="username email"
               placeholder="name@beispiel.de"
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:border-transparent"
               aria-required="true"
               aria-invalid={!!loginError}
             />
@@ -200,7 +210,7 @@ const Login = () => {
           <div>
             <label
               htmlFor="password"
-              className="block text-sm font-medium text-slate-700 mb-1"
+              className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1"
             >
               Passwort
             </label>
@@ -210,7 +220,7 @@ const Login = () => {
               value={password}
               onChange={handlePasswordChange}
               autoComplete="current-password"
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary focus:border-transparent"
+              className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:border-transparent"
               aria-required="true"
               aria-invalid={!!loginError}
             />
@@ -224,24 +234,24 @@ const Login = () => {
               className="rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
               aria-label="Eingeloggt bleiben"
             />
-            <span className="text-sm text-slate-700">Eingeloggt bleiben</span>
+            <span className="text-sm text-slate-700 dark:text-slate-200">Eingeloggt bleiben</span>
           </label>
 
           {stateMessage && (
             <p className="text-sm text-green-600">{stateMessage}</p>
           )}
           {loginError && (
-            <p className="text-sm text-red-600" role="alert">
+            <p className="text-sm text-red-600 dark:text-red-400 font-medium" role="alert">
               {loginError}
             </p>
           )}
 
           <button
             type="submit"
-            className="w-full py-2.5 text-slate-800 font-medium rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 hover:bg-slate-100"
-            style={{ backgroundColor: '#ffffff' }}
+            disabled={isSubmitting}
+            className="w-full py-2.5 text-slate-800 dark:text-slate-100 font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Anmelden
+            {isSubmitting ? 'Wird angemeldet…' : 'Anmelden'}
           </button>
 
           <button

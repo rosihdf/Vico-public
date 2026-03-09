@@ -168,6 +168,10 @@ const mapReminderRow = (row: Record<string, unknown>): MaintenanceReminder => ({
   bv_id: row.bv_id as string,
   bv_name: (row.bv_name as string) ?? '',
   internal_id: (row.internal_id as string) ?? null,
+  object_name: (row.object_name as string) ?? null,
+  object_room: (row.object_room as string) ?? null,
+  object_floor: (row.object_floor as string) ?? null,
+  object_manufacturer: (row.object_manufacturer as string) ?? null,
   maintenance_interval_months: (row.maintenance_interval_months as number) ?? 0,
   last_maintenance_date: row.last_maintenance_date ? String(row.last_maintenance_date).slice(0, 10) : null,
   next_maintenance_date: row.next_maintenance_date ? String(row.next_maintenance_date).slice(0, 10) : null,
@@ -833,6 +837,50 @@ export const getObjectPhotoUrl = (storagePath: string): string => {
 
 export const getObjectPhotoDisplayUrl = (p: ObjectPhotoDisplay): string =>
   p.localDataUrl ?? getObjectPhotoUrl(p.storage_path)
+
+// --- Kundenportal ---
+
+export type PortalUser = {
+  id: string
+  customer_id: string
+  email: string
+  user_id: string | null
+  invited_by: string | null
+  invited_at: string
+  created_at: string
+}
+
+export const fetchPortalUsers = async (customerId: string): Promise<PortalUser[]> => {
+  if (!isOnline()) return []
+  const { data, error } = await supabase
+    .from('customer_portal_users')
+    .select('*')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false })
+  if (error) return []
+  return (data ?? []) as PortalUser[]
+}
+
+export const invitePortalUser = async (
+  customerId: string,
+  email: string
+): Promise<{ success: boolean; error?: string }> => {
+  const { data, error } = await supabase.functions.invoke('invite-portal-user', {
+    body: { customer_id: customerId, email },
+  })
+  if (error) return { success: false, error: error.message }
+  const bodyError = (data as { error?: string })?.error
+  if (bodyError) return { success: false, error: bodyError }
+  return { success: true }
+}
+
+export const deletePortalUser = async (
+  id: string
+): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) return { error: { message: 'Offline: Nicht möglich' } }
+  const { error } = await supabase.from('customer_portal_users').delete().eq('id', id)
+  return { error: error ? { message: error.message } : null }
+}
 
 // --- Aufträge (Orders) ---
 

@@ -168,6 +168,7 @@ Nach dem Login sehen Sie die Startseite mit:
 | **Mitarbeiter** | CRUD Stammdaten + Aufträge, kein Löschen von Kunden/BVs/Objekten, BV anlegen nur Admin |
 | **Operator** | Nur Wartungsprotokolle schreiben, Stammdaten/Aufträge lesen |
 | **Leser** | Nur lesen |
+| **Demo** | Wie Mitarbeiter, aber nur eigene Demo-Daten; werden nach 24h gelöscht |
 
 ---
 

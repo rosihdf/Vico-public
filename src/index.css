@@ -14,6 +14,10 @@ body {
   background-color: var(--vico-background);
 }
 
+.dark body {
+  background-color: #1e293b;
+}
+
 * {
   box-sizing: border-box;
 }

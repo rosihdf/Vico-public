@@ -5,7 +5,7 @@ export type Profile = {
   email: string | null
   first_name: string | null
   last_name: string | null
-  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo'
+  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
   created_at?: string
   updated_at?: string
 }
@@ -58,7 +58,7 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
 
 export const updateProfileRoleByEmail = async (
   email: string,
-  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo'
+  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
 ): Promise<{ error: { message: string } | null }> => {
   const profile = await fetchProfileByEmail(email)
   if (!profile) return { error: { message: 'Benutzer nicht gefunden.' } }
@@ -67,7 +67,7 @@ export const updateProfileRoleByEmail = async (
 
 export const updateProfileRole = async (
   profileId: string,
-  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo'
+  role: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
 ): Promise<{ error: { message: string } | null }> => {
   const { error } = await supabase
     .from('profiles')

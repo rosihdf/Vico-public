@@ -4,15 +4,17 @@ import { useAuth } from './AuthContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import { supabase } from './supabase'
 import { fetchProfiles, updateProfileRole, updateProfileName, getProfileDisplayName } from './lib/userService'
+import { LoadingSpinner } from './components/LoadingSpinner'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import type { Profile } from './lib/userService'
 
-const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo', string> = {
+const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde', string> = {
   admin: 'Admin',
   mitarbeiter: 'Mitarbeiter',
   operator: 'Operator',
   leser: 'Leser',
   demo: 'Demo (24h-Löschung)',
+  kunde: 'Kunde (Portal)',
 }
 
 const Benutzerverwaltung = () => {
@@ -133,7 +135,7 @@ const Benutzerverwaltung = () => {
   const isLastAdmin = (p: Profile) =>
     p.role === 'admin' && profiles.filter((x) => x.role === 'admin').length === 1
 
-  const handleRoleChange = async (profile: Profile, newRole: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo') => {
+  const handleRoleChange = async (profile: Profile, newRole: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde') => {
     if (newRole === profile.role) return
     if (isLastAdmin(profile)) return
     setFormError(null)
@@ -186,7 +188,7 @@ const Benutzerverwaltung = () => {
       </div>
 
       {isLoading ? (
-        <p className="mt-4 text-slate-600">Lade Benutzer…</p>
+        <LoadingSpinner message="Lade Benutzer…" className="mt-4 py-8" />
       ) : (
         <>
           {formError && (
@@ -226,7 +228,7 @@ const Benutzerverwaltung = () => {
               </div>
               <select
                 value={p.role}
-                onChange={(e) => handleRoleChange(p, e.target.value as 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo')}
+                onChange={(e) => handleRoleChange(p, e.target.value as 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde')}
                 disabled={updatingId === p.id || isLastAdmin(p)}
                 className="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 bg-white disabled:opacity-50 min-w-[140px]"
                 aria-label={`Rolle von ${getProfileDisplayName(p)} ändern`}

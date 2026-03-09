@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchCustomers, fetchAllBvs, fetchAllObjects } from './lib/dataService'
 import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
+import { LoadingSpinner } from './components/LoadingSpinner'
 import type { Customer, BV, Object as Obj } from './types'
 
 const matchQuery = (text: string | null, q: string): boolean => {
@@ -135,7 +136,7 @@ const Suche = () => {
       />
 
       {isLoading ? (
-        <p className="mt-4 text-slate-600">Lade Daten…</p>
+        <LoadingSpinner message="Lade Daten…" className="mt-4 py-8" />
       ) : query.trim().length >= 2 ? (
         results.length === 0 ? (
           <p className="mt-4 text-slate-600">Keine Treffer.</p>

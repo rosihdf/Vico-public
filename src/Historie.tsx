@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from './AuthContext'
+import { LoadingSpinner } from './components/LoadingSpinner'
 import { fetchAuditLog, type AuditLogEntry } from './lib/dataService'
 
 const TABLE_LABELS: Record<string, string> = {
@@ -74,7 +75,7 @@ const Historie = () => {
       </div>
 
       {isLoading ? (
-        <p className="text-slate-600">Lade Historie…</p>
+        <LoadingSpinner message="Lade Historie…" className="py-8" />
       ) : entries.length === 0 ? (
         <p className="text-slate-600 py-8 text-center">Noch keine Einträge in der Historie.</p>
       ) : (

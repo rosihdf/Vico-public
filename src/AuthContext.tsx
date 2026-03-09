@@ -3,7 +3,7 @@ import { supabase, setRememberMe } from './supabase'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import type { User, Session } from '@supabase/supabase-js'
 
-type UserRole = 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo'
+type UserRole = 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
 
 type Profile = {
   id: string
@@ -17,7 +17,7 @@ type AuthContextType = {
   userEmail: string | null
   userRole: UserRole | null
   refreshUserRole: () => Promise<void>
-  login: (identifier: string, password: string, rememberMe?: boolean) => Promise<boolean>
+  login: (identifier: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; message?: string }>
   signUp: (email: string, password: string) => Promise<{ success: boolean; message: string; sessionCreated?: boolean }>
   resetPasswordForEmail: (email: string) => Promise<{ success: boolean; message: string }>
   updatePassword: (newPassword: string) => Promise<{ success: boolean; message: string }>
@@ -30,7 +30,7 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 const fetchProfileSupabase = async (userId: string): Promise<Profile | null> => {
   const { data: roleData, error: roleError } = await supabase.rpc('get_my_role')
-  if (!roleError && roleData != null && (roleData === 'admin' || roleData === 'mitarbeiter' || roleData === 'operator' || roleData === 'leser' || roleData === 'demo')) {
+  if (!roleError && roleData != null && (roleData === 'admin' || roleData === 'mitarbeiter' || roleData === 'operator' || roleData === 'leser' || roleData === 'demo' || roleData === 'kunde')) {
     return { id: userId, email: null, role: roleData as UserRole }
   }
   const { data, error } = await supabase
@@ -54,33 +54,43 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const login = useCallback(async (identifier: string, password: string, rememberMe = true) => {
     setLoginError(null)
     if (!identifier.trim() || !password) {
-      setLoginError('Bitte E-Mail und Passwort eingeben.')
-      return false
+      const msg = 'Bitte E-Mail und Passwort eingeben.'
+      setLoginError(msg)
+      return { success: false, message: msg }
     }
 
     const url = import.meta.env.VITE_SUPABASE_URL
-    if (!url) {
-      setLoginError('Supabase nicht konfiguriert. .env prüfen.')
-      return false
+    if (!url || url.includes('example.supabase.co')) {
+      const msg = 'Supabase nicht konfiguriert. .env mit VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY prüfen.'
+      setLoginError(msg)
+      return { success: false, message: msg }
     }
 
     setRememberMe(rememberMe)
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: identifier.trim(),
-      password,
-    })
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: identifier.trim(),
+        password,
+      })
 
-    if (error) {
-      setLoginError(getSupabaseErrorMessage(error))
-      return false
-    }
+      if (error) {
+        const msg = getSupabaseErrorMessage(error)
+        setLoginError(msg)
+        return { success: false, message: msg }
+      }
 
-    if (data.user) {
-      const profile = await fetchProfileSupabase(data.user.id)
-      setUserRole(profile?.role ?? 'mitarbeiter')
+      if (data.user) {
+        setUser(data.user)
+        const profile = await fetchProfileSupabase(data.user.id)
+        setUserRole(profile?.role ?? 'mitarbeiter')
+      }
+      return { success: true }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Anmeldung fehlgeschlagen.'
+      setLoginError(msg)
+      return { success: false, message: msg }
     }
-    return true
   }, [])
 
   const signUp = useCallback(async (email: string, password: string) => {

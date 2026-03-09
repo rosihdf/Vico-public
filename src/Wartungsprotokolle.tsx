@@ -21,6 +21,7 @@ import {
 } from './lib/dataService'
 import SignatureField from './SignatureField'
 import { useAuth } from './AuthContext'
+import { LoadingSpinner } from './components/LoadingSpinner'
 import { getObjectDisplayName } from './lib/objectUtils'
 import type {
   Object as Obj,
@@ -354,7 +355,7 @@ const Wartungsprotokolle = () => {
   if (!bv || !customer || isLoading) {
     return (
       <div className="p-4">
-        <p className="text-slate-600">Lade...</p>
+        <LoadingSpinner message="Lade…" className="py-8" />
       </div>
     )
   }

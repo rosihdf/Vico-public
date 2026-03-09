@@ -1,6 +1,6 @@
 # Vico – Türen & Tore
 
-Wartungs- und Mängeldokumentation für Türen und Tore. Stand: Februar 2025.
+Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2025.
 
 ---
 
@@ -72,6 +72,8 @@ Kunde → BV → Objekt → Wartungsprotokolle
 | **Mitarbeiter** | CRUD Stammdaten + Aufträge (außer Löschen von Kunden, BVs, Objekten; BV anlegen nur Admin) |
 | **Operator** | Nur Wartungsprotokolle schreiben, Stammdaten/Aufträge lesen |
 | **Leser** | Nur lesen |
+| **Demo** | Wie Mitarbeiter, aber nur eigene Daten; keine Auftragszuweisung; Daten nach 24h gelöscht |
+| **Kunde** | Portal-Benutzer (extern): Nur Wartungsprotokolle der eigenen Kunden lesen + PDF-Download |
 
 ---
 
@@ -99,6 +101,12 @@ Kunde → BV → Objekt → Wartungsprotokolle
 - Lokale Speicherung, Outbox
 - Sync-Status: Offline, Ready, Synchronisiert
 
+### Darstellung (UX)
+
+- **Dunkelmodus**: Einstellungen → Darstellung → Hell / Dunkel / System (folgt Systempräferenz)
+- **LoadingSpinner**: Einheitliche Ladeanzeige (Spinner + Text) auf allen Seiten
+- **Header**: Immer Vico-Farbe (#5b7895), Logo farblich eingebettet auch im Dark-Mode
+
 ---
 
 ## 4. Datenbank (Supabase)
@@ -108,6 +116,7 @@ Kunde → BV → Objekt → Wartungsprotokolle
 - profiles, customers, bvs, objects
 - object_photos, maintenance_reports, maintenance_report_photos, maintenance_report_smoke_detectors
 - orders, component_settings, audit_log
+- customer_portal_users (Kundenportal: Verknüpfung Auth-User ↔ Kunden)
 
 ### Indizes
 
@@ -118,7 +127,7 @@ Kunde → BV → Objekt → Wartungsprotokolle
 
 ### Schema
 
-`supabase-complete.sql` im Supabase SQL Editor ausführen (idempotent). Enthält Rollen (admin, mitarbeiter, operator, leser), RLS, RPCs, Audit-Trigger.
+`supabase-complete.sql` im Supabase SQL Editor ausführen (idempotent). Enthält Rollen (admin, mitarbeiter, operator, leser, demo, kunde), RLS, RPCs, Audit-Trigger, Kundenportal-Tabellen.
 
 ---
 
@@ -154,6 +163,7 @@ Manueller Start: Actions → Supabase Keep-Alive → Run workflow.
 - **Rolle "demo"**: Admin weist in Benutzerverwaltung zu.
 - Demo-Benutzer sehen nur eigene Daten (Kunden mit `demo_user_id`).
 - Beim Anlegen von Kunden wird automatisch `demo_user_id` gesetzt (Trigger).
+- **Aufträge**: Demo-User dürfen keinen Aufträgen zugewiesen werden (DB-Trigger, Filter in Zuweisungsliste).
 - **Löschung**: GitHub Actions `.github/workflows/cleanup-demo-data.yml` läuft täglich 4:00 UTC, ruft RPC `cleanup_demo_customers_older_than_24h()` auf.
 - Gleiche Secrets wie Keep-Alive.
 
@@ -170,6 +180,7 @@ Manueller Start: Actions → Supabase Keep-Alive → Run workflow.
 | objectUtils | ✅ `getObjectDisplayName()` |
 | Objekt-Anzeige | ✅ Suche, Auftrag, Wartung, PDF, QR, Startseite, Wartungsstatus (Ampel) in Kundenübersicht |
 | Rechte | ✅ Kunden/BVs/Objekte löschen nur Admin, BV anlegen nur Admin, Demo-Rolle (24h-Löschung) |
+| UX | ✅ Dunkelmodus (Hell/Dunkel/System), LoadingSpinner global, Login-Fehler per Toast, Touch-Targets (44px), Header immer Vico-Farbe |
 | Web-App-Test-Checkliste | ✅ 45 Punkte, `npm run generate-checklist-webapp`, Button in Einstellungen |
 | Historie | ✅ Audit-Log, Route `/historie` |
 | Adressuche | ✅ OpenPLZ API: PLZ→Ort, Straßen unter PLZ |
@@ -181,6 +192,7 @@ Manueller Start: Actions → Supabase Keep-Alive → Run workflow.
 | npm audit | ✅ 0 Schwachstellen |
 | ESLint | ✅ Konfiguriert |
 | CI/CD | ✅ GitHub Actions: Lint, Test, Build bei Push/PR |
+| PWA | ✅ vite-plugin-pwa 1.2.0 (Vite 7 Support), generateSW |
 
 ### Abgeschlossen
 
@@ -197,8 +209,9 @@ Manueller Start: Actions → Supabase Keep-Alive → Run workflow.
 
 ### Geplant
 
-- DSGVO, Lizenzmodell
-- Kundenportal für Wartungsberichte
+- ~~DSGVO~~ ✅ (Kundenportal: Datenschutzerklärung, Impressum, Einwilligung beim Login)
+- Lizenzmodell
+- ~~Kundenportal für Wartungsberichte~~ ✅ (Separates Portal unter `portal/`, Rolle "kunde", Magic Link + Einladung, RLS)
 
 ### Geplante Verbesserungen
 
@@ -218,6 +231,8 @@ Manueller Start: Actions → Supabase Keep-Alive → Run workflow.
 
 8. ~~**Supabase-Inaktivierung vermeiden**~~ ✅ (GitHub Actions Keep-Alive: `.github/workflows/supabase-keepalive.yml`)
 
+9. ~~**PWA-Build-Fehler beheben**~~ ✅ (vite-plugin-pwa 0.19 → 1.2.0 für Vite 7)
+
 ---
 
 ## 8. Projektstruktur
@@ -225,13 +240,20 @@ Manueller Start: Actions → Supabase Keep-Alive → Run workflow.
 ```
 Vico/
 ├── src/
-│   ├── components/     # AddressLookupFields, OrderCalendar, ObjectFormModal
+│   ├── components/     # AddressLookupFields, LoadingSpinner, OrderCalendar, ObjectFormModal, PortalInviteSection
 │   ├── lib/            # dataService, offlineStorage, Utils, PDF-Generierung
 │   ├── types/          # TypeScript-Typen (customer, bv, object, order, maintenance)
-│   └── *.tsx           # Seiten, Layout, Auth, Context
+│   └── *.tsx           # Seiten, Layout, Auth, ThemeContext, ToastContext, Context
+├── portal/             # Kundenportal (separates Vite-Projekt)
+│   ├── src/
+│   │   ├── pages/      # Login, AuthCallback, Berichte, Datenschutz, Impressum
+│   │   ├── components/ # Layout
+│   │   └── lib/        # supabase, portalService
+│   ├── public/
+│   └── netlify.toml
 ├── public/             # Favicon, Logo, Checkliste-PDF, version.json (Dev-Fallback)
 ├── scripts/            # generate-checklist-webapp-pdf.mjs
-├── supabase/           # Edge Functions (send-maintenance-report)
+├── supabase/           # Edge Functions (send-maintenance-report, invite-portal-user, request-portal-magic-link)
 ├── supabase-complete.sql
 ├── Vico.md
 ├── BENUTZERANLEITUNG.md

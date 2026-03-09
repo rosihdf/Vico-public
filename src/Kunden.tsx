@@ -21,6 +21,8 @@ import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
 import { AddressLookupFields } from './components/AddressLookupFields'
 import { lazy, Suspense } from 'react'
 import ObjectFormModal from './components/ObjectFormModal'
+import { LoadingSpinner } from './components/LoadingSpinner'
+import PortalInviteSection from './components/PortalInviteSection'
 import type { Customer, CustomerFormData, BV, BVFormData } from './types'
 import type { MaintenanceReminder } from './types'
 
@@ -600,7 +602,7 @@ const Kunden = () => {
       </div>
 
       {isLoading ? (
-        <p className="text-slate-600">Lade Kunden...</p>
+        <LoadingSpinner message="Lade Kunden…" className="py-8" />
       ) : filteredCustomers.length === 0 ? (
         <p className="text-slate-600 py-8 text-center">
           {searchQuery ? 'Keine Kunden gefunden.' : 'Noch keine Kunden angelegt.'}
@@ -675,7 +677,7 @@ const Kunden = () => {
                 {isExpanded && (
                   <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
                     {isBvsLoading ? (
-                      <p className="text-sm text-slate-500 py-2">Lade BVs...</p>
+                      <LoadingSpinner message="Lade BVs…" size="sm" className="py-2" />
                     ) : filteredBvs.length === 0 ? (
                       <div className="py-4 flex flex-col items-start gap-3">
                         <p className="text-sm text-slate-500">
@@ -762,7 +764,7 @@ const Kunden = () => {
                                 {isBvExpanded && (
                                   <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
                                     {isObjectsLoading ? (
-                                      <p className="text-xs text-slate-500 py-2">Lade Objekte...</p>
+                                      <LoadingSpinner message="Lade Objekte…" size="sm" className="py-2" />
                                     ) : filteredObjects.length === 0 ? (
                                       <div className="py-3 flex flex-col items-start gap-3">
                                         <p className="text-xs text-slate-500">
@@ -880,6 +882,9 @@ const Kunden = () => {
                           </button>
                         )}
                       </>
+                    )}
+                    {userRole === 'admin' && (
+                      <PortalInviteSection customerId={customer.id} customerName={customer.name} />
                     )}
                   </div>
                 )}

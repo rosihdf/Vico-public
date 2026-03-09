@@ -1,15 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { LoadingSpinner } from './components/LoadingSpinner'
 import { fetchMyProfile, updateProfileName, getProfileDisplayName } from './lib/userService'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import type { Profile } from './lib/userService'
 
-const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser', string> = {
+const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde', string> = {
   admin: 'Admin',
   mitarbeiter: 'Mitarbeiter',
   operator: 'Operator',
   leser: 'Leser',
+  demo: 'Demo',
+  kunde: 'Kunde (Portal)',
 }
 
 const Profil = () => {
@@ -86,12 +89,13 @@ const Profil = () => {
   if (!isAuthenticated) {
     return (
       <div className="p-4">
-        <h2 className="text-xl font-bold text-slate-800">Mein Profil</h2>
-        <p className="mt-2 text-slate-600">Bitte zuerst anmelden.</p>
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Mein Profil</h2>
+        <p className="mt-2 text-slate-600 dark:text-slate-400">Bitte zuerst anmelden.</p>
         <button
           type="button"
           onClick={() => navigate('/login')}
-          className="mt-4 px-4 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover border border-slate-300"
+          className="mt-4 px-4 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 font-medium focus:outline-none focus:ring-2 focus:ring-vico-primary"
+          aria-label="Zum Login"
         >
           Zum Login
         </button>
@@ -101,17 +105,17 @@ const Profil = () => {
 
   return (
     <div className="p-4">
-      <h2 className="text-xl font-bold text-slate-800">Mein Profil</h2>
+      <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Mein Profil</h2>
 
       {isLoading ? (
-        <p className="mt-4 text-slate-600">Lade Profil…</p>
+        <LoadingSpinner message="Lade Profil…" className="mt-4 py-8" />
       ) : (
         <div className="mt-4 space-y-4 max-w-md">
-          <div className="p-4 bg-white rounded-lg border border-slate-200">
+          <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <p className="text-sm text-slate-500">Name</p>
-                <p className="font-medium text-slate-800">
+                <p className="text-sm text-slate-500 dark:text-slate-400">Name</p>
+                <p className="font-medium text-slate-800 dark:text-slate-100">
                   {profile ? getProfileDisplayName(profile) : userEmail ?? '–'}
                 </p>
               </div>
@@ -128,22 +132,22 @@ const Profil = () => {
             </div>
           </div>
 
-          <div className="p-4 bg-white rounded-lg border border-slate-200">
-            <p className="text-sm text-slate-500">E-Mail</p>
-            <p className="font-medium text-slate-800">{userEmail ?? '–'}</p>
+          <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600">
+            <p className="text-sm text-slate-500 dark:text-slate-400">E-Mail</p>
+            <p className="font-medium text-slate-800 dark:text-slate-100">{userEmail ?? '–'}</p>
           </div>
 
           {userRole && (
-            <div className="p-4 bg-white rounded-lg border border-slate-200">
-              <p className="text-sm text-slate-500">Rolle</p>
-              <p className="font-medium text-slate-800">{ROLE_LABELS[userRole]}</p>
+            <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600">
+              <p className="text-sm text-slate-500 dark:text-slate-400">Rolle</p>
+              <p className="font-medium text-slate-800 dark:text-slate-100">{ROLE_LABELS[userRole]}</p>
             </div>
           )}
 
           <button
             type="button"
             onClick={handleLogout}
-            className="mt-4 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
+            className="mt-6 w-full sm:w-auto px-4 py-2.5 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900 transition-colors"
             aria-label="Ausloggen"
           >
             Ausloggen

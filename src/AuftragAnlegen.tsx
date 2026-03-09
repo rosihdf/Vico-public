@@ -20,6 +20,7 @@ import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { fetchProfiles, getProfileDisplayName } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
 import { OrderCalendar } from './components/OrderCalendar'
+import { LoadingSpinner } from './components/LoadingSpinner'
 import type { Order, Customer, BV, Object as Obj, OrderType, OrderStatus } from './types'
 import type { Profile } from './lib/userService'
 
@@ -295,7 +296,7 @@ const AuftragAnlegen = () => {
       )}
 
       {viewMode === 'list' && (isLoading ? (
-        <p className="text-slate-600">Lade Aufträge…</p>
+        <LoadingSpinner message="Lade Aufträge…" className="py-8" />
       ) : displayOrders.length === 0 ? (
         <div className="p-6 bg-white rounded-xl border border-slate-200 text-center text-slate-600">
           Noch keine Aufträge. Klicke auf „Auftrag anlegen“.

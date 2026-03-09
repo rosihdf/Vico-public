@@ -2,6 +2,15 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
 
+const initTheme = () => {
+  const stored = localStorage.getItem('vico-theme')
+  const prefersDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
+  const resolved = stored === 'dark' ? 'dark' : stored === 'light' ? 'light' : prefersDark ? 'dark' : 'light'
+  document.documentElement.classList.remove('light', 'dark')
+  document.documentElement.classList.add(resolved)
+}
+initTheme()
+
 const rootEl = document.getElementById('root')
 if (!rootEl) throw new Error('Root element not found')
 
