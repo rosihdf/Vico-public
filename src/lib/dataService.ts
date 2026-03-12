@@ -9,6 +9,8 @@ import type {
   MaintenanceReportSmokeDetector,
   MaintenanceReminder,
   ObjectPhoto,
+  ObjectDocument,
+  ObjectDocumentType,
 } from '../types'
 import {
   getCachedCustomers,
@@ -26,6 +28,11 @@ import {
   getObjectPhotoOutbox,
   addToObjectPhotoOutbox,
   removeObjectPhotoOutboxItem,
+  getCachedObjectDocuments,
+  setCachedObjectDocuments,
+  getObjectDocumentOutbox,
+  addToObjectDocumentOutbox,
+  removeObjectDocumentOutboxItem,
   getCachedMaintenancePhotos,
   setCachedMaintenancePhotos,
   getMaintenancePhotoOutbox,
@@ -37,6 +44,9 @@ import {
   addToMaintenanceOutbox,
   removeMaintenanceOutboxItem,
   addToOutbox,
+  getCachedAuditLog,
+  setCachedAuditLog,
+  addToEmailOutbox,
 } from './offlineStorage'
 
 type Listener = () => void
@@ -61,6 +71,17 @@ export const fetchCustomers = async (): Promise<Customer[]> => {
     }
   }
   return getCachedCustomers() as Customer[]
+}
+
+export const fetchCustomerCount = async (): Promise<number> => {
+  if (isOnline()) {
+    const { count, error } = await supabase
+      .from('customers')
+      .select('*', { count: 'exact', head: true })
+      .is('demo_user_id', null)
+    if (!error && count !== null) return count
+  }
+  return (getCachedCustomers() as Customer[]).filter((c) => !c.demo_user_id).length
 }
 
 export const fetchCustomer = async (id: string): Promise<Customer | null> => {
@@ -198,19 +219,25 @@ export type AuditLogEntry = {
   created_at: string
 }
 
+const mapAuditRow = (row: Record<string, unknown>): AuditLogEntry => ({
+  id: row.id as string,
+  user_id: (row.user_id as string) ?? null,
+  user_email: (row.user_email as string) ?? null,
+  action: (row.action as string) ?? '',
+  table_name: (row.table_name as string) ?? '',
+  record_id: (row.record_id as string) ?? null,
+  created_at: row.created_at ? new Date(row.created_at as string).toISOString() : '',
+})
+
 export const fetchAuditLog = async (limit = 200): Promise<AuditLogEntry[]> => {
-  if (!isOnline()) return []
+  if (!isOnline()) {
+    return (getCachedAuditLog() as AuditLogEntry[]) ?? []
+  }
   const { data, error } = await supabase.rpc('get_audit_log', { limit_rows: limit })
-  if (error || !Array.isArray(data)) return []
-  return data.map((row: Record<string, unknown>) => ({
-    id: row.id as string,
-    user_id: (row.user_id as string) ?? null,
-    user_email: (row.user_email as string) ?? null,
-    action: (row.action as string) ?? '',
-    table_name: (row.table_name as string) ?? '',
-    record_id: (row.record_id as string) ?? null,
-    created_at: row.created_at ? new Date(row.created_at as string).toISOString() : '',
-  }))
+  if (error || !Array.isArray(data)) return (getCachedAuditLog() as AuditLogEntry[]) ?? []
+  const mapped = data.map((row: Record<string, unknown>) => mapAuditRow(row))
+  setCachedAuditLog(mapped)
+  return mapped
 }
 
 type CustomerPayload = Omit<Customer, 'id' | 'created_at' | 'updated_at'> & {
@@ -716,11 +743,42 @@ export const sendMaintenanceReportEmail = async (
   return { error: null }
 }
 
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const result = reader.result as string
+      const base64 = result.split(',')[1] ?? ''
+      resolve(base64)
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+
+export const sendMaintenanceReportEmailOrQueue = async (
+  pdfBlob: Blob,
+  reportId: string,
+  toEmail: string,
+  subject: string,
+  filename: string
+): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) {
+    const pdfBase64 = await blobToBase64(pdfBlob)
+    addToEmailOutbox({ reportId, pdfBase64, toEmail, subject, filename })
+    notifyDataChange()
+    return { error: null }
+  }
+  const { path, error: uploadError } = await uploadMaintenancePdf(reportId, pdfBlob)
+  if (uploadError || !path) return { error: uploadError ?? { message: 'PDF-Upload fehlgeschlagen' } }
+  return sendMaintenanceReportEmail(path, toEmail, subject, filename)
+}
+
 // --- Object Photos ---
 
 export type ObjectPhotoDisplay = ObjectPhoto & { localDataUrl?: string }
 
 const OBJECT_PHOTOS_BUCKET = 'object-photos'
+const OBJECT_DOCUMENTS_BUCKET = 'object-documents'
 
 const fileToBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -842,6 +900,129 @@ export const getObjectPhotoUrl = (storagePath: string): string => {
 
 export const getObjectPhotoDisplayUrl = (p: ObjectPhotoDisplay): string =>
   p.localDataUrl ?? getObjectPhotoUrl(p.storage_path)
+
+// --- Object Documents ---
+
+export type ObjectDocumentDisplay = ObjectDocument & { localDataUrl?: string }
+
+export const fetchObjectDocuments = async (objectId: string): Promise<ObjectDocumentDisplay[]> => {
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('object_documents')
+      .select('*')
+      .eq('object_id', objectId)
+      .order('created_at', { ascending: false })
+    if (error) return []
+    return (data ?? []) as ObjectDocumentDisplay[]
+  }
+  const cached = (getCachedObjectDocuments() as ObjectDocument[]).filter((d) => d.object_id === objectId)
+  const outbox = getObjectDocumentOutbox().filter((o) => o.object_id === objectId)
+  const pending: ObjectDocumentDisplay[] = outbox.map((o) => ({
+    id: o.tempId,
+    object_id: o.object_id,
+    storage_path: '',
+    document_type: o.document_type,
+    title: o.title,
+    file_name: o.file_name,
+    created_at: o.timestamp,
+    localDataUrl: `data:application/octet-stream;base64,${o.fileBase64}`,
+  }))
+  const merged = [...pending, ...cached]
+  merged.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  return merged
+}
+
+export const uploadObjectDocument = async (
+  objectId: string,
+  file: File,
+  documentType: ObjectDocumentType,
+  title?: string
+): Promise<{ data: ObjectDocumentDisplay | null; error: { message: string } | null }> => {
+  const ext = file.name.split('.').pop() || 'pdf'
+  const fileName = file.name
+  if (!isOnline()) {
+    const base64 = await fileToBase64(file)
+    const tempId = `temp-${crypto.randomUUID()}`
+    addToObjectDocumentOutbox({
+      object_id: objectId,
+      tempId,
+      fileBase64: base64,
+      document_type: documentType,
+      title: title?.trim() || null,
+      file_name: fileName,
+      ext,
+    })
+    notifyDataChange()
+    return {
+      data: {
+        id: tempId,
+        object_id: objectId,
+        storage_path: '',
+        document_type: documentType,
+        title: title?.trim() || null,
+        file_name: fileName,
+        created_at: new Date().toISOString(),
+        localDataUrl: `data:application/octet-stream;base64,${base64}`,
+      },
+      error: null,
+    }
+  }
+  const path = `${objectId}/${crypto.randomUUID()}.${ext}`
+  const { error: uploadError } = await supabase.storage
+    .from(OBJECT_DOCUMENTS_BUCKET)
+    .upload(path, file, { upsert: false })
+  if (uploadError) return { data: null, error: { message: uploadError.message } }
+  const { data: doc, error } = await supabase
+    .from('object_documents')
+    .insert({
+      object_id: objectId,
+      storage_path: path,
+      document_type: documentType,
+      title: title?.trim() || null,
+      file_name: fileName,
+    })
+    .select()
+    .single()
+  return { data: doc as ObjectDocumentDisplay, error: error ? { message: error.message } : null }
+}
+
+export const deleteObjectDocument = async (
+  documentId: string,
+  storagePath: string
+): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) {
+    if (documentId.startsWith('temp-')) {
+      const outbox = getObjectDocumentOutbox()
+      const item = outbox.find((o) => o.tempId === documentId)
+      if (item) removeObjectDocumentOutboxItem(item.id)
+    } else {
+      addToOutbox({
+        table: 'object_documents',
+        action: 'delete',
+        payload: { id: documentId, storage_path: storagePath },
+      })
+      const cached = (getCachedObjectDocuments() as ObjectDocument[]).filter((d) => d.id !== documentId)
+      setCachedObjectDocuments(cached)
+    }
+    notifyDataChange()
+    return { error: null }
+  }
+  await supabase.storage.from(OBJECT_DOCUMENTS_BUCKET).remove([storagePath])
+  const { error } = await supabase.from('object_documents').delete().eq('id', documentId)
+  if (!error) {
+    const cached = (getCachedObjectDocuments() as ObjectDocument[]).filter((d) => d.id !== documentId)
+    setCachedObjectDocuments(cached)
+    notifyDataChange()
+  }
+  return { error: error ? { message: error.message } : null }
+}
+
+export const getObjectDocumentUrl = (storagePath: string): string => {
+  const { data } = supabase.storage
+    .from(OBJECT_DOCUMENTS_BUCKET)
+    .getPublicUrl(storagePath)
+  return data.publicUrl
+}
 
 // --- Kundenportal ---
 

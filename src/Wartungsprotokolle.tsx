@@ -16,8 +16,7 @@ import {
   uploadMaintenancePhoto,
   getMaintenancePhotoUrl,
   deleteMaintenancePhoto,
-  uploadMaintenancePdf,
-  sendMaintenanceReportEmail,
+  sendMaintenanceReportEmailOrQueue,
 } from './lib/dataService'
 import SignatureField from './SignatureField'
 import { useAuth } from './AuthContext'
@@ -333,23 +332,18 @@ const Wartungsprotokolle = () => {
         technicianSignaturePath: r.technician_signature_path,
         customerSignaturePath: r.customer_signature_path,
       })
-      const { path, error: uploadError } = await uploadMaintenancePdf(r.id, blob)
-      if (uploadError) {
-        alert(`Fehler beim Hochladen: ${uploadError.message}`)
-        return
-      }
-      if (!path) {
-        alert('PDF konnte nicht hochgeladen werden.')
-        return
-      }
       const filename = `Wartungsprotokoll_${r.maintenance_date}_${getObjectDisplayName(object)}.pdf`
       const subject = `Wartungsprotokoll ${getObjectDisplayName(object)} – ${r.maintenance_date}`
-      const { error: sendError } = await sendMaintenanceReportEmail(path, recipient, subject, filename)
+      const { error: sendError } = await sendMaintenanceReportEmailOrQueue(blob, r.id, recipient, subject, filename)
       if (sendError) {
         alert(`E-Mail konnte nicht gesendet werden: ${sendError.message}`)
         return
       }
-      alert(`Wartungsprotokoll wurde an ${recipient} gesendet.`)
+      alert(
+        navigator.onLine
+          ? `Wartungsprotokoll wurde an ${recipient} gesendet.`
+          : `E-Mail wird beim nächsten Sync gesendet (${recipient}).`
+      )
     } finally {
       setSendingEmailFor(null)
     }

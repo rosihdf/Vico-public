@@ -30,9 +30,10 @@ const STATUS_LABELS: Record<SmokeDetectorStatus | string, string> = {
   ersetzt: 'Ersetzt',
 }
 
-const fetchImageAsBase64 = async (url: string): Promise<string | null> => {
+const fetchImageAsBase64 = async (urlOrDataUrl: string): Promise<string | null> => {
+  if (urlOrDataUrl.startsWith('data:')) return urlOrDataUrl
   try {
-    const res = await fetch(url, { mode: 'cors' })
+    const res = await fetch(urlOrDataUrl, { mode: 'cors' })
     if (!res.ok) return null
     const blob = await res.blob()
     return new Promise((resolve) => {
@@ -48,13 +49,19 @@ const fetchImageAsBase64 = async (url: string): Promise<string | null> => {
   }
 }
 
+export type MaintenancePdfPhoto = {
+  storage_path: string | null
+  caption: string | null
+  localDataUrl?: string
+}
+
 export type MaintenancePdfData = {
   report: MaintenanceReport
   customer: Customer
   bv: BV
   object: Obj
   smokeDetectors: { label: string; status: SmokeDetectorStatus }[]
-  photos: { storage_path: string | null; caption: string | null }[]
+  photos: MaintenancePdfPhoto[]
   technicianSignaturePath: string | null
   customerSignaturePath: string | null
 }
@@ -199,15 +206,16 @@ export const generateMaintenancePdf = async (
     const perRow = Math.floor((pageW - 2 * margin) / (imgW + imgGap))
     let col = 0
     for (const p of photos) {
-      if (!p.storage_path) continue
+      const hasImage = p.storage_path || p.localDataUrl
+      if (!hasImage) continue
       if (y + rowH > 285) {
         doc.addPage()
         y = margin
         col = 0
       }
       const x = margin + col * (imgW + imgGap)
-      const url = getMaintenancePhotoUrl(p.storage_path)
-      const base64 = await fetchImageAsBase64(url)
+      const urlOrData = p.localDataUrl ?? (p.storage_path ? getMaintenancePhotoUrl(p.storage_path) : '')
+      const base64 = await fetchImageAsBase64(urlOrData)
       if (base64) {
         const imgFormat = base64.startsWith('data:image/png') ? 'PNG' : 'JPEG'
         try {

@@ -1,0 +1,26 @@
+---
+description: Empfohlene Nutzung von Composer vs. Chat für Vico-Umbau
+alwaysApply: true
+---
+
+# AI-Workflow: Composer + Chat kombinieren
+
+## Composer (Agent) – für Implementierung
+
+- Umbau-Schritte aus Vico.md Abschnitt 9.12 umsetzen
+- Neue Features implementieren (Aktivierungs-Screen, Lizenz-API, etc.)
+- Multi-File-Refactorings (LicenseContext, Routing, Design-Config)
+- Konsistente Patterns über App, Admin, API
+
+## Chat (Claude) – für Planung & Review
+
+- Architekturfragen klären
+- Code-Reviews und Erklärungen
+- Debugging und Fehlersuche
+- Konzept-Diskussionen
+
+## Vorgehen bei Mandantenfähigkeit
+
+1. **Planung:** Chat – Fragen klären, Vico.md konsultieren
+2. **Implementierung:** Composer – konkrete Aufgabe (z.B. „Phase 2 implementieren“)
+3. **Review:** Chat – Code prüfen, Verbesserungen vorschlagen

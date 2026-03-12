@@ -284,6 +284,28 @@ create policy "Mitarbeiter/Admin can insert object_photos" on public.object_phot
 create policy "Mitarbeiter/Admin can update object_photos" on public.object_photos for update using (auth.uid() is not null and public.can_write_master_data());
 create policy "Admin can delete object_photos" on public.object_photos for delete using (auth.uid() is not null and public.is_admin());
 
+-- 2.5 Object Documents (Zeichnungen, Zertifikate)
+create table if not exists public.object_documents (
+  id uuid default gen_random_uuid() primary key,
+  object_id uuid references public.objects(id) on delete cascade not null,
+  storage_path text not null,
+  document_type text not null check (document_type in ('zeichnung', 'zertifikat', 'sonstiges')),
+  title text,
+  file_name text,
+  created_at timestamptz default now()
+);
+alter table public.object_documents enable row level security;
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'object_documents' loop
+    execute format('drop policy if exists %I on public.object_documents', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated users can read object_documents" on public.object_documents for select using (auth.uid() is not null);
+create policy "Mitarbeiter/Admin can insert object_documents" on public.object_documents for insert with check (auth.uid() is not null and public.can_write_master_data());
+create policy "Mitarbeiter/Admin can update object_documents" on public.object_documents for update using (auth.uid() is not null and public.can_write_master_data());
+create policy "Admin can delete object_documents" on public.object_documents for delete using (auth.uid() is not null and public.is_admin());
+
 -- =============================================================================
 -- 3. WARTUNGSPROTOKOLLE
 -- =============================================================================
@@ -395,6 +417,55 @@ create trigger check_order_assigned_to_valid_role
   before insert or update of assigned_to on public.orders
   for each row execute function public.check_order_assigned_to_valid_role();
 
+-- Arbeitszeiterfassung
+create table if not exists public.time_entries (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  date date not null,
+  start timestamptz not null,
+  "end" timestamptz,
+  notes text,
+  order_id uuid references public.orders(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.time_entries enable row level security;
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'time_entries' loop
+    execute format('drop policy if exists %I on public.time_entries', r.policyname);
+  end loop;
+end $$;
+create policy "User can read own time_entries" on public.time_entries for select using (auth.uid() = user_id);
+create policy "Admin can read all time_entries" on public.time_entries for select using (public.is_admin());
+create policy "User can insert own time_entries" on public.time_entries for insert with check (auth.uid() = user_id);
+create policy "Admin can update time_entries" on public.time_entries for update using (public.is_admin());
+
+create table if not exists public.time_breaks (
+  id uuid default gen_random_uuid() primary key,
+  time_entry_id uuid references public.time_entries(id) on delete cascade not null,
+  start timestamptz not null,
+  "end" timestamptz,
+  created_at timestamptz default now()
+);
+alter table public.time_breaks enable row level security;
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'time_breaks' loop
+    execute format('drop policy if exists %I on public.time_breaks', r.policyname);
+  end loop;
+end $$;
+create policy "User can read own time_breaks" on public.time_breaks for select using (
+  exists (select 1 from public.time_entries te where te.id = time_entry_id and te.user_id = auth.uid())
+);
+create policy "Admin can read all time_breaks" on public.time_breaks for select using (public.is_admin());
+create policy "User can insert time_breaks" on public.time_breaks for insert with check (
+  exists (select 1 from public.time_entries te where te.id = time_entry_id and te.user_id = auth.uid())
+);
+create policy "User can update own time_breaks" on public.time_breaks for update using (
+  exists (select 1 from public.time_entries te where te.id = time_entry_id and te.user_id = auth.uid())
+);
+
 create table if not exists public.component_settings (
   id uuid default gen_random_uuid() primary key,
   component_key text unique not null, label text not null, enabled boolean default true, sort_order int default 0,
@@ -444,7 +515,7 @@ end;
 $$;
 do $$
 declare t text;
-  tbls text[] := array['customers','bvs','objects','object_photos','orders','profiles','maintenance_reports','maintenance_report_photos','maintenance_report_smoke_detectors','customer_portal_users'];
+  tbls text[] := array['customers','bvs','objects','object_photos','object_documents','orders','time_entries','time_breaks','profiles','maintenance_reports','maintenance_report_photos','maintenance_report_smoke_detectors','customer_portal_users'];
 begin
   foreach t in array tbls loop
     execute format('drop trigger if exists audit_%I on public.%I', t, t);
@@ -708,6 +779,7 @@ create index if not exists idx_customer_portal_users_customer_id on public.custo
 -- =============================================================================
 
 insert into storage.buckets (id, name, public) values ('object-photos', 'object-photos', true) on conflict (id) do nothing;
+insert into storage.buckets (id, name, public) values ('object-documents', 'object-documents', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('maintenance-photos', 'maintenance-photos', true) on conflict (id) do nothing;
 
 drop policy if exists "Authenticated users can read object-photos" on storage.objects;
@@ -716,6 +788,13 @@ drop policy if exists "Authenticated users can delete object-photos" on storage.
 create policy "Authenticated users can read object-photos" on storage.objects for select using (bucket_id = 'object-photos' and auth.uid() is not null);
 create policy "Authenticated users can upload object-photos" on storage.objects for insert with check (bucket_id = 'object-photos' and auth.uid() is not null);
 create policy "Authenticated users can delete object-photos" on storage.objects for delete using (bucket_id = 'object-photos' and auth.uid() is not null);
+
+drop policy if exists "Authenticated users can read object-documents" on storage.objects;
+drop policy if exists "Authenticated users can upload object-documents" on storage.objects;
+drop policy if exists "Authenticated users can delete object-documents" on storage.objects;
+create policy "Authenticated users can read object-documents" on storage.objects for select using (bucket_id = 'object-documents' and auth.uid() is not null);
+create policy "Authenticated users can upload object-documents" on storage.objects for insert with check (bucket_id = 'object-documents' and auth.uid() is not null);
+create policy "Authenticated users can delete object-documents" on storage.objects for delete using (bucket_id = 'object-documents' and auth.uid() is not null);
 
 drop policy if exists "Authenticated users can read maintenance-photos" on storage.objects;
 drop policy if exists "Authenticated users can upload maintenance-photos" on storage.objects;
@@ -732,6 +811,7 @@ create index if not exists idx_customers_demo_user_id on public.customers(demo_u
 create index if not exists idx_bvs_customer_id on public.bvs(customer_id);
 create index if not exists idx_objects_bv_id on public.objects(bv_id);
 create index if not exists idx_object_photos_object_id on public.object_photos(object_id);
+create index if not exists idx_object_documents_object_id on public.object_documents(object_id);
 create index if not exists idx_maintenance_reports_object_id on public.maintenance_reports(object_id);
 create index if not exists idx_maintenance_reports_object_date on public.maintenance_reports(object_id, maintenance_date desc);
 create index if not exists idx_maintenance_report_photos_report_id on public.maintenance_report_photos(report_id);
@@ -740,6 +820,8 @@ create index if not exists idx_orders_order_date on public.orders(order_date);
 create index if not exists idx_orders_assigned_to on public.orders(assigned_to);
 create index if not exists idx_orders_customer_id on public.orders(customer_id);
 create index if not exists idx_orders_bv_id on public.orders(bv_id);
+create index if not exists idx_time_entries_user_date on public.time_entries(user_id, date desc);
+create index if not exists idx_time_breaks_time_entry_id on public.time_breaks(time_entry_id);
 create index if not exists idx_audit_log_created_at on public.audit_log(created_at desc);
 create index if not exists idx_component_settings_sort_order on public.component_settings(sort_order);
 

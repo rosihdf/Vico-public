@@ -4,11 +4,13 @@ import { useAuth } from './AuthContext'
 import { useToast } from './ToastContext'
 import { getRememberMe } from './supabase'
 import Logo from './Logo'
+import MfaChallenge from './components/MfaChallenge'
 
 const Login = () => {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showMfaChallenge, setShowMfaChallenge] = useState(false)
   const [rememberMe, setRememberMeState] = useState(true)
   const [showRegister, setShowRegister] = useState(false)
   const [showForgotPassword, setShowForgotPassword] = useState(false)
@@ -18,7 +20,7 @@ const Login = () => {
   const [registerEmail, setRegisterEmail] = useState('')
   const [registerPassword, setRegisterPassword] = useState('')
   const [registerMessage, setRegisterMessage] = useState<string | null>(null)
-  const { login, signUp, resetPasswordForEmail, loginError } = useAuth()
+  const { login, verifyMfa, logout, signUp, resetPasswordForEmail, loginError } = useAuth()
   const { showError } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
@@ -34,13 +36,30 @@ const Login = () => {
     try {
       const result = await login(identifier, password, rememberMe)
       if (result.success) {
-        navigate('/')
+        if (result.needsMfa) {
+          setShowMfaChallenge(true)
+        } else {
+          navigate('/')
+        }
       } else if (result.message) {
         showError(result.message)
       }
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const handleMfaSubmit = async (code: string) => {
+    const result = await verifyMfa(code)
+    if (result.success) {
+      navigate('/')
+    }
+    return result
+  }
+
+  const handleMfaCancel = async () => {
+    await logout()
+    setShowMfaChallenge(false)
   }
 
   const handleIdentifierChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,10 +104,15 @@ const Login = () => {
       <div className="w-full max-w-sm p-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-lg">
         <Logo variant="login" />
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">
-          {showForgotPassword ? 'Passwort zurücksetzen' : showRegister ? 'Konto anlegen' : 'Anmelden'}
+          {showMfaChallenge ? 'Zwei-Faktor-Authentifizierung' : showForgotPassword ? 'Passwort zurücksetzen' : showRegister ? 'Konto anlegen' : 'Anmelden'}
         </h2>
 
-        {showForgotPassword ? (
+        {showMfaChallenge ? (
+          <MfaChallenge
+            onSubmit={handleMfaSubmit}
+            onCancel={handleMfaCancel}
+          />
+        ) : showForgotPassword ? (
           <form onSubmit={handleForgotSubmit} className="space-y-4">
             <div>
               <label htmlFor="forgot-email" className="block text-sm font-medium text-slate-700 mb-1">

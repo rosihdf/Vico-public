@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { LoadingSpinner } from './components/LoadingSpinner'
+import MfaSettings from './components/MfaSettings'
 import { fetchMyProfile, updateProfileName, getProfileDisplayName } from './lib/userService'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import type { Profile } from './lib/userService'
@@ -143,6 +144,8 @@ const Profil = () => {
               <p className="font-medium text-slate-800 dark:text-slate-100">{ROLE_LABELS[userRole]}</p>
             </div>
           )}
+
+          <MfaSettings />
 
           <button
             type="button"

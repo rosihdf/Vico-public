@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, Link, useLocation } from 'react-router-dom'
 import type { User } from '@supabase/supabase-js'
 
 type LayoutProps = {
@@ -7,10 +7,26 @@ type LayoutProps = {
 }
 
 const Layout = ({ user, onLogout }: LayoutProps) => {
+  const location = useLocation()
+  const isMandanten = location.pathname === '/' || location.pathname.startsWith('/mandanten')
+  const isGrenzen = location.pathname.startsWith('/grenzueberschreitungen')
+  const isLizenzmodelle = location.pathname.startsWith('/lizenzmodelle')
+  const navClass = (active: boolean) =>
+    active
+      ? 'px-3 py-1.5 text-sm font-medium text-vico-primary bg-vico-primary/10 rounded-lg'
+      : 'px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg'
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-100">
       <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-bold text-slate-800">Vico Lizenz-Admin</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-lg font-bold text-slate-800">Vico Lizenz-Admin</h1>
+          <nav className="flex gap-1">
+            <Link to="/" className={navClass(isMandanten)}>Mandanten</Link>
+            <Link to="/lizenzmodelle" className={navClass(isLizenzmodelle)}>Lizenzmodelle</Link>
+            <Link to="/grenzueberschreitungen" className={navClass(isGrenzen)}>Grenzüberschreitungen</Link>
+          </nav>
+        </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-slate-500">{user.email}</span>
           <button

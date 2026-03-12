@@ -7,12 +7,19 @@ import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
 import { useComponentSettings } from './ComponentSettingsContext'
+import { hasFeature } from './lib/licenseService'
 
 const Layout = () => {
   const { syncStatus, pendingCount } = useSync()
   const { isAuthenticated, logout, userRole } = useAuth()
   const { license } = useLicense()
   const { isEnabled } = useComponentSettings()
+  const showArbeitszeit =
+    license &&
+    hasFeature(license, 'arbeitszeiterfassung') &&
+    isEnabled('arbeitszeiterfassung') &&
+    userRole !== 'leser' &&
+    userRole !== 'kunde'
   const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const location = useLocation()
@@ -48,6 +55,7 @@ const Layout = () => {
     ...(isEnabled('auftrag') ? [{ to: '/auftrag', label: 'Auftrag' }] : []),
     ...(userRole === 'admin' && isEnabled('benutzerverwaltung') ? [{ to: '/benutzerverwaltung', label: 'Benutzerverwaltung' }] : []),
     ...(userRole === 'admin' ? [{ to: '/historie', label: 'Historie' }] : []),
+    ...(showArbeitszeit ? [{ to: '/arbeitszeit', label: 'Arbeitszeit' }] : []),
     ...(isEnabled('einstellungen') ? [{ to: '/einstellungen', label: 'Einstellungen' }] : []),
   ]
 
@@ -57,6 +65,7 @@ const Layout = () => {
     ...(isEnabled('auftrag') ? [{ to: '/auftrag', label: 'Auftrag', icon: '📋' }] : []),
     ...(isEnabled('suche') ? [{ to: '/suche', label: 'Suche', icon: '🔍' }] : []),
     ...(isEnabled('scan') ? [{ to: '/scan', label: 'Scan', icon: '📷' }] : []),
+    ...(showArbeitszeit ? [{ to: '/arbeitszeit', label: 'Zeit', icon: '⏱' }] : []),
     ...(isAuthenticated && isEnabled('profil')
       ? [{ to: '/profil', label: 'Profil', icon: '👤' }]
       : !isAuthenticated

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
+import { useLicenseOptional } from './LicenseContext'
 
-const LOGO_SRC = '/logo_vico.png'
+const DEFAULT_LOGO = '/logo_vico.png'
 
 type LogoProps = {
   variant?: 'header' | 'login' | 'full'
@@ -19,10 +20,15 @@ const getSizeClasses = (variant: LogoProps['variant']) => {
 }
 
 const Logo = ({ variant = 'header', className = '' }: LogoProps) => {
+  const licenseContext = useLicenseOptional()
+  const design = licenseContext?.design
+  const logoUrl = design?.logo_url || DEFAULT_LOGO
+  const appName = design?.app_name || 'Vico Türen & Tore'
+
   const img = (
     <img
-      src={LOGO_SRC}
-      alt="Vico Türen & Tore"
+      src={logoUrl}
+      alt={appName}
       className={`object-contain object-center ${getSizeClasses(variant)} ${className}`}
     />
   )

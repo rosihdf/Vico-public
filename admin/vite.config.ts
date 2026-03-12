@@ -12,4 +12,15 @@ export default defineConfig({
     strictPort: false,
   },
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'router': ['react-router-dom'],
+          'supabase': ['@supabase/supabase-js'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 400,
+  },
 })

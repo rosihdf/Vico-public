@@ -10,5 +10,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase: SupabaseClient = createClient(
   supabaseUrl || 'https://example.supabase.co',
   supabaseAnonKey || 'placeholder',
-  { auth: { persistSession: true } }
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      storageKey: 'vico-license-portal-auth',
+    },
+  }
 )

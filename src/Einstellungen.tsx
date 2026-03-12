@@ -9,6 +9,11 @@ import type { Theme } from './ThemeContext'
 import { fetchProfileByEmail } from './lib/userService'
 import { downloadWebAppChecklist } from './lib/downloadChecklist'
 import { formatLicenseDate, isLimitReached } from './lib/licenseService'
+import {
+  isLicenseApiConfigured,
+  getStoredLicenseNumber,
+  setStoredLicenseNumber,
+} from './lib/licensePortalApi'
 import type { SyncStatus } from './types'
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.1'
@@ -39,6 +44,9 @@ const Einstellungen = () => {
   const [checkEmail, setCheckEmail] = useState('')
   const [checkResult, setCheckResult] = useState<{ email: string; role: string } | null>(null)
   const [isChecking, setIsChecking] = useState(false)
+  const [licenseNumberInput, setLicenseNumberInput] = useState(getStoredLicenseNumber() ?? '')
+  const [isSavingLicense, setIsSavingLicense] = useState(false)
+  const [licenseNumberMessage, setLicenseNumberMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const handleCheckUpdate = async () => {
     setUpdateStatus('checking')
@@ -78,6 +86,25 @@ const Einstellungen = () => {
     setIsSyncing(true)
     await syncNow()
     setIsSyncing(false)
+  }
+
+  const handleSaveLicenseNumber = async () => {
+    const trimmed = licenseNumberInput.trim()
+    if (!trimmed) {
+      setLicenseNumberMessage({ type: 'error', text: 'Bitte Lizenznummer eingeben.' })
+      return
+    }
+    setIsSavingLicense(true)
+    setLicenseNumberMessage(null)
+    try {
+      setStoredLicenseNumber(trimmed)
+      await refreshLicense()
+      setLicenseNumberMessage({ type: 'success', text: 'Lizenznummer gespeichert. Lizenz neu geladen.' })
+    } catch {
+      setLicenseNumberMessage({ type: 'error', text: 'Lizenz konnte nicht geladen werden.' })
+    } finally {
+      setIsSavingLicense(false)
+    }
   }
 
   return (
@@ -131,6 +158,28 @@ const Einstellungen = () => {
         >
           Benutzeranleitung öffnen
         </button>
+      </section>
+
+      {/* Dokumentation */}
+      <section
+        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+        aria-labelledby="dokumentation-heading"
+      >
+        <h3 id="dokumentation-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+          Dokumentation
+        </h3>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+          Projekt-Dokumentation mit Architektur, Features, Roadmap und technischen Details.
+        </p>
+        <a
+          href="/Vico-Dokumentation.pdf"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+          aria-label="Vico-Dokumentation als PDF öffnen"
+        >
+          Vico-Dokumentation (PDF)
+        </a>
       </section>
 
       {/* Checklisten */}
@@ -348,7 +397,7 @@ const Einstellungen = () => {
       )}
 
       {/* Lizenz (Admin) */}
-      {userRole === 'admin' && license && (
+      {userRole === 'admin' && (
         <section
           className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
           aria-labelledby="lizenz-heading"
@@ -356,51 +405,103 @@ const Einstellungen = () => {
           <h3 id="lizenz-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
             Lizenz
           </h3>
-          {license.expired && (
-            <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg" role="alert">
-              <p className="text-sm font-medium text-red-800 dark:text-red-300">
-                Lizenz abgelaufen seit {formatLicenseDate(license.valid_until)}
+
+          <div className="mb-4">
+            {!isLicenseApiConfigured() && (
+              <p className="text-sm text-amber-600 dark:text-amber-400 mb-2">
+                Lizenz-API nicht konfiguriert. Setze in .env: <code className="text-xs bg-slate-100 dark:bg-slate-700 px-1 rounded">VITE_LICENSE_API_URL</code> (z.B. https://…supabase.co/functions/v1)
               </p>
-              <p className="text-xs text-red-700 dark:text-red-400 mt-1">
-                Einige Funktionen sind eingeschränkt. Bitte Lizenz verlängern.
+            )}
+            <label htmlFor="license-number" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
+              Lizenznummer
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="license-number"
+                type="text"
+                value={licenseNumberInput}
+                onChange={(e) => {
+                  setLicenseNumberInput(e.target.value)
+                  setLicenseNumberMessage(null)
+                }}
+                placeholder="VIC-XXXX-XXXX"
+                className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 font-mono text-sm focus:ring-2 focus:ring-vico-primary focus:border-vico-primary"
+                aria-label="Lizenznummer"
+              />
+              <button
+                type="button"
+                onClick={handleSaveLicenseNumber}
+                disabled={isSavingLicense || !isLicenseApiConfigured()}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50 transition-colors"
+                aria-label="Lizenznummer speichern und Lizenz laden"
+              >
+                {isSavingLicense ? 'Lade…' : 'Speichern'}
+              </button>
+            </div>
+            {licenseNumberMessage && (
+              <p
+                className={`mt-2 text-sm ${licenseNumberMessage.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}
+                role="status"
+              >
+                {licenseNumberMessage.text}
               </p>
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="text-slate-500 dark:text-slate-400">Tier</div>
-            <div className="text-slate-800 dark:text-slate-100 font-medium capitalize">{license.tier}</div>
-
-            <div className="text-slate-500 dark:text-slate-400">Gültig bis</div>
-            <div className="text-slate-800 dark:text-slate-100 font-medium">{formatLicenseDate(license.valid_until)}</div>
-
-            <div className="text-slate-500 dark:text-slate-400">Kunden</div>
-            <div className={`font-medium ${isLimitReached(license.current_customers, license.max_customers) ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}>
-              {license.current_customers} / {license.max_customers ?? '∞'}
-            </div>
-
-            <div className="text-slate-500 dark:text-slate-400">Benutzer</div>
-            <div className={`font-medium ${isLimitReached(license.current_users, license.max_users) ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}>
-              {license.current_users} / {license.max_users ?? '∞'}
-            </div>
-
-            <div className="text-slate-500 dark:text-slate-400">Kundenportal</div>
-            <div className="text-slate-800 dark:text-slate-100 font-medium">
-              {license.features?.kundenportal ? '✓ Aktiv' : '✗ Nicht enthalten'}
-            </div>
-
-            <div className="text-slate-500 dark:text-slate-400">Historie</div>
-            <div className="text-slate-800 dark:text-slate-100 font-medium">
-              {license.features?.historie ? '✓ Aktiv' : '✗ Nicht enthalten'}
-            </div>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={refreshLicense}
-            className="mt-3 px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-            aria-label="Lizenz-Status neu laden"
-          >
-            Neu laden
-          </button>
+
+          {license && (
+            <>
+              {license.expired && (
+                <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg" role="alert">
+                  <p className="text-sm font-medium text-red-800 dark:text-red-300">
+                    Lizenz abgelaufen seit {formatLicenseDate(license.valid_until)}
+                  </p>
+                  <p className="text-xs text-red-700 dark:text-red-400 mt-1">
+                    Einige Funktionen sind eingeschränkt. Bitte Lizenz verlängern.
+                  </p>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="text-slate-500 dark:text-slate-400">Tier</div>
+                <div className="text-slate-800 dark:text-slate-100 font-medium capitalize">{license.tier}</div>
+
+                <div className="text-slate-500 dark:text-slate-400">Gültig bis</div>
+                <div className="text-slate-800 dark:text-slate-100 font-medium">{formatLicenseDate(license.valid_until)}</div>
+
+                <div className="text-slate-500 dark:text-slate-400">Kunden</div>
+                <div className={`font-medium ${isLimitReached(license.current_customers, license.max_customers) ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                  {license.current_customers} / {license.max_customers ?? '∞'}
+                </div>
+
+                <div className="text-slate-500 dark:text-slate-400">Benutzer</div>
+                <div className={`font-medium ${isLimitReached(license.current_users, license.max_users) ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                  {license.current_users} / {license.max_users ?? '∞'}
+                </div>
+
+                <div className="text-slate-500 dark:text-slate-400">Kundenportal</div>
+                <div className="text-slate-800 dark:text-slate-100 font-medium">
+                  {license.features?.kundenportal ? '✓ Aktiv' : '✗ Nicht enthalten'}
+                </div>
+
+                <div className="text-slate-500 dark:text-slate-400">Historie</div>
+                <div className="text-slate-800 dark:text-slate-100 font-medium">
+                  {license.features?.historie ? '✓ Aktiv' : '✗ Nicht enthalten'}
+                </div>
+
+                <div className="text-slate-500 dark:text-slate-400">Arbeitszeiterfassung</div>
+                <div className="text-slate-800 dark:text-slate-100 font-medium">
+                  {license.features?.arbeitszeiterfassung ? '✓ Aktiv' : '✗ Nicht enthalten'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={refreshLicense}
+                className="mt-3 px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                aria-label="Lizenz-Status neu laden"
+              >
+                Neu laden
+              </button>
+            </>
+          )}
         </section>
       )}
 

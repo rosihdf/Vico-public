@@ -2,7 +2,10 @@ const CACHE_PREFIX = 'vico-cache-'
 const OUTBOX_KEY = 'vico-outbox'
 const MAINTENANCE_OUTBOX_KEY = 'vico-outbox-maintenance'
 const OBJECT_PHOTO_OUTBOX_KEY = 'vico-outbox-object-photos'
+const OBJECT_DOCUMENT_OUTBOX_KEY = 'vico-outbox-object-documents'
 const MAINTENANCE_PHOTO_OUTBOX_KEY = 'vico-outbox-maintenance-photos'
+const EMAIL_OUTBOX_KEY = 'vico-outbox-email'
+const TIME_OUTBOX_KEY = 'vico-outbox-time'
 const CACHE_KEYS = {
   customers: `${CACHE_PREFIX}customers`,
   bvs: `${CACHE_PREFIX}bvs`,
@@ -10,16 +13,21 @@ const CACHE_KEYS = {
   maintenanceReports: `${CACHE_PREFIX}maintenance-reports`,
   orders: `${CACHE_PREFIX}orders`,
   objectPhotos: `${CACHE_PREFIX}object-photos`,
+  objectDocuments: `${CACHE_PREFIX}object-documents`,
+  timeEntries: `${CACHE_PREFIX}time-entries`,
   maintenancePhotos: `${CACHE_PREFIX}maintenance-photos`,
   reminders: `${CACHE_PREFIX}reminders`,
   componentSettings: `${CACHE_PREFIX}component-settings`,
+  license: `${CACHE_PREFIX}license`,
+  profiles: `${CACHE_PREFIX}profiles`,
+  auditLog: `${CACHE_PREFIX}audit-log`,
 } as const
 
 export type OutboxAction = 'insert' | 'update' | 'delete'
 
 export type OutboxItem = {
   id: string
-  table: 'customers' | 'bvs' | 'objects' | 'orders' | 'object_photos' | 'maintenance_report_photos' | 'component_settings'
+  table: 'customers' | 'bvs' | 'objects' | 'orders' | 'object_photos' | 'object_documents' | 'time_entries' | 'time_breaks' | 'maintenance_report_photos' | 'component_settings' | 'profiles'
   action: OutboxAction
   payload: Record<string, unknown>
   tempId?: string
@@ -97,6 +105,42 @@ export const removeObjectPhotoOutboxItem = (id: string) => {
   setObjectPhotoOutbox(getObjectPhotoOutbox().filter((i) => i.id !== id))
 }
 
+export const getCachedObjectDocuments = () => safeJsonParse<unknown[]>(CACHE_KEYS.objectDocuments, [])
+export const setCachedObjectDocuments = (data: unknown[]) => safeJsonSet(CACHE_KEYS.objectDocuments, data)
+
+export type ObjectDocumentOutboxItem = {
+  id: string
+  object_id: string
+  tempId: string
+  fileBase64: string
+  document_type: 'zeichnung' | 'zertifikat' | 'sonstiges'
+  title: string | null
+  file_name: string | null
+  ext: string
+  timestamp: string
+}
+
+export const getObjectDocumentOutbox = (): ObjectDocumentOutboxItem[] =>
+  safeJsonParse<ObjectDocumentOutboxItem[]>(OBJECT_DOCUMENT_OUTBOX_KEY, [])
+const setObjectDocumentOutbox = (items: ObjectDocumentOutboxItem[]) =>
+  safeJsonSet(OBJECT_DOCUMENT_OUTBOX_KEY, items)
+
+export const addToObjectDocumentOutbox = (item: Omit<ObjectDocumentOutboxItem, 'id' | 'timestamp'>) => {
+  const full: ObjectDocumentOutboxItem = {
+    ...item,
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+  }
+  const box = getObjectDocumentOutbox()
+  box.push(full)
+  setObjectDocumentOutbox(box)
+  return full
+}
+
+export const removeObjectDocumentOutboxItem = (id: string) => {
+  setObjectDocumentOutbox(getObjectDocumentOutbox().filter((i) => i.id !== id))
+}
+
 export type MaintenancePhotoOutboxItem = {
   id: string
   report_id: string
@@ -138,6 +182,57 @@ export const getCachedComponentSettings = () =>
   safeJsonParse<Record<string, boolean>>(CACHE_KEYS.componentSettings, {})
 export const setCachedComponentSettings = (data: Record<string, boolean>) =>
   safeJsonSet(CACHE_KEYS.componentSettings, data)
+
+export const getCachedLicense = () => safeJsonParse<unknown | null>(CACHE_KEYS.license, null)
+export const setCachedLicense = (data: unknown | null) => safeJsonSet(CACHE_KEYS.license, data)
+
+export const getCachedProfiles = () => safeJsonParse<unknown[]>(CACHE_KEYS.profiles, [])
+export const setCachedProfiles = (data: unknown[]) => safeJsonSet(CACHE_KEYS.profiles, data)
+
+export const getCachedAuditLog = () => safeJsonParse<unknown[]>(CACHE_KEYS.auditLog, [])
+export const setCachedAuditLog = (data: unknown[]) => safeJsonSet(CACHE_KEYS.auditLog, data)
+
+export const getCachedTimeEntries = () => safeJsonParse<unknown[]>(CACHE_KEYS.timeEntries, [])
+export const setCachedTimeEntries = (data: unknown[]) => safeJsonSet(CACHE_KEYS.timeEntries, data)
+
+export type TimeOutboxItem = {
+  id: string
+  tempId: string
+  user_id: string
+  date: string
+  start: string
+  end: string | null
+  breaks: { start: string; end: string | null }[]
+  timestamp: string
+}
+
+export const getTimeOutbox = (): TimeOutboxItem[] =>
+  safeJsonParse<TimeOutboxItem[]>(TIME_OUTBOX_KEY, [])
+const setTimeOutbox = (items: TimeOutboxItem[]) => safeJsonSet(TIME_OUTBOX_KEY, items)
+
+export const addToTimeOutbox = (item: Omit<TimeOutboxItem, 'id' | 'timestamp'>) => {
+  const full: TimeOutboxItem = {
+    ...item,
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+  }
+  const box = getTimeOutbox()
+  box.push(full)
+  setTimeOutbox(box)
+  return full
+}
+
+export const removeTimeOutboxItem = (id: string) => {
+  setTimeOutbox(getTimeOutbox().filter((i) => i.id !== id))
+}
+
+export const updateTimeOutboxItem = (tempId: string, updater: (item: TimeOutboxItem) => TimeOutboxItem) => {
+  const box = getTimeOutbox()
+  const idx = box.findIndex((o) => o.tempId === tempId)
+  if (idx < 0) return
+  box[idx] = updater(box[idx])
+  setTimeOutbox(box)
+}
 
 export const getCachedMaintenanceReports = (objectId: string): unknown[] => {
   const map = safeJsonParse<Record<string, unknown[]>>(CACHE_KEYS.maintenanceReports, {})
@@ -190,3 +285,33 @@ export const removeOutboxItem = (id: string) => {
 }
 
 export const clearOutbox = () => setOutbox([])
+
+export type EmailOutboxItem = {
+  id: string
+  reportId: string
+  pdfBase64: string
+  toEmail: string
+  subject: string
+  filename: string
+  timestamp: string
+}
+
+export const getEmailOutbox = (): EmailOutboxItem[] =>
+  safeJsonParse<EmailOutboxItem[]>(EMAIL_OUTBOX_KEY, [])
+const setEmailOutbox = (items: EmailOutboxItem[]) => safeJsonSet(EMAIL_OUTBOX_KEY, items)
+
+export const addToEmailOutbox = (item: Omit<EmailOutboxItem, 'id' | 'timestamp'>) => {
+  const full: EmailOutboxItem = {
+    ...item,
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+  }
+  const box = getEmailOutbox()
+  box.push(full)
+  setEmailOutbox(box)
+  return full.id
+}
+
+export const removeEmailOutboxItem = (id: string) => {
+  setEmailOutbox(getEmailOutbox().filter((i) => i.id !== id))
+}

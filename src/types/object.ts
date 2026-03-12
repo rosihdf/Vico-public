@@ -73,3 +73,15 @@ export type ObjectPhoto = {
   caption: string | null
   created_at: string
 }
+
+export type ObjectDocumentType = 'zeichnung' | 'zertifikat' | 'sonstiges'
+
+export type ObjectDocument = {
+  id: string
+  object_id: string
+  storage_path: string
+  document_type: ObjectDocumentType
+  title: string | null
+  file_name: string | null
+  created_at: string
+}

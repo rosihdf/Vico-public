@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+vi.mock('./offlineStorage', () => ({
+  getCachedLicense: vi.fn(() => null),
+  setCachedLicense: vi.fn(),
+}))
+
 vi.mock('../supabase', () => ({
   supabase: {
     rpc: vi.fn(),
@@ -19,6 +24,11 @@ import {
 describe('licenseService', () => {
   beforeEach(() => {
     vi.mocked(supabase.rpc).mockReset()
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { ...(typeof navigator !== 'undefined' ? navigator : {}), onLine: true },
+      writable: true,
+      configurable: true,
+    })
   })
 
   describe('fetchLicenseStatus', () => {

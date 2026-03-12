@@ -10,6 +10,7 @@ import AuthLoader from './AuthLoader'
 import Layout from './Layout'
 import ProtectedRoute from './ProtectedRoute'
 import ComponentGuard from './ComponentGuard'
+import LicenseGate from './components/LicenseGate'
 import { LoadingSpinner } from './components/LoadingSpinner'
 
 const Startseite = lazy(() => import('./Startseite'))
@@ -26,6 +27,10 @@ const AuftragAnlegen = lazy(() => import('./AuftragAnlegen'))
 const Login = lazy(() => import('./Login'))
 const ResetPassword = lazy(() => import('./ResetPassword'))
 const Profil = lazy(() => import('./Profil'))
+const Arbeitszeit = lazy(() => import('./Arbeitszeit'))
+const AktivierungsScreen = lazy(() => import('./pages/AktivierungsScreen'))
+const Impressum = lazy(() => import('./pages/Impressum'))
+const Datenschutz = lazy(() => import('./pages/Datenschutz'))
 
 const PageFallback = () => (
   <LoadingSpinner message="Lade…" size="lg" className="p-8 min-h-[200px]" />
@@ -38,11 +43,17 @@ const App = () => {
     <ThemeProvider>
     <AuthProvider>
       <AuthLoader>
-        <LicenseProvider>
-        <SyncProvider>
-          <ComponentSettingsProvider>
-          <BrowserRouter>
-            <Routes>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/aktivierung" element={<Suspense fallback={<PageFallback />}><AktivierungsScreen /></Suspense>} />
+            <Route path="/impressum" element={<Suspense fallback={<PageFallback />}><Impressum /></Suspense>} />
+            <Route path="/datenschutz" element={<Suspense fallback={<PageFallback />}><Datenschutz /></Suspense>} />
+            <Route path="/*" element={
+              <LicenseGate>
+                <LicenseProvider>
+                <SyncProvider>
+                  <ComponentSettingsProvider>
+                  <Routes>
               <Route path="/" element={<Layout />}>
                 <Route index element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="dashboard"><ProtectedRoute><Startseite /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><Kunden /></ProtectedRoute></ComponentGuard></Suspense>} />
@@ -58,12 +69,16 @@ const App = () => {
                 <Route path="login" element={<Suspense fallback={<PageFallback />}><Login /></Suspense>} />
                 <Route path="reset-password" element={<Suspense fallback={<PageFallback />}><ResetPassword /></Suspense>} />
                 <Route path="profil" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="profil"><ProtectedRoute><Profil /></ProtectedRoute></ComponentGuard></Suspense>} />
+                <Route path="arbeitszeit" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="arbeitszeiterfassung"><ProtectedRoute><Arbeitszeit /></ProtectedRoute></ComponentGuard></Suspense>} />
               </Route>
-            </Routes>
-        </BrowserRouter>
+                  </Routes>
           </ComponentSettingsProvider>
         </SyncProvider>
-        </LicenseProvider>
+                </LicenseProvider>
+              </LicenseGate>
+            } />
+          </Routes>
+        </BrowserRouter>
       </AuthLoader>
     </AuthProvider>
     </ThemeProvider>

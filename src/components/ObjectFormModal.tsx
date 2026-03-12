@@ -10,8 +10,13 @@ import {
   uploadObjectPhoto,
   deleteObjectPhoto,
   getObjectPhotoDisplayUrl,
+  fetchObjectDocuments,
+  uploadObjectDocument,
+  deleteObjectDocument,
+  getObjectDocumentUrl,
 } from '../lib/dataService'
-import type { Object as Obj, ObjectFormData, ObjectPhoto } from '../types'
+import type { Object as Obj, ObjectFormData, ObjectPhoto, ObjectDocumentType } from '../types'
+import type { ObjectDocumentDisplay } from '../lib/dataService'
 
 const INITIAL_FORM: ObjectFormData = {
   name: '',
@@ -112,15 +117,28 @@ const ObjectFormModal = ({
   const [objectPhotos, setObjectPhotos] = useState<ObjectPhoto[]>([])
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [expandedPhoto, setExpandedPhoto] = useState<ObjectPhoto | null>(null)
+  const [objectDocuments, setObjectDocuments] = useState<ObjectDocumentDisplay[]>([])
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false)
+  const [documentUploadType, setDocumentUploadType] = useState<ObjectDocumentType>('zeichnung')
+  const [documentUploadTitle, setDocumentUploadTitle] = useState('')
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
     photo: ObjectPhoto | null
   }>({ open: false, photo: null })
+  const [confirmDocumentDialog, setConfirmDocumentDialog] = useState<{
+    open: boolean
+    document: ObjectDocumentDisplay | null
+  }>({ open: false, document: null })
   const editingId = object?.id ?? null
 
   useEffect(() => {
     if (!object) return
     fetchObjectPhotos(object.id).then(setObjectPhotos)
+  }, [object?.id])
+
+  useEffect(() => {
+    if (!object) return
+    fetchObjectDocuments(object.id).then(setObjectDocuments)
   }, [object?.id])
 
   useEffect(() => {
@@ -232,6 +250,36 @@ const ObjectFormModal = ({
     } else {
       setObjectPhotos((prev) => prev.filter((p) => p.id !== photo.id))
     }
+  }
+
+  const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!editingId || !e.target.files?.length) return
+    setIsUploadingDocument(true)
+    for (const file of Array.from(e.target.files)) {
+      const { data } = await uploadObjectDocument(editingId, file, documentUploadType, documentUploadTitle || undefined)
+      if (data) setObjectDocuments((prev) => [data, ...prev])
+    }
+    setIsUploadingDocument(false)
+    setDocumentUploadTitle('')
+    e.target.value = ''
+  }
+
+  const handleDocumentDelete = async (doc: ObjectDocumentDisplay) => {
+    const { error } = await deleteObjectDocument(doc.id, doc.storage_path)
+    if (error) {
+      showError(getSupabaseErrorMessage(error))
+    } else {
+      setObjectDocuments((prev) => prev.filter((d) => d.id !== doc.id))
+    }
+  }
+
+  const getDocumentDisplayUrl = (doc: ObjectDocumentDisplay): string =>
+    doc.localDataUrl ?? getObjectDocumentUrl(doc.storage_path)
+
+  const DOCUMENT_TYPE_LABELS: Record<ObjectDocumentType, string> = {
+    zeichnung: 'Zeichnung',
+    zertifikat: 'Zertifikat',
+    sonstiges: 'Sonstiges',
   }
 
   return (
@@ -534,6 +582,78 @@ const ObjectFormModal = ({
                 )}
               </div>
             )}
+            {editingId && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Dokumente (Zeichnungen, Zertifikate)</label>
+                {canEdit && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <select
+                      value={documentUploadType}
+                      onChange={(e) => setDocumentUploadType(e.target.value as ObjectDocumentType)}
+                      className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      aria-label="Dokumenttyp"
+                    >
+                      <option value="zeichnung">Zeichnung</option>
+                      <option value="zertifikat">Zertifikat</option>
+                      <option value="sonstiges">Sonstiges</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={documentUploadTitle}
+                      onChange={(e) => setDocumentUploadTitle(e.target.value)}
+                      placeholder="Titel (optional)"
+                      className="flex-1 min-w-[120px] px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      aria-label="Dokumenttitel"
+                    />
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      multiple
+                      onChange={handleDocumentUpload}
+                      disabled={isUploadingDocument}
+                      className="text-sm text-slate-600 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 disabled:opacity-50"
+                      aria-label="Dokument hochladen"
+                    />
+                  </div>
+                )}
+                {isUploadingDocument && <p className="text-xs text-slate-500 mb-2">Wird hochgeladen…</p>}
+                {objectDocuments.length > 0 ? (
+                  <ul className="space-y-2">
+                    {objectDocuments.map((doc) => (
+                      <li
+                        key={doc.id}
+                        className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 bg-slate-50 dark:bg-slate-800/50 dark:border-slate-700"
+                      >
+                        <span className="text-xs font-medium text-slate-500 w-20 shrink-0">
+                          {DOCUMENT_TYPE_LABELS[doc.document_type]}
+                        </span>
+                        <a
+                          href={getDocumentDisplayUrl(doc)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 text-sm text-vico-primary hover:underline truncate"
+                          aria-label={`${doc.title || doc.file_name || 'Dokument'} öffnen`}
+                        >
+                          {doc.title || doc.file_name || 'Dokument'}
+                        </a>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDocumentDialog({ open: true, document: doc })}
+                            className="shrink-0 w-8 h-8 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg"
+                            aria-label="Dokument löschen"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-400">Keine Dokumente vorhanden.</p>
+                )}
+              </div>
+            )}
             {formError && (
               <div className="text-sm text-red-600">
                 <p>{formError}</p>
@@ -567,6 +687,21 @@ const ObjectFormModal = ({
           }
         }}
         onCancel={() => setConfirmDialog({ open: false, photo: null })}
+      />
+
+      <ConfirmDialog
+        open={confirmDocumentDialog.open}
+        title="Dokument löschen"
+        message="Dokument wirklich löschen?"
+        confirmLabel="Löschen"
+        variant="danger"
+        onConfirm={() => {
+          if (confirmDocumentDialog.document) {
+            handleDocumentDelete(confirmDocumentDialog.document)
+            setConfirmDocumentDialog({ open: false, document: null })
+          }
+        }}
+        onCancel={() => setConfirmDocumentDialog({ open: false, document: null })}
       />
 
       {expandedPhoto && (

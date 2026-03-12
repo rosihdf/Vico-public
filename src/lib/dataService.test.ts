@@ -23,6 +23,11 @@ vi.mock('./offlineStorage', () => ({
   getObjectPhotoOutbox: vi.fn(() => []),
   addToObjectPhotoOutbox: vi.fn(),
   removeObjectPhotoOutboxItem: vi.fn(),
+  getCachedObjectDocuments: vi.fn(() => []),
+  setCachedObjectDocuments: vi.fn(),
+  getObjectDocumentOutbox: vi.fn(() => []),
+  addToObjectDocumentOutbox: vi.fn(),
+  removeObjectDocumentOutboxItem: vi.fn(),
   getCachedMaintenancePhotos: vi.fn(() => []),
   setCachedMaintenancePhotos: vi.fn(),
   getMaintenancePhotoOutbox: vi.fn(() => []),
@@ -34,6 +39,8 @@ vi.mock('./offlineStorage', () => ({
   addToMaintenanceOutbox: vi.fn(),
   removeMaintenanceOutboxItem: vi.fn(),
   addToOutbox: vi.fn(),
+  getCachedAuditLog: vi.fn(() => []),
+  setCachedAuditLog: vi.fn(),
 }))
 
 import {
@@ -168,8 +175,20 @@ describe('dataService', () => {
       expect(result).toEqual(cached)
     })
 
-    it('fetchAuditLog gibt leeres Array zurück wenn offline', async () => {
+    it('fetchAuditLog gibt Cache zurück wenn offline', async () => {
+      const origNavigator = globalThis.navigator
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { ...origNavigator, onLine: false },
+        writable: true,
+        configurable: true,
+      })
+      vi.mocked(offlineStorage.getCachedAuditLog).mockReturnValue([])
       const result = await fetchAuditLog()
+      Object.defineProperty(globalThis, 'navigator', {
+        value: origNavigator,
+        writable: true,
+        configurable: true,
+      })
 
       expect(result).toEqual([])
     })

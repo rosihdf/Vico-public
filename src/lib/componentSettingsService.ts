@@ -1,5 +1,5 @@
 import { supabase } from '../supabase'
-import { getCachedComponentSettings, setCachedComponentSettings } from './offlineStorage'
+import { getCachedComponentSettings, setCachedComponentSettings, addToOutbox } from './offlineStorage'
 
 const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
 
@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS_META: { component_key: string; label: string; enab
   { component_key: 'benutzerverwaltung', label: 'Benutzerverwaltung', enabled: true, sort_order: 6 },
   { component_key: 'einstellungen', label: 'Einstellungen', enabled: true, sort_order: 7 },
   { component_key: 'profil', label: 'Profil', enabled: true, sort_order: 8 },
+  { component_key: 'arbeitszeiterfassung', label: 'Arbeitszeiterfassung', enabled: true, sort_order: 9 },
 ]
 
 const DEFAULT_SETTINGS: Record<string, boolean> = Object.fromEntries(
@@ -85,6 +86,16 @@ export const updateComponentSetting = async (
   if (!isOnline()) {
     const cached = getCachedComponentSettings()
     setCachedComponentSettings({ ...cached, [componentKey]: enabled })
+    addToOutbox({
+      table: 'component_settings',
+      action: 'update',
+      payload: {
+        component_key: componentKey,
+        label: meta?.label ?? componentKey,
+        enabled,
+        sort_order: meta?.sort_order ?? 0,
+      },
+    })
     return { ok: true }
   }
 

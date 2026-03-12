@@ -17,7 +17,8 @@ type AuthContextType = {
   userEmail: string | null
   userRole: UserRole | null
   refreshUserRole: () => Promise<void>
-  login: (identifier: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; message?: string }>
+  login: (identifier: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; needsMfa?: boolean; message?: string }>
+  verifyMfa: (code: string) => Promise<{ success: boolean; message?: string }>
   signUp: (email: string, password: string) => Promise<{ success: boolean; message: string; sessionCreated?: boolean }>
   resetPasswordForEmail: (email: string) => Promise<{ success: boolean; message: string }>
   updatePassword: (newPassword: string) => Promise<{ success: boolean; message: string }>
@@ -84,6 +85,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUser(data.user)
         const profile = await fetchProfileSupabase(data.user.id)
         setUserRole(profile?.role ?? 'mitarbeiter')
+
+        const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+        if (aalData?.nextLevel === 'aal2' && aalData?.currentLevel !== aalData.nextLevel) {
+          return { success: true, needsMfa: true }
+        }
       }
       return { success: true }
     } catch (err) {
@@ -148,6 +154,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return { success: true, message: 'Passwort wurde geändert.' }
   }, [])
 
+  const verifyMfa = useCallback(async (code: string): Promise<{ success: boolean; message?: string }> => {
+    setLoginError(null)
+    try {
+      const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors()
+      if (factorsError || !factorsData?.totp?.length) {
+        return { success: false, message: 'Kein 2FA-Faktor gefunden. Bitte Support kontaktieren.' }
+      }
+      const factorId = factorsData.totp[0].id
+
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({ factorId })
+      if (challengeError || !challengeData?.id) {
+        return { success: false, message: getSupabaseErrorMessage(challengeError ?? new Error('Challenge fehlgeschlagen')) }
+      }
+
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId,
+        challengeId: challengeData.id,
+        code: code.trim().replace(/\s/g, ''),
+      })
+      if (verifyError) {
+        return { success: false, message: getSupabaseErrorMessage(verifyError) }
+      }
+
+      const profile = await fetchProfileSupabase((await supabase.auth.getUser()).data.user!.id)
+      setUserRole(profile?.role ?? 'mitarbeiter')
+      return { success: true }
+    } catch (err) {
+      return { success: false, message: err instanceof Error ? err.message : '2FA-Verifizierung fehlgeschlagen.' }
+    }
+  }, [])
+
   const logout = useCallback(async () => {
     setLoginError(null)
     await supabase.auth.signOut()
@@ -172,8 +209,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return
         }
         setUser(session.user)
-        const profile = await fetchProfileSupabase(session.user.id)
-        setUserRole(profile?.role ?? 'mitarbeiter')
+        try {
+          const profile = await fetchProfileSupabase(session.user.id)
+          setUserRole(profile?.role ?? 'mitarbeiter')
+        } catch {
+          setUserRole('mitarbeiter')
+        }
       } catch {
         setUser(null)
         setUserRole(null)
@@ -193,17 +234,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsLoading(false)
     }, 4000)
 
-    supabase.auth
-      .getSession()
-      .then(async ({ data: { session } }) => {
-        await initSupabaseAuth(session)
-      })
+    const loadSession = async (retryCount = 0) => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session && retryCount < 1) {
+        await new Promise((r) => setTimeout(r, 200))
+        return loadSession(1)
+      }
+      await initSupabaseAuth(session)
+    }
+    loadSession()
       .catch(() => {
         setUser(null)
         setUserRole(null)
-        setIsLoading(false)
       })
-      .finally(() => clearTimeout(safetyTimeoutId))
+      .finally(() => {
+        setIsLoading(false)
+        clearTimeout(safetyTimeoutId)
+      })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
@@ -226,6 +273,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         userRole,
         refreshUserRole,
         login,
+        verifyMfa,
         signUp,
         resetPasswordForEmail,
         updatePassword,

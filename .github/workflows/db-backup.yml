@@ -1,0 +1,64 @@
+# Automatisches tägliches Datenbank-Backup (Supabase PostgreSQL).
+# Dump wird als Artifact gespeichert (90 Tage Retention).
+# Optional: Upload zu S3, wenn AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY gesetzt sind.
+#
+# GitHub Secrets erforderlich:
+#   SUPABASE_DB_URL – PostgreSQL Connection String (Supabase Dashboard → Settings → Database → Connection string URI)
+#     Format: postgresql://postgres.[project-ref]:[PASSWORD]@aws-0-[region].pooler.supabase.com:6543/postgres
+#     Oder Direct: postgresql://postgres:[PASSWORD]@db.[project-ref].supabase.co:5432/postgres
+#
+# Optional (für S3-Upload):
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#   AWS_S3_BACKUP_BUCKET – z.B. vico-db-backups
+#   AWS_REGION – z.B. eu-central-1
+
+name: DB Backup
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Täglich 3:00 UTC
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Create backup
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL Secret fehlt. Supabase Dashboard → Settings → Database → Connection string (URI)"
+            exit 1
+          fi
+          BACKUP_FILE="vico-backup-$(date +%Y%m%d-%H%M%S).sql"
+          pg_dump "$SUPABASE_DB_URL" --no-owner --no-acl -F p -f "$BACKUP_FILE"
+          echo "BACKUP_FILE=$BACKUP_FILE" >> $GITHUB_ENV
+          echo "Backup erstellt: $BACKUP_FILE"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_number }}
+          path: ${{ env.BACKUP_FILE }}
+
+      - name: Upload to S3 (optional)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'eu-central-1' }}
+          AWS_S3_BACKUP_BUCKET: ${{ secrets.AWS_S3_BACKUP_BUCKET }}
+        run: |
+          if [ -z "$AWS_S3_BACKUP_BUCKET" ]; then
+            echo "S3-Upload übersprungen (AWS_S3_BACKUP_BUCKET nicht gesetzt)"
+            exit 0
+          fi
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "S3-Upload übersprungen: AWS_ACCESS_KEY_ID und AWS_SECRET_ACCESS_KEY erforderlich"
+            exit 0
+          fi
+          aws s3 cp ${{ env.BACKUP_FILE }} "s3://${AWS_S3_BACKUP_BUCKET}/vico/${{ env.BACKUP_FILE }}"
+          echo "Backup nach S3 hochgeladen"

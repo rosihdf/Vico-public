@@ -7,5 +7,6 @@ tsconfig.tsbuildinfo
 .DS_Store
 *.log
 supabase/.temp/
+**/supabase/.temp/
 *.tsbuildinfo
 admin/vite.config.d.ts

@@ -8,7 +8,8 @@ import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalBadge from './components/PortalBadge'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { useLicense } from './LicenseContext'
-import { checkCanInviteUser } from './lib/licenseService'
+import { checkCanInviteUser, getUsageLevel, getUsageMessage } from './lib/licenseService'
+import { getStoredLicenseNumber, reportLimitExceeded, isLicenseApiConfigured } from './lib/licensePortalApi'
 import type { Profile } from './lib/userService'
 
 const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde', string> = {
@@ -28,7 +29,7 @@ const isAppUser = (p: Profile) => APP_ROLES.includes(p.role as (typeof APP_ROLES
 const Benutzerverwaltung = () => {
   const navigate = useNavigate()
   const { userRole, signUp, logout } = useAuth()
-  useLicense()
+  const { license } = useLicense()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -63,6 +64,18 @@ const Benutzerverwaltung = () => {
   const handleOpenCreate = async () => {
     const allowed = await checkCanInviteUser()
     if (!allowed) {
+      if (isLicenseApiConfigured() && license) {
+        const licenseNumber = getStoredLicenseNumber()
+        if (licenseNumber && license.max_users != null) {
+          const currentUsers = profiles.filter((p) => !['demo', 'kunde'].includes(p.role)).length
+          reportLimitExceeded({
+            licenseNumber,
+            limit_type: 'users',
+            current_value: currentUsers,
+            max_value: license.max_users,
+          })
+        }
+      }
       setFormError('Benutzer-Limit erreicht. Bitte Lizenz upgraden, um weitere Benutzer einzuladen.')
       return
     }
@@ -183,6 +196,27 @@ const Benutzerverwaltung = () => {
       <p className="mt-1 text-sm text-slate-600">
         Benutzer anlegen und Rollen verwalten (nur Admin).
       </p>
+
+      {license?.max_users != null && (() => {
+        const currentUsers = profiles.filter((p) => !['demo', 'kunde'].includes(p.role)).length
+        const msg = getUsageMessage(currentUsers, license.max_users, 'Benutzer')
+        const level = getUsageLevel(currentUsers, license.max_users)
+        if (!msg) return null
+        return (
+          <div
+            className={`mb-4 p-4 rounded-xl border ${
+              level === 'blocked'
+                ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700 text-red-800 dark:text-red-300'
+                : level === 'critical'
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300'
+                  : 'bg-amber-50/80 dark:bg-amber-900/10 border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300'
+            }`}
+            role="status"
+          >
+            <p className="text-sm font-medium">{msg}</p>
+          </div>
+        )
+      })()}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button

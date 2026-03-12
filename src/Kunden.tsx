@@ -18,7 +18,8 @@ import {
 } from './lib/dataService'
 import { useComponentSettings } from './ComponentSettingsContext'
 import { useLicense } from './LicenseContext'
-import { checkCanCreateCustomer } from './lib/licenseService'
+import { checkCanCreateCustomer, getUsageLevel, getUsageMessage } from './lib/licenseService'
+import { getStoredLicenseNumber, reportLimitExceeded, isLicenseApiConfigured } from './lib/licensePortalApi'
 import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
 import { AddressLookupFields } from './components/AddressLookupFields'
 import ObjectFormModal from './components/ObjectFormModal'
@@ -68,7 +69,7 @@ const Kunden = () => {
   const { userRole } = useAuth()
   const { showError } = useToast()
   const { isEnabled } = useComponentSettings()
-  useLicense()
+  const { license } = useLicense()
   const canEdit = userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'demo'
   const canDelete = userRole === 'admin' || userRole === 'demo'
   const canCreateBv = userRole === 'admin' || userRole === 'demo'
@@ -245,6 +246,18 @@ const Kunden = () => {
   const handleOpenCreate = async () => {
     const allowed = await checkCanCreateCustomer()
     if (!allowed) {
+      if (isLicenseApiConfigured() && license) {
+        const licenseNumber = getStoredLicenseNumber()
+        if (licenseNumber && license.max_customers != null) {
+          const count = customers.filter((c) => !c.demo_user_id).length
+          reportLimitExceeded({
+            licenseNumber,
+            limit_type: 'customers',
+            current_value: count,
+            max_value: license.max_customers,
+          })
+        }
+      }
       showError('Kunden-Limit erreicht. Bitte Lizenz upgraden, um weitere Kunden anzulegen.')
       return
     }
@@ -533,8 +546,30 @@ const Kunden = () => {
     setExpandedObjects(data ?? [])
   }
 
+  const customerCountForLicense = customers.filter((c) => !c.demo_user_id).length
+
   return (
     <div className="p-4">
+      {license?.max_customers != null && (() => {
+        const msg = getUsageMessage(customerCountForLicense, license.max_customers, 'Kunden')
+        const level = getUsageLevel(customerCountForLicense, license.max_customers)
+        if (!msg) return null
+        return (
+          <div
+            className={`mb-4 p-4 rounded-xl border ${
+              level === 'blocked'
+                ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700 text-red-800 dark:text-red-300'
+                : level === 'critical'
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300'
+                  : 'bg-amber-50/80 dark:bg-amber-900/10 border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300'
+            }`}
+            role="status"
+          >
+            <p className="text-sm font-medium">{msg}</p>
+          </div>
+        )
+      })()}
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <h2 className="text-xl font-bold text-slate-800">Kunden</h2>
         <div className="flex gap-2">
