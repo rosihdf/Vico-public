@@ -37,13 +37,16 @@ jobs:
             const url = process.env.SUPABASE_URL;
             const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
             if (!url || !key) {
-              console.error('Fehlende Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY');
+              console.error('::error::Fehlende Secrets: SUPABASE_URL und SUPABASE_SERVICE_ROLE_KEY');
+              console.error('Diese Secrets beziehen sich auf das HAUPT-Supabase (Mandanten-DB), nicht das Lizenzportal.');
+              console.error('GitHub → Settings → Secrets → SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY');
               process.exit(1);
             }
             const supabase = createClient(url, key);
             const { data, error } = await supabase.rpc('cleanup_demo_customers_older_than_24h');
             if (error) {
-              console.error('Fehler:', error.message);
+              console.error('::error::RPC fehlgeschlagen:', error.message);
+              console.error('Prüfen: Supabase-Projekt pausiert? RPC cleanup_demo_customers_older_than_24h in supabase-complete.sql ausgeführt?');
               process.exit(1);
             }
             const cnt = data?.deleted_count ?? 0;

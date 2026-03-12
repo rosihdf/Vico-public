@@ -3,9 +3,8 @@
 # Optional: Upload zu S3, wenn AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY gesetzt sind.
 #
 # GitHub Secrets erforderlich:
-#   SUPABASE_DB_URL – PostgreSQL Connection String (Supabase Dashboard → Settings → Database → Connection string URI)
-#     Format: postgresql://postgres.[project-ref]:[PASSWORD]@aws-0-[region].pooler.supabase.com:6543/postgres
-#     Oder Direct: postgresql://postgres:[PASSWORD]@db.[project-ref].supabase.co:5432/postgres
+#   SUPABASE_DB_URL – PostgreSQL Connection String (Supabase Connect → Session, NICHT Direct – IPv6 funktioniert nicht in GitHub Actions)
+#     Format: postgres://postgres.[project-ref]:[PASSWORD]@aws-0-[region].pooler.supabase.com:5432/postgres
 #
 # Optional (für S3-Upload):
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
@@ -23,19 +22,21 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
-      - name: Create backup
+      - name: Create backup (PostgreSQL 17)
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           if [ -z "$SUPABASE_DB_URL" ]; then
-            echo "::error::SUPABASE_DB_URL Secret fehlt. Supabase Dashboard → Settings → Database → Connection string (URI)"
+            echo "::error::SUPABASE_DB_URL Secret fehlt."
             exit 1
           fi
           BACKUP_FILE="vico-backup-$(date +%Y%m%d-%H%M%S).sql"
-          pg_dump "$SUPABASE_DB_URL" --no-owner --no-acl -F p -f "$BACKUP_FILE"
+          docker run --rm \
+            -e SUPABASE_DB_URL \
+            -v "$GITHUB_WORKSPACE:/out" \
+            -w /out \
+            postgres:17 \
+            pg_dump "$SUPABASE_DB_URL" --no-owner --no-acl -F p -f "$BACKUP_FILE"
           echo "BACKUP_FILE=$BACKUP_FILE" >> $GITHUB_ENV
           echo "Backup erstellt: $BACKUP_FILE"
 

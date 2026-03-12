@@ -413,6 +413,7 @@ begin
 end;
 $$;
 drop trigger if exists check_order_assigned_to_not_demo on public.orders;
+drop trigger if exists check_order_assigned_to_valid_role on public.orders;
 create trigger check_order_assigned_to_valid_role
   before insert or update of assigned_to on public.orders
   for each row execute function public.check_order_assigned_to_valid_role();

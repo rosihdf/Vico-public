@@ -1,6 +1,19 @@
-# GitHub Secrets für Lizenzportal
+# GitHub Secrets für Vico
 
-## Supabase Keep-Alive (Pause vermeiden)
+## Übersicht: Zwei Supabase-Projekte
+
+| Workflow | Secrets | Supabase-Projekt |
+|----------|---------|------------------|
+| **Supabase Lizenzportal Keep-Alive** | `SUPABASE_LICENSE_PORTAL_URL`, `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` | Lizenzportal |
+| **Supabase Keep-Alive** | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Haupt-App (Mandanten-DB) |
+| **Cleanup Demo Data** | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Haupt-App (Mandanten-DB) |
+| **DB Backup** | `SUPABASE_DB_URL` | Haupt-App (Mandanten-DB) |
+
+Beide Projekte brauchen jeweils eigene Secrets. Wenn Cleanup oder Keep-Alive fehlschlägt: `SUPABASE_URL` und `SUPABASE_SERVICE_ROLE_KEY` für das **Haupt-Supabase** prüfen.
+
+---
+
+## Lizenzportal: Supabase Keep-Alive (Pause vermeiden)
 
 Free-Tier-Projekte pausieren nach 7 Tagen Inaktivität. Der Workflow `.github/workflows/supabase-license-portal-keepalive.yml` hält das Lizenzportal-Supabase aktiv.
 
@@ -74,3 +87,35 @@ Free-Tier-Projekte pausieren nach 7 Tagen Inaktivität. Der Workflow `.github/wo
 **Actions** → **Supabase Lizenzportal Keep-Alive** → **Run workflow**
 
 Der Workflow läuft automatisch Mo + Do um 9:00 UTC.
+
+---
+
+## DB Backup: SUPABASE_DB_URL
+
+Der Workflow **DB Backup** erstellt täglich um 3:00 UTC einen PostgreSQL-Dump. Er benötigt den Connection String der Datenbank.
+
+### SUPABASE_DB_URL ermitteln
+
+1. [Supabase Dashboard](https://supabase.com/dashboard) öffnen
+2. **Haupt-Projekt** (Mandanten-DB) auswählen
+3. Oben auf der Projektseite auf **Connect** klicken (grüner/grauer Button)
+4. Im Modal erscheinen mehrere Verbindungsoptionen:
+5. **Nicht** Direct connection – der nutzt IPv6, GitHub Actions unterstützt das nicht.
+6. Stattdessen **Session** (oder **Transaction**) wählen – diese nutzen den Pooler (IPv4).
+7. **URI** kopieren, `[YOUR-PASSWORD]` ersetzen durch das echte DB-Passwort:
+   - **Settings** (Zahnrad links) → **Database** → **Database password** (Reset, falls vergessen)
+8. Format Session: `postgres://postgres.[project-ref]:[PASSWORD]@aws-0-[region].pooler.supabase.com:5432/postgres`
+
+**Wichtig:** `[YOUR-PASSWORD]` komplett durch das Passwort ersetzen – **ohne** die eckigen Klammern.  
+Beispiel Session: `postgres://postgres.[project-ref]:[PASSWORT]@aws-0-eu-central-1.pooler.supabase.com:5432/postgres`  
+**Sonderzeichen im Passwort:** URL-encoden (z.B. `@` → `%40`, `#` → `%23`).
+
+### Secret anlegen
+
+1. GitHub → **Settings** → **Secrets and variables** → **Actions**
+2. **New repository secret**
+3. **Name:** `SUPABASE_DB_URL`
+4. **Secret:** Den vollständigen Connection String einfügen (mit echtem Passwort)
+5. **Add secret** klicken
+
+**Hinweis:** Ohne dieses Secret schlägt der Backup-Workflow fehl. Das Backup wird als GitHub Artifact gespeichert (90 Tage). Optional kann ein S3-Upload konfiguriert werden (siehe Workflow-Kommentare).
