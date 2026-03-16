@@ -13,6 +13,8 @@ export type LicenseStatus = {
   features: Record<string, boolean>
   valid: boolean
   expired: boolean
+  read_only: boolean
+  check_interval?: 'on_start' | 'daily' | 'weekly'
 }
 
 /** Mappt API-Response auf LicenseStatus (current_* von Mandanten-DB, hier 0) */
@@ -25,6 +27,8 @@ export const mapApiToLicenseStatus = (api: {
     features: Record<string, boolean>
     valid: boolean
     expired: boolean
+    read_only?: boolean
+    check_interval?: 'on_start' | 'daily' | 'weekly'
   }
 }): LicenseStatus => ({
   tier: api.license.tier,
@@ -36,6 +40,8 @@ export const mapApiToLicenseStatus = (api: {
   features: api.license.features ?? {},
   valid: api.license.valid,
   expired: api.license.expired,
+  read_only: api.license.read_only ?? false,
+  check_interval: api.license.check_interval ?? 'daily',
 })
 
 const EMPTY_LICENSE: LicenseStatus = {
@@ -48,6 +54,7 @@ const EMPTY_LICENSE: LicenseStatus = {
   features: {},
   valid: false,
   expired: true,
+  read_only: false,
 }
 
 export const fetchLicenseStatus = async (): Promise<LicenseStatus> => {

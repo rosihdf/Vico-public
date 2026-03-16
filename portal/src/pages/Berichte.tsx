@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { fetchPortalReports, getPortalPdfSignedUrl, getPortalPdfPath } from '../lib/portalService'
 import type { PortalReport } from '../lib/portalService'
-import EmptyState from '../components/EmptyState'
+import EmptyState from '../../../shared/EmptyState'
 
 type BerichteProps = {
   user: User | null

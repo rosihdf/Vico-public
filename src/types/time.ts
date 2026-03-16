@@ -8,6 +8,10 @@ export type TimeEntry = {
   order_id: string | null
   created_at: string
   updated_at: string
+  location_start_lat?: number | null
+  location_start_lon?: number | null
+  location_end_lat?: number | null
+  location_end_lon?: number | null
 }
 
 export type TimeBreak = {
@@ -16,4 +20,24 @@ export type TimeBreak = {
   start: string
   end: string | null
   created_at: string
+}
+
+export type TimeEntryEditLogEntry = {
+  id: string
+  time_entry_id: string
+  edited_by: string
+  edited_at: string
+  reason: string
+  reason_code: string | null
+  old_start: string
+  old_end: string | null
+  new_start: string
+  new_end: string | null
+}
+
+/** Zeile aus get_time_entry_edit_log (RPC) für LOG-Übersicht */
+export type TimeEntryEditLogRow = TimeEntryEditLogEntry & {
+  entry_user_id: string
+  entry_date: string
+  editor_display_name: string | null
 }

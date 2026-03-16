@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { supabase } from './lib/supabase'
+import { supabase, warmUpConnection } from './lib/supabase'
+import { withTimeoutReject, checkRole as checkRoleUtil } from '../../shared/authUtils'
 import type { User } from '@supabase/supabase-js'
 import Layout from './components/Layout'
 import Mandanten from './pages/Mandanten'
@@ -18,35 +19,40 @@ const PageFallback = () => (
   </div>
 )
 
-const AUTH_TIMEOUT_MS = 60_000
-const withTimeout = <T,>(p: Promise<T>): Promise<T> =>
-  Promise.race([
-    p,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Zeitüberschreitung')), AUTH_TIMEOUT_MS)
-    ),
-  ])
+const AUTH_TIMEOUT_MS = 30_000
+const RETRY_DELAY_MS = 2_000
+const MAX_RETRIES = 2
+
+const withTimeout = <T,>(p: Promise<T>) =>
+  withTimeoutReject(p, AUTH_TIMEOUT_MS, 'Zeitüberschreitung')
+
+const checkRole = () => checkRoleUtil(supabase, ['admin'])
+
+const isNetworkError = (msg: string) =>
+  msg === 'Zeitüberschreitung' ||
+  msg.includes('fetch') ||
+  msg.includes('network') ||
+  msg.includes('Failed')
 
 const App = () => {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [loadingHint, setLoadingHint] = useState<string | null>(null)
+  const authInFlight = useRef(false)
 
-  const checkRole = useCallback(async (): Promise<boolean> => {
-    const { data, error } = await supabase.rpc('get_my_role')
-    if (error || data !== 'admin') return false
-    return true
-  }, [])
-
-  const initAuth = useCallback(async () => {
+  const initAuth = useCallback(async (isRetry = false, retryCount = 0) => {
+    if (authInFlight.current && !isRetry) return
+    authInFlight.current = true
+    let isRetrying = false
+    if (!isRetry) setLoadingHint(null)
     try {
       const { data: { session } } = await withTimeout(supabase.auth.getSession())
       const u = session?.user ?? null
       setUser(u)
       if (!u) {
-        setIsAdmin(null)
-        setIsLoading(false)
+        setIsAdmin(false)
         return
       }
       try {
@@ -58,103 +64,89 @@ const App = () => {
           setAuthError('Zugriff verweigert. Nur Administratoren dürfen die Lizenz-Verwaltung nutzen.')
         }
       } catch (roleErr) {
-        setUser(u)
-        setIsAdmin(null)
         const msg = roleErr instanceof Error ? roleErr.message : 'Verbindungsfehler'
-        let displayMsg = msg === 'Zeitüberschreitung' ? 'Verbindung zu langsam. Bitte erneut versuchen.' : msg
-        if (msg.includes('fetch') || msg.includes('network') || msg.includes('Failed')) {
-          displayMsg = 'Supabase nicht erreichbar (evtl. pausiert). Bitte „Erneut versuchen“.'
+        if (retryCount < MAX_RETRIES && isNetworkError(msg)) {
+          isRetrying = true
+          setLoadingHint(`Verbindung langsam. Versuch ${retryCount + 2}/${MAX_RETRIES + 1} in wenigen Sekunden…`)
+          setTimeout(() => initAuth(true, retryCount + 1), RETRY_DELAY_MS)
+          return
         }
-        setAuthError(displayMsg)
+        setAuthError(
+          msg === 'Zeitüberschreitung'
+            ? 'Verbindung zu langsam. Bitte „Erneut versuchen".'
+            : isNetworkError(msg)
+              ? 'Supabase nicht erreichbar (evtl. pausiert). Bitte „Erneut versuchen".'
+              : msg
+        )
       }
     } catch (err) {
       setUser(null)
-      setIsAdmin(null)
+      setIsAdmin(false)
       const msg = err instanceof Error ? err.message : 'Verbindungsfehler'
-      let displayMsg = msg === 'Zeitüberschreitung' ? 'Verbindung zu langsam. Bitte erneut versuchen.' : msg
-      if (msg.includes('fetch') || msg.includes('network') || msg.includes('Failed')) {
-        displayMsg = 'Supabase nicht erreichbar. Prüfen Sie Ihre Internetverbindung.'
-      } else if (msg === 'Verbindungsfehler' || !msg) {
-        displayMsg = 'Verbindungsfehler. Bitte erneut versuchen.'
+      if (retryCount < MAX_RETRIES && isNetworkError(msg)) {
+        isRetrying = true
+        setLoadingHint(`Verbindung langsam. Versuch ${retryCount + 2}/${MAX_RETRIES + 1} in wenigen Sekunden…`)
+        setTimeout(() => initAuth(true, retryCount + 1), RETRY_DELAY_MS)
+        return
       }
-      setAuthError(displayMsg)
+      setAuthError(
+        msg === 'Zeitüberschreitung'
+          ? 'Verbindung zu langsam. Bitte erneut versuchen.'
+          : isNetworkError(msg)
+            ? 'Supabase nicht erreichbar. Prüfen Sie Ihre Internetverbindung.'
+            : msg === 'Verbindungsfehler' || !msg
+              ? 'Verbindungsfehler. Bitte erneut versuchen.'
+              : msg
+      )
     } finally {
-      setIsLoading(false)
+      authInFlight.current = false
+      if (!isRetrying) setIsLoading(false)
     }
-  }, [checkRole])
+  }, [])
 
   useEffect(() => {
+    let hintTimer: ReturnType<typeof setTimeout> | null = null
+    if (isLoading) {
+      hintTimer = setTimeout(() => {
+        setLoadingHint((prev) =>
+          prev ? prev : 'Bei inaktivem Supabase-Projekt kann das Aufwecken 1–2 Min. dauern.'
+        )
+      }, 5_000)
+    }
+    return () => {
+      if (hintTimer) clearTimeout(hintTimer)
+    }
+  }, [isLoading])
+
+  useEffect(() => {
+    warmUpConnection()
     initAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (event === 'SIGNED_OUT') {
           setUser(null)
-          setIsAdmin(null)
+          setIsAdmin(false)
           setIsLoading(false)
           return
         }
-        const u = session?.user ?? null
-        if (!u) {
-          if (event === 'TOKEN_REFRESHED') {
-            const { data: { session: retry } } = await supabase.auth.getSession()
-            if (retry?.user) {
-              setUser(retry.user)
-              try {
-                const admin = await withTimeout(checkRole())
-                setIsAdmin(admin)
-                if (!admin) {
-                  await supabase.auth.signOut()
-                  setUser(null)
-                  setAuthError('Zugriff verweigert. Nur Administratoren dürfen die Lizenz-Verwaltung nutzen.')
-                }
-              } catch {
-                setUser(retry.user)
-                setIsAdmin(null)
-                setAuthError('Verbindungsfehler. Bitte „Erneut versuchen“.')
-              }
-            } else {
-              setUser(null)
-              setIsAdmin(null)
-            }
-          } else {
-            setUser(null)
-            setIsAdmin(null)
-          }
-          setIsLoading(false)
-          return
-        }
-        setUser(u)
-        try {
-          const admin = await withTimeout(checkRole())
-          setIsAdmin(admin)
-          if (!admin) {
-            await supabase.auth.signOut()
-            setUser(null)
-            setAuthError('Zugriff verweigert. Nur Administratoren dürfen die Lizenz-Verwaltung nutzen.')
-          }
-        } catch {
-          setUser(u)
-          setIsAdmin(null)
-          setAuthError('Verbindungsfehler. Bitte „Erneut versuchen“.')
-        } finally {
-          setIsLoading(false)
-        }
+        if (session?.user) setUser(session.user)
       }
     )
 
     return () => subscription.unsubscribe()
-  }, [initAuth, checkRole])
+  }, [initAuth])
 
   const handleLoginSuccess = useCallback(() => {
     setAuthError(null)
+    setIsLoading(true)
     initAuth()
   }, [initAuth])
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut()
     setUser(null)
-    setIsAdmin(null)
+    setIsAdmin(false)
     setAuthError(null)
   }, [])
 
@@ -164,6 +156,11 @@ const App = () => {
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-vico-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-sm text-slate-500">Lade Lizenz-Admin…</p>
+          {loadingHint && (
+            <p className="text-xs text-slate-400 mt-2 max-w-xs" role="status">
+              {loadingHint}
+            </p>
+          )}
         </div>
       </div>
     )
@@ -178,7 +175,7 @@ const App = () => {
           ) : (
             <Suspense fallback={<PageFallback />}>
               <div>
-                {user && !isAdmin && authError ? (
+                {authError && user ? (
                   <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4">
                     <div className="max-w-md w-full p-6 bg-amber-50 border border-amber-200 rounded-xl text-center">
                       <h1 className="text-lg font-bold text-amber-800 mb-2">Verbindung zur Datenbank fehlgeschlagen</h1>

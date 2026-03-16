@@ -204,6 +204,11 @@ export type TimeOutboxItem = {
   end: string | null
   breaks: { start: string; end: string | null }[]
   timestamp: string
+  order_id?: string | null
+  location_start_lat?: number | null
+  location_start_lon?: number | null
+  location_end_lat?: number | null
+  location_end_lon?: number | null
 }
 
 export const getTimeOutbox = (): TimeOutboxItem[] =>

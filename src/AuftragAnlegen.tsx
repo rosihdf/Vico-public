@@ -45,6 +45,7 @@ const INITIAL_FORM = {
   bv_id: '',
   object_id: '',
   order_date: new Date().toISOString().slice(0, 10),
+  order_time: '',
   order_type: 'wartung' as OrderType,
   status: 'offen' as OrderStatus,
   description: '',
@@ -137,6 +138,16 @@ const AuftragAnlegen = () => {
   }, [formData.customer_id, loadBvsForCustomer])
 
   useEffect(() => {
+    if (bvs.length === 1 && formData.customer_id) {
+      setFormData((prev) => (prev.bv_id === bvs[0].id ? prev : { ...prev, bv_id: bvs[0].id, object_id: '' }))
+    }
+    if (bvs.length !== 1 && formData.bv_id) {
+      const stillValid = bvs.some((b) => b.id === formData.bv_id)
+      if (!stillValid) setFormData((prev) => ({ ...prev, bv_id: '', object_id: '' }))
+    }
+  }, [bvs, formData.customer_id, formData.bv_id])
+
+  useEffect(() => {
     if (formData.bv_id) loadObjectsForBv(formData.bv_id)
   }, [formData.bv_id, loadObjectsForBv])
 
@@ -175,11 +186,16 @@ const AuftragAnlegen = () => {
     })
   }
 
+  const showBvSelect = bvs.length > 1
+  const singleBv = bvs.length === 1 ? bvs[0] : null
+  const canSubmitOrder = formData.customer_id && (formData.bv_id || singleBv?.id)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
-    if (!formData.customer_id || !formData.bv_id) {
-      setFormError('Kunde und BV sind erforderlich.')
+    const effectiveBvId = formData.bv_id || singleBv?.id
+    if (!formData.customer_id || !effectiveBvId) {
+      setFormError(bvs.length === 0 ? 'Bitte zuerst ein Objekt/BV unter dem Kunden anlegen.' : 'Kunde und Objekt/BV sind erforderlich.')
       return
     }
     if (!formData.order_date) {
@@ -189,9 +205,10 @@ const AuftragAnlegen = () => {
     setIsSaving(true)
     const payload = {
       customer_id: formData.customer_id,
-      bv_id: formData.bv_id,
+      bv_id: effectiveBvId,
       object_id: formData.object_id.trim() || null,
       order_date: formData.order_date,
+      order_time: formData.order_time.trim() || null,
       order_type: formData.order_type,
       status: formData.status,
       description: formData.description.trim() || null,
@@ -352,7 +369,7 @@ const AuftragAnlegen = () => {
                   )}
                 </p>
                 <p className="text-sm text-slate-600">
-                  {o.order_date} · {ORDER_TYPE_LABELS[o.order_type]} · {ORDER_STATUS_LABELS[o.status]}
+                  {o.order_date}{o.order_time ? ` ${o.order_time.slice(0, 5)}` : ''} · {ORDER_TYPE_LABELS[o.order_type]} · {ORDER_STATUS_LABELS[o.status]}
                   {o.assigned_to && (
                     <span className="ml-2 text-slate-500">→ {getProfileLabel(o.assigned_to)}</span>
                   )}
@@ -422,6 +439,12 @@ const AuftragAnlegen = () => {
                     </button>
                 )}
                 <Link
+                  to={`/auftrag/${o.id}`}
+                  className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50"
+                >
+                  Abarbeiten
+                </Link>
+                <Link
                   to={o.object_id ? `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}&objectId=${o.object_id}` : `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}`}
                   className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50"
                 >
@@ -479,29 +502,45 @@ const AuftragAnlegen = () => {
                   ))}
                 </select>
               </div>
-              <div>
-                <label htmlFor="order-bv" className="block text-sm font-medium text-slate-700 mb-1">
-                  BV *
-                </label>
-                <select
-                  id="order-bv"
-                  value={formData.bv_id}
-                  onChange={(e) => handleFormChange('bv_id', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                  required
-                  disabled={!formData.customer_id}
-                >
-                  <option value="">— Auswählen —</option>
-                  {bvs.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {formData.customer_id && (
+                <>
+                  {bvs.length === 0 && (
+                    <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" role="status">
+                      Kein Objekt/BV vorhanden. Bitte zuerst unter Kunden anlegen.
+                    </p>
+                  )}
+                  {showBvSelect && (
+                    <div>
+                      <label htmlFor="order-bv" className="block text-sm font-medium text-slate-700 mb-1">
+                        Objekt/BV *
+                      </label>
+                      <select
+                        id="order-bv"
+                        value={formData.bv_id}
+                        onChange={(e) => handleFormChange('bv_id', e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                        required
+                        aria-label="Objekt/BV auswählen"
+                      >
+                        <option value="">— Auswählen —</option>
+                        {bvs.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {singleBv && (
+                    <p className="text-sm text-slate-600">
+                      <span className="font-medium">Objekt/BV:</span> {singleBv.name}
+                    </p>
+                  )}
+                </>
+              )}
               <div>
                 <label htmlFor="order-object" className="block text-sm font-medium text-slate-700 mb-1">
-                  Objekt (optional)
+                  Tür/Tor (optional)
                 </label>
                 <select
                   id="order-object"
@@ -554,6 +593,19 @@ const AuftragAnlegen = () => {
                 />
               </div>
               <div>
+                <label htmlFor="order-time" className="block text-sm font-medium text-slate-700 mb-1">
+                  Uhrzeit (optional)
+                </label>
+                <input
+                  id="order-time"
+                  type="time"
+                  value={formData.order_time}
+                  onChange={(e) => handleFormChange('order_time', e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  aria-label="Uhrzeit optional"
+                />
+              </div>
+              <div>
                 <label htmlFor="order-type" className="block text-sm font-medium text-slate-700 mb-1">
                   Art
                 </label>
@@ -591,7 +643,7 @@ const AuftragAnlegen = () => {
               <div className="flex gap-2 pt-2">
                 <button
                   type="submit"
-                  disabled={isSaving}
+                  disabled={!canSubmitOrder || isSaving}
                   className="flex-1 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover disabled:opacity-50 font-medium border border-slate-300"
                 >
                   {isSaving ? 'Wird gespeichert…' : 'Anlegen'}

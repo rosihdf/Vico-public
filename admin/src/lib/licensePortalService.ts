@@ -7,6 +7,8 @@ export type License = {
   license_model_id: string | null
   tier: string
   valid_until: string | null
+  is_trial: boolean
+  grace_period_days: number
   max_users: number | null
   max_customers: number | null
   check_interval: 'on_start' | 'daily' | 'weekly'
@@ -26,6 +28,8 @@ export type LicenseInsert = {
   license_model_id?: string | null
   tier?: string
   valid_until?: string | null
+  is_trial?: boolean
+  grace_period_days?: number
   max_users?: number | null
   max_customers?: number | null
   check_interval?: 'on_start' | 'daily' | 'weekly'
@@ -60,7 +64,7 @@ export type LimitExceededEntry = {
   tenants: { id: string; name: string } | null
 }
 
-export const fetchLimitExceededLog = async (): Promise<LimitExceededEntry[]> => {
+export const fetchLimitExceededLog = async (signal?: AbortSignal): Promise<LimitExceededEntry[]> => {
   const { data, error } = await supabase
     .from('limit_exceeded_log')
     .select(`
@@ -75,12 +79,13 @@ export const fetchLimitExceededLog = async (): Promise<LimitExceededEntry[]> => 
       tenants (id, name)
     `)
     .order('created_at', { ascending: false })
+    .abortSignal(signal)
     .limit(100)
   if (error) return []
   return (data ?? []) as unknown as LimitExceededEntry[]
 }
 
-export const fetchLicenses = async (): Promise<LicenseWithTenant[]> => {
+export const fetchLicenses = async (signal?: AbortSignal): Promise<LicenseWithTenant[]> => {
   const { data, error } = await supabase
     .from('licenses')
     .select(`
@@ -90,6 +95,8 @@ export const fetchLicenses = async (): Promise<LicenseWithTenant[]> => {
       license_model_id,
       tier,
       valid_until,
+      is_trial,
+      grace_period_days,
       max_users,
       max_customers,
       check_interval,
@@ -100,6 +107,7 @@ export const fetchLicenses = async (): Promise<LicenseWithTenant[]> => {
       license_models (id, name)
     `)
     .order('created_at', { ascending: false })
+    .abortSignal(signal)
   if (error) throw new Error(error.message)
   return (data ?? []) as unknown as LicenseWithTenant[]
 }
@@ -112,7 +120,20 @@ export const fetchLicensesByTenant = async (tenantId: string): Promise<LicenseWi
   const { data, error } = await supabase
     .from('licenses')
     .select(`
-      *,
+      id,
+      tenant_id,
+      license_number,
+      license_model_id,
+      tier,
+      valid_until,
+      is_trial,
+      grace_period_days,
+      max_users,
+      max_customers,
+      check_interval,
+      features,
+      created_at,
+      updated_at,
       license_models (id, name)
     `)
     .eq('tenant_id', tenantId)
@@ -130,6 +151,8 @@ export const createLicense = async (payload: LicenseInsert): Promise<{ id: strin
       license_model_id: payload.license_model_id ?? null,
       tier: payload.tier ?? 'professional',
       valid_until: payload.valid_until ?? null,
+      is_trial: payload.is_trial ?? false,
+      grace_period_days: payload.grace_period_days ?? 0,
       max_users: payload.max_users ?? null,
       max_customers: payload.max_customers ?? null,
       check_interval: payload.check_interval ?? 'daily',
@@ -147,6 +170,8 @@ export const updateLicense = async (id: string, payload: LicenseUpdate): Promise
     .update({
       ...(payload.tier !== undefined && { tier: payload.tier }),
       ...(payload.valid_until !== undefined && { valid_until: payload.valid_until }),
+      ...(payload.is_trial !== undefined && { is_trial: payload.is_trial }),
+      ...(payload.grace_period_days !== undefined && { grace_period_days: payload.grace_period_days }),
       ...(payload.max_users !== undefined && { max_users: payload.max_users }),
       ...(payload.max_customers !== undefined && { max_customers: payload.max_customers }),
       ...(payload.check_interval !== undefined && { check_interval: payload.check_interval }),
@@ -193,12 +218,14 @@ export type LicenseModelInsert = {
 
 export type LicenseModelUpdate = Partial<Omit<LicenseModelInsert, never>>
 
-export const fetchLicenseModels = async (): Promise<LicenseModel[]> => {
-  const { data, error } = await supabase
+export const fetchLicenseModels = async (signal?: AbortSignal): Promise<LicenseModel[]> => {
+  let query = supabase
     .from('license_models')
     .select('*')
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true })
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
   if (error) throw new Error(error.message)
   return (data ?? []) as LicenseModel[]
 }

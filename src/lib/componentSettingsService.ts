@@ -21,9 +21,10 @@ export const DEFAULT_SETTINGS_META: { component_key: string; label: string; enab
   { component_key: 'scan', label: 'Scan', enabled: true, sort_order: 4 },
   { component_key: 'wartungsprotokolle', label: 'Wartungsprotokolle', enabled: true, sort_order: 5 },
   { component_key: 'benutzerverwaltung', label: 'Benutzerverwaltung', enabled: true, sort_order: 6 },
-  { component_key: 'einstellungen', label: 'Einstellungen', enabled: true, sort_order: 7 },
-  { component_key: 'profil', label: 'Profil', enabled: true, sort_order: 8 },
-  { component_key: 'arbeitszeiterfassung', label: 'Arbeitszeiterfassung', enabled: true, sort_order: 9 },
+  { component_key: 'info', label: 'Info', enabled: true, sort_order: 7 },
+  { component_key: 'einstellungen', label: 'Einstellungen', enabled: true, sort_order: 8 },
+  { component_key: 'profil', label: 'Profil', enabled: true, sort_order: 9 },
+  { component_key: 'arbeitszeiterfassung', label: 'Arbeitszeiterfassung', enabled: true, sort_order: 10 },
 ]
 
 const DEFAULT_SETTINGS: Record<string, boolean> = Object.fromEntries(

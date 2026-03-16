@@ -1,118 +1,110 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchCustomers, fetchAllBvs, fetchAllObjects } from './lib/dataService'
-import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
+import { supabase } from './supabase'
 import { LoadingSpinner } from './components/LoadingSpinner'
-import type { Customer, BV, Object as Obj } from './types'
 
-const matchQuery = (text: string | null, q: string): boolean => {
-  if (!text) return false
-  return text.toLowerCase().includes(q.toLowerCase())
-}
-
-type SearchResult = {
-  type: 'customer'
-  customer: Customer
-  customerId: string
-  bvId?: never
-  objectId?: never
-} | {
-  type: 'bv'
-  bv: BV
-  customer: Customer
-  customerId: string
-  bvId: string
-  objectId?: never
-} | {
-  type: 'object'
-  object: Obj
-  bv: BV
-  customer: Customer
-  customerId: string
-  bvId: string
-  objectId: string
-}
+type SearchResult =
+  | {
+      type: 'customer'
+      customerId: string
+      customerName: string
+      customerStreet: string | null
+      customerHouseNumber: string | null
+      customerCity: string | null
+    }
+  | {
+      type: 'bv'
+      customerId: string
+      customerName: string
+      bvId: string
+      bvName: string
+      bvStreet: string | null
+      bvHouseNumber: string | null
+      bvCity: string | null
+    }
+  | {
+      type: 'object'
+      customerId: string
+      customerName: string
+      bvId: string | null
+      bvName: string
+      objectId: string
+      objectName: string | null
+      objectInternalId: string | null
+      objectRoom: string | null
+      objectFloor: string | null
+    }
 
 const Suche = () => {
   const [query, setQuery] = useState('')
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [bvs, setBvs] = useState<BV[]>([])
-  const [objects, setObjects] = useState<Obj[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
 
   useEffect(() => {
-    const load = async () => {
-      setIsLoading(true)
-      const [cust, bvList, objList] = await Promise.all([
-        fetchCustomers(),
-        fetchAllBvs(),
-        fetchAllObjects(),
-      ])
-      setCustomers(cust ?? [])
-      setBvs(bvList ?? [])
-      setObjects(objList ?? [])
-      setIsLoading(false)
-    }
-    load()
-  }, [])
-
-  const results = useMemo((): SearchResult[] => {
     const q = query.trim()
-    if (!q || q.length < 2) return []
-
-    const custList = customers as Customer[]
-    const bvList = bvs as BV[]
-    const objList = objects as Obj[]
-
-    const out: SearchResult[] = []
-
-    for (const c of custList) {
-      const matchName = matchQuery(c.name, q)
-      const matchCity = matchQuery(c.city, q)
-      const matchStreet = matchQuery(c.street, q)
-      const matchHouseNumber = matchQuery(c.house_number, q)
-      if (matchName || matchCity || matchStreet || matchHouseNumber) {
-        out.push({ type: 'customer', customer: c, customerId: c.id })
-      }
+    if (!q || q.length < 2) {
+      setResults([])
+      setHasSearched(false)
+      return
     }
 
-    for (const b of bvList) {
-      const cust = custList.find((c) => c.id === b.customer_id)
-      if (!cust) continue
-      const matchName = matchQuery(b.name, q)
-      const matchCity = matchQuery(b.city, q)
-      const matchStreet = matchQuery(b.street, q)
-      const matchHouseNumber = matchQuery(b.house_number, q)
-      if (matchName || matchCity || matchStreet || matchHouseNumber) {
-        out.push({ type: 'bv', bv: b, customer: cust, customerId: cust.id, bvId: b.id })
-      }
-    }
+    let cancelled = false
+    setIsSearching(true)
 
-    for (const o of objList) {
-      const b = bvList.find((b) => b.id === o.bv_id)
-      const cust = b ? custList.find((c) => c.id === b.customer_id) : null
-      if (!b || !cust) continue
-      const matchName = matchQuery(o.name, q)
-      const matchId = matchQuery(o.internal_id, q)
-      const matchRoom = matchQuery(o.room, q)
-      const matchFloor = matchQuery(o.floor, q)
-      const matchManufacturer = matchQuery(o.manufacturer, q)
-      const matchBuildYear = matchQuery(o.build_year, q)
-      if (matchName || matchId || matchRoom || matchFloor || matchManufacturer || matchBuildYear) {
-        out.push({
+    const handle = setTimeout(async () => {
+      const { data, error } = await supabase.rpc('search_entities', { q })
+      if (cancelled) return
+      setIsSearching(false)
+      setHasSearched(true)
+      if (error || !Array.isArray(data)) {
+        setResults([])
+        return
+      }
+      const mapped: SearchResult[] = data.map((row: any) => {
+        if (row.entity_type === 'customer') {
+          return {
+            type: 'customer',
+            customerId: row.customer_id,
+            customerName: row.customer_name,
+            customerStreet: row.customer_street,
+            customerHouseNumber: row.customer_house_number,
+            customerCity: row.customer_city,
+          }
+        }
+        if (row.entity_type === 'bv') {
+          return {
+            type: 'bv',
+            customerId: row.customer_id,
+            customerName: row.customer_name,
+            bvId: row.bv_id,
+            bvName: row.bv_name,
+            bvStreet: row.bv_street,
+            bvHouseNumber: row.bv_house_number,
+            bvCity: row.bv_city,
+          }
+        }
+        return {
           type: 'object',
-          object: o,
-          bv: b,
-          customer: cust,
-          customerId: cust.id,
-          bvId: b.id,
-          objectId: o.id,
-        })
-      }
-    }
+          customerId: row.customer_id,
+          customerName: row.customer_name,
+          bvId: row.bv_id,
+          bvName: row.bv_name,
+          objectId: row.object_id,
+          objectName: row.object_name,
+          objectInternalId: row.object_internal_id,
+          objectRoom: row.object_room,
+          objectFloor: row.object_floor,
+        }
+      })
+      setResults(mapped)
+    }, 300)
 
-    return out
-  }, [query, customers, bvs, objects])
+    return () => {
+      cancelled = true
+      clearTimeout(handle)
+    }
+  }, [query])
 
   const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setQuery(e.target.value)
@@ -135,85 +127,93 @@ const Suche = () => {
         autoFocus
       />
 
-      {isLoading ? (
-        <LoadingSpinner message="Lade Daten…" className="mt-4 py-8" />
-      ) : query.trim().length >= 2 ? (
-        results.length === 0 ? (
-          <p className="mt-4 text-slate-600">Keine Treffer.</p>
-        ) : (
-          <ul className="mt-4 space-y-2">
-            {results.map((r) => {
-              if (r.type === 'customer') {
-                return (
-                  <li key={`cust-${r.customer.id}`}>
-                    <Link
-                      to={`/kunden?customerId=${r.customerId}`}
-                      className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
-                    >
-                      <span className="text-xs font-medium text-slate-500 uppercase">Kunde</span>
-                      <p className="font-medium text-slate-800">{r.customer.name}</p>
-                      {(r.customer.city || r.customer.street || r.customer.house_number) && (
-                        <p className="text-sm text-slate-500">
-                          {[
-                            [r.customer.street, r.customer.house_number].filter(Boolean).join(' '),
-                            r.customer.city,
-                          ]
-                            .filter(Boolean)
-                            .join(', ')}
-                        </p>
-                      )}
-                    </Link>
-                  </li>
-                )
-              }
-              if (r.type === 'bv') {
-                return (
-                  <li key={`bv-${r.bv.id}`}>
-                    <Link
-                      to={`/kunden?customerId=${r.customerId}&bvId=${r.bvId}`}
-                      className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
-                    >
-                      <span className="text-xs font-medium text-slate-500 uppercase">BV</span>
-                      <p className="font-medium text-slate-800">{r.bv.name}</p>
-                      <p className="text-sm text-slate-500">{r.customer.name}</p>
-                      {(r.bv.street || r.bv.house_number || r.bv.city) && (
-                        <p className="text-xs text-slate-400">
-                          {[
-                            [r.bv.street, r.bv.house_number].filter(Boolean).join(' '),
-                            r.bv.city,
-                          ]
-                            .filter(Boolean)
-                            .join(', ')}
-                        </p>
-                      )}
-                    </Link>
-                  </li>
-                )
-              }
-              return (
-                <li key={`obj-${r.object.id}`}>
-                  <Link
-                    to={`/kunden?customerId=${r.customerId}&bvId=${r.bvId}&objectId=${r.objectId}`}
-                    className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
-                  >
-                    <span className="text-xs font-medium text-slate-500 uppercase">Objekt</span>
-                    <p className="font-medium text-slate-800">
-                      {getObjectDisplayName(r.object)}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      {formatObjectRoomFloor(r.object) !== '–' ? formatObjectRoomFloor(r.object) : r.bv.name}
-                    </p>
-                    <p className="text-xs text-slate-400">{r.customer.name} → {r.bv.name}</p>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        )
-      ) : (
+      {query.trim().length < 2 ? (
         <p className="mt-4 text-slate-500 text-sm">
           Tippe mindestens 2 Zeichen ein.
         </p>
+      ) : isSearching ? (
+        <LoadingSpinner message="Suche…" className="mt-4 py-8" />
+      ) : hasSearched && results.length === 0 ? (
+        <p className="mt-4 text-slate-600">Keine Treffer.</p>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {results.map((r) => {
+            if (r.type === 'customer') {
+              const addressParts = [
+                [r.customerStreet, r.customerHouseNumber].filter(Boolean).join(' '),
+                r.customerCity,
+              ]
+                .filter(Boolean)
+                .join(', ')
+              return (
+                <li key={`cust-${r.customerId}`}>
+                  <Link
+                    to={`/kunden?customerId=${r.customerId}`}
+                    className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
+                  >
+                    <span className="text-xs font-medium text-slate-500 uppercase">Kunde</span>
+                    <p className="font-medium text-slate-800">{r.customerName}</p>
+                    {addressParts && (
+                      <p className="text-sm text-slate-500">
+                        {addressParts}
+                      </p>
+                    )}
+                  </Link>
+                </li>
+              )
+            }
+            if (r.type === 'bv') {
+              const addressParts = [
+                [r.bvStreet, r.bvHouseNumber].filter(Boolean).join(' '),
+                r.bvCity,
+              ]
+                .filter(Boolean)
+                .join(', ')
+              return (
+                <li key={`bv-${r.bvId}`}>
+                  <Link
+                    to={`/kunden?customerId=${r.customerId}&bvId=${r.bvId}`}
+                    className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
+                  >
+                    <span className="text-xs font-medium text-slate-500 uppercase">Objekt/BV</span>
+                    <p className="font-medium text-slate-800">{r.bvName}</p>
+                    <p className="text-sm text-slate-500">{r.customerName}</p>
+                    {addressParts && (
+                      <p className="text-xs text-slate-400">
+                        {addressParts}
+                      </p>
+                    )}
+                  </Link>
+                </li>
+              )
+            }
+            const roomFloorParts = [r.objectRoom, r.objectFloor].filter(Boolean).join(' / ')
+            const subtitle = roomFloorParts || r.bvName
+            const title = r.objectName || r.objectInternalId || 'Objekt'
+            const objectHref = r.bvId
+              ? `/kunden?customerId=${r.customerId}&bvId=${r.bvId}&objectId=${r.objectId}`
+              : `/kunden?customerId=${r.customerId}&objectId=${r.objectId}`
+            return (
+              <li key={`obj-${r.objectId}`}>
+                <Link
+                  to={objectHref}
+                  className="block bg-white rounded-lg border border-slate-200 p-4 hover:bg-slate-50"
+                >
+                  <span className="text-xs font-medium text-slate-500 uppercase">Objekt</span>
+                  <p className="font-medium text-slate-800">
+                    {title}
+                  </p>
+                  <p className="text-sm text-slate-500">
+                    {subtitle}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {r.customerName}{r.bvName ? ` → ${r.bvName}` : ''}
+                  </p>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
       )}
     </div>
   )

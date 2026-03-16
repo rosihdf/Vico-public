@@ -89,6 +89,7 @@ const Startseite = () => {
       return
     }
     setIsLoading(true)
+    const loadStart = performance.now()
     const [profileData, assignedData, customerData, bvData, reminderData] = await Promise.all([
       fetchMyProfile(user.id),
       fetchOrdersAssignedTo(user.id),
@@ -102,6 +103,7 @@ const Startseite = () => {
     setAllBvs(bvData ?? [])
     setReminders(reminderData ?? [])
     setIsLoading(false)
+    console.info(`[Startseite] loadData: ${Math.round(performance.now() - loadStart)}ms`)
   }, [user?.id])
 
   useEffect(() => {
@@ -250,7 +252,7 @@ const Startseite = () => {
               {activeOrders.map((o) => (
                 <li key={o.id}>
                   <Link
-                    to={o.object_id ? `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}&objectId=${o.object_id}` : `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}`}
+                    to={`/auftrag/${o.id}`}
                     className="block bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                   >
                     <p className="font-medium text-slate-800 dark:text-slate-100">

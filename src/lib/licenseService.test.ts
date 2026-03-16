@@ -51,6 +51,7 @@ describe('licenseService', () => {
         features: { kundenportal: true },
         valid: true,
         expired: false,
+        read_only: false,
       }
       vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: mockData, error: null } as never)
       const result = await fetchLicenseStatus()

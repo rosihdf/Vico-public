@@ -24,11 +24,21 @@ const Lizenzmodelle = () => {
   const load = useCallback(async () => {
     setIsLoading(true)
     setError(null)
+    const loadStart = performance.now()
     try {
-      const data = await fetchLicenseModels()
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 20_000)
+      const data = await fetchLicenseModels(controller.signal)
+      clearTimeout(timeoutId)
       setModels(data)
+      console.info(`[Lizenzportal] Lizenzmodelle load: ${Math.round(performance.now() - loadStart)}ms`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Laden fehlgeschlagen.')
+      const msg = err instanceof Error ? err.message : 'Laden fehlgeschlagen.'
+      setError(
+        msg === 'The user aborted a request.'
+          ? 'Zeitüberschreitung beim Laden. Supabase möglicherweise pausiert oder langsam. Bitte erneut versuchen.'
+          : msg
+      )
     } finally {
       setIsLoading(false)
     }
@@ -77,7 +87,15 @@ const Lizenzmodelle = () => {
 
       {!isLoading && error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-800" role="alert">
-          {error}
+          <p className="font-medium mb-1">Laden fehlgeschlagen</p>
+          <p className="text-sm">{error}</p>
+          <button
+            type="button"
+            onClick={load}
+            className="mt-3 inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 hover:bg-red-200 text-red-800"
+          >
+            Erneut versuchen
+          </button>
         </div>
       )}
 

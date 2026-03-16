@@ -3,12 +3,21 @@ import { useLocation } from 'react-router-dom'
 import {
   isLicenseApiConfigured,
   getStoredLicenseNumber,
+  getCachedLicenseResponse,
+  getCachedLicenseWithMeta,
   fetchLicenseFromApi,
+  setCachedLicenseResponse,
 } from '../lib/licensePortalApi'
 import { LoadingSpinner } from './LoadingSpinner'
 import AktivierungsScreen from '../pages/AktivierungsScreen'
 
 const PUBLIC_PATHS = ['/aktivierung', '/impressum', '/datenschutz']
+
+/** Cache frisch genug für sofort „ready“ ohne API-Call (5 Min). */
+const CACHE_FRESH_MS = 5 * 60 * 1000
+
+const isAllowed = (data: { license?: { valid?: boolean; read_only?: boolean } } | null) =>
+  data?.license?.valid === true || data?.license?.read_only === true
 
 type LicenseGateProps = {
   children: React.ReactNode
@@ -17,6 +26,7 @@ type LicenseGateProps = {
 /**
  * Prüft Lizenz bei API-Modus (Mandantenfähigkeit).
  * Legacy-Modus (keine VITE_LICENSE_API_URL): Kinder werden direkt gerendert.
+ * Optimiert: Cache zuerst nutzen (sofort ready), API nur bei Bedarf mit Retry.
  */
 const LicenseGate = ({ children }: LicenseGateProps) => {
   const location = useLocation()
@@ -33,26 +43,49 @@ const LicenseGate = ({ children }: LicenseGateProps) => {
       return
     }
 
-    const check = async () => {
-      const licenseNumber = getStoredLicenseNumber()
-      if (!licenseNumber?.trim()) {
-        setStatus('needs_activation')
-        return
-      }
-
-      try {
-        const data = await fetchLicenseFromApi(licenseNumber)
-        if (!data || !data.license?.valid) {
-          setStatus('needs_activation')
-          return
-        }
-        setStatus('ready')
-      } catch {
-        setStatus('needs_activation')
-      }
+    const licenseNumber = getStoredLicenseNumber()
+    if (!licenseNumber?.trim()) {
+      setStatus('needs_activation')
+      return
     }
 
-    check()
+    // Cache zuerst: Wenn gültig und frisch (< 5 Min), sofort ready – kein API-Block
+    const cachedMeta = getCachedLicenseWithMeta(licenseNumber)
+    if (cachedMeta && isAllowed(cachedMeta.data) && Date.now() - cachedMeta.ts < CACHE_FRESH_MS) {
+      setStatus('ready')
+      return
+    }
+
+    // Cache gültig aber älter: Sofort ready, API im Hintergrund zur Aktualisierung
+    if (cachedMeta && isAllowed(cachedMeta.data)) {
+      setStatus('ready')
+      fetchLicenseFromApi(licenseNumber, 8_000).then((data) => {
+        if (data) setCachedLicenseResponse(data, licenseNumber)
+      }).catch(() => {})
+      return
+    }
+
+    // Kein gültiger Cache: API-Call mit Retry (1× nach 2s)
+    const doFetch = (retryCount = 0) =>
+      fetchLicenseFromApi(licenseNumber, 8_000)
+        .then((data) => {
+          if (isAllowed(data)) {
+            if (data) setCachedLicenseResponse(data, licenseNumber)
+            setStatus('ready')
+            return
+          }
+          const fallback = getCachedLicenseResponse(licenseNumber)
+          if (isAllowed(fallback)) setStatus('ready')
+          else setStatus('needs_activation')
+        })
+        .catch(() => {
+          const fallback = getCachedLicenseResponse(licenseNumber)
+          if (isAllowed(fallback)) setStatus('ready')
+          else if (retryCount < 1) setTimeout(() => doFetch(1), 2_000)
+          else setStatus('needs_activation')
+        })
+
+    doFetch()
   }, [location.pathname])
 
   if (status === 'checking') {

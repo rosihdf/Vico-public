@@ -1,5 +1,6 @@
 import { supabase } from '../supabase'
 import type { Customer, BV, Object as Obj, Order, ObjectPhoto, ObjectDocument, MaintenanceReminder } from '../types'
+import { CUSTOMER_COLUMNS, BV_COLUMNS, OBJECT_COLUMNS, ORDER_COLUMNS, OBJECT_PHOTO_COLUMNS, OBJECT_DOCUMENT_COLUMNS, MAINTENANCE_REPORT_COLUMNS, MAINTENANCE_REPORT_PHOTO_COLUMNS, TIME_ENTRY_COLUMNS } from './dataColumns'
 import {
   getOutbox,
   removeOutboxItem,
@@ -49,6 +50,23 @@ const OBJECT_DOCUMENTS_BUCKET = 'object-documents'
 const MAINTENANCE_PHOTOS_BUCKET = 'maintenance-photos'
 
 export type SyncResult = { success: boolean; pendingCount: number; error?: string }
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('Synchronisation hat zu lange gedauert (Timeout).'))
+    }, timeoutMs)
+    promise
+      .then((value) => {
+        clearTimeout(timer)
+        resolve(value)
+      })
+      .catch((err) => {
+        clearTimeout(timer)
+        reject(err)
+      })
+  })
+}
 
 export const processOutbox = async (): Promise<SyncResult> => {
   const box = getOutbox()
@@ -111,43 +129,52 @@ export const processOutbox = async (): Promise<SyncResult> => {
 }
 
 export const pullFromServer = async (): Promise<void> => {
+  const pullStart = performance.now()
+
   const [custRes, bvRes, objRes, ordersRes, photosRes, docsRes, maintPhotosRes] = await Promise.all([
-    supabase.from('customers').select('*').order('name'),
-    supabase.from('bvs').select('*').order('name'),
-    supabase.from('objects').select('*').order('internal_id'),
-    supabase.from('orders').select('*').order('order_date', { ascending: false }),
-    supabase.from('object_photos').select('*').order('created_at', { ascending: false }),
-    supabase.from('object_documents').select('*').order('created_at', { ascending: false }),
-    supabase.from('maintenance_report_photos').select('*'),
+    supabase.from('customers').select(CUSTOMER_COLUMNS).order('name'),
+    supabase.from('bvs').select(BV_COLUMNS).order('name'),
+    supabase.from('objects').select(OBJECT_COLUMNS).order('internal_id'),
+    supabase.from('orders').select(ORDER_COLUMNS).order('order_date', { ascending: false }),
+    supabase.from('object_photos').select(OBJECT_PHOTO_COLUMNS).order('created_at', { ascending: false }),
+    supabase.from('object_documents').select(OBJECT_DOCUMENT_COLUMNS).order('created_at', { ascending: false }),
+    supabase.from('maintenance_report_photos').select(MAINTENANCE_REPORT_PHOTO_COLUMNS),
   ])
 
-  if (!custRes.error) setCachedCustomers((custRes.data as Customer[]) ?? [])
-  if (!bvRes.error) setCachedBvs((bvRes.data as BV[]) ?? [])
-  if (!objRes.error) setCachedObjects((objRes.data as Obj[]) ?? [])
-  if (!ordersRes.error) setCachedOrders((ordersRes.data ?? []) as Order[])
-  if (!photosRes.error) setCachedObjectPhotos((photosRes.data ?? []) as ObjectPhoto[])
-  if (!docsRes.error) setCachedObjectDocuments((docsRes.data ?? []) as ObjectDocument[])
-  if (!maintPhotosRes.error) setCachedMaintenancePhotos((maintPhotosRes.data ?? []) as { id: string; report_id: string; storage_path: string | null; caption: string | null }[])
-  const { data: compSettingsData } = await supabase
-    .from('component_settings')
-    .select('component_key, enabled')
-    .order('sort_order', { ascending: true })
-  if (Array.isArray(compSettingsData)) {
+  const batch1Ms = Math.round(performance.now() - pullStart)
+
+  if (!custRes.error) setCachedCustomers((custRes.data as unknown as Customer[]) ?? [])
+  if (!bvRes.error) setCachedBvs((bvRes.data as unknown as BV[]) ?? [])
+  if (!objRes.error) setCachedObjects((objRes.data as unknown as Obj[]) ?? [])
+  if (!ordersRes.error) setCachedOrders((ordersRes.data ?? []) as unknown as Order[])
+  if (!photosRes.error) setCachedObjectPhotos((photosRes.data ?? []) as unknown as ObjectPhoto[])
+  if (!docsRes.error) setCachedObjectDocuments((docsRes.data ?? []) as unknown as ObjectDocument[])
+  if (!maintPhotosRes.error) setCachedMaintenancePhotos((maintPhotosRes.data ?? []) as unknown as { id: string; report_id: string; storage_path: string | null; caption: string | null }[])
+
+  const batch2Start = performance.now()
+
+  // Zweite Runde parallel (reduziert Ladezeit gegenüber sequentiellen Requests)
+  const [compSettingsRes, profilesRes, licenseStatus, auditRes, remindersRes] = await Promise.all([
+    supabase.from('component_settings').select('component_key, enabled').order('sort_order', { ascending: true }),
+    supabase.from('profiles').select('id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week').order('email', { nullsFirst: false }),
+    fetchLicenseStatus().catch(() => null),
+    supabase.rpc('get_audit_log', { limit_rows: 200 }),
+    supabase.rpc('get_maintenance_reminders'),
+  ])
+
+  if (Array.isArray(compSettingsRes.data)) {
     const map: Record<string, boolean> = {}
-    compSettingsData.forEach((row: { component_key: string; enabled: boolean }) => {
+    compSettingsRes.data.forEach((row: { component_key: string; enabled: boolean }) => {
       map[row.component_key] = row.enabled
     })
     if (Object.keys(map).length > 0) setCachedComponentSettings(map)
   }
-  const profilesRes = await supabase.from('profiles').select('id, email, first_name, last_name, role, created_at, updated_at').order('email', { nullsFirst: false })
   if (!profilesRes.error && Array.isArray(profilesRes.data)) {
     setCachedProfiles(profilesRes.data)
   }
-  const licenseStatus = await fetchLicenseStatus().catch(() => null)
   if (licenseStatus) setCachedLicense(licenseStatus)
-  const { data: auditData } = await supabase.rpc('get_audit_log', { limit_rows: 200 })
-  if (Array.isArray(auditData)) {
-    const mapped = auditData.map((row: Record<string, unknown>) => ({
+  if (Array.isArray(auditRes.data)) {
+    const mapped = auditRes.data.map((row: Record<string, unknown>) => ({
       id: row.id as string,
       user_id: (row.user_id as string) ?? null,
       user_email: (row.user_email as string) ?? null,
@@ -158,10 +185,9 @@ export const pullFromServer = async (): Promise<void> => {
     }))
     setCachedAuditLog(mapped)
   }
-  const { data: remindersData } = await supabase.rpc('get_maintenance_reminders')
-  if (Array.isArray(remindersData)) {
+  if (Array.isArray(remindersRes.data)) {
     setCachedReminders(
-      remindersData.map((row: Record<string, unknown>) => ({
+      remindersRes.data.map((row: Record<string, unknown>) => ({
         object_id: row.object_id,
         customer_id: row.customer_id,
         customer_name: row.customer_name ?? '',
@@ -180,6 +206,12 @@ export const pullFromServer = async (): Promise<void> => {
       }))
     )
   }
+
+  const batch2Ms = Math.round(performance.now() - batch2Start)
+  const totalMs = Math.round(performance.now() - pullStart)
+  console.info(
+    `[Sync] pullFromServer: Batch1 (Stammdaten) ${batch1Ms}ms, Batch2 (Einstellungen/Profile/Lizenz/Audit/Reminders) ${batch2Ms}ms, gesamt ${totalMs}ms`
+  )
 }
 
 const processMaintenanceOutbox = async (): Promise<SyncResult> => {
@@ -190,12 +222,13 @@ const processMaintenanceOutbox = async (): Promise<SyncResult> => {
       const { data: report, error } = await supabase
         .from('maintenance_reports')
         .insert(full)
-        .select()
+        .select(MAINTENANCE_REPORT_COLUMNS)
         .single()
       if (error) throw new Error(error.message)
+      const reportRow = report as unknown as { id: string }
       if (report && item.smokeDetectors.length > 0) {
         const rows = item.smokeDetectors.map((sd) => ({
-          report_id: report.id,
+          report_id: reportRow.id,
           smoke_detector_label: sd.label,
           status: sd.status,
         }))
@@ -206,7 +239,7 @@ const processMaintenanceOutbox = async (): Promise<SyncResult> => {
       }
       const photoOutbox = getMaintenancePhotoOutbox().filter((p) => p.report_id === item.tempId)
       for (const photoItem of photoOutbox) {
-        const path = `${report!.id}/${crypto.randomUUID()}.${photoItem.ext}`
+        const path = `${reportRow.id}/${crypto.randomUUID()}.${photoItem.ext}`
         const binary = Uint8Array.from(atob(photoItem.fileBase64), (c) => c.charCodeAt(0))
         const blob = new Blob([binary], { type: `image/${photoItem.ext === 'jpg' ? 'jpeg' : photoItem.ext}` })
         const { error: uploadError } = await supabase.storage
@@ -215,18 +248,18 @@ const processMaintenanceOutbox = async (): Promise<SyncResult> => {
         if (uploadError) throw new Error(uploadError.message)
         const { error: photoError } = await supabase
           .from('maintenance_report_photos')
-          .insert({ report_id: report!.id, storage_path: path, caption: photoItem.caption })
+          .insert({ report_id: reportRow.id, storage_path: path, caption: photoItem.caption })
         if (photoError) throw new Error(photoError.message)
         removeMaintenancePhotoOutboxItem(photoItem.id)
       }
       const objectId = item.reportPayload.object_id as string
       const cached = getCachedMaintenanceReports(objectId) as Record<string, unknown>[]
       const filtered = cached.filter((r) => r.id !== item.tempId)
-      setCachedMaintenanceReports(objectId, [report, ...filtered])
+      setCachedMaintenanceReports(objectId, [report as unknown as Record<string, unknown>, ...filtered])
       removeMaintenanceOutboxItem(item.id)
 
       supabase.functions.invoke('notify-portal-on-report', {
-        body: { report_id: report.id },
+        body: { report_id: reportRow.id },
       }).catch(() => { /* fire-and-forget */ })
     } catch (err) {
       return {
@@ -257,7 +290,7 @@ const processObjectPhotoOutbox = async (): Promise<SyncResult> => {
           storage_path: path,
           caption: item.caption,
         })
-        .select()
+        .select(OBJECT_PHOTO_COLUMNS)
         .single()
       if (error) throw new Error(error.message)
       removeObjectPhotoOutboxItem(item.id)
@@ -294,7 +327,7 @@ const processObjectDocumentOutbox = async (): Promise<SyncResult> => {
           title: item.title,
           file_name: item.file_name,
         })
-        .select()
+        .select(OBJECT_DOCUMENT_COLUMNS)
         .single()
       if (error) throw new Error(error.message)
       removeObjectDocumentOutboxItem(item.id)
@@ -326,8 +359,13 @@ const processTimeOutbox = async (): Promise<SyncResult> => {
           date: item.date,
           start: item.start,
           end: item.end,
+          order_id: item.order_id ?? null,
+          location_start_lat: item.location_start_lat ?? null,
+          location_start_lon: item.location_start_lon ?? null,
+          location_end_lat: item.location_end_lat ?? null,
+          location_end_lon: item.location_end_lon ?? null,
         })
-        .select()
+        .select(TIME_ENTRY_COLUMNS)
         .single()
       if (entryError || !entry) throw new Error(entryError?.message ?? 'Zeiteintrag fehlgeschlagen')
       for (const b of item.breaks) {
@@ -391,6 +429,7 @@ const processEmailOutbox = async (): Promise<SyncResult> => {
 }
 
 export const runSync = async (): Promise<SyncResult> => {
+  const syncStart = performance.now()
   const pushResult = await processOutbox()
   if (!pushResult.success) return pushResult
   const maintResult = await processMaintenanceOutbox()
@@ -403,8 +442,26 @@ export const runSync = async (): Promise<SyncResult> => {
   if (!timeResult.success) return timeResult
   const emailResult = await processEmailOutbox()
   if (!emailResult.success) return emailResult
-  await pullFromServer()
-  return { success: true, pendingCount: 0 }
+  const pushMs = Math.round(performance.now() - syncStart)
+  try {
+    await withTimeout(pullFromServer(), 60000)
+    const totalMs = Math.round(performance.now() - syncStart)
+    console.info(`[Sync] runSync: Push ${pushMs}ms, Pull siehe oben, gesamt ${totalMs}ms`)
+    return { success: true, pendingCount: 0 }
+  } catch (err) {
+    return {
+      success: false,
+      pendingCount:
+        getOutbox().length +
+        getMaintenanceOutbox().length +
+        getObjectPhotoOutbox().length +
+        getObjectDocumentOutbox().length +
+        getTimeOutbox().length +
+        getMaintenancePhotoOutbox().length +
+        getEmailOutbox().length,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
 }
 
 export const getPendingCount = () =>

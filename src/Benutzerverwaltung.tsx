@@ -1,19 +1,32 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import { supabase } from './supabase'
-import { fetchProfiles, updateProfileRole, updateProfileName, getProfileDisplayName } from './lib/userService'
+import { fetchProfiles, updateProfileRole, updateProfileName, updateProfileSollMinutes, getProfileDisplayName, updateProfileRoleByEmail, fetchTeams, updateProfileTeam, createTeam } from './lib/userService'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalBadge from './components/PortalBadge'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { useLicense } from './LicenseContext'
 import { checkCanInviteUser, getUsageLevel, getUsageMessage } from './lib/licenseService'
 import { getStoredLicenseNumber, reportLimitExceeded, isLicenseApiConfigured } from './lib/licensePortalApi'
-import type { Profile } from './lib/userService'
+import {
+  fetchCustomers,
+  fetchAllPortalUserAssignments,
+  linkPortalUserToCustomer,
+  deletePortalUser,
+  fetchPortalVisibility,
+  setPortalVisibilityForCustomer,
+  fetchBvs,
+} from './lib/dataService'
+import type { Profile, Team } from './lib/userService'
+import type { PortalUserAssignment } from './lib/dataService'
+import type { Customer } from './types'
+import type { BV } from './types'
 
-const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde', string> = {
+const ROLE_LABELS: Record<'admin' | 'teamleiter' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde', string> = {
   admin: 'Admin',
+  teamleiter: 'Teamleiter',
   mitarbeiter: 'Mitarbeiter',
   operator: 'Operator',
   leser: 'Leser',
@@ -21,8 +34,7 @@ const ROLE_LABELS: Record<'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo
   kunde: 'Kunde (Portal)',
 }
 
-const APP_ROLES = ['admin', 'mitarbeiter', 'operator', 'leser', 'demo'] as const
-const PORTAL_ROLES = ['kunde'] as const
+const APP_ROLES = ['admin', 'teamleiter', 'mitarbeiter', 'operator', 'leser', 'demo'] as const
 
 const isAppUser = (p: Profile) => APP_ROLES.includes(p.role as (typeof APP_ROLES)[number])
 
@@ -37,6 +49,7 @@ const Benutzerverwaltung = () => {
   const [newPassword, setNewPassword] = useState('')
   const [newFirstName, setNewFirstName] = useState('')
   const [newLastName, setNewLastName] = useState('')
+  const [newRole, setNewRole] = useState<'admin' | 'teamleiter' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'>('mitarbeiter')
   const [formError, setFormError] = useState<string | null>(null)
   const [formMessage, setFormMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -44,6 +57,61 @@ const Benutzerverwaltung = () => {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null)
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [portalAssignments, setPortalAssignments] = useState<PortalUserAssignment[]>([])
+  const [expandingPortalUserId, setExpandingPortalUserId] = useState<string | null>(null)
+  const [visibilityByUser, setVisibilityByUser] = useState<Record<string, Record<string, string[]>>>({})
+  const [bvsByCustomer, setBvsByCustomer] = useState<Record<string, BV[]>>({})
+  const [savingVisibilityUserId, setSavingVisibilityUserId] = useState<string | null>(null)
+  const [linkingUserId, setLinkingUserId] = useState<string | null>(null)
+  const [savingSollId, setSavingSollId] = useState<string | null>(null)
+  const [editingSoll, setEditingSoll] = useState<Record<string, string>>({})
+  const [teams, setTeams] = useState<Team[]>([])
+  const [savingTeamId, setSavingTeamId] = useState<string | null>(null)
+  const [newTeamName, setNewTeamName] = useState('')
+  const [isCreatingTeam, setIsCreatingTeam] = useState(false)
+
+  const handleSollBlur = async (profileId: string, value: string) => {
+    setEditingSoll((prev) => {
+      const next = { ...prev }
+      delete next[profileId]
+      return next
+    })
+    const parsed = value === '' ? null : parseInt(value, 10)
+    const toSave: number | null =
+      value === '' ? null : parsed === null || Number.isNaN(parsed) || parsed < 0 ? null : parsed
+    setSavingSollId(profileId)
+    const { error } = await updateProfileSollMinutes(profileId, toSave)
+    setSavingSollId(null)
+    if (!error) await loadProfiles()
+    else setFormError(getSupabaseErrorMessage(error.message))
+  }
+
+  const handleTeamChange = async (profileId: string, teamId: string | null) => {
+    setSavingTeamId(profileId)
+    const { error } = await updateProfileTeam(profileId, teamId)
+    setSavingTeamId(null)
+    if (!error) await loadProfiles()
+    else setFormError(getSupabaseErrorMessage(error.message))
+  }
+
+  const handleCreateTeam = async () => {
+    const name = newTeamName.trim()
+    if (!name) return
+    setIsCreatingTeam(true)
+    setFormError(null)
+    const { error } = await createTeam(name)
+    setIsCreatingTeam(false)
+    if (!error) {
+      setNewTeamName('')
+      await loadTeams()
+      await loadProfiles()
+      setFormMessage(`Team „${name}" wurde angelegt.`)
+      setTimeout(() => setFormMessage(null), 3000)
+    } else {
+      setFormError(getSupabaseErrorMessage(error.message))
+    }
+  }
 
   const loadProfiles = useCallback(async () => {
     setIsLoading(true)
@@ -60,6 +128,24 @@ const Benutzerverwaltung = () => {
     const unsub = subscribeToProfileChanges(loadProfiles)
     return unsub
   }, [loadProfiles])
+
+  const loadCustomersAndAssignments = useCallback(async () => {
+    const [custs, assigns] = await Promise.all([fetchCustomers(), fetchAllPortalUserAssignments()])
+    setCustomers(custs)
+    setPortalAssignments(assigns)
+  }, [])
+
+  const loadTeams = useCallback(async () => {
+    const data = await fetchTeams()
+    setTeams(data)
+  }, [])
+
+  useEffect(() => {
+    if (userRole === 'admin') {
+      loadCustomersAndAssignments()
+      loadTeams()
+    }
+  }, [userRole, loadCustomersAndAssignments, loadTeams])
 
   const handleOpenCreate = async () => {
     const allowed = await checkCanInviteUser()
@@ -83,6 +169,7 @@ const Benutzerverwaltung = () => {
     setNewPassword('')
     setNewFirstName('')
     setNewLastName('')
+    setNewRole('mitarbeiter')
     setFormError(null)
     setFormMessage(null)
     setShowForm(true)
@@ -106,13 +193,20 @@ const Benutzerverwaltung = () => {
       setFormError('Passwort muss mindestens 6 Zeichen haben.')
       return
     }
+    if (newRole === 'kunde' && !(license?.features?.kundenportal)) {
+      setFormError('Portalbenutzer können nur angelegt werden, wenn das Kundenportal in der Lizenz enthalten ist.')
+      return
+    }
     setIsSaving(true)
     const { success, message, sessionCreated } = await signUp(newEmail.trim(), newPassword)
     if (success && sessionCreated && (newFirstName.trim() || newLastName.trim())) {
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
+      if (user && (newFirstName.trim() || newLastName.trim())) {
         await updateProfileName(user.id, newFirstName.trim() || null, newLastName.trim() || null)
       }
+    }
+    if (success && newRole && newRole !== 'mitarbeiter') {
+      await updateProfileRoleByEmail(newEmail.trim(), newRole)
     }
     setIsSaving(false)
     if (success) {
@@ -121,6 +215,7 @@ const Benutzerverwaltung = () => {
       setNewPassword('')
       setNewFirstName('')
       setNewLastName('')
+      setNewRole('mitarbeiter')
       loadProfiles()
       handleCloseForm()
       if (sessionCreated) {
@@ -162,7 +257,88 @@ const Benutzerverwaltung = () => {
   const isLastAdmin = (p: Profile) =>
     p.role === 'admin' && profiles.filter((x) => x.role === 'admin').length === 1
 
-  const handleRoleChange = async (profile: Profile, newRole: 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde') => {
+  const assignmentsForUser = (userId: string) =>
+    portalAssignments.filter((a) => a.user_id === userId)
+  const customerName = (customerId: string) =>
+    customers.find((c) => c.id === customerId)?.name ?? customerId
+
+  const handleLinkPortalUserToCustomer = async (profile: Profile, customerId: string) => {
+    if (!profile.email) return
+    setLinkingUserId(profile.id)
+    setFormError(null)
+    const { error } = await linkPortalUserToCustomer(profile.id, profile.email, customerId)
+    setLinkingUserId(null)
+    if (error) {
+      setFormError(error)
+      return
+    }
+    await loadCustomersAndAssignments()
+  }
+
+  const handleUnlinkPortalUser = async (assignmentId: string) => {
+    setFormError(null)
+    const res = await deletePortalUser(assignmentId)
+    if (res.error) {
+      setFormError(res.error.message)
+      return
+    }
+    await loadCustomersAndAssignments()
+  }
+
+  const handleOpenVisibility = async (userId: string) => {
+    if (expandingPortalUserId === userId) {
+      setExpandingPortalUserId(null)
+      return
+    }
+    setExpandingPortalUserId(userId)
+    const assignments = portalAssignments.filter((a) => a.user_id === userId)
+    const [vis, ...bvsResults] = await Promise.all([
+      fetchPortalVisibility(userId),
+      ...assignments.map((a) => fetchBvs(a.customer_id)),
+    ])
+    const bvsMap: Record<string, BV[]> = {}
+    assignments.forEach((a, i) => {
+      bvsMap[a.customer_id] = bvsResults[i] ?? []
+    })
+    setBvsByCustomer((prev) => ({ ...prev, ...bvsMap }))
+    const visMap: Record<string, string[]> = {}
+    vis.forEach((r) => {
+      if (!visMap[r.customer_id]) visMap[r.customer_id] = []
+      visMap[r.customer_id].push(r.bv_id)
+    })
+    setVisibilityByUser((prev) => ({ ...prev, [userId]: visMap }))
+  }
+
+  const handleVisibilityCheck = (userId: string, customerId: string, bvId: string, checked: boolean) => {
+    setVisibilityByUser((prev) => {
+      const userVis = prev[userId] ?? {}
+      const bvIds = userVis[customerId] ?? []
+      const allBvIds = (bvsByCustomer[customerId] ?? []).map((b) => b.id)
+      let next: string[]
+      if (checked) {
+        if (bvIds.length === 0) next = [...allBvIds]
+        else next = [...bvIds]
+        if (!next.includes(bvId)) next.push(bvId)
+      } else {
+        if (bvIds.length === 0) next = allBvIds.filter((id) => id !== bvId)
+        else next = bvIds.filter((id) => id !== bvId)
+      }
+      return { ...prev, [userId]: { ...userVis, [customerId]: next } }
+    })
+  }
+
+  const handleSaveVisibility = async (userId: string, customerId: string) => {
+    setSavingVisibilityUserId(userId)
+    const userVis = visibilityByUser[userId] ?? {}
+    const bvIds = userVis[customerId] ?? []
+    const allBvIds = (bvsByCustomer[customerId] ?? []).map((b) => b.id)
+    const toSave = allBvIds.length === bvIds.length ? [] : bvIds
+    const { error } = await setPortalVisibilityForCustomer(userId, customerId, toSave)
+    setSavingVisibilityUserId(null)
+    if (error) setFormError(error)
+  }
+
+  const handleRoleChange = async (profile: Profile, newRole: 'admin' | 'teamleiter' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde') => {
     if (newRole === profile.role) return
     if (isLastAdmin(profile)) return
     setFormError(null)
@@ -183,9 +359,6 @@ const Benutzerverwaltung = () => {
       <div className="p-4">
         <h2 className="text-xl font-bold text-slate-800">Benutzerverwaltung</h2>
         <p className="mt-2 text-slate-600">Zugriff nur für Administratoren.</p>
-        <Link to="/einstellungen" className="mt-4 inline-block text-vico-primary hover:underline">
-          ← Zurück zu Einstellungen
-        </Link>
       </div>
     )
   }
@@ -196,6 +369,12 @@ const Benutzerverwaltung = () => {
       <p className="mt-1 text-sm text-slate-600">
         Benutzer anlegen und Rollen verwalten (nur Admin).
       </p>
+
+      {license && (
+        <p className="mt-2 text-xs text-slate-500">
+          Verfügbare Rollen können je nach Lizenz und aktivierten Modulen eingeschränkt sein (z.B. Portalbenutzer nur bei aktivem Kundenportal).
+        </p>
+      )}
 
       {license?.max_users != null && (() => {
         const currentUsers = profiles.filter((p) => !['demo', 'kunde'].includes(p.role)).length
@@ -227,12 +406,6 @@ const Benutzerverwaltung = () => {
         >
           + Benutzer anlegen
         </button>
-        <Link
-          to="/einstellungen"
-          className="px-4 py-2 rounded-lg font-medium border border-slate-300 text-slate-700 hover:bg-slate-50"
-        >
-          Einstellungen
-        </Link>
       </div>
 
       {isLoading ? (
@@ -304,6 +477,48 @@ const Benutzerverwaltung = () => {
                         {ROLE_LABELS[p.role]}
                       </span>
                     )}
+                    {canChangeRole && (
+                      <div className="flex items-center gap-1">
+                        <label htmlFor={`soll-${p.id}`} className="text-xs text-slate-500 whitespace-nowrap">
+                          Soll Min/Monat
+                        </label>
+                        <input
+                          id={`soll-${p.id}`}
+                          type="number"
+                          min={0}
+                          step={60}
+                          value={editingSoll[p.id] ?? p.soll_minutes_per_month ?? ''}
+                          onChange={(e) => setEditingSoll((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                          onBlur={(e) => handleSollBlur(p.id, e.target.value.trim())}
+                          disabled={savingSollId === p.id}
+                          className="w-20 px-2 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white disabled:opacity-50"
+                          aria-label={`Soll-Arbeitszeit pro Monat (Minuten) für ${getProfileDisplayName(p)}`}
+                        />
+                      </div>
+                    )}
+                    {canChangeRole && (
+                      <div className="flex items-center gap-1">
+                        <label htmlFor={`team-${p.id}`} className="text-xs text-slate-500 whitespace-nowrap">
+                          Team
+                        </label>
+                        <select
+                          id={`team-${p.id}`}
+                          value={p.team_id ?? ''}
+                          onChange={(e) => handleTeamChange(p.id, e.target.value || null)}
+                          disabled={savingTeamId === p.id}
+                          className="px-2 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white disabled:opacity-50 min-w-[120px]"
+                          aria-label={`Team für ${getProfileDisplayName(p)}`}
+                          title="Team (für Teamleiter-Zuordnung)"
+                        >
+                          <option value="">– Kein Team –</option>
+                          {teams.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -311,12 +526,35 @@ const Benutzerverwaltung = () => {
 
             return (
               <div className="mt-4 space-y-6">
+                <section className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      value={newTeamName}
+                      onChange={(e) => setNewTeamName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCreateTeam()}
+                      placeholder="Neues Team (Name)"
+                      className="px-3 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white w-48"
+                      aria-label="Name für neues Team"
+                      disabled={isCreatingTeam}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreateTeam}
+                      disabled={!newTeamName.trim() || isCreatingTeam}
+                      className="px-3 py-1.5 text-sm rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:pointer-events-none"
+                      aria-label="Team anlegen"
+                    >
+                      Team anlegen
+                    </button>
+                  </div>
+                </section>
                 <section>
                   <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
                     App-Benutzer ({appProfiles.length})
                   </h3>
                   <p className="text-xs text-slate-500 mb-2">
-                    Zugriff auf die Vico Web-App (Admin, Mitarbeiter, Operator, Leser, Demo)
+                    Zugriff auf die Vico Web-App (Admin, Mitarbeiter, Operator, Leser, Demo). Team-Zuordnung für Teamleiter und Mitarbeiter.
                   </p>
                   {renderUserList(appProfiles, APP_ROLES, true)}
                 </section>
@@ -325,9 +563,174 @@ const Benutzerverwaltung = () => {
                     Portal-Benutzer ({portalProfiles.length})
                   </h3>
                   <p className="text-xs text-slate-500 mb-2">
-                    Zugriff auf das Kundenportal (Wartungsberichte). Rollen werden über die Kundenverwaltung gesetzt.
+                    Zugriff auf das Kundenportal (Wartungsberichte). Kunden zuweisen und Sichtbarkeit Objekte/BV einschränken.
                   </p>
-                  {renderUserList(portalProfiles, PORTAL_ROLES, false)}
+                  <ul className="space-y-2" aria-label="Portal-Benutzerliste">
+                    {portalProfiles.map((p) => {
+                      const assignments = assignmentsForUser(p.id)
+                      const assignedCustomerIds = assignments.map((a) => a.customer_id)
+                      const availableCustomers = customers.filter((c) => !assignedCustomerIds.includes(c.id))
+                      const isExpanded = expandingPortalUserId === p.id
+                      const userVis = visibilityByUser[p.id] ?? {}
+                      return (
+                        <li
+                          key={p.id}
+                          className="flex flex-col gap-2 p-3 bg-white rounded-lg border border-slate-200"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-slate-800">
+                                  {getProfileDisplayName(p)}
+                                  {(p.first_name || p.last_name) && p.email && (
+                                    <span className="text-slate-400 font-normal"> ({p.email})</span>
+                                  )}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditName(p)}
+                                  className="text-xs text-vico-primary hover:underline"
+                                  aria-label="Name bearbeiten"
+                                >
+                                  bearbeiten
+                                </button>
+                              </div>
+                              <span className="ml-2 text-sm text-slate-500 flex items-center gap-1.5">
+                                {ROLE_LABELS[p.role]}
+                                <PortalBadge />
+                              </span>
+                            </div>
+                            <span className="px-3 py-1.5 text-sm text-slate-600 min-w-[140px]">
+                              {ROLE_LABELS[p.role]}
+                            </span>
+                          </div>
+                          <div className="text-sm text-slate-600">
+                            <span className="font-medium">Zuordnung: </span>
+                            {assignments.length === 0 ? (
+                              <span className="text-slate-400">Kein Kunde zugewiesen</span>
+                            ) : (
+                              <span className="flex flex-wrap gap-1.5 items-center">
+                                {assignments.map((a) => (
+                                  <span
+                                    key={a.id}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700"
+                                  >
+                                    {customerName(a.customer_id)}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUnlinkPortalUser(a.id)}
+                                      className="text-red-600 hover:text-red-800 font-medium"
+                                      aria-label={`${customerName(a.customer_id)} entfernen`}
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                            {availableCustomers.length > 0 && (
+                              <span className="inline-flex items-center gap-2 mt-1.5">
+                                <label htmlFor={`portal-add-${p.id}`} className="sr-only">
+                                  Kunde zuweisen
+                                </label>
+                                <select
+                                  id={`portal-add-${p.id}`}
+                                  value=""
+                                  onChange={(e) => {
+                                    const cid = e.target.value
+                                    if (cid) {
+                                      handleLinkPortalUserToCustomer(p, cid)
+                                      e.target.value = ''
+                                    }
+                                  }}
+                                  disabled={linkingUserId === p.id}
+                                  className="text-sm rounded border border-slate-300 text-slate-700 bg-white disabled:opacity-50"
+                                  aria-label="Kunde zuweisen"
+                                >
+                                  <option value="">+ Kunde zuweisen</option>
+                                  {availableCustomers.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                      {c.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </span>
+                            )}
+                          </div>
+                          {assignments.length > 0 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenVisibility(p.id)}
+                                className="text-sm text-vico-primary hover:underline text-left"
+                                aria-expanded={isExpanded}
+                              >
+                                {isExpanded ? '▼ Sichtbare Objekte/BV ausblenden' : '▶ Sichtbare Objekte/BV bearbeiten'}
+                              </button>
+                              {isExpanded && (
+                                <div className="pl-2 border-l-2 border-slate-200 space-y-3">
+                                  {assignments.map((a) => {
+                                    const bvs = bvsByCustomer[a.customer_id] ?? []
+                                    const selectedBvIds = userVis[a.customer_id] ?? []
+                                    const allSelected = bvs.length > 0 && selectedBvIds.length === bvs.length
+                                    return (
+                                      <div key={a.customer_id} className="space-y-1.5">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="font-medium text-slate-700">{customerName(a.customer_id)}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSaveVisibility(p.id, a.customer_id)}
+                                            disabled={savingVisibilityUserId === p.id || bvs.length === 0}
+                                            className="text-xs px-2 py-1 rounded bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
+                                          >
+                                            {savingVisibilityUserId === p.id ? 'Speichern…' : 'Sichtbarkeit speichern'}
+                                          </button>
+                                        </div>
+                                        <p className="text-xs text-slate-500">
+                                          {bvs.length === 0
+                                            ? 'Keine BV angelegt.'
+                                            : allSelected || selectedBvIds.length === 0
+                                              ? 'Alle BV sichtbar (Standard).'
+                                              : `Nur ${selectedBvIds.length} von ${bvs.length} BV sichtbar.`}
+                                        </p>
+                                        {bvs.length > 0 && (
+                                          <ul className="space-y-1 max-h-40 overflow-y-auto">
+                                            {bvs.map((bv) => {
+                                              const isChecked =
+                                                selectedBvIds.length === 0 || selectedBvIds.includes(bv.id)
+                                              return (
+                                                <li key={bv.id} className="flex items-center gap-2">
+                                                  <input
+                                                    type="checkbox"
+                                                    id={`vis-${p.id}-${a.customer_id}-${bv.id}`}
+                                                    checked={isChecked}
+                                                    onChange={(e) =>
+                                                      handleVisibilityCheck(p.id, a.customer_id, bv.id, e.target.checked)
+                                                    }
+                                                    className="rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                                                  />
+                                                  <label
+                                                    htmlFor={`vis-${p.id}-${a.customer_id}-${bv.id}`}
+                                                    className="text-sm text-slate-700 cursor-pointer"
+                                                  >
+                                                    {bv.name}
+                                                  </label>
+                                                </li>
+                                              )
+                                            })}
+                                          </ul>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
                 </section>
               </div>
             )
@@ -412,6 +815,30 @@ const Benutzerverwaltung = () => {
                   required
                   disabled={isSaving}
                 />
+              </div>
+              <div>
+                <label htmlFor="user-role" className="block text-sm font-medium text-slate-700 mb-1">
+                  Rolle
+                </label>
+                <select
+                  id="user-role"
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value as typeof newRole)}
+                  disabled={isSaving}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary bg-white text-slate-700"
+                  aria-label="Rolle auswählen"
+                >
+                  {(Object.entries(ROLE_LABELS) as [keyof typeof ROLE_LABELS, string][])
+                    .filter(([role]) => {
+                      if (role === 'kunde') return license?.features?.kundenportal === true
+                      return APP_ROLES.includes(role)
+                    })
+                    .map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                </select>
               </div>
               {formError && (
                 <p className="text-sm text-red-600" role="alert">

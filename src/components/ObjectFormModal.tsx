@@ -90,8 +90,13 @@ const objToFormData = (obj: Obj): ObjectFormData => ({
   maintenance_interval_months: obj.maintenance_interval_months?.toString() ?? '',
 })
 
+type BvOption = { id: string; name: string | null }
+
 type ObjectFormModalProps = {
-  bvId: string
+  bvId?: string | null
+  customerId?: string | null
+  /** BVs des Kunden für das Zuordnungs-Dropdown (nur beim Bearbeiten) */
+  customerBvs?: BvOption[] | null
   object: Obj | null
   canEdit: boolean
   canDelete: boolean
@@ -100,15 +105,33 @@ type ObjectFormModalProps = {
 }
 
 const ObjectFormModal = ({
-  bvId,
+  bvId = null,
+  customerId = null,
+  customerBvs = null,
   object,
   canEdit,
   canDelete,
   onClose,
   onSuccess,
 }: ObjectFormModalProps) => {
+  const effectiveBvId = bvId ?? object?.bv_id ?? null
+  const effectiveCustomerId = customerId ?? object?.customer_id ?? null
   const { showError } = useToast()
   const isEdit = !!object
+  /** Zuordnung: null = direkt unter Kunde, string = BV-ID. Wenn Kunde Objekte/BV hat, darf nicht "direkt unter Kunde" gewählt werden. */
+  const bvsList = customerBvs ?? []
+  const customerHasBvs = bvsList.length > 0
+  const [assignmentBvId, setAssignmentBvId] = useState<string | null>(() => {
+    if (effectiveBvId) return effectiveBvId
+    if (bvsList.length > 0) return bvsList[0].id
+    return null
+  })
+  useEffect(() => {
+    if (!object) return
+    if (effectiveBvId) setAssignmentBvId(effectiveBvId)
+    else if (bvsList.length > 0) setAssignmentBvId(bvsList[0].id)
+    else setAssignmentBvId(null)
+  }, [object?.id, effectiveBvId, customerBvs])
   const [formData, setFormData] = useState<ObjectFormData>(
     object ? objToFormData(object) : { ...INITIAL_FORM, internal_id: `OBJ-${Date.now().toString(36).toUpperCase()}` }
   )
@@ -175,9 +198,14 @@ const ObjectFormModal = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
+    if (editingId && customerHasBvs && !assignmentBvId) {
+      setFormError('Bitte ein Objekt/BV auswählen. Wenn Objekte/BV vorhanden sind, muss die Tür einem zugeordnet sein.')
+      return
+    }
     setIsSaving(true)
     const payload = {
-      bv_id: bvId,
+      bv_id: assignmentBvId,
+      customer_id: assignmentBvId ? null : effectiveCustomerId,
       name: formData.name.trim() || null,
       internal_id: formData.internal_id.trim() || null,
       door_position: formData.door_position.trim() || null,
@@ -301,7 +329,7 @@ const ObjectFormModal = ({
         >
           <div className="p-4 sticky top-0 bg-white border-b border-slate-200">
             <h3 id="object-form-title" className="text-lg font-bold text-slate-800">
-              {isEdit ? 'Objekt bearbeiten' : 'Objekt anlegen'}
+              {isEdit ? 'Tür/Tor bearbeiten' : 'Tür/Tor anlegen'}
             </h3>
             {formData.internal_id && (
               <p className="mt-1 text-sm text-slate-600">
@@ -310,6 +338,33 @@ const ObjectFormModal = ({
             )}
           </div>
           <form onSubmit={handleSubmit} className="p-4 space-y-4">
+            {isEdit && effectiveCustomerId != null && customerBvs !== undefined && (
+              <div>
+                <label htmlFor="obj-assignment" className="block text-sm font-medium text-slate-700 mb-1">
+                  Zuordnung
+                </label>
+                <select
+                  id="obj-assignment"
+                  value={assignmentBvId ?? ''}
+                  onChange={(e) => setAssignmentBvId(e.target.value || null)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  aria-label="Tür/Tor zuordnen zu Objekt/BV oder direkt unter Kunde"
+                  disabled={!canEdit}
+                >
+                  {!customerHasBvs && <option value="">Direkt unter Kunde</option>}
+                  {bvsList.map((bv) => (
+                    <option key={bv.id} value={bv.id}>
+                      {bv.name ?? bv.id}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  {customerHasBvs
+                    ? 'Wenn Objekte/BV vorhanden sind, muss jede Tür einem Objekt/BV zugeordnet sein.'
+                    : 'Protokolle, Fotos und Dokumente bleiben der Tür zugeordnet.'}
+                </p>
+              </div>
+            )}
             <div>
               <label htmlFor="obj-name" className="block text-sm font-medium text-slate-700 mb-1">Name</label>
               <input

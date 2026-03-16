@@ -1,15 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-
-const translateAuthError = (msg: string): string => {
-  if (msg.includes('Signup disabled')) return 'Registrierung ist deaktiviert. Bitte Admin kontaktieren.'
-  if (msg.includes('Email not confirmed')) return 'E-Mail noch nicht bestätigt. Bitte Link in der E-Mail klicken.'
-  if (msg.includes('Invalid login credentials')) return 'Ungültige Anmeldedaten.'
-  if (msg.includes('User already registered')) return 'Diese E-Mail ist bereits registriert. Bitte anmelden.'
-  if (msg.includes('Password should be at least')) return 'Passwort muss mindestens 6 Zeichen haben.'
-  if (msg.includes('Unable to validate email')) return 'E-Mail-Format ungültig.'
-  return msg
-}
+import { getSupabaseErrorMessage } from '../../../shared/supabaseErrors'
 
 type LoginProps = {
   onSuccess: () => void
@@ -39,7 +30,7 @@ const Login = ({ onSuccess, onError }: LoginProps) => {
     })
     setIsSubmitting(false)
     if (error) {
-      onError(translateAuthError(error.message))
+      onError(getSupabaseErrorMessage(error))
       return
     }
     if (data.user) {
@@ -64,14 +55,14 @@ const Login = ({ onSuccess, onError }: LoginProps) => {
     setMfaError(null)
     const { data: factorsData, error: factorsError } = await supabase.auth.mfa.listFactors()
     if (factorsError || !factorsData?.totp?.length) {
-      setMfaError('Kein 2FA-Faktor gefunden.')
+      setMfaError(getSupabaseErrorMessage(factorsError))
       setIsMfaSubmitting(false)
       return
     }
     const factorId = factorsData.totp[0].id
     const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({ factorId })
     if (challengeError || !challengeData?.id) {
-      setMfaError(challengeError?.message ?? 'Challenge fehlgeschlagen')
+      setMfaError(getSupabaseErrorMessage(challengeError ?? new Error('Challenge fehlgeschlagen')))
       setIsMfaSubmitting(false)
       return
     }
@@ -82,7 +73,7 @@ const Login = ({ onSuccess, onError }: LoginProps) => {
     })
     setIsMfaSubmitting(false)
     if (verifyError) {
-      setMfaError(verifyError.message)
+      setMfaError(getSupabaseErrorMessage(verifyError))
       return
     }
     onSuccess()

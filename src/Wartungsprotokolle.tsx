@@ -74,7 +74,7 @@ const INITIAL_FORM: MaintenanceReportFormData = {
 const Wartungsprotokolle = () => {
   const { customerId, bvId, objectId } = useParams<{
     customerId: string
-    bvId: string
+    bvId?: string
     objectId: string
   }>()
   const { user, userRole } = useAuth()
@@ -106,11 +106,11 @@ const Wartungsprotokolle = () => {
   }>({ open: false, reportId: null })
 
   const loadData = useCallback(async () => {
-    if (!customerId || !bvId || !objectId) return
+    if (!customerId || !objectId) return
     setIsLoading(true)
     const [cust, bvData, objData, reportData] = await Promise.all([
       fetchCustomer(customerId),
-      fetchBv(bvId),
+      bvId ? fetchBv(bvId) : Promise.resolve(null),
       fetchObject(objectId),
       fetchMaintenanceReports(objectId),
     ])
@@ -285,12 +285,30 @@ const Wartungsprotokolle = () => {
 
   const handleDownloadPdf = async (r: MaintenanceReport) => {
     const details = reportDetails[r.id]
-    if (!customer || !bv || !object) return
+    if (!customer || !object) return
+    const bvForPdf = bv ?? {
+      id: '',
+      customer_id: customer.id,
+      name: '–',
+      street: customer.street,
+      house_number: customer.house_number,
+      postal_code: customer.postal_code,
+      city: customer.city,
+      email: customer.email,
+      phone: customer.phone,
+      contact_name: customer.contact_name,
+      contact_email: customer.contact_email,
+      contact_phone: customer.contact_phone,
+      maintenance_report_email: customer.maintenance_report_email,
+      maintenance_report_email_address: customer.maintenance_report_email_address,
+      created_at: '',
+      updated_at: '',
+    } as BV
     const { generateMaintenancePdf } = await import('./lib/generateMaintenancePdf')
     const blob = await generateMaintenancePdf({
       report: r,
       customer,
-      bv,
+      bv: bvForPdf,
       object,
       smokeDetectors: details?.smokeDetectors ?? [],
       photos: details?.photos ?? [],
@@ -317,7 +335,25 @@ const Wartungsprotokolle = () => {
       alert('Keine E-Mail-Adresse hinterlegt. Bitte unter Kunde oder BV „E-Mail für Wartungsprotokoll“ eintragen.')
       return
     }
-    if (!customer || !bv || !object) return
+    if (!customer || !object) return
+    const bvForPdf = bv ?? {
+      id: '',
+      customer_id: customer.id,
+      name: '–',
+      street: customer.street,
+      house_number: customer.house_number,
+      postal_code: customer.postal_code,
+      city: customer.city,
+      email: customer.email,
+      phone: customer.phone,
+      contact_name: customer.contact_name,
+      contact_email: customer.contact_email,
+      contact_phone: customer.contact_phone,
+      maintenance_report_email: customer.maintenance_report_email,
+      maintenance_report_email_address: customer.maintenance_report_email_address,
+      created_at: '',
+      updated_at: '',
+    } as BV
     setSendingEmailFor(r.id)
     try {
       const { generateMaintenancePdf } = await import('./lib/generateMaintenancePdf')
@@ -325,7 +361,7 @@ const Wartungsprotokolle = () => {
       const blob = await generateMaintenancePdf({
         report: r,
         customer,
-        bv,
+        bv: bvForPdf,
         object,
         smokeDetectors: details?.smokeDetectors ?? [],
         photos: details?.photos ?? [],
@@ -378,13 +414,17 @@ const Wartungsprotokolle = () => {
         <Link to={`/kunden?customerId=${customerId}`} className="hover:text-slate-800">
           {customer.name}
         </Link>
-        <span>/</span>
-        <Link
-          to={`/kunden?customerId=${customerId}&bvId=${bvId}`}
-          className="hover:text-slate-800"
-        >
-          {bv.name}
-        </Link>
+        {bv && (
+          <>
+            <span>/</span>
+            <Link
+              to={`/kunden?customerId=${customerId}&bvId=${bvId}`}
+              className="hover:text-slate-800"
+            >
+              {bv.name}
+            </Link>
+          </>
+        )}
         <span>/</span>
         <span className="font-medium text-slate-800">
           Wartung {object ? `· ${getObjectDisplayName(object)}` : ''}

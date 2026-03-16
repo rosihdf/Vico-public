@@ -1,19 +1,45 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams, Link } from 'react-router-dom'
 import { fetchLimitExceededLog, type LimitExceededEntry } from '../lib/licensePortalService'
 
 const Grenzueberschreitungen = () => {
+  const [searchParams] = useSearchParams()
+  const filterTenantId = searchParams.get('tenant_id')
   const [entries, setEntries] = useState<LimitExceededEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true)
-      const data = await fetchLimitExceededLog()
+  const filteredEntries = useMemo(() => {
+    if (!filterTenantId) return entries
+    return entries.filter((e) => e.tenant_id === filterTenantId)
+  }, [entries, filterTenantId])
+
+  const load = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    const loadStart = performance.now()
+    try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 20_000)
+      const data = await fetchLimitExceededLog(controller.signal)
+      clearTimeout(timeoutId)
       setEntries(data)
+      console.info(`[Lizenzportal] Grenzueberschreitungen load: ${Math.round(performance.now() - loadStart)}ms`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Laden fehlgeschlagen.'
+      setError(
+        msg === 'The user aborted a request.'
+          ? 'Zeitüberschreitung beim Laden. Supabase möglicherweise pausiert oder langsam. Bitte erneut versuchen.'
+          : msg
+      )
+    } finally {
       setIsLoading(false)
     }
-    load()
   }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   const limitTypeLabel = (t: string) => (t === 'users' ? 'Benutzer' : t === 'customers' ? 'Kunden' : t)
   const formatDate = (s: string) => {
@@ -35,17 +61,36 @@ const Grenzueberschreitungen = () => {
       <h2 className="text-xl font-bold text-slate-800 mb-2">Grenzüberschreitungen</h2>
       <p className="text-sm text-slate-600 mb-4">
         Meldungen von Mandanten-Apps, wenn Benutzer- oder Kunden-Limit erreicht wurde.
+        {filterTenantId && (
+          <span className="block mt-2">
+            Gefiltert nach Mandant. <Link to="/grenzueberschreitungen" className="text-vico-primary hover:underline">Filter aufheben</Link>
+          </span>
+        )}
       </p>
 
       {isLoading ? (
         <div className="py-8 flex justify-center">
           <div className="w-8 h-8 border-4 border-vico-primary border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : entries.length === 0 ? (
-        <p className="text-sm text-slate-500 py-8">Keine Meldungen.</p>
+      ) : error ? (
+        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-800" role="alert">
+          <p className="font-medium mb-1">Laden fehlgeschlagen</p>
+          <p className="text-sm">{error}</p>
+          <button
+            type="button"
+            onClick={load}
+            className="mt-3 inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 hover:bg-red-200 text-red-800"
+          >
+            Erneut versuchen
+          </button>
+        </div>
+      ) : filteredEntries.length === 0 ? (
+        <p className="text-sm text-slate-500 py-8">
+          {filterTenantId ? 'Keine Meldungen für diesen Mandanten.' : 'Keine Meldungen.'}
+        </p>
       ) : (
         <div className="space-y-2">
-          {entries.map((e) => (
+          {filteredEntries.map((e) => (
             <div
               key={e.id}
               className="p-4 bg-white rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3"

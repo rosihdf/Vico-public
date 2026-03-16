@@ -5,7 +5,7 @@
 ### Lizenz-Architektur
 
 - [ ] **Lizenz-API prüfen:** Aktuell Supabase Edge Function. Alternative: Netlify Function mit Service-Role-Key (siehe `admin/netlify/functions/license.ts`)
-- [ ] **Entscheidung:** Edge Function beibehalten oder auf Netlify wechseln?
+- **Entscheidung:** Auf später verschoben – Edge Function bleibt; Netlify-Migration bei Bedarf. Siehe `docs/Entscheidungen-Offene-Punkte.md` §8.
 
 ### Lizenzportal
 

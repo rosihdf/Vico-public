@@ -11,13 +11,14 @@ type ObjectQRCodeModalProps = {
   customerName: string
   bvName: string
   customerId: string
-  bvId: string
+  bvId: string | null
   onClose: () => void
 }
 
-const getObjectUrl = (customerId: string, bvId: string, objectId: string): string => {
+const getObjectUrl = (customerId: string, bvId: string | null, objectId: string): string => {
   const base = (window.location.origin + (import.meta.env.BASE_URL || '/')).replace(/\/$/, '')
-  return `${base}/kunden?customerId=${customerId}&bvId=${bvId}&objectId=${objectId}`
+  if (bvId) return `${base}/kunden?customerId=${customerId}&bvId=${bvId}&objectId=${objectId}`
+  return `${base}/kunden?customerId=${customerId}&objectId=${objectId}`
 }
 
 const isWebBluetoothSupported = (): boolean =>
@@ -67,7 +68,7 @@ const ObjectQRCodeModal = ({
           .line('Vico Türen & Tore')
           .newline()
           .line(customerName)
-          .line(bvName)
+          .line(bvName || '–')
           .line(`ID: ${displayName}${roomInfo}`)
           .newline()
           .qrcode(url, { size: 6, model: 2, errorlevel: 'm' })
@@ -118,7 +119,7 @@ const ObjectQRCodeModal = ({
       onKeyDown={handleKeyDown}
       role="dialog"
       aria-modal
-      aria-label="QR-Code für Objekt"
+      aria-label="QR-Code für Tür/Tor"
     >
       <div
         className="bg-white rounded-xl shadow-xl max-w-sm w-full"

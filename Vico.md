@@ -15,6 +15,9 @@ Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2025.
 7. [Roadmap](#7-roadmap)
 8. [Projektstruktur](#8-projektstruktur)
 9. [Plan: Mandantenfähigkeit & Lizenzportal](#9-plan-mandantenfähigkeit--lizenzportal)
+10. [Konzept: Geplante Änderungen Hauptapp](#10-konzept-geplante-änderungen-hauptapp)
+
+**Getroffene Entscheidungen** zu zuvor offenen Punkten (App-Name, Lizenz, Zeiterfassung, Etikettendrucker, Suche, etc.): `docs/Entscheidungen-Offene-Punkte.md`.
 
 ---
 
@@ -33,8 +36,21 @@ Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2025.
 | Ziel | Befehl |
 |------|--------|
 | Web Dev | `npm run dev` |
-| Web Dev (Netzwerk) | `npm run dev -- --host` |
+| Web Dev (Netzwerk) | `npm run dev` (alle Vite-Configs haben `host: true`) |
 | Web Build | `npm run build` |
+
+### Dev-Server (Ports & IP-Zugriff)
+
+Alle Apps sind per IP erreichbar (`host: true` in Vite). Nach `npm run dev` in jedem Projekt:
+
+| App | Port | Local | Netzwerk (IP) |
+|-----|------|-------|---------------|
+| **Haupt-App** | 5173 | http://localhost:5173/ | http://&lt;IP&gt;:5173/ |
+| **Kundenportal** | 5174 | http://localhost:5174/ | http://&lt;IP&gt;:5174/ |
+| **Admin (Lizenz)** | 5175 | http://localhost:5175/ | http://&lt;IP&gt;:5175/ |
+| **Arbeitszeit-Portal** | 5176 | http://localhost:5176/ | http://&lt;IP&gt;:5176/ |
+
+Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal && npm run dev`, `cd arbeitszeit-portal && npm run dev`. Die IP-Adresse zeigt Vite beim Start (z. B. `Network: http://192.168.0.186:5173/`).
 | Tests | `npm run test` / `npm run test:run` |
 | Lint | `npm run lint` |
 | Vico-Dokumentation als PDF | `npm run generate-vico-pdf` |
@@ -45,9 +61,9 @@ Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2025.
 
 ### Datenmodell
 
-```
-Kunde → BV → Objekt → Wartungsprotokolle
-```
+**Aktuell:** `Kunde → BV → Objekt → Wartungsprotokolle`
+
+**Geplant (Konzept Hauptapp, siehe Abschnitt 10):** Begriffe werden angepasst: **BV → Objekt/BV** (Gebäude/Standort), **Objekt → Tür/Tor** (konkretes Element). Tür/Tor kann bei Kunden ohne Objekte/BVs auch direkt unter dem Kunden angelegt werden. Wartungsvertrag entweder auf Kundenebene (wenn keine Objekte/BVs) oder pro Objekt/BV.
 
 ### Routen
 
@@ -150,6 +166,79 @@ Kunde → BV → Objekt → Wartungsprotokolle
 
 GitHub Actions `.github/workflows/supabase-keepalive.yml` – Mo + Do 9:00 UTC. Secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 
+### Supabase-Region & Ladezeiten
+
+**Aktuelle Region anzeigen**
+
+- Supabase Dashboard: [https://supabase.com/dashboard](https://supabase.com/dashboard) → dein Projekt wählen
+- **Settings** (Zahnrad links) → **General**
+- Unter **Infrastructure** steht die **Region** (z. B. `Frankfurt (eu-central-1)` oder `N. Virginia (us-east-1)`)
+
+**Region wechseln**
+
+Supabase erlaubt **kein Umstellen der Region** eines bestehenden Projekts. Optionen:
+
+1. **Neues Projekt in der gewünschten Region anlegen**
+   - Dashboard → **New project** → bei **Region** eine Region nahe an den Nutzern wählen (z. B. **Frankfurt** für DACH).
+   - Verfügbare Regionen: [Supabase Docs – Regions](https://supabase.com/docs/guides/platform/regions) (General regions bzw. konkrete AWS-Regionen).
+
+2. **Daten migrieren**
+   - Schema (z. B. `supabase-complete.sql`) im neuen Projekt ausführen.
+   - Daten exportieren/importieren (pg_dump/pg_restore oder Supabase Backup).
+   - Anschließend in der App die neuen Werte für `VITE_SUPABASE_URL` und `VITE_SUPABASE_ANON_KEY` setzen (Netlify Env, lokale `.env`).
+
+**Ladezeiten messen (aktuell)**
+
+Die App schreibt bei jedem Sync und beim Laden der Startseite Zeiten in die **Browser-Konsole** (DevTools → Console):
+
+- `[Sync] pullFromServer: Batch1 (Stammdaten) Xms, Batch2 (…) Yms, gesamt Zms`
+- `[Sync] runSync: Push Xms, … gesamt Yms`
+- `[Startseite] loadData: Xms`
+
+So siehst du, ob der Flaschenhals beim ersten Datenblock (Stammdaten), beim zweiten (Einstellungen/Profile/Lizenz/Audit/Reminders) oder beim Push liegt. Bei hohen Werten: Region prüfen und ggf. neues Projekt in näherer Region anlegen.
+
+**Lizenzportal (Admin-App, `admin/`):** Gleiches Vorgehen wie in der Haupt-App – parallele Abfragen und Ladezeit-Logs in der Konsole:
+
+- **Auth:** `[Lizenzportal] Auth: getSession Xms, checkRole Yms, gesamt Zms`
+- **Mandanten:** `[Lizenzportal] Mandanten load: Xms` (Tenants, Lizenzen, Grenzüberschreitungs-Log bereits in einem `Promise.all`)
+- **Mandant bearbeiten:** Mandant + Lizenzen + Lizenzmodelle in einem `Promise.all` → `[Lizenzportal] MandantForm load: Xms`
+- **Grenzüberschreitungen / Lizenzmodelle / Export:** je eigene Log-Zeile
+
+Das Lizenzportal-Supabase-Projekt (B3/L1) sollte ebenfalls in einer nahen Region liegen (siehe Checkliste oben).
+
+### Mobile-Build (Capacitor / Android & iOS)
+
+Die Web-App läuft in einer nativen Hülle (Capacitor). **Parallel zur PWA** – gleicher Code, Build für Android und iOS.
+
+**Voraussetzung:** Node, npm, Android Studio (für APK/Emulator), ggf. Xcode (für iOS, nur macOS).
+
+**Ablauf:**
+
+1. **Web-Build + Sync:** `npm run build:mobile` (baut die App und kopiert sie in `android/` und `ios/`).
+2. **Android:** `npm run cap:android` öffnet Android Studio. Von dort: Device/Emulator wählen → Run, oder Build → Build Bundle(s) / APK(s) für Release.
+3. **iOS:** `npm run cap:ios` öffnet Xcode (nur macOS). Scheme wählen, Simulator oder Gerät, Run. Für Release: Archive → Distribute.
+
+**Scripts (package.json):**
+
+| Befehl | Bedeutung |
+|--------|-----------|
+| `npm run build:mobile` | `npm run build` + `npx cap sync` |
+| `npm run cap:sync` | Web-Assets aus `dist/` in native Projekte kopieren (nach Änderungen an der Web-App). |
+| `npm run cap:android` | Android Studio öffnen |
+| `npm run cap:ios` | Xcode öffnen (macOS) |
+
+**Konfiguration:** `capacitor.config.ts` – `appId: 'de.vico.app'`, `appName: 'Vico'`, `webDir: 'dist'`. Optional: `server.url` für Live-Reload im Emulator (z. B. `http://192.168.x.x:5173`).
+
+**Hinweis:** Nach Änderungen an der Web-App immer `npm run build:mobile` (oder `npm run build` + `npm run cap:sync`) ausführen, bevor in Android Studio/Xcode gebaut wird.
+
+**Geplant: Ladezeiten-Dashboard (Roadmap J9)**
+
+Optional ein kleines **Performance-Dashboard** (z. B. unter Einstellungen oder eigener Menüpunkt „Performance“, nur für Admin):
+
+- Ladezeiten sammeln (z. B. in localStorage oder optional Backend) statt nur Konsole.
+- **Grafische Anzeige:** Verlauf von Sync Batch1, Batch2, Gesamt-Sync, Startseite loadData (Balken, Sparklines oder einfache Linien über die letzten N Syncs/Loads).
+- Ziel: Flaschenhälse auf einen Blick erkennen, ohne DevTools zu öffnen. Details siehe Roadmap **J9** (Abschnitt 7.1).
+
 ### Demo-Account (24h-Löschung)
 
 Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täglich 4:00 UTC.
@@ -173,7 +262,9 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 
 ## 7. Roadmap
 
-### Roadmap: Geplante Features (mit Aufwand)
+**Maßgeblich** ist die **konsolidierte Roadmap in Abschnitt 7.1** weiter unten (eine Tabelle mit Erledigt-Status ✅ und offenen Punkten). **7.2** ist die Feature-Referenz (Priorität, Aufwand). Die frühere Doppeltabelle (A–H, Weitere W1–W7 ohne ✅) ist darin aufgegangen.
+
+### 7.2 Roadmap: Geplante Features (mit Aufwand) – Referenz
 
 | # | Feature | Priorität | Aufwand | Beschreibung |
 |---|---------|-----------|---------|--------------|
@@ -192,6 +283,8 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 | 13 | Dokumente/Anhänge pro Objekt | Niedrig | 4 T | ~~Zeichnungen, Zertifikate pro Objekt~~ ✅ |
 | 14 | Bulk-Operationen | Niedrig | 3 T | Mehrere Objekte/Kunden gleichzeitig bearbeiten |
 | 15 | Portal: Push-Benachrichtigungen | Niedrig | 2–3 T | Kunden bei neuem Wartungsbericht informieren |
+| 16 | Ladezeiten-Monitoring / Performance-Dashboard | Niedrig | 1–2 T | Sync- und Startseiten-Ladezeiten grafisch anzeigen (Admin); optional kleines Dashboard mit Verlauf (Batch1/Batch2/Gesamt, loadData). Siehe Abschnitt 5 (Supabase-Region) und Roadmap J9. |
+| 17 | **Bug-Erfassungsmodul** | Niedrig | 1–2 T | Automatische Erfassung von JS-Fehlern (onerror, unhandledrejection, ErrorBoundary) und Speicherung in DB; Admin-Ansicht „Fehlerberichte“. Siehe `docs/Bug-Erfassungsmodul-Planung.md`. |
 
 **Aufwand:** T = Tage (geschätzt, 1 Entwickler)
 
@@ -205,7 +298,93 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 
 ### Arbeitszeiterfassung (Modul)
 
-**Aktivierung:** Lizenzmodul über admin/. **Ablauf:** Start/Ende Arbeitszeit, Pausen (manuell oder automatisch nach ArbZG § 4). **Technisch:** Tabelle `time_entries`, Feature-Flag, Route `/arbeitszeit`, RLS.
+**Aktivierung:** Lizenzmodul über admin/. **Ablauf:** Start/Ende Arbeitszeit, Pausen (manuell oder automatisch nach ArbZG § 4). **Technisch:** Tabelle `time_entries`, `time_breaks`, Feature-Flag, Component Setting, Route `/arbeitszeit`, RLS.
+
+**Phase 1 (MVP) abgeschlossen:** Tagesansicht, Start/Pause/Ende, ArbZG §3/§4/§5, Wochen-Summe, „Vergessen auszustempeln“-Hinweis, Admin sieht alle (User-Dropdown), Offline/Outbox. Detail siehe `docs/Arbeitszeiterfassung-Detailkonzept.md`.
+
+**Phase 2 (umgesetzt):** Bearbeiten mit Grund (`time_entry_edit_log`, RPC `update_time_entry_admin`), Admin-Modal mit Grund-Auswahl (Korrektur/Nachreichung/Fehler/Sonstiges), **Wochenansicht** (Mo–So, Vorherige/Nächste Woche), **Monatsansicht** (Kalender-Grid mit Stundensummen pro Tag). **LOG-Übersicht:** Tab „Log“ mit Filter (Zeitraum, Benutzer), Paginierung, „Filter zurücksetzen“. **Auftragszuordnung:** Technisch umgesetzt, in der UI derzeit **ausgeblendet** (Feature-Flag); bei Nichtbedarf vor Release entfernen – siehe `docs/Zeiterfassung-Offene-Punkte-und-IONOS.md`. **Arbeitszeitkonto:** Spalte `profiles.soll_minutes_per_month`; Monatsansicht zeigt Soll/Ist/Saldo; Admin setzt Soll in Benutzerverwaltung („Soll Min/Monat“).  
+**Offene Punkte, Admin-Modul-Gliederung, tägl./wöchentl. Soll, IONOS-Hosting:** siehe `docs/Zeiterfassung-Offene-Punkte-und-IONOS.md`. **Ortung (GPS)** mit gesetzlichen Anforderungen (Informationspflicht, Einwilligung, Anzeige im Portal): `docs/Zeiterfassung-Ortung-GPS-Recht-und-Planung.md`.
+
+---
+
+### 7.1 Konsolidierte Roadmap (offene Punkte, empfohlene Abarbeitsreihenfolge)
+
+Alle noch offenen Punkte aus Vico.md (Abschnitte 7, 9, 10) in einer sinnvollen Reihenfolge. Empfehlung: zuerst schnelle UX-Anpassungen und Lizenz-Abschluss, dann fachliche Erweiterungen (Auftrag, Datenmodell), zuletzt Mobile/APK und optionale Auswertungen.
+
+| Phase | Nr. | Offener Punkt | Quelle | Geschätzter Aufwand |
+|-------|-----|----------------|--------|---------------------|
+| **A – Menü & Einstellungen** | A1 | ✅ Neuer Menüpunkt **„Info“** (oder „App-Info“): Appversion, Lizenz, Anleitung. Diese Inhalte aus Einstellungen entfernen. | 10.5 | 0,5–1 T |
+| | A2 | ✅ Aus **Einstellungen:** Benutzerverwaltung-Link entfernen. Aus **Benutzerverwaltung:** Einstellungen-Link entfernen. | 10.5 | 0,25 T |
+| **B – Lizenzportal (Abschluss)** | B1 | ✅ **Grenzwarnungen** (80 %/90 %/100 %) in Benutzerverwaltung + ggf. Einstellungen/Dashboard. | 9.17 | 1 T |
+| | B2 | ✅ **Verhalten bei abgelaufener Lizenz:** Schonfrist Nur-Lesen (Tage im Lizenzportal konfigurierbar), danach Redirect. Siehe `docs/Entscheidungen-Offene-Punkte.md` §2. | 9.10, 9.17 | 1–2 T |
+| | B3 | ✅ **Lizenzportal-Supabase-Projekt** anlegen, Schema `supabase-license-portal.sql` im neuen Projekt ausführen (operativer Schritt). | 9.17 | 0,5 T |
+| **C – Benutzerverwaltung** | C1 | ✅ **Benutzer anlegen:** Auswahl der Rolle (Rollenliste abhängig von Lizenz/Modulen). | 10.6, 10.12 | 0,5 T |
+| | C2 | ✅ **Portalbenutzer:** Anzeige/Bearbeitung zu welchem Kunde; Auswahl der Objekte/BV für Zugriff (Whitelist-UI). | 10.3, 10.6 | 1–2 T |
+| **D – Auftrag** | D1 | ✅ **Auftrag anlegen:** Objekt/BV nur anzeigen wenn Kunde mehrere hat; Uhrzeit optional. Felder wie in 10.8. | 10.8 | 0,5 T |
+| | D2 | ✅ **Tabelle `order_completions`** (Monteursbericht): Schema, RLS, CRUD. Felder: ausgeführte Arbeiten, Material, Arbeitszeit, Unterschriften (Bild + Name/Datum). | 10.9, 10.12 | 2–3 T |
+| | D3 | ✅ **Route `/auftrag/:orderId`**, Auftragsdetail-Seite (kein Popup): Kunden-/Objekt/BV-Daten, Beschreibung, Completion-Formular, Unterschriften. | 10.9 | 1,5–2 T |
+| | D4 | ✅ Dashboard: Klick auf Auftrag führt zu Auftragsdetail; Mitarbeiter kann Auftrag von dort abarbeiten. | 10.9 | 0,5 T |
+| **E – Datenmodell & Labels** | E1 | ✅ **Labels:** BV → „Objekt/BV“, Objekt → „Tür/Tor“ in UI (Menü, Titel, Formulare). URLs unverändert. | 10.2, 10.12 | 1 T |
+| | E2 | ✅ **Tür/Tor direkt unter Kunde:** Schema erweitern (`objects.bv_id` optional, ggf. `customer_id` oder Default-Objekt/BV). UI: Tür unter Kunde anlegbar wenn keine Objekte/BV. | 10.2, 10.12 | 1,5–2 T |
+| | E3 | ✅ **Verschieben von Türen:** Dropdown „Zuordnung: [Objekt/BV wählen]“ pro Tür; Protokolle/Fotos/Dokumente bleiben der Tür zugeordnet. | 10.2, 10.12 | 1 T |
+| | E4 | ✅ **Wartungsvertrag:** Tabelle/Felder (Vertragsnummer JJJJ/0000, Datum Beginn, Ende); unter Kunde (wenn keine Objekte/BV) oder unter Objekt/BV. Mehrere Verträge pro Kunde/Objekt/BV. | 10.10, 10.12 | 1,5–2 T |
+| **F – Kundenportal** | F1 | ✅ **Tabelle `portal_user_object_visibility`** (Whitelist); RLS/API im Portal: nur sichtbare Objekte/BV liefern. Standard: alle. | 10.3, 10.12 | 1,5–2 T |
+| **G – Historie** | G1 | ✅ **Historie:** Details on-demand (Klick auf Zeile → RPC `get_audit_log_detail(id)`). Optional: audit_log um Vorher/Nachher erweitern. | 10.4, 10.12 | 1–2 T |
+| **H – Stammdatenimport** | H1 | ✅ **Menüpunkt „Import“** (oder unter Kunden). CSV/Excel-Upload, Spalten-Mapping (Firma, PLZ, Straße, Stadt, Mail, Tel, Anprechpartner, Objekt/BV). Objekt/BV verknüpfen oder neu anlegen; Fehlerzeilen überspringen, Fehlerliste am Ende. | 10.7, 10.12 | 2–3 T |
+| **I – Mobile (Capacitor + APK/iOS)** | I1 | ✅ **Capacitor** einbinden; Web-App in native Hülle; **Android-APK** + **iOS** von Anfang an mitgeplant. Parallel zur PWA. (Siehe Abschnitt 5: Mobile-Build.) | 10.1, 10.12 | 3–5 T |
+| | I2 | Optional: **Bluetooth-Drucker-Plugin** für QR-Etikettendruck aus der App (siehe `docs/Etikettendrucker-Planung.md`). | 10.1, docs | 1–2 T |
+| **J – Optionale Auswertungen & Sonstiges** | J1 | Wartungsplanung / Erinnerungen (z. B. 30 Tage vorher), optional E-Mail. | 7 | 3–5 T |
+| | J2 | Wartungsstatistik / Auswertung (pro Kunde/BV/Objekt, überfällige Wartungen). | 7 | 3–4 T |
+| | J3 | Export für Buchhaltung (CSV/Excel). | 7 | 2–3 T |
+| | J4 | Schnellzugriff / Zuletzt bearbeitet auf Startseite. | 7 | 1–2 T |
+| | J5 | Erweiterte Filter Kundenliste (PLZ, Wartungsstatus, BV-Anzahl). | 7 | 2 T |
+| | J6 | Umbau Wartung (MVP) – Auftrag → Monteursbericht → Freigabe → Portal (Phasen 1–4, Detail in Abschnitt 7). | 7 | 15–20 T |
+| | J7 | Mängel-Follow-up, Kalender-Sync (iCal), Bulk-Operationen, Portal Push-Benachrichtigungen. | 7 | je 2–3 T |
+| | J8 | ✅ **Lizenzportal: Daten-Export bei Mandantenkündigung;** ggf. manuelle Statusabfrage pro Mandant. (Export: Button „Daten exportieren (JSON, z. B. bei Kündigung)“ in Mandanten, `exportService.ts`.) | 9.11, 9.12 | 1–2 T |
+| | J9 | **Ladezeiten-Monitoring / Performance-Dashboard:** Supabase-Sync- und Startseiten-Ladezeiten (bereits in Konsole geloggt). Optional: kleines Admin-Dashboard mit grafischer Anzeige (z. B. Verlauf Sync-Batch1/Batch2/Gesamt, Startseite loadData; Balken/Sparklines; nur für Admin-Rolle). | 5 (Supabase-Region), 10.12 | 1–2 T |
+| | J10 | **Bug-Erfassungsmodul:** Automatische Erfassung von Fehlern (window.onerror, unhandledrejection, ErrorBoundary) und Speicherung in DB; Admin-Ansicht „Fehlerberichte“. Siehe `docs/Bug-Erfassungsmodul-Planung.md`. | docs | 1–2 T |
+| **Lizenzportal** | L1 | ✅ **Lizenzportal-Supabase** anlegen, Schema `supabase-license-portal.sql` ausführen (operativer Schritt, siehe B3). | 9.17 | 0,5 T |
+| | L2 | ✅ **Status pro Mandant:** Letzte Grenzüberschreitungs-Meldung in Mandantenliste; Link „Grenzüberschreitungen anzeigen“ (Filter nach Mandant). | 9.12 | 1 T |
+| | L3 | ✅ **Daten-Export bei Kündigung:** Button „Export“ pro Mandant → JSON-Download (Mandant, Lizenzen, limit_exceeded_log). | 9.11 | 1–2 T |
+
+**Hinweis:** Arbeitszeiterfassung (Modul) und 2FA sind bereits implementiert. Die Tabelle oben enthält nur **noch offene** Punkte. Aufwand „T“ = Tage (Schätzung, 1 Entwickler).
+
+#### Status B3 / L1 (Lizenzportal-Supabase – operativer Schritt)
+
+B3 und L1 sind derselbe Schritt: **ein separates Supabase-Projekt nur für das Lizenzportal** anlegen und das Schema einspielen. Die Haupt-App (Vico Web-App) nutzt weiterhin ihr eigenes Supabase-Projekt; die **Admin-App** (`admin/`) spricht mit dem **Lizenzportal-Supabase**.
+
+**Checkliste – erledigt, wenn:**
+
+| # | Aufgabe | Erledigt? |
+|---|---------|------------|
+| 1 | Neues Supabase-Projekt im Dashboard anlegen (z. B. Name „vico-license-portal“, Region wählen). | |
+| 2 | Im neuen Projekt: **SQL Editor** → Inhalt von `supabase-license-portal.sql` einfügen und ausführen (idempotent). | |
+| 3 | **Auth:** E-Mail bestätigen ggf. deaktivieren (Settings → Auth), Redirect-URLs für Admin-App eintragen (z. B. `https://admin.vico-tueren.de/**`, `http://localhost:*/**`). | |
+| 4 | **API Keys** kopieren: Project URL + anon key (für Admin-Frontend). Optional: service_role key für Netlify/Backend (Lizenz-API). | |
+| 5 | Admin-App konfigurieren: `admin/.env` (lokal) bzw. Netlify-Umgebungsvariablen: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` = Werte aus dem **Lizenzportal**-Projekt (nicht Haupt-App). | |
+| 6 | Optional (Lizenz-API aus Haupt-App/Netlify): `SUPABASE_LICENSE_PORTAL_URL` + `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` setzen. | |
+| 7 | Test: Admin-App starten (`cd admin && npm run dev`), Login mit neuem Benutzer (wird über Trigger als `profiles.role = 'admin'` angelegt). Mandanten/Lizenzen anlegen prüfen. | |
+
+**Status im Repo prüfen:** Im Repo liegt **kein** `.env` (nur `admin/.env.example`). Ob B3/L1 erledigt sind, erkennst du nur außerhalb des Repos: zweites Supabase-Projekt vorhanden? Admin-App mit korrekten Env-Variablen deployt und Login funktionsfähig? Wenn ja → B3/L1 in der Roadmap als ✅ markieren.
+
+#### Verifizierung „bereits umgesetzt?“ (Stand Prüfung)
+
+Alle Punkte ohne ✅ wurden im Code geprüft. Ergebnis:
+
+| Punkt | Im Code geprüft | Ergebnis |
+|-------|------------------|----------|
+| **B3 / L1** | Nicht prüfbar (operativer Schritt: zweites Supabase-Projekt). | Nur manuell prüfbar (Checkliste oben). |
+| **I1** Capacitor | `@capacitor/core`, `@capacitor/cli`, `android`, `ios`; `capacitor.config.ts`; Scripts `build:mobile`, `cap:sync`, `cap:android`, `cap:ios`. | ✅ Umgesetzt. |
+| **I2** Bluetooth-Drucker | Kein Plugin/Code. | ❌ Nicht umgesetzt. |
+| **J1** Wartungsplanung/Erinnerungen | `get_maintenance_reminders` (30-Tage-Status), Anzeige Startseite/Kunden. | ⚠️ Teilweise: Erinnerungsliste & „due_soon“ ja, **optionale E-Mail** fehlt. |
+| **J2** Wartungsstatistik | Keine dedizierte Statistik-/Auswertungsseite. | ❌ Nicht umgesetzt. |
+| **J3** Export Buchhaltung | Nur Import (CSV), kein Export für Buchhaltung. | ❌ Nicht umgesetzt. |
+| **J4** Schnellzugriff/Zuletzt bearbeitet | Startseite: Aufträge, Erinnerungen; kein „Zuletzt bearbeitet“. | ❌ Nicht umgesetzt. |
+| **J5** Erweiterte Filter Kundenliste | Keine Filter für PLZ, Wartungsstatus, BV-Anzahl. | ❌ Nicht umgesetzt. |
+| **J6** Umbau Wartung MVP | `order_completions`, Auftragsdetail, Unterschriften vorhanden. | ⚠️ Teilweise: Monteursbericht ja; Freigabe-Workflow & Portal-Integration offen. |
+| **J7** Mängel-Follow-up, iCal, Bulk, Push | Kein iCal, kein Mängel-Tracking, keine Bulk-UI, kein Portal-Push. | ❌ Nicht umgesetzt. |
+| **J8** Lizenzportal Export Kündigung | `admin/exportService.ts`, Button „Daten exportieren“ in Mandanten. | ✅ Umgesetzt → als erledigt markiert. |
+| **J9** Ladezeiten-Dashboard | Nur Konsole-Logging (Sync/Startseite); kein grafisches Dashboard. | ❌ Dashboard nicht umgesetzt (nur Messung). |
 
 ---
 
@@ -221,7 +400,9 @@ Vico/
 ├── supabase/         # Edge Functions
 ├── supabase-complete.sql
 ├── Vico.md           # Diese Dokumentation
-└── BENUTZERANLEITUNG.md
+├── BENUTZERANLEITUNG.md
+├── docs/             # Weitere Konzept- und Planungsdokumente (siehe Abschnitt 10.11)
+└── …
 ```
 
 ---
@@ -250,7 +431,7 @@ Vico/
 - **Farbliche Anpassung:** Individuell pro Mandant, Steuerung über Lizenzportal.
 
 **Frage 1:** Welcher Projektname? (Vorschläge: WartungsLog, TürWart, TorCheck, MängelLog, WartungsApp – oder eigener Vorschlag?)  
-→ **Offen, auf später verschoben.** Rechtlich unbedenkliche Alternativen recherchiert: Objektio, Portaio, Baseio. Änderung bei späterer Entscheidung gering (app_name kommt aus API; technisch: package.json, Manifest).
+→ **Entscheidung:** Bleibt auf später verschoben. App-Name kommt aus API; bei Festlegung Anpassung in Lizenzportal, package.json, Manifest. Siehe `docs/Entscheidungen-Offene-Punkte.md` §1.
 
 **Frage 2:** Soll die App branchenspezifisch bleiben (Türen & Tore) oder generisch werden?  
 → **Entscheidung:** Hybrid – Kern branchenspezifisch, Labels konfigurierbar für spätere Erweiterung.
@@ -464,6 +645,8 @@ Schwellwerte (80 %, 90 %) pro Mandant im Lizenzportal konfigurierbar oder fest. 
 
 ### 9.10 Offene Punkte & weitere Vorschläge
 
+**Entscheidung (abgelaufene Lizenz):** Schonfrist Nur-Lesen (konfigurierbare Tage), danach Redirect/Sperre. **Steuerung der Schonfrist (Anzahl Tage) im Lizenzportal** pro Mandant/Lizenz. Siehe `docs/Entscheidungen-Offene-Punkte.md` §2.
+
 **Vorschlag 1 – Lizenz-Caching:** Lizenz nach Aktivierung lokal speichern; optional periodische Prüfung (z.B. täglich) ob Lizenz noch gültig ist.
 
 **Vorschlag 2 – Lizenz-Trial:** Optional: Mandant erhält 14 Tage Trial mit allen Modulen; danach Einschränkung ohne Verlängerung.
@@ -474,7 +657,7 @@ Schwellwerte (80 %, 90 %) pro Mandant im Lizenzportal konfigurierbar oder fest. 
 
 **Frage 21:** Welche dieser Vorschläge sind relevant oder sollen berücksichtigt werden?
 
-→ **Entscheidung:** **Umsetzen:** Vorschlag 1 (Lizenz-Caching, bereits in Frage 9) und Vorschlag 4 (Daten-Export bei Kündigung). **Später:** Vorschlag 2 (Trial), Vorschlag 3 (Self-Service). Zunächst nur über Lizenzportal durch Betreiber.
+→ **Entscheidung:** **Umsetzen:** Vorschlag 1 (Lizenz-Caching), Vorschlag 4 (Daten-Export). **Trial (Vorschlag 2):** Ja – 14 Tage, alle Module; genaue Trial-Definition bei Umsetzung. **Self-Service (Vorschlag 3):** Erstmal nur Betreiber; später Self-Service – **Ort in Haupt-App:** Einstellungen, Bereich „Stammdaten / Impressum“ (nur Admin). Siehe `docs/Entscheidungen-Offene-Punkte.md` §3, §4.
 
 ---
 
@@ -565,10 +748,7 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 
 ### 9.14 Status: Alle Fragen geklärt
 
-**Auf später verschoben (nicht blockierend):**
-- **Frage 1:** Projektname (Objektio, Portaio, Baseio oder eigener Vorschlag)
-- **Vorschlag 2:** Lizenz-Trial (14 Tage)
-- **Vorschlag 3:** Mandanten-Self-Service
+**Auf später verschoben (nicht blockierend):** Frage 1 (App-Name). Trial und Self-Service sind umgesetzt bzw. geplant – siehe `docs/Entscheidungen-Offene-Punkte.md` §3, §4.
 
 **Alle übrigen Fragen (2–22) beantwortet.** Planung vollständig für Start Phase 1.
 
@@ -645,6 +825,7 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 **Nächste Schritte:**
 - Lizenzportal-Supabase-Projekt anlegen, Schema ausführen
 - Grenzwarnungen (80 %/90 %/100 %) in Benutzerverwaltung
+- **Verhalten bei abgelaufener Lizenz** definieren und ggf. umsetzen (Hinweis, Sperre, Frist)
 
 ---
 
@@ -662,3 +843,211 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 - **App:** Login mit MFA-Challenge, Profil-Einstellungen für 2FA-Aktivierung/-Deaktivierung
 - **Admin:** Login mit MFA-Challenge
 - **Supabase:** MFA muss im Dashboard aktiviert sein (Authentication → Providers → MFA)
+
+---
+
+## 10. Konzept: Geplante Änderungen Hauptapp
+
+Die folgenden Punkte sind als Konzept für die Hauptapp vorgesehen. Referenzierte Detailplanungen liegen in `docs/` (z. B. Etikettendrucker, Arbeitszeiterfassung, Optimierungsplan).
+
+### 10.1 React Native / APK
+
+- **Ausbaustufe:** Erstellung einer nativen Android-APK über React Native (oder vergleichbaren Ansatz) einplanen.
+- **Ziel:** Installierbare App aus einem Store oder als APK, bessere Integration z. B. für Bluetooth-Drucker (siehe `docs/Etikettendrucker-Planung.md`).
+
+### 10.2 Begriffe & Datenmodell: BV → Objekt/BV, Objekt → Tür/Tor
+
+- **BV umbenennen in „Objekt/BV“** (Anzeige und Konzept).
+- **Aus dem bisherigen Objekt** wird die konkrete **Tür oder das Tor** (ein Objekt = eine Tür/ein Tor).
+- **Objekt/BV** bleibt die organisatorische Ebene (Gebäude/Standort); darunter liegen die **Türen/Tore**.
+- **Sonderfall Kunde ohne Objekt/BV:** Wenn ein Kunde keine Objekte/BVs hat, sollen **Türen/Tore direkt unter dem Kunden** angelegt werden können.
+- **Barrierefreiheit / Verschieben:** Türen müssen **innerhalb des Kunden verschiebbar** sein (z. B. wenn nachträglich Objekt/BV angelegt wird und vorher alles nur unter dem Kunden hing). Drag & Drop oder explizite „Zuordnung ändern“-Funktion.
+
+### 10.3 Kundenportal – Sichtbarkeit pro Portalzugang
+
+- **Auswahl, welche Objekte/BV** einem Kundenportal-Zugang angezeigt werden.
+- **Beispiel:** Zugang 1 sieht Objekt/BV 1, 2, 3; Zugang 2 sieht Objekt/BV 4, 5, 6. Zugang bleibt immer auf einen Kunden beschränkt.
+- **Standard:** Alle Objekte/BV des Kunden sind ausgewählt; Admin kann die Sichtbarkeit pro Portalbenutzer einschränken.
+- **Erweiterung:** In der Benutzerverwaltung bei Portalbenutzer: Zuordnung zum Kunden + optional welche Objekte/BV der Benutzer sieht (siehe 10.8).
+
+### 10.4 Historie
+
+- **Klar erkennbar:** Welche Änderungen gemacht wurden und ggf. was geändert wurde (Vorher/Nachher oder Änderungsdetails).
+- **Performance:** Details **erst auf Anforderung** laden (z. B. Klick auf Zeile → nachladen). Immer auf Performance achten (Paginierung, schlanke Abfragen).
+
+### 10.5 Menü & Einstellungen
+
+- **Neuer Menüpunkt** (eigener Eintrag im Seitenmenü, nicht unter Einstellungen):
+  - **Appversion**
+  - **Lizenz**
+  - **Anleitung**
+- Diese Inhalte werden **aus Einstellungen entfernt** und nur noch unter dem neuen Menüpunkt geführt.
+- **Einstellungen:** Punkt **Benutzerverwaltung** entfernen (doppelt; Benutzerverwaltung bleibt eigener Menüpunkt mit voller Funktionalität).
+- **Benutzerverwaltung:** Punkt **Einstellungen** entfernen (kein Einstellungs-Link dort).
+
+### 10.6 Benutzerverwaltung – Erweiterungen
+
+- **Benutzer anlegen:** Auswahl **welche Rolle** der Benutzer erhält.
+- **Portalbenutzer:** Anzeige/ Bearbeitung **zu welchem Kunden** der Portalbenutzer gehört; idealerweise zusätzlich **Auswahl der Objekte/BV**, auf die der Benutzer Zugriff hat (siehe 10.3).
+
+### 10.7 Stammdatenimport
+
+- **Format:** Excel/CSV.
+- **Spalten (Beispiel):** Firma, PLZ, Straße, Stadt, Mail, Tel, Anprechpartner, Objekt/BV.
+- Import-Wizard oder Upload mit Zuordnung der Spalten zu den App-Feldern.
+
+### 10.8 Auftrag anlegen – Felder
+
+- **Art** (z. B. Wartung, Reparatur, Montage, Sonstiges)
+- **Kunde**
+- **Objekt/BV:** Auswahl nur anzeigen, wenn der Kunde **mehrere** Objekte/BV hat; sonst Feld ausblenden bzw. nach Kundenauswahl prüfen und bei nur einem Objekt/BV automatisch setzen.
+- **Datum**
+- **Uhrzeit** (optional)
+- **Zugewiesen an**
+- **Beschreibung**
+
+### 10.9 Auftrag abarbeiten (Dashboard → Auftragsdetail)
+
+- Der **Mitarbeiter** kann den Auftrag **direkt aus dem Dashboard** abarbeiten (nicht nur anlegen/zugewiesen sehen).
+- **Kein Popup:** Klick auf Auftrag öffnet eine **eigene Auftragsdetail-Seite** (keine Modal-Ansicht).
+- **Inhalt der Auftragsdetail-Ansicht (z. B. Reparaturauftrag):**
+  - Kundenstammdaten und Objekt/BV
+  - Beschreibung aus dem Auftrag
+  - **Feld für ausgeführte Arbeiten** (Freitext)
+  - **Feld für Material**
+  - **Feld für Erfassung der Arbeitszeit**
+  - **Unterschrift des App-Benutzers** (Name bereits vorausgefüllt)
+  - **Unterschrift des Kunden** (Name muss händisch eingetragen werden)
+
+### 10.10 Wartungsvertrag
+
+- **Ort:** Wenn der Kunde **keine** weiteren Objekte/BV hat → Feld **Wartungsvertrag** direkt **unter Kunde**. Ansonsten **unter Objekt/BV**.
+- **Felder:** Wartungsvertrag (Format z. B. JJJJ/0000), **Datum Beginn**, **Datum Ende**. Später für Auflistung der Wartungsverträge nutzbar.
+
+### 10.11 Verweise auf weitere Dokumentation
+
+| Thema | Datei | Inhalt |
+|-------|--------|--------|
+| Etikettendrucker / QR-Druck | `docs/Etikettendrucker-Planung.md` | Anforderungen, Modellvorschläge, Wrapper vs. Helper-App, Integration |
+| Arbeitszeiterfassung | `docs/Arbeitszeiterfassung-Detailkonzept.md` | Phasen, RLS, ArbZG, Zeitmodell |
+| Optimierung | `docs/Optimierungsplan.md` | Data-Layer, Sync, Suche, Vite, Historie |
+| Lizenzportal / Mandanten | Abschnitt 9 dieser Datei | Mandantenfähigkeit, Lizenz-API, Aktivierung |
+| Lizenzportal-Setup | `docs/Lizenzportal-Setup.md` | Setup Admin-App, Domain, API, Betrieb |
+| Demokunde | `docs/Demokunde-Setup.md` | Demo-Mandant einrichten, 24h-Löschung |
+| Release | `docs/Release-Checkliste.md` | Checkliste vor Release |
+
+### 10.12 Umsetzungsfragen & Vorschläge
+
+Die folgenden Punkte sollten vor der Umsetzung entschieden werden. Pro Frage ist ein **Vorschlag** angegeben – zum Abhaken bzw. Anpassen.
+
+---
+
+#### 1. React Native / APK
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 1.1 | React Native neu oder Capacitor um die bestehende Web-App? | **Capacitor** – eine Codebasis (Web-App), native Hülle + Plugins; weniger Aufwand als komplett React Native. | |
+| 1.2 | APK parallel zur PWA oder später PWA ersetzen? | **Parallel** – PWA bleibt für Browser-Nutzung; APK für Techniker mit Drucker/Offline. Gleiche Backend-URL. | |
+| 1.3 | iOS von vornherein mitplanen? | **Ja** – iOS von Anfang an mitplanen (Capacitor unterstützt beides, zweites Build). | ✅ Entscheidung: Ja, iOS mitplanen |
+
+---
+
+#### 2. Objekt/BV und Tür/Tor (Datenmodell)
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 2.1 | Bestehende Tabellen umbenennen oder neue + Migration? | **Bestehende Tabellen behalten**, nur **Anzeige-Labels** umstellen (BV → „Objekt/BV“, Objekt → „Tür/Tor“). Später optional DB-Spalten/Views umbenennen. | |
+| 2.2 | URLs/Routen beibehalten (QR-Codes) oder anpassen? | **URLs beibehalten** (`/kunden/…/bvs/…/objekte`) – bestehende QR-Codes bleiben gültig; nur Menü-/Seitentitel anpassen. | |
+| 2.3 | Tür/Tor direkt unter Kunde: neue Relation oder virtuelles Default-Objekt/BV? | **Option A:** Neue Relation (Objekt kann `bv_id` NULL haben, dann `customer_id` gesetzt). Sauberer, erfordert Schema-Erweiterung. **Alternative:** Ein „Default-Objekt/BV“ pro Kunde (unsichtbar in UI) – weniger Schema-Änderung. | |
+
+**Entscheidung:** Wie Vorschlag – bestehende Tabellen/Labels, URLs beibehalten, echte Relation Kunde→Tür/Tor (`bv_id` optional).
+
+---
+
+#### 3. Verschieben von Türen (Barrierefreiheit)
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 3.1 | Drag & Drop oder Dropdown/Auswahl? | **Dropdown/Auswahl** – „Zuordnung: [Objekt/BV wählen]“ pro Tür. Einfacher umsetzbar und barrierefrei (Tastatur, Screenreader). | |
+| 3.2 | Wartungsprotokolle, Fotos, Dokumente der Tür bleiben zugeordnet? | **Ja** – sie bleiben der gleichen Tür (ID) zugeordnet; nur die Zuordnung „Kunde ↔ Objekt/BV“ ändert sich. | |
+
+**Entscheidung:** Wie Vorschlag – Dropdown/Auswahl, Protokolle/Fotos/Dokumente bleiben der Tür zugeordnet.
+
+---
+
+#### 4. Kundenportal – Sichtbarkeit Objekte/BV
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 4.1 | Whitelist-Tabelle oder „ausgewählte Objekte/BV“ pro Portalbenutzer? | **Whitelist:** Tabelle `portal_user_object_visibility` (portal_user_id, bv_id). Standard: alle Objekte/BV des Kunden ausgewählt; Admin kann einschränken. | |
+| 4.2 | Filterung nur Backend (API/RLS) oder auch Frontend? | **Nur Backend** – RLS/API liefert nur sichtbare Objekte/BV; Portal-Frontend zeigt alles, was es bekommt. | |
+
+**Entscheidung:** Wie Vorschlag – Whitelist-Tabelle, Filterung nur im Backend.
+
+---
+
+#### 5. Historie – Details on-demand
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 5.1 | „Details“ = nur geänderte Spalte oder Vorher/Nachher? | **Zunächst:** nur **welche Spalte** (table_name, record_id, action). **Später:** Vorher/Nachher, wenn audit_log erweitert wird (alte/new Werte speichern). | |
+| 5.2 | Lazy-Load: Klick auf Zeile → separater API-Call? | **Ja** – Klick auf Zeile lädt Details nach (z. B. RPC `get_audit_log_detail(id)` oder erweiterte Zeile). Liste bleibt schlank (Paginierung beibehalten). | |
+
+**Entscheidung:** Wie Vorschlag – Vorher/Nachher wenn audit_log erweiterbar; Lazy-Load per RPC/Detail-Call.
+
+---
+
+#### 6. Neuer Menüpunkt (Appversion, Lizenz, Anleitung)
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 6.1 | Name des Menüpunkts? | **„Info“** oder **„App-Info“** – kurz, eindeutig. | |
+| 6.2 | Anleitung: eine PDF oder mehrere Dokumente? | **Eine PDF** (BENUTZERANLEITUNG) wie bisher; Link „Anleitung öffnen“. Später erweiterbar. | |
+
+**Entscheidung:** Wie Vorschlag – Menüpunkt „Info“ oder „App-Info“, Anleitung eine PDF.
+
+---
+
+#### 7. Auftrag abarbeiten – Auftragsdetail-Seite
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 7.1 | Route für Auftragsdetail? | **`/auftrag/:orderId`** – Klick auf Auftrag im Dashboard führt zu dieser Seite. | |
+| 7.2 | Neue Spalten in `orders` oder neue Tabelle (z. B. Monteursbericht)? | **Neue Tabelle `order_completions`** (oder `monteursbericht`) – order_id, ausgeführte_arbeiten, material, arbeitszeit_minuten, unterschrift_mitarbeiter_path, unterschrift_mitarbeiter_name, unterschrift_kunde_path, unterschrift_kunde_name, created_at. Orders bleibt für Stammdaten; Completion für Abarbeitung. | |
+| 7.3 | Unterschriften: nur Bild oder auch Name/Datum strukturiert? | **Beides** – Bild (Storage-Pfad) + strukturierte Felder (Name, Datum) für Anzeige und Export. | |
+
+**Entscheidung:** Wie Vorschlag – Route `/auftrag/:orderId`, Tabelle `order_completions`, Unterschriften Bild + strukturierte Felder.
+
+---
+
+#### 8. Wartungsvertrag
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 8.1 | Nur Vertragsnummer, Beginn, Ende oder weitere Felder? | **MVP:** Vertragsnummer (JJJJ/0000), Datum Beginn, Datum Ende. **Später:** optional Kundennummer, Ansprechpartner, Verlängerung. | |
+| 8.2 | Ein Wartungsvertrag oder mehrere pro Kunde/Objekt/BV? | **Mehrere erlauben** – Liste von Verträgen (z. B. Verlängerungen). Pro Eintrag: Nummer, Beginn, Ende. | |
+
+**Entscheidung:** Wie Vorschlag – MVP-Felder (Nummer, Beginn, Ende), mehrere Verträge pro Kunde/Objekt/BV möglich.
+
+---
+
+#### 9. Stammdatenimport (CSV/Excel)
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 9.1 | Wo in der App? | **Eigener Menüpunkt „Import“** oder Unterpunkt unter **Kunden** („Stammdaten importieren“). | |
+| 9.2 | Objekt/BV-Spalte: bestehendes verknüpfen oder neu anlegen? | **Beides** – Wenn Objekt/BV-Name/ID in CSV existiert → verknüpfen; wenn neu → optional anlegen (Checkbox „Unbekannte Objekte/BV anlegen“). | |
+| 9.3 | Bei Fehlern: Abbruch oder Zeile überspringen + Fehlerliste? | **Zeile überspringen** – fehlerhafte Zeilen in Fehlerliste, Rest importieren. Am Ende Zusammenfassung: „X importiert, Y Fehler“ + Download Fehlerliste. | |
+
+**Entscheidung:** Wie Vorschlag – Menüpunkt „Import“, Objekt/BV verknüpfen oder neu anlegen, Zeile überspringen + Fehlerliste.
+
+---
+
+#### 10. Sonstiges
+
+| # | Frage | Vorschlag | Deine Entscheidung |
+|---|--------|-----------|--------------------|
+| 10.1 | Reihenfolge der Umsetzung? | **Vorschlag:** (1) Menü/Info + Einstellungen aufräumen → (2) Benutzerverwaltung (Rolle, Portalbenutzer Kunde/Objekte) → (3) Auftrag anlegen + abarbeiten + Completion-Tabelle → (4) Datenmodell/Labels Objekt/BV + Tür/Tor + Wartungsvertrag → (5) Kundenportal-Sichtbarkeit → (6) Historie-Details → (7) Stammdatenimport → (8) React Native/Capacitor + APK. | |
+| 10.2 | Rollenauswahl beim Anlegen: abhängig von Lizenz? | **Ja** – Nur Rollen anbieten, die durch Lizenz/Module freigegeben sind (z. B. „Kunde“ nur wenn Kundenportal-Modul aktiv). | |
+
+**Entscheidung:** Wie Vorschlag – Reihenfolge wie oben, Rollenauswahl abhängig von Lizenz/Modulen.

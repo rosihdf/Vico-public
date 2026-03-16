@@ -19,15 +19,19 @@ const BVRedirect = lazy(() => import('./BVRedirect'))
 const ObjectRedirect = lazy(() => import('./ObjectRedirect'))
 const Wartungsprotokolle = lazy(() => import('./Wartungsprotokolle'))
 const Suche = lazy(() => import('./Suche'))
+const Info = lazy(() => import('./Info'))
 const Einstellungen = lazy(() => import('./Einstellungen'))
 const Benutzerverwaltung = lazy(() => import('./Benutzerverwaltung'))
 const Historie = lazy(() => import('./Historie'))
+const Fehlerberichte = lazy(() => import('./Fehlerberichte'))
 const Scan = lazy(() => import('./Scan'))
 const AuftragAnlegen = lazy(() => import('./AuftragAnlegen'))
+const Auftragsdetail = lazy(() => import('./Auftragsdetail'))
 const Login = lazy(() => import('./Login'))
 const ResetPassword = lazy(() => import('./ResetPassword'))
 const Profil = lazy(() => import('./Profil'))
 const Arbeitszeit = lazy(() => import('./Arbeitszeit'))
+const Import = lazy(() => import('./Import'))
 const AktivierungsScreen = lazy(() => import('./pages/AktivierungsScreen'))
 const Impressum = lazy(() => import('./pages/Impressum'))
 const Datenschutz = lazy(() => import('./pages/Datenschutz'))
@@ -60,16 +64,21 @@ const App = () => {
                 <Route path="kunden/:customerId/bvs" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><BVRedirect /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden/:customerId/bvs/:bvId/objekte" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><ObjectRedirect /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden/:customerId/bvs/:bvId/objekte/:objectId/wartung" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="wartungsprotokolle"><ProtectedRoute><Wartungsprotokolle /></ProtectedRoute></ComponentGuard></Suspense>} />
+                <Route path="kunden/:customerId/objekte/:objectId/wartung" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="wartungsprotokolle"><ProtectedRoute><Wartungsprotokolle /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="suche" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="suche"><ProtectedRoute><Suche /></ProtectedRoute></ComponentGuard></Suspense>} />
+                <Route path="info" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="info"><ProtectedRoute><Info /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="einstellungen" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="einstellungen"><ProtectedRoute><Einstellungen /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="benutzerverwaltung" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="benutzerverwaltung"><ProtectedRoute><Benutzerverwaltung /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="historie" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><Historie /></ProtectedRoute></Suspense>} />
+                <Route path="fehlerberichte" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><Fehlerberichte /></ProtectedRoute></Suspense>} />
                 <Route path="scan" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="scan"><ProtectedRoute><Scan /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="auftrag" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="auftrag"><ProtectedRoute><AuftragAnlegen /></ProtectedRoute></ComponentGuard></Suspense>} />
+                <Route path="auftrag/:orderId" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="auftrag"><ProtectedRoute><Auftragsdetail /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="login" element={<Suspense fallback={<PageFallback />}><Login /></Suspense>} />
                 <Route path="reset-password" element={<Suspense fallback={<PageFallback />}><ResetPassword /></Suspense>} />
                 <Route path="profil" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="profil"><ProtectedRoute><Profil /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="arbeitszeit" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="arbeitszeiterfassung"><ProtectedRoute><Arbeitszeit /></ProtectedRoute></ComponentGuard></Suspense>} />
+                <Route path="import" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><Import /></ProtectedRoute></ComponentGuard></Suspense>} />
               </Route>
                   </Routes>
           </ComponentSettingsProvider>

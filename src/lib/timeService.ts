@@ -1,4 +1,10 @@
 import { supabase } from '../supabase'
+import { TIME_ENTRY_COLUMNS, TIME_BREAK_COLUMNS } from './dataColumns'
+import {
+  getWeekBounds,
+  getMonthBounds,
+  calcWorkMinutes,
+} from '../../shared/timeUtils'
 import {
   getCachedTimeEntries,
   setCachedTimeEntries,
@@ -8,11 +14,47 @@ import {
   addToOutbox,
 } from './offlineStorage'
 import { notifyDataChange } from './dataService'
-import type { TimeEntry, TimeBreak } from '../types'
+import type { TimeEntry, TimeBreak, TimeEntryEditLogRow } from '../types'
 
 const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
 
 const toDateStr = (d: Date): string => d.toISOString().slice(0, 10)
+
+export { getWeekBounds, getMonthBounds, calcWorkMinutes }
+
+/** Letzter beendeter Eintrag (für §5 ArbZG Ruhezeit-Prüfung). */
+export const getLastEndedEntry = async (userId: string): Promise<TimeEntry | null> => {
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('time_entries')
+      .select(TIME_ENTRY_COLUMNS)
+      .eq('user_id', userId)
+      .not('end', 'is', null)
+      .order('end', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (error) return null
+    return (data ?? null) as TimeEntry | null
+  }
+  const cached = (getCachedTimeEntries() as TimeEntry[]).filter(
+    (e) => e.user_id === userId && e.end != null
+  )
+  const outbox = getTimeOutbox().filter((o) => o.user_id === userId && o.end != null)
+  const fromOutbox: TimeEntry[] = outbox.map((o) => ({
+    id: o.tempId,
+    user_id: o.user_id,
+    date: o.date,
+    start: o.start,
+    end: o.end!,
+    notes: null,
+    order_id: o.order_id ?? null,
+    created_at: o.timestamp,
+    updated_at: o.timestamp,
+  }))
+  const merged = [...fromOutbox, ...cached]
+  merged.sort((a, b) => (b.end || '').localeCompare(a.end || ''))
+  return merged[0] ?? null
+}
 
 export const fetchTimeEntriesForUser = async (
   userId: string,
@@ -22,7 +64,7 @@ export const fetchTimeEntriesForUser = async (
   if (isOnline()) {
     const { data, error } = await supabase
       .from('time_entries')
-      .select('*')
+      .select(TIME_ENTRY_COLUMNS)
       .eq('user_id', userId)
       .gte('date', fromDate)
       .lte('date', toDate)
@@ -49,9 +91,13 @@ export const fetchTimeEntriesForUser = async (
     start: o.start,
     end: o.end,
     notes: null,
-    order_id: null,
+    order_id: o.order_id ?? null,
     created_at: o.timestamp,
     updated_at: o.timestamp,
+    location_start_lat: o.location_start_lat ?? null,
+    location_start_lon: o.location_start_lon ?? null,
+    location_end_lat: o.location_end_lat ?? null,
+    location_end_lon: o.location_end_lon ?? null,
   }))
   const merged = [...fromOutbox, ...cached]
   merged.sort((a, b) => (b.start || '').localeCompare(a.start || ''))
@@ -73,7 +119,7 @@ export const fetchTimeBreaksForEntry = async (entryId: string): Promise<TimeBrea
   if (isOnline()) {
     const { data, error } = await supabase
       .from('time_breaks')
-      .select('*')
+      .select(TIME_BREAK_COLUMNS)
       .eq('time_entry_id', entryId)
       .order('start', { ascending: true })
     if (error) return []
@@ -82,7 +128,12 @@ export const fetchTimeBreaksForEntry = async (entryId: string): Promise<TimeBrea
   return []
 }
 
-export const startTimeEntry = async (userId: string): Promise<{ data: TimeEntry | null; error: { message: string } | null }> => {
+export type TimeEntryLocation = { lat: number; lon: number }
+
+export const startTimeEntry = async (
+  userId: string,
+  location?: TimeEntryLocation | null
+): Promise<{ data: TimeEntry | null; error: { message: string } | null }> => {
   const now = new Date()
   const dateStr = toDateStr(now)
   const startStr = now.toISOString()
@@ -96,6 +147,9 @@ export const startTimeEntry = async (userId: string): Promise<{ data: TimeEntry 
       start: startStr,
       end: null,
       breaks: [],
+      order_id: null,
+      location_start_lat: location?.lat ?? null,
+      location_start_lon: location?.lon ?? null,
     })
     notifyDataChange()
     return {
@@ -109,15 +163,27 @@ export const startTimeEntry = async (userId: string): Promise<{ data: TimeEntry 
         order_id: null,
         created_at: startStr,
         updated_at: startStr,
+        location_start_lat: location?.lat ?? null,
+        location_start_lon: location?.lon ?? null,
       },
       error: null,
     }
   }
 
+  const insertPayload: Record<string, unknown> = {
+    user_id: userId,
+    date: dateStr,
+    start: startStr,
+    order_id: null,
+  }
+  if (location != null) {
+    insertPayload.location_start_lat = location.lat
+    insertPayload.location_start_lon = location.lon
+  }
   const { data, error } = await supabase
     .from('time_entries')
-    .insert({ user_id: userId, date: dateStr, start: startStr })
-    .select()
+    .insert(insertPayload)
+    .select(TIME_ENTRY_COLUMNS)
     .single()
   if (error) return { data: null, error: { message: error.message } }
   const entry = data as TimeEntry
@@ -129,38 +195,60 @@ export const startTimeEntry = async (userId: string): Promise<{ data: TimeEntry 
 
 export const endTimeEntry = async (
   entryId: string,
-  userId: string
+  userId: string,
+  location?: TimeEntryLocation | null
 ): Promise<{ error: { message: string } | null }> => {
   const endStr = new Date().toISOString()
 
   if (entryId.startsWith('temp-')) {
-    updateTimeOutboxItem(entryId, (o) => ({ ...o, end: endStr }))
+    updateTimeOutboxItem(entryId, (o) => ({
+      ...o,
+      end: endStr,
+      location_end_lat: location?.lat ?? o.location_end_lat,
+      location_end_lon: location?.lon ?? o.location_end_lon,
+    }))
     notifyDataChange()
     return { error: null }
   }
 
   if (!isOnline()) {
-    addToOutbox({
-      table: 'time_entries',
-      action: 'update',
-      payload: { id: entryId, end: endStr, updated_at: endStr },
-    })
+    const payload: Record<string, unknown> = { id: entryId, end: endStr, updated_at: endStr }
+    if (location != null) {
+      payload.location_end_lat = location.lat
+      payload.location_end_lon = location.lon
+    }
+    addToOutbox({ table: 'time_entries', action: 'update', payload })
     const cached = (getCachedTimeEntries() as TimeEntry[]).map((e) =>
-      e.id === entryId ? { ...e, end: endStr, updated_at: endStr } : e
+      e.id === entryId
+        ? {
+            ...e,
+            end: endStr,
+            updated_at: endStr,
+            location_end_lat: location?.lat ?? e.location_end_lat,
+            location_end_lon: location?.lon ?? e.location_end_lon,
+          }
+        : e
     )
     setCachedTimeEntries(cached)
     notifyDataChange()
     return { error: null }
   }
 
+  const updatePayload: Record<string, unknown> = { end: endStr, updated_at: endStr }
+  if (location != null) {
+    updatePayload.location_end_lat = location.lat
+    updatePayload.location_end_lon = location.lon
+  }
   const { error } = await supabase
     .from('time_entries')
-    .update({ end: endStr, updated_at: endStr })
+    .update(updatePayload)
     .eq('id', entryId)
     .eq('user_id', userId)
   if (error) return { error: { message: error.message } }
   const cached = (getCachedTimeEntries() as TimeEntry[]).map((e) =>
-    e.id === entryId ? { ...e, end: endStr, updated_at: endStr } : e
+    e.id === entryId
+      ? { ...e, end: endStr, updated_at: endStr, location_end_lat: location?.lat, location_end_lon: location?.lon }
+      : e
   )
   setCachedTimeEntries(cached)
   notifyDataChange()
@@ -243,14 +331,51 @@ export const getActiveEntry = (entries: TimeEntry[]): TimeEntry | null =>
 export const getActiveBreak = (_entry: TimeEntry, breaks: TimeBreak[]): TimeBreak | null =>
   breaks.find((b) => !b.end) ?? null
 
-export const calcWorkMinutes = (entry: TimeEntry, breaks: TimeBreak[]): number => {
-  const start = new Date(entry.start).getTime()
-  const end = entry.end ? new Date(entry.end).getTime() : Date.now()
-  let total = (end - start) / 60000
-  for (const b of breaks) {
-    const bStart = new Date(b.start).getTime()
-    const bEnd = b.end ? new Date(b.end).getTime() : Date.now()
-    total -= (bEnd - bStart) / 60000
-  }
-  return Math.max(0, Math.floor(total))
+export type TimeEntryEditReasonCode = 'korrektur' | 'nachreichung' | 'fehler' | 'sonstiges'
+
+export const updateTimeEntryAsAdmin = async (
+  entryId: string,
+  newStart: string,
+  newEnd: string | null,
+  reason: string,
+  reasonCode: TimeEntryEditReasonCode = 'korrektur'
+): Promise<{ error: { message: string } | null }> => {
+  const { error } = await supabase.rpc('update_time_entry_admin', {
+    p_entry_id: entryId,
+    p_new_start: newStart,
+    p_new_end: newEnd,
+    p_reason: reason.trim() || 'Kein Grund angegeben',
+    p_reason_code: reasonCode,
+    p_order_id: null,
+  })
+  if (error) return { error: { message: error.message } }
+  const cached = getCachedTimeEntries() as TimeEntry[]
+  const updated = cached.map((e) =>
+    e.id === entryId ? { ...e, start: newStart, end: newEnd, order_id: null, updated_at: new Date().toISOString() } : e
+  )
+  setCachedTimeEntries(updated)
+  notifyDataChange()
+  return { error: null }
+}
+
+export type TimeEntryEditLogFilters = {
+  dateFrom?: string
+  dateTo?: string
+  entryUserId?: string | null
+}
+
+export const fetchTimeEntryEditLog = async (
+  limit = 100,
+  offset = 0,
+  filters?: TimeEntryEditLogFilters
+): Promise<TimeEntryEditLogRow[]> => {
+  const { data, error } = await supabase.rpc('get_time_entry_edit_log', {
+    p_limit: limit,
+    p_offset: offset,
+    p_date_from: filters?.dateFrom ?? null,
+    p_date_to: filters?.dateTo ?? null,
+    p_entry_user_id: filters?.entryUserId ?? null,
+  })
+  if (error) return []
+  return (data ?? []) as TimeEntryEditLogRow[]
 }

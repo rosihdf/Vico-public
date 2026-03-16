@@ -1,20 +1,21 @@
 -- =============================================================================
 -- Vico Lizenzportal – Datenbank-Schema
+-- =============================================================================
 -- Eigenes Supabase-Projekt für Mandanten & Lizenzen.
 -- Im Supabase SQL Editor ausführen (neues Projekt anlegen oder bestehendes).
--- Idempotent.
+-- Idempotent. Zuletzt geprüft/aufgeräumt: 2025-03
 --
 -- RLS: is_admin() als SECURITY DEFINER verhindert Rekursion (Policies lesen
 -- profiles nicht direkt, sondern über die Funktion).
+--
+-- Struktur:
+--   1. Profiles (Admin-Benutzer, get_my_role, Trigger Signup)
+--   2. Tenants (Mandanten)
+--   3. Licenses (Lizenzen pro Mandant)
+--   3b. License_models (Vorlagen), FK licenses.license_model_id, Standard-Seeds
+--   4. limit_exceeded_log (Grenzüberschreitungs-Meldungen)
+--   5. Indizes
 -- =============================================================================
---
--- Tabellen:
---   tenants         – Mandanten (Firmen, die die App nutzen)
---   licenses        – Lizenzen pro Mandant
---   license_models  – Lizenzmodelle (Vorlagen für Lizenzen)
---   profiles        – Admin-Benutzer (Lizenzportal)
---   limit_exceeded_log – Meldungen bei Grenzüberschreitung
---
 
 -- =============================================================================
 -- 1. PROFILES (Admin-Benutzer für Lizenzportal)
@@ -120,6 +121,8 @@ create table if not exists public.licenses (
   license_number text not null unique,
   tier text default 'professional' check (tier in ('free', 'professional', 'enterprise')),
   valid_until date,
+  is_trial boolean default false,
+  grace_period_days int default 0 check (grace_period_days >= 0),
   max_users int,
   max_customers int,
   check_interval text default 'daily' check (check_interval in ('on_start', 'daily', 'weekly')),
@@ -127,6 +130,28 @@ create table if not exists public.licenses (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Schonfrist (Tage): Spalte nachträglich hinzufügen falls Tabelle schon existiert
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'licenses' and column_name = 'grace_period_days'
+  ) then
+    alter table public.licenses add column grace_period_days int default 0 check (grace_period_days >= 0);
+  end if;
+end $$;
+
+-- Trial-Flag: Spalte nachträglich hinzufügen
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'licenses' and column_name = 'is_trial'
+  ) then
+    alter table public.licenses add column is_trial boolean default false;
+  end if;
+end $$;
 
 alter table public.licenses enable row level security;
 
@@ -195,7 +220,7 @@ create table if not exists public.limit_exceeded_log (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid references public.tenants(id) on delete cascade,
   license_id uuid references public.licenses(id) on delete set null,
-  limit_type text not null,
+  limit_type text not null check (limit_type in ('users', 'customers')),
   current_value int not null,
   max_value int not null,
   license_number text,
@@ -211,6 +236,27 @@ do $$ declare r record; begin
 end $$;
 create policy "Admins can read limit_exceeded_log" on public.limit_exceeded_log for select using (public.is_admin());
 
-create policy "Service role can insert limit_exceeded_log" on public.limit_exceeded_log for insert with check (true);
+-- Insert erfolgt ausschließlich über Edge Function limit-exceeded (service_role, RLS umgangen).
+-- Keine INSERT-Policy für anon/authenticated – verhindert unbefugte Einträge.
 
+-- limit_type-Check für bestehende Tabellen (idempotent)
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.limit_exceeded_log'::regclass and conname = 'limit_exceeded_log_limit_type_check'
+  ) then
+    alter table public.limit_exceeded_log add constraint limit_exceeded_log_limit_type_check
+      check (limit_type in ('users', 'customers'));
+  end if;
+end $$;
+
+-- =============================================================================
+-- 5. INDIZES
+-- =============================================================================
+
+create index if not exists tenants_name_idx on public.tenants (name);
+create index if not exists licenses_tenant_created_idx on public.licenses (tenant_id, created_at desc);
+-- license_number: Unique-Constraint erzeugt bereits einen Index
+create index if not exists license_models_sort_name_idx on public.license_models (sort_order, name);
 create index if not exists limit_exceeded_log_tenant_created_idx on public.limit_exceeded_log (tenant_id, created_at desc);

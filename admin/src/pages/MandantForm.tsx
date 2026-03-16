@@ -23,6 +23,8 @@ const DEFAULT_CREATE_FORM: {
   license_model_id: string | null
   tier: 'free' | 'professional' | 'enterprise'
   valid_until: string | null
+  is_trial: boolean
+  grace_period_days: number
   max_users: number | null
   max_customers: number | null
   check_interval: 'on_start' | 'daily' | 'weekly'
@@ -32,6 +34,8 @@ const DEFAULT_CREATE_FORM: {
   license_model_id: null,
   tier: 'professional',
   valid_until: null,
+  is_trial: false,
+  grace_period_days: 0,
   max_users: null,
   max_customers: null,
   check_interval: 'daily',
@@ -81,7 +85,9 @@ const MandantForm = () => {
     }
   }, [])
 
+  // Bei neuem Mandanten nur Lizenzmodelle laden (für Dropdown „Neue Lizenz“).
   useEffect(() => {
+    if (!isNew) return
     const load = async () => {
       try {
         const data = await fetchLicenseModels()
@@ -91,18 +97,20 @@ const MandantForm = () => {
       }
     }
     load()
-  }, [])
+  }, [isNew])
 
+  // Beim Bearbeiten: Mandant, Lizenzen und Lizenzmodelle parallel laden (eine Roundtrip-Runde).
   useEffect(() => {
-    if (isNew) return
+    if (isNew || !id) return
     const load = async () => {
-      if (!id) return
       setIsLoading(true)
       setError(null)
+      const loadStart = performance.now()
       try {
-        const [t, licensesData] = await Promise.all([
+        const [t, licensesData, modelsData] = await Promise.all([
           fetchTenant(id),
           fetchLicensesByTenant(id),
+          fetchLicenseModels(),
         ])
         if (t) {
           setForm({
@@ -119,6 +127,8 @@ const MandantForm = () => {
           })
         }
         setTenantLicenses(licensesData)
+        setLicenseModels(modelsData ?? [])
+        console.info(`[Lizenzportal] MandantForm load: ${Math.round(performance.now() - loadStart)}ms`)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Laden fehlgeschlagen')
         setTenantLicenses([])
@@ -215,6 +225,8 @@ const MandantForm = () => {
       license_model_id: createForm.license_model_id,
       tier: createForm.tier,
       valid_until: createForm.valid_until || null,
+      is_trial: createForm.is_trial,
+      grace_period_days: createForm.grace_period_days,
       max_users: createForm.max_users,
       max_customers: createForm.max_customers,
       check_interval: createForm.check_interval,
@@ -230,11 +242,39 @@ const MandantForm = () => {
     loadLicenses(id)
   }
 
+  const handleStartTrial = async () => {
+    if (!id) return
+    const trialEnd = new Date()
+    trialEnd.setDate(trialEnd.getDate() + 14)
+    const validUntil = trialEnd.toISOString().slice(0, 10)
+    const allFeatures = FEATURE_KEYS.reduce((acc, k) => ({ ...acc, [k]: true }), {} as Record<string, boolean>)
+    setError(null)
+    const result = await createLicense({
+      tenant_id: id,
+      license_number: generateLicenseNumber(),
+      tier: 'professional',
+      valid_until: validUntil,
+      is_trial: true,
+      grace_period_days: 0,
+      max_users: 10,
+      max_customers: 50,
+      check_interval: 'daily',
+      features: allFeatures,
+    })
+    if ('error' in result) {
+      setError(result.error)
+      return
+    }
+    setSuccessMessage(`Trial-Lizenz ${result.license_number} wurde angelegt (14 Tage, alle Module).`)
+    loadLicenses(id)
+  }
+
   const handleEditLicense = (lic: License) => {
     setEditingLicenseId(lic.id)
     setEditForm({
       tier: lic.tier,
       valid_until: lic.valid_until,
+      grace_period_days: lic.grace_period_days ?? 0,
       max_users: lic.max_users,
       max_customers: lic.max_customers,
       check_interval: lic.check_interval ?? 'daily',
@@ -320,13 +360,22 @@ const MandantForm = () => {
         <div className="mb-8">
           <div className="flex items-center justify-between gap-4 mb-4">
             <h3 className="text-sm font-semibold text-slate-700">Lizenzen & Lizenzstatus</h3>
-            <button
-              type="button"
-              onClick={handleOpenCreateLicense}
-              className="px-3 py-1.5 text-sm font-medium text-vico-primary hover:bg-vico-primary/10 rounded-lg transition-colors"
-            >
-              Lizenz anlegen
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleStartTrial}
+                className="px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors"
+              >
+                Trial starten (14 Tage)
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenCreateLicense}
+                className="px-3 py-1.5 text-sm font-medium text-vico-primary hover:bg-vico-primary/10 rounded-lg transition-colors"
+              >
+                Lizenz anlegen
+              </button>
+            </div>
           </div>
 
           {showCreateLicense && (
@@ -403,9 +452,39 @@ const MandantForm = () => {
                     <input
                       type="date"
                       value={createForm.valid_until ?? ''}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, valid_until: e.target.value || null }))}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          valid_until: e.target.value || null,
+                        }))
+                      }
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
                     />
+                    <label className="mt-1 inline-flex items-center gap-2 cursor-pointer text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={createForm.valid_until === null}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setCreateForm((f) => ({ ...f, valid_until: null }))
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                      />
+                      <span>Unbegrenzt (kein Ablaufdatum)</span>
+                    </label>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Schonfrist (Tage)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={createForm.grace_period_days}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, grace_period_days: Math.max(0, parseInt(e.target.value, 10) || 0) }))}
+                      placeholder="0"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+                    />
+                    <p className="mt-0.5 text-xs text-slate-500">Nach Ablauf: so viele Tage Nur-Lesen, danach Redirect zur Aktivierung.</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Max. Benutzer</label>
@@ -515,7 +594,35 @@ const MandantForm = () => {
                             <input
                               type="date"
                               value={editForm.valid_until ?? ''}
-                              onChange={(e) => setEditForm((f) => ({ ...f, valid_until: e.target.value || null }))}
+                              onChange={(e) =>
+                                setEditForm((f) => ({
+                                  ...f,
+                                  valid_until: e.target.value || null,
+                                }))
+                              }
+                              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+                            />
+                            <label className="mt-1 inline-flex items-center gap-2 cursor-pointer text-xs text-slate-600">
+                              <input
+                                type="checkbox"
+                                checked={editForm.valid_until === null}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setEditForm((f) => ({ ...f, valid_until: null }))
+                                  }
+                                }}
+                                className="w-4 h-4 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                              />
+                              <span>Unbegrenzt (kein Ablaufdatum)</span>
+                            </label>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Schonfrist (Tage)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={editForm.grace_period_days ?? ''}
+                              onChange={(e) => setEditForm((f) => ({ ...f, grace_period_days: Math.max(0, parseInt(e.target.value, 10) || 0) }))}
                               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
                             />
                           </div>
@@ -590,6 +697,11 @@ const MandantForm = () => {
                           >
                             {expired ? 'Abgelaufen' : 'Gültig'}
                           </span>
+                          {lic.is_trial && (
+                            <span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                              Trial
+                            </span>
+                          )}
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                           <div>

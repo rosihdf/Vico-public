@@ -48,14 +48,22 @@ const Layout = () => {
     }
   }
 
+  const showImport = isEnabled('kunden') && (userRole === 'admin' || userRole === 'mitarbeiter')
+  const arbeitszeitPortalUrl = (import.meta.env.VITE_ARBEITSZEIT_PORTAL_URL ?? '').trim()
+  const showArbeitszeitPortal = showArbeitszeit && arbeitszeitPortalUrl.length > 0 && (userRole === 'admin' || userRole === 'teamleiter')
+
   const menuLinks = [
     ...(isEnabled('dashboard') ? [{ to: '/', label: 'Dashboard' }] : []),
     ...(isEnabled('kunden') ? [{ to: '/kunden', label: 'Kunden' }] : []),
+    ...(showImport ? [{ to: '/import', label: 'Import' }] : []),
     ...(isEnabled('suche') ? [{ to: '/suche', label: 'Suche' }] : []),
     ...(isEnabled('auftrag') ? [{ to: '/auftrag', label: 'Auftrag' }] : []),
     ...(userRole === 'admin' && isEnabled('benutzerverwaltung') ? [{ to: '/benutzerverwaltung', label: 'Benutzerverwaltung' }] : []),
     ...(userRole === 'admin' ? [{ to: '/historie', label: 'Historie' }] : []),
+    ...(userRole === 'admin' ? [{ to: '/fehlerberichte', label: 'Fehlerberichte' }] : []),
     ...(showArbeitszeit ? [{ to: '/arbeitszeit', label: 'Arbeitszeit' }] : []),
+    ...(showArbeitszeitPortal ? [{ to: arbeitszeitPortalUrl, label: 'Arbeitszeitenportal', external: true }] : []),
+    ...(isEnabled('info') ? [{ to: '/info', label: 'Info' }] : []),
     ...(isEnabled('einstellungen') ? [{ to: '/einstellungen', label: 'Einstellungen' }] : []),
   ]
 
@@ -101,7 +109,9 @@ const Layout = () => {
           className="bg-red-100 dark:bg-red-900/40 text-red-900 dark:text-red-200 text-center py-2 px-4 text-sm font-medium border-b border-red-200 dark:border-red-700"
           aria-live="polite"
         >
-          Lizenz abgelaufen – einige Funktionen sind eingeschränkt. Bitte Lizenz verlängern.
+          {license.read_only
+            ? 'Lizenz abgelaufen – Nur-Lesen (Schonfrist). Bitte Lizenz verlängern.'
+            : 'Lizenz abgelaufen – einige Funktionen sind eingeschränkt. Bitte Lizenz verlängern.'}
         </div>
       )}
       {userRole === 'demo' && (
@@ -176,20 +186,33 @@ const Layout = () => {
         aria-label="Seitenmenü"
       >
         <div className="flex flex-col pt-16 px-2">
-          {menuLinks.map(({ to, label }) => (
-            <Link
-              key={to}
-              to={to}
-              onClick={handleMenuClose}
-              className={`px-4 py-3 rounded-lg font-medium transition-colors ${
-                location.pathname === to
-                  ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100'
-              }`}
-            >
-              {label}
-            </Link>
-          ))}
+          {menuLinks.map((item) => {
+            const { to, label, external } = item as { to: string; label: string; external?: boolean }
+            const className = `px-4 py-3 rounded-lg font-medium transition-colors ${
+              external ? 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100' : location.pathname === to
+                ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100'
+            }`
+            if (external) {
+              return (
+                <a
+                  key={to}
+                  href={to}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={handleMenuClose}
+                  className={className}
+                >
+                  {label}
+                </a>
+              )
+            }
+            return (
+              <Link key={to} to={to} onClick={handleMenuClose} className={className}>
+                {label}
+              </Link>
+            )
+          })}
           <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-600">
             <button
               type="button"

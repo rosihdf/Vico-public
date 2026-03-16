@@ -13,7 +13,11 @@ import {
   updateBv,
   deleteBv,
   fetchObjects,
+  fetchObjectsDirectUnderCustomer,
   fetchMaintenanceReminders,
+  fetchMaintenanceContractsByCustomer,
+  fetchMaintenanceContractsByBv,
+  deleteMaintenanceContract,
   subscribeToDataChange,
 } from './lib/dataService'
 import { useComponentSettings } from './ComponentSettingsContext'
@@ -27,8 +31,9 @@ import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalInviteSection from './components/PortalInviteSection'
 import ConfirmDialog from './components/ConfirmDialog'
 import EmptyState from './components/EmptyState'
+import MaintenanceContractModal from './components/MaintenanceContractModal'
 import type { Customer, CustomerFormData, BV, BVFormData } from './types'
-import type { MaintenanceReminder } from './types'
+import type { MaintenanceReminder, MaintenanceContract } from './types'
 
 const ObjectQRCodeModal = lazy(() => import('./ObjectQRCodeModal'))
 import type { Object as Obj } from './types'
@@ -98,9 +103,22 @@ const Kunden = () => {
   const [isBvSaving, setIsBvSaving] = useState(false)
   const [editingObject, setEditingObject] = useState<Obj | null>(null)
   const [editingObjectBvId, setEditingObjectBvId] = useState<string | null>(null)
-  const [qrObject, setQrObject] = useState<{ obj: Obj; customerId: string; bvId: string; customerName: string; bvName: string } | null>(null)
+  const [editingObjectCustomerId, setEditingObjectCustomerId] = useState<string | null>(null)
+  const [directObjectsUnderCustomer, setDirectObjectsUnderCustomer] = useState<Obj[]>([])
+  const [isDirectObjectsLoading, setIsDirectObjectsLoading] = useState(false)
+  const [qrObject, setQrObject] = useState<{ obj: Obj; customerId: string; bvId: string | null; customerName: string; bvName: string } | null>(null)
   const [showNeuDropdown, setShowNeuDropdown] = useState(false)
   const [maintenanceReminders, setMaintenanceReminders] = useState<MaintenanceReminder[]>([])
+  const [maintenanceContractsCustomer, setMaintenanceContractsCustomer] = useState<MaintenanceContract[]>([])
+  const [maintenanceContractsBv, setMaintenanceContractsBv] = useState<MaintenanceContract[]>([])
+  const [isContractsCustomerLoading, setIsContractsCustomerLoading] = useState(false)
+  const [isContractsBvLoading, setIsContractsBvLoading] = useState(false)
+  const [contractModal, setContractModal] = useState<{
+    open: boolean
+    customerId: string | null
+    bvId: string | null
+    contract: MaintenanceContract | null
+  }>({ open: false, customerId: null, bvId: null, contract: null })
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
     title: string
@@ -149,20 +167,50 @@ const Kunden = () => {
       if (cancelled) return
       setExpandedBvs(bvsData ?? [])
       setIsBvsLoading(false)
+      const [direct, contracts] = await Promise.all([
+        fetchObjectsDirectUnderCustomer(urlCustomerId),
+        fetchMaintenanceContractsByCustomer(urlCustomerId),
+      ])
+      if (!cancelled) {
+        setDirectObjectsUnderCustomer(direct ?? [])
+        setMaintenanceContractsCustomer(contracts ?? [])
+      }
+      if ((bvsData ?? []).length === 0 && urlObjectId && direct?.length) {
+        const obj = direct.find((o) => o.id === urlObjectId)
+        if (obj) {
+          setEditingObject(obj)
+          setEditingObjectBvId(null)
+          setEditingObjectCustomerId(urlCustomerId)
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev)
+            next.delete('customerId')
+            next.delete('bvId')
+            next.delete('objectId')
+            return next
+          }, { replace: true })
+        }
+      }
       if (!urlBvId) return
       const bv = (bvsData ?? []).find((b) => b.id === urlBvId)
       if (!bv) return
       setExpandedBvId(urlBvId)
       setIsObjectsLoading(true)
-      const objData = await fetchObjects(urlBvId)
+      setIsContractsBvLoading(true)
+      const [objData, contractData] = await Promise.all([
+        fetchObjects(urlBvId),
+        fetchMaintenanceContractsByBv(urlBvId),
+      ])
       if (cancelled) return
       setExpandedObjects(objData ?? [])
+      setMaintenanceContractsBv(contractData ?? [])
       setIsObjectsLoading(false)
+      setIsContractsBvLoading(false)
       if (urlObjectId) {
         const obj = (objData ?? []).find((o) => o.id === urlObjectId)
         if (obj) {
           setEditingObject(obj)
           setEditingObjectBvId(urlBvId)
+          setEditingObjectCustomerId(urlCustomerId)
           setSearchParams((prev) => {
             const next = new URLSearchParams(prev)
             next.delete('customerId')
@@ -368,15 +416,28 @@ const Kunden = () => {
       setExpandedBvs([])
       setExpandedBvId(null)
       setExpandedObjects([])
+      setDirectObjectsUnderCustomer([])
+      setMaintenanceContractsCustomer([])
+      setMaintenanceContractsBv([])
       return
     }
     setExpandedCustomerId(customerId)
     setExpandedBvId(null)
     setExpandedObjects([])
     setIsBvsLoading(true)
-    const data = await fetchBvs(customerId)
-    setExpandedBvs(data ?? [])
+    setIsDirectObjectsLoading(true)
+    setIsContractsCustomerLoading(true)
+    const [bvsData, directData, contractsData] = await Promise.all([
+      fetchBvs(customerId),
+      fetchObjectsDirectUnderCustomer(customerId),
+      fetchMaintenanceContractsByCustomer(customerId),
+    ])
+    setExpandedBvs(bvsData ?? [])
+    setDirectObjectsUnderCustomer(directData ?? [])
+    setMaintenanceContractsCustomer(contractsData ?? [])
     setIsBvsLoading(false)
+    setIsDirectObjectsLoading(false)
+    setIsContractsCustomerLoading(false)
   }
 
   const reloadExpandedBvs = async () => {
@@ -531,13 +592,20 @@ const Kunden = () => {
     if (expandedBvId === bvId) {
       setExpandedBvId(null)
       setExpandedObjects([])
+      setMaintenanceContractsBv([])
       return
     }
     setExpandedBvId(bvId)
     setIsObjectsLoading(true)
-    const data = await fetchObjects(bvId)
-    setExpandedObjects(data ?? [])
+    setIsContractsBvLoading(true)
+    const [objData, contractData] = await Promise.all([
+      fetchObjects(bvId),
+      fetchMaintenanceContractsByBv(bvId),
+    ])
+    setExpandedObjects(objData ?? [])
+    setMaintenanceContractsBv(contractData ?? [])
     setIsObjectsLoading(false)
+    setIsContractsBvLoading(false)
   }
 
   const reloadExpandedObjects = async () => {
@@ -622,7 +690,7 @@ const Kunden = () => {
                       role="menuitem"
                       title={!expandedCustomerId ? 'Kunde zuerst ausklappen' : undefined}
                     >
-                      Neues BV
+                      Neues Objekt/BV
                     </button>
                   )}
                   <button
@@ -630,17 +698,28 @@ const Kunden = () => {
                     onClick={(e) => {
                       e.stopPropagation()
                       setShowNeuDropdown(false)
-                      if (expandedCustomerId && expandedBvId) {
-                        setEditingObject(null)
+                      if (!expandedCustomerId) return
+                      setEditingObject(null)
+                      if (expandedBvId) {
                         setEditingObjectBvId(expandedBvId)
+                        setEditingObjectCustomerId(null)
+                      } else {
+                        setEditingObjectBvId(null)
+                        setEditingObjectCustomerId(expandedCustomerId)
                       }
                     }}
-                    disabled={!expandedCustomerId || !expandedBvId}
+                    disabled={!expandedCustomerId || ((expandedBvs?.length ?? 0) > 0 && !expandedBvId)}
                     className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     role="menuitem"
-                    title={!expandedCustomerId || !expandedBvId ? 'Kunde und BV zuerst ausklappen' : undefined}
+                    title={
+                      !expandedCustomerId
+                        ? 'Kunde zuerst ausklappen'
+                        : (expandedBvs?.length ?? 0) > 0 && !expandedBvId
+                          ? 'Objekt/BV ausklappen oder Kunde ohne Objekte/BV wählen'
+                          : undefined
+                    }
                   >
-                    Neues Objekt
+                    Neues Tür/Tor
                   </button>
                 </div>
               )}
@@ -671,7 +750,7 @@ const Kunden = () => {
                   onClick={() => handleToggleBvs(customer.id)}
                   className="w-full p-4 flex items-center justify-between gap-2 text-left hover:bg-slate-50 transition-colors cursor-pointer"
                   aria-expanded={isExpanded}
-                  aria-label={`BVs für ${customer.name} ${isExpanded ? 'einklappen' : 'ausklappen'}`}
+                  aria-label={`Objekt/BV für ${customer.name} ${isExpanded ? 'einklappen' : 'ausklappen'}`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <svg
@@ -754,23 +833,240 @@ const Kunden = () => {
                     {isBvsLoading ? (
                       <LoadingSpinner message="Lade BVs…" size="sm" className="py-2" />
                     ) : filteredBvs.length === 0 ? (
-                      <div className="py-4 flex flex-col items-start gap-3">
-                        <EmptyState
-                          title={searchLower && expandedBvs.length > 0 ? 'Keine BVs gefunden.' : 'Noch keine BVs angelegt.'}
-                          className="py-2 items-start"
-                        />
-                        {canCreateBv && (
-                          <button
-                            type="button"
-                            onClick={handleOpenBvCreate}
-                            className="px-3 py-2 text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
-                          >
-                            + BV anlegen
-                          </button>
-                        )}
+                      <div className="py-4 space-y-4">
+                        <div className="flex flex-col items-start gap-3">
+                          <EmptyState
+                            title={searchLower ? 'Keine Objekte/BV gefunden.' : 'Noch keine Objekte/BV angelegt.'}
+                            className="py-2 items-start"
+                          />
+                          {canCreateBv && (
+                            <button
+                              type="button"
+                              onClick={handleOpenBvCreate}
+                              className="px-3 py-2 text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                            >
+                              + Objekt/BV anlegen
+                            </button>
+                          )}
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-700 mb-2">Türen/Tore direkt unter Kunde</h4>
+                          {isDirectObjectsLoading ? (
+                            <LoadingSpinner message="Lade Türen/Tore…" size="sm" className="py-2" />
+                          ) : directObjectsUnderCustomer.length === 0 ? (
+                            <p className="text-sm text-slate-500 py-2">Noch keine Türen/Tore direkt unter diesem Kunden.</p>
+                          ) : (
+                            <ul className="space-y-1.5">
+                              {directObjectsUnderCustomer.map((obj) => (
+                                <li
+                                  key={obj.id}
+                                  className="bg-white rounded border border-slate-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                >
+                                  <div className="min-w-0 flex items-center gap-2">
+                                    {(() => {
+                                      const reminder = remindersByObjectId.get(obj.id)
+                                      const status = reminder?.status
+                                      const title = reminder
+                                        ? status === 'overdue'
+                                          ? `Überfällig`
+                                          : status === 'due_soon'
+                                            ? `Bald fällig`
+                                            : 'Wartung in Ordnung'
+                                        : 'Kein Wartungsintervall'
+                                      const dotClass = status === 'overdue' ? 'bg-red-500' : status === 'due_soon' ? 'bg-amber-500' : 'bg-green-500'
+                                      return (
+                                        <span className={`shrink-0 w-2.5 h-2.5 rounded-full ${reminder ? dotClass : 'bg-slate-200'}`} title={title} aria-label={title} />
+                                      )
+                                    })()}
+                                    <div>
+                                      <p className="font-medium text-slate-600 text-xs">{getObjectDisplayName(obj)}</p>
+                                      <p className="text-[11px] text-slate-500">{formatObjectRoomFloor(obj)}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {canEdit && (
+                                      <button
+                                        type="button"
+                                        onClick={() => { setEditingObject(obj); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
+                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                        aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
+                                      >
+                                        Bearbeiten
+                                      </button>
+                                    )}
+                                    {isEnabled('wartungsprotokolle') && (
+                                      <Link
+                                        to={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
+                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                      >
+                                        Wartung
+                                      </Link>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => setQrObject({ obj, customerId: customer.id, bvId: null, customerName: customer.name, bvName: '' })}
+                                      className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                      aria-label="QR-Code anzeigen"
+                                    >
+                                      QR-Code
+                                    </button>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => { setEditingObject(null); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
+                              className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                            >
+                              + Tür/Tor anlegen
+                            </button>
+                          )}
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-700 mb-2">Wartungsverträge</h4>
+                          {isContractsCustomerLoading ? (
+                            <LoadingSpinner message="Lade Verträge…" size="sm" className="py-2" />
+                          ) : maintenanceContractsCustomer.length === 0 ? (
+                            <p className="text-sm text-slate-500 py-2">Noch keine Wartungsverträge.</p>
+                          ) : (
+                            <ul className="space-y-1.5">
+                              {maintenanceContractsCustomer.map((c) => (
+                                <li
+                                  key={c.id}
+                                  className="bg-white rounded border border-slate-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                >
+                                  <div>
+                                    <p className="font-medium text-slate-600 text-xs">{c.contract_number}</p>
+                                    <p className="text-[11px] text-slate-500">
+                                      {c.start_date}{c.end_date ? ` – ${c.end_date}` : ''}
+                                    </p>
+                                  </div>
+                                  <div className="flex gap-1">
+                                    {canEdit && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setContractModal({ open: true, customerId: customer.id, bvId: null, contract: c })}
+                                        className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                        aria-label="Vertrag bearbeiten"
+                                      >
+                                        Bearbeiten
+                                      </button>
+                                    )}
+                                    {canDelete && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setConfirmDialog({
+                                            open: true,
+                                            title: 'Wartungsvertrag löschen',
+                                            message: `Vertrag ${c.contract_number} wirklich löschen?`,
+                                            onConfirm: async () => {
+                                              setConfirmDialog((d) => ({ ...d, open: false }))
+                                              await deleteMaintenanceContract(c.id)
+                                              const list = await fetchMaintenanceContractsByCustomer(customer.id)
+                                              setMaintenanceContractsCustomer(list ?? [])
+                                            },
+                                          })
+                                        }
+                                        className="px-2.5 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                                        aria-label="Vertrag löschen"
+                                      >
+                                        Löschen
+                                      </button>
+                                    )}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {canEdit && (
+                            <button
+                              type="button"
+                              onClick={() => setContractModal({ open: true, customerId: customer.id, bvId: null, contract: null })}
+                              className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                            >
+                              + Wartungsvertrag anlegen
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <>
+                        {directObjectsUnderCustomer.length > 0 && (
+                          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            <h4 className="text-sm font-semibold text-amber-800 mb-2">
+                              Türen/Tore direkt unter Kunde (noch keinem Objekt/BV zugeordnet)
+                            </h4>
+                            <p className="text-xs text-amber-700 mb-2">
+                              Diese Türen einem Objekt/BV zuordnen: Bearbeiten → Zuordnung auswählen → Speichern.
+                            </p>
+                            {isDirectObjectsLoading ? (
+                              <LoadingSpinner message="Lade…" size="sm" className="py-2" />
+                            ) : (
+                              <ul className="space-y-1.5">
+                                {directObjectsUnderCustomer.map((obj) => (
+                                  <li
+                                    key={obj.id}
+                                    className="bg-white rounded border border-amber-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                  >
+                                    <div className="min-w-0 flex items-center gap-2">
+                                      {(() => {
+                                        const reminder = remindersByObjectId.get(obj.id)
+                                        const status = reminder?.status
+                                        const title = reminder
+                                          ? status === 'overdue'
+                                            ? 'Überfällig'
+                                            : status === 'due_soon'
+                                              ? 'Bald fällig'
+                                              : 'Wartung in Ordnung'
+                                          : 'Kein Wartungsintervall'
+                                        const dotClass = status === 'overdue' ? 'bg-red-500' : status === 'due_soon' ? 'bg-amber-500' : 'bg-green-500'
+                                        return (
+                                          <span className={`shrink-0 w-2.5 h-2.5 rounded-full ${reminder ? dotClass : 'bg-slate-200'}`} title={title} aria-label={title} />
+                                        )
+                                      })()}
+                                      <div>
+                                        <p className="font-medium text-slate-600 text-xs">{getObjectDisplayName(obj)}</p>
+                                        <p className="text-[11px] text-slate-500">{formatObjectRoomFloor(obj)}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {canEdit && (
+                                        <button
+                                          type="button"
+                                          onClick={() => { setEditingObject(obj); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
+                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                          aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
+                                        >
+                                          Bearbeiten (Objekt/BV zuordnen)
+                                        </button>
+                                      )}
+                                      {isEnabled('wartungsprotokolle') && (
+                                        <Link
+                                          to={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
+                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                        >
+                                          Wartung
+                                        </Link>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => setQrObject({ obj, customerId: customer.id, bvId: null, customerName: customer.name, bvName: '' })}
+                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                        aria-label="QR-Code anzeigen"
+                                      >
+                                        QR-Code
+                                      </button>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
                         <ul className="space-y-2">
                           {filteredBvs.map((bv) => {
                             const isBvExpanded = expandedBvId === bv.id
@@ -784,7 +1080,7 @@ const Kunden = () => {
                                   onClick={() => handleToggleObjects(bv.id)}
                                   className="w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-slate-50 transition-colors cursor-pointer"
                                   aria-expanded={isBvExpanded}
-                                  aria-label={`Objekte für ${bv.name} ${isBvExpanded ? 'einklappen' : 'ausklappen'}`}
+                                  aria-label={`Türen/Tore für ${bv.name} ${isBvExpanded ? 'einklappen' : 'ausklappen'}`}
                                 >
                                   <div className="flex items-center gap-2 min-w-0">
                                     <svg
@@ -878,7 +1174,7 @@ const Kunden = () => {
                                             onClick={() => { setEditingObject(null); setEditingObjectBvId(bv.id) }}
                                             className="px-4 py-2.5 min-h-[40px] inline-flex items-center text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
                                           >
-                                            + Objekt anlegen
+                                            + Tür/Tor anlegen
                                           </button>
                                         )}
                                       </div>
@@ -927,7 +1223,12 @@ const Kunden = () => {
                                                 {canEdit && (
                                                   <button
                                                     type="button"
-                                                    onClick={(e) => { e.stopPropagation(); setEditingObject(obj); setEditingObjectBvId(bv.id) }}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      setEditingObject(obj)
+                                                      setEditingObjectBvId(bv.id)
+                                                      setEditingObjectCustomerId(customer.id)
+                                                    }}
                                                     className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
                                                     aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
                                                   >
@@ -960,14 +1261,86 @@ const Kunden = () => {
                                         {canEdit && (
                                           <button
                                             type="button"
-                                            onClick={() => { setEditingObject(null); setEditingObjectBvId(bv.id) }}
+                                            onClick={() => {
+                                              setEditingObject(null)
+                                              setEditingObjectBvId(bv.id)
+                                              setEditingObjectCustomerId(customer.id)
+                                            }}
                                             className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
                                           >
-                                            + Objekt anlegen
+                                            + Tür/Tor anlegen
                                           </button>
                                         )}
                                       </>
                                     )}
+                                    <div className="mt-3 pt-3 border-t border-slate-200">
+                                      <h4 className="text-sm font-semibold text-slate-700 mb-2">Wartungsverträge</h4>
+                                      {isContractsBvLoading ? (
+                                        <LoadingSpinner message="Lade Verträge…" size="sm" className="py-2" />
+                                      ) : maintenanceContractsBv.length === 0 ? (
+                                        <p className="text-sm text-slate-500 py-2">Noch keine Wartungsverträge.</p>
+                                      ) : (
+                                        <ul className="space-y-1.5">
+                                          {maintenanceContractsBv.map((c) => (
+                                            <li
+                                              key={c.id}
+                                              className="bg-white rounded border border-slate-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                            >
+                                              <div>
+                                                <p className="font-medium text-slate-600 text-xs">{c.contract_number}</p>
+                                                <p className="text-[11px] text-slate-500">
+                                                  {c.start_date}{c.end_date ? ` – ${c.end_date}` : ''}
+                                                </p>
+                                              </div>
+                                              <div className="flex gap-1">
+                                                {canEdit && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); setContractModal({ open: true, customerId: null, bvId: bv.id, contract: c }) }}
+                                                    className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                                    aria-label="Vertrag bearbeiten"
+                                                  >
+                                                    Bearbeiten
+                                                  </button>
+                                                )}
+                                                {canDelete && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      setConfirmDialog({
+                                                        open: true,
+                                                        title: 'Wartungsvertrag löschen',
+                                                        message: `Vertrag ${c.contract_number} wirklich löschen?`,
+                                                        onConfirm: async () => {
+                                                          setConfirmDialog((d) => ({ ...d, open: false }))
+                                                          await deleteMaintenanceContract(c.id)
+                                                          const list = await fetchMaintenanceContractsByBv(bv.id)
+                                                          setMaintenanceContractsBv(list ?? [])
+                                                        },
+                                                      })
+                                                    }}
+                                                    className="px-2.5 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                                                    aria-label="Vertrag löschen"
+                                                  >
+                                                    Löschen
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                      {canEdit && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); setContractModal({ open: true, customerId: null, bvId: bv.id, contract: null }) }}
+                                          className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                                        >
+                                          + Wartungsvertrag anlegen
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
                               </li>
@@ -980,7 +1353,7 @@ const Kunden = () => {
                             onClick={handleOpenBvCreate}
                             className="mt-2 px-3 py-2 text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
                           >
-                            + BV anlegen
+                            + Objekt/BV anlegen
                           </button>
                         )}
                       </>
@@ -1006,6 +1379,23 @@ const Kunden = () => {
         onCancel={() => setConfirmDialog((c) => ({ ...c, open: false }))}
       />
 
+      <MaintenanceContractModal
+        open={contractModal.open}
+        customerId={contractModal.customerId}
+        bvId={contractModal.bvId}
+        contract={contractModal.contract}
+        onClose={() => setContractModal({ open: false, customerId: null, bvId: null, contract: null })}
+        onSuccess={async () => {
+          if (contractModal.bvId) {
+            const list = await fetchMaintenanceContractsByBv(contractModal.bvId)
+            setMaintenanceContractsBv(list ?? [])
+          } else if (contractModal.customerId) {
+            const list = await fetchMaintenanceContractsByCustomer(contractModal.customerId)
+            setMaintenanceContractsCustomer(list ?? [])
+          }
+        }}
+      />
+
       {qrObject && (
         <Suspense fallback={null}>
           <ObjectQRCodeModal
@@ -1019,17 +1409,24 @@ const Kunden = () => {
         </Suspense>
       )}
 
-      {editingObjectBvId && (
+      {(editingObjectBvId || editingObjectCustomerId) && (
         <ObjectFormModal
           bvId={editingObjectBvId}
+          customerId={editingObjectCustomerId ?? expandedCustomerId}
+          customerBvs={expandedBvs}
           object={editingObject}
           canEdit={canEdit}
           canDelete={canDelete}
-          onClose={() => { setEditingObject(null); setEditingObjectBvId(null) }}
-          onSuccess={() => {
-            reloadExpandedObjects()
+          onClose={() => { setEditingObject(null); setEditingObjectBvId(null); setEditingObjectCustomerId(null) }}
+          onSuccess={async () => {
+            if (expandedCustomerId) {
+              reloadExpandedObjects()
+              const direct = await fetchObjectsDirectUnderCustomer(expandedCustomerId)
+              setDirectObjectsUnderCustomer(direct ?? [])
+            }
             setEditingObject(null)
             setEditingObjectBvId(null)
+            setEditingObjectCustomerId(null)
           }}
         />
       )}
@@ -1205,7 +1602,7 @@ const Kunden = () => {
           >
             <div className="p-4 sticky top-0 bg-white border-b border-slate-200">
               <h3 id="bv-form-title" className="text-lg font-bold text-slate-800">
-                {bvEditingId ? 'BV bearbeiten' : 'BV anlegen'}
+                {bvEditingId ? 'Objekt/BV bearbeiten' : 'Objekt/BV anlegen'}
               </h3>
             </div>
             <form onSubmit={handleBvSubmit} className="p-4 space-y-4">

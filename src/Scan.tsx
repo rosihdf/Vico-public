@@ -74,36 +74,22 @@ const Scan = () => {
 
     if ('path' in parsed) {
       const pathOrId = parsed.path
-      if (UUID_REGEX.test(pathOrId)) {
-        const { data: obj } = await supabase
-          .from('objects')
-          .select('id, bv_id')
-          .eq('id', pathOrId)
-          .single()
-        if (!obj) {
-          const { data: byInternalId } = await supabase
-            .from('objects')
-            .select('id, bv_id')
-            .eq('internal_id', pathOrId)
-            .maybeSingle()
-          if (byInternalId) {
-            const { data: bv } = await supabase.from('bvs').select('customer_id').eq('id', byInternalId.bv_id).single()
-            if (bv) {
-              navigate(`/kunden?customerId=${bv.customer_id}&bvId=${byInternalId.bv_id}&objectId=${byInternalId.id}`)
-              return
-            }
-          }
-          setMessage('Objekt nicht gefunden.')
-          return
-        }
-        const { data: bv } = await supabase.from('bvs').select('customer_id').eq('id', obj.bv_id).single()
-        if (bv) {
-          navigate(`/kunden?customerId=${bv.customer_id}&bvId=${obj.bv_id}&objectId=${obj.id}`)
-        } else {
-          setMessage('Objekt-Kontext nicht gefunden.')
-        }
+      if (!UUID_REGEX.test(pathOrId) && !pathOrId.trim()) {
+        setMessage('Unbekannter Inhalt.')
+        return
+      }
+      const { data, error } = await supabase.rpc('resolve_object_to_navigation', { identifier: pathOrId })
+      if (error) {
+        setMessage('Objekt-Suche fehlgeschlagen.')
+        return
+      }
+      if (Array.isArray(data) && data.length > 0) {
+        const row = data[0] as { customer_id: string; bv_id: string | null; object_id: string }
+        const params = new URLSearchParams({ customerId: row.customer_id, objectId: row.object_id })
+        if (row.bv_id) params.set('bvId', row.bv_id)
+        navigate(`/kunden?${params.toString()}`)
       } else {
-        setMessage(`Unbekannter Inhalt: ${pathOrId}`)
+        setMessage('Objekt nicht gefunden.')
       }
       return
     }

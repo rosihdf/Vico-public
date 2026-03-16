@@ -1,6 +1,7 @@
 export type Object = {
   id: string
-  bv_id: string
+  bv_id: string | null
+  customer_id: string | null
   name: string | null
   internal_id: string | null
   door_position: string | null

@@ -4,14 +4,17 @@ import type {
   BV,
   Object as Obj,
   Order,
+  OrderCompletion,
   MaintenanceReport,
   MaintenanceReportPhoto,
   MaintenanceReportSmokeDetector,
   MaintenanceReminder,
+  MaintenanceContract,
   ObjectPhoto,
   ObjectDocument,
   ObjectDocumentType,
 } from '../types'
+import { CUSTOMER_COLUMNS, BV_COLUMNS, OBJECT_COLUMNS, MAINTENANCE_CONTRACT_COLUMNS, ORDER_COLUMNS, ORDER_COMPLETION_COLUMNS, OBJECT_PHOTO_COLUMNS, OBJECT_DOCUMENT_COLUMNS, MAINTENANCE_REPORT_COLUMNS, MAINTENANCE_REPORT_PHOTO_COLUMNS, MAINTENANCE_REPORT_SMOKE_DETECTOR_COLUMNS, PORTAL_USER_COLUMNS } from './dataColumns'
 import {
   getCachedCustomers,
   setCachedCustomers,
@@ -45,7 +48,6 @@ import {
   removeMaintenanceOutboxItem,
   addToOutbox,
   getCachedAuditLog,
-  setCachedAuditLog,
   addToEmailOutbox,
 } from './offlineStorage'
 
@@ -64,10 +66,11 @@ const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
 
 export const fetchCustomers = async (): Promise<Customer[]> => {
   if (isOnline()) {
-    const { data, error } = await supabase.from('customers').select('*').order('name')
+    const { data, error } = await supabase.from('customers').select(CUSTOMER_COLUMNS).order('name')
     if (!error && data) {
-      setCachedCustomers(data as Customer[])
-      return data as Customer[]
+      const customers = data as unknown as Customer[]
+      setCachedCustomers(customers)
+      return customers
     }
   }
   return getCachedCustomers() as Customer[]
@@ -86,14 +89,19 @@ export const fetchCustomerCount = async (): Promise<number> => {
 
 export const fetchCustomer = async (id: string): Promise<Customer | null> => {
   if (isOnline()) {
-    const { data, error } = await supabase.from('customers').select('*').eq('id', id).single()
+    const { data, error } = await supabase
+      .from('customers')
+      .select(CUSTOMER_COLUMNS)
+      .eq('id', id)
+      .single()
     if (!error && data) {
+      const customer = data as unknown as Customer
       const all = getCachedCustomers() as Customer[]
       const merged = all.some((c) => c.id === id)
-        ? all.map((c) => (c.id === id ? (data as Customer) : c))
-        : [...all, data as Customer]
+        ? all.map((c) => (c.id === id ? customer : c))
+        : [...all, customer]
       setCachedCustomers(merged)
-      return data as Customer
+      return customer
     }
   }
   return (getCachedCustomers() as Customer[]).find((c) => c.id === id) ?? null
@@ -101,14 +109,15 @@ export const fetchCustomer = async (id: string): Promise<Customer | null> => {
 
 export const fetchBv = async (id: string): Promise<BV | null> => {
   if (isOnline()) {
-    const { data, error } = await supabase.from('bvs').select('*').eq('id', id).single()
+    const { data, error } = await supabase.from('bvs').select(BV_COLUMNS).eq('id', id).single()
     if (!error && data) {
+      const bv = data as unknown as BV
       const all = getCachedBvs() as BV[]
       const merged = all.some((b) => b.id === id)
-        ? all.map((b) => (b.id === id ? (data as BV) : b))
-        : [...all, data as BV]
+        ? all.map((b) => (b.id === id ? bv : b))
+        : [...all, bv]
       setCachedBvs(merged)
-      return data as BV
+      return bv
     }
   }
   return (getCachedBvs() as BV[]).find((b) => b.id === id) ?? null
@@ -118,14 +127,15 @@ export const fetchBvs = async (customerId: string): Promise<BV[]> => {
   if (isOnline()) {
     const { data, error } = await supabase
       .from('bvs')
-      .select('*')
+      .select(BV_COLUMNS)
       .eq('customer_id', customerId)
       .order('name')
     if (!error && data) {
+      const bvs = data as unknown as BV[]
       const all = getCachedBvs() as BV[]
       const others = all.filter((b) => b.customer_id !== customerId)
-      setCachedBvs([...others, ...(data as BV[])])
-      return data as BV[]
+      setCachedBvs([...others, ...bvs])
+      return bvs
     }
   }
   return (getCachedBvs() as BV[]).filter((b) => b.customer_id === customerId)
@@ -135,10 +145,10 @@ export const fetchObject = async (objectId: string): Promise<Obj | null> => {
   if (isOnline()) {
     const { data, error } = await supabase
       .from('objects')
-      .select('*')
+      .select(OBJECT_COLUMNS)
       .eq('id', objectId)
       .single()
-    if (!error && data) return data as Obj
+    if (!error && data) return data as unknown as Obj
   }
   return (getCachedObjects() as Obj[]).find((o) => o.id === objectId) ?? null
 }
@@ -147,25 +157,106 @@ export const fetchObjects = async (bvId: string): Promise<Obj[]> => {
   if (isOnline()) {
     const { data, error } = await supabase
       .from('objects')
-      .select('*')
+      .select(OBJECT_COLUMNS)
       .eq('bv_id', bvId)
       .order('internal_id')
     if (!error && data) {
+      const objs = data as unknown as Obj[]
       const all = getCachedObjects() as Obj[]
       const others = all.filter((o) => o.bv_id !== bvId)
-      setCachedObjects([...others, ...(data as Obj[])])
-      return data as Obj[]
+      setCachedObjects([...others, ...objs])
+      return objs
     }
   }
   return (getCachedObjects() as Obj[]).filter((o) => o.bv_id === bvId)
 }
 
+export const fetchObjectsDirectUnderCustomer = async (customerId: string): Promise<Obj[]> => {
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('objects')
+      .select(OBJECT_COLUMNS)
+      .eq('customer_id', customerId)
+      .is('bv_id', null)
+      .order('internal_id')
+    if (!error && data) {
+      const objs = data as unknown as Obj[]
+      const all = getCachedObjects() as Obj[]
+      const others = all.filter((o) => !(o.customer_id === customerId && o.bv_id == null))
+      setCachedObjects([...others, ...objs])
+      return objs
+    }
+  }
+  return (getCachedObjects() as Obj[]).filter((o) => o.customer_id === customerId && o.bv_id == null)
+}
+
+export const fetchMaintenanceContractsByCustomer = async (customerId: string): Promise<MaintenanceContract[]> => {
+  if (!isOnline()) return []
+  const { data, error } = await supabase
+    .from('maintenance_contracts')
+    .select(MAINTENANCE_CONTRACT_COLUMNS)
+    .eq('customer_id', customerId)
+    .is('bv_id', null)
+    .order('start_date', { ascending: false })
+  if (error) return []
+  return (data ?? []) as MaintenanceContract[]
+}
+
+export const fetchMaintenanceContractsByBv = async (bvId: string): Promise<MaintenanceContract[]> => {
+  if (!isOnline()) return []
+  const { data, error } = await supabase
+    .from('maintenance_contracts')
+    .select(MAINTENANCE_CONTRACT_COLUMNS)
+    .eq('bv_id', bvId)
+    .order('start_date', { ascending: false })
+  if (error) return []
+  return (data ?? []) as MaintenanceContract[]
+}
+
+export const createMaintenanceContract = async (
+  payload: { customer_id?: string | null; bv_id?: string | null; contract_number: string; start_date: string; end_date?: string | null }
+): Promise<{ data: MaintenanceContract | null; error: { message: string } | null }> => {
+  const full = {
+    ...payload,
+    customer_id: payload.customer_id ?? null,
+    bv_id: payload.bv_id ?? null,
+    end_date: payload.end_date?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }
+  if (isOnline()) {
+    const { data, error } = await supabase.from('maintenance_contracts').insert(full).select(MAINTENANCE_CONTRACT_COLUMNS).single()
+    return { data: data ? (data as unknown as MaintenanceContract) : null, error: error ? { message: error.message } : null }
+  }
+  return { data: null, error: { message: 'Offline: Wartungsverträge nur online anlegbar.' } }
+}
+
+export const updateMaintenanceContract = async (
+  id: string,
+  payload: Partial<{ contract_number: string; start_date: string; end_date: string | null }>
+): Promise<{ error: { message: string } | null }> => {
+  const full = { ...payload, id, updated_at: new Date().toISOString() }
+  if (isOnline()) {
+    const { error } = await supabase.from('maintenance_contracts').update(full).eq('id', id)
+    return { error: error ? { message: error.message } : null }
+  }
+  return { error: { message: 'Offline: Wartungsverträge nur online bearbeitbar.' } }
+}
+
+export const deleteMaintenanceContract = async (id: string): Promise<{ error: { message: string } | null }> => {
+  if (isOnline()) {
+    const { error } = await supabase.from('maintenance_contracts').delete().eq('id', id)
+    return { error: error ? { message: error.message } : null }
+  }
+  return { error: { message: 'Offline: Wartungsverträge nur online löschbar.' } }
+}
+
 export const fetchAllBvs = async (): Promise<BV[]> => {
   if (isOnline()) {
-    const { data, error } = await supabase.from('bvs').select('*').order('name')
+    const { data, error } = await supabase.from('bvs').select(BV_COLUMNS).order('name')
     if (!error && data) {
-      setCachedBvs(data as BV[])
-      return data as BV[]
+      const bvs = data as unknown as BV[]
+      setCachedBvs(bvs)
+      return bvs
     }
   }
   return getCachedBvs() as BV[]
@@ -173,10 +264,14 @@ export const fetchAllBvs = async (): Promise<BV[]> => {
 
 export const fetchAllObjects = async (): Promise<Obj[]> => {
   if (isOnline()) {
-    const { data, error } = await supabase.from('objects').select('*').order('internal_id')
+    const { data, error } = await supabase
+      .from('objects')
+      .select(OBJECT_COLUMNS)
+      .order('internal_id')
     if (!error && data) {
-      setCachedObjects(data as Obj[])
-      return data as Obj[]
+      const objs = data as unknown as Obj[]
+      setCachedObjects(objs)
+      return objs
     }
   }
   return getCachedObjects() as Obj[]
@@ -229,15 +324,26 @@ const mapAuditRow = (row: Record<string, unknown>): AuditLogEntry => ({
   created_at: row.created_at ? new Date(row.created_at as string).toISOString() : '',
 })
 
-export const fetchAuditLog = async (limit = 200): Promise<AuditLogEntry[]> => {
+export const fetchAuditLog = async (limit = 200, offset = 0): Promise<AuditLogEntry[]> => {
   if (!isOnline()) {
     return (getCachedAuditLog() as AuditLogEntry[]) ?? []
   }
-  const { data, error } = await supabase.rpc('get_audit_log', { limit_rows: limit })
-  if (error || !Array.isArray(data)) return (getCachedAuditLog() as AuditLogEntry[]) ?? []
-  const mapped = data.map((row: Record<string, unknown>) => mapAuditRow(row))
-  setCachedAuditLog(mapped)
-  return mapped
+  const { data, error } = await supabase.rpc('get_audit_log', { limit_rows: limit, offset_rows: offset })
+  if (error || !Array.isArray(data)) return []
+  return data.map((row: Record<string, unknown>) => mapAuditRow(row))
+}
+
+export type AuditLogDetailEntry = AuditLogEntry & { user_name?: string | null }
+
+export const fetchAuditLogDetail = async (id: string): Promise<AuditLogDetailEntry | null> => {
+  if (!isOnline()) return null
+  const { data, error } = await supabase.rpc('get_audit_log_detail', { entry_id: id })
+  if (error || !Array.isArray(data) || data.length === 0) return null
+  const row = data[0] as Record<string, unknown>
+  return {
+    ...mapAuditRow(row),
+    user_name: (row.user_name as string) ?? null,
+  }
 }
 
 type CustomerPayload = Omit<Customer, 'id' | 'created_at' | 'updated_at'> & {
@@ -251,9 +357,13 @@ export const createCustomer = async (
 ): Promise<{ data: Customer | null; error: { message: string } | null }> => {
   const full = { ...payload, updated_at: new Date().toISOString() }
   if (isOnline()) {
-    const { data, error } = await supabase.from('customers').insert(full).select().single()
-    if (!error && data) setCachedCustomers([...(getCachedCustomers() as Customer[]), data as Customer])
-    return { data: data as Customer | null, error: error ? { message: error.message } : null }
+    const { data, error } = await supabase.from('customers').insert(full).select(CUSTOMER_COLUMNS).single()
+    if (!error && data) {
+      const customer = data as unknown as Customer
+      setCachedCustomers([...(getCachedCustomers() as Customer[]), customer])
+      return { data: customer, error: null }
+    }
+    return { data: null, error: error ? { message: error.message } : null }
   }
   const id = crypto.randomUUID()
   addToOutbox({ table: 'customers', action: 'insert', payload: { ...full, id }, tempId: id })
@@ -300,12 +410,13 @@ export const createBv = async (
 ): Promise<{ data: BV | null; error: { message: string } | null }> => {
   const full = { ...payload, updated_at: new Date().toISOString() }
   if (isOnline()) {
-    const { data, error } = await supabase.from('bvs').insert(full).select().single()
+    const { data, error } = await supabase.from('bvs').insert(full).select(BV_COLUMNS).single()
     if (!error && data) {
+      const bv = data as unknown as BV
       const all = getCachedBvs() as BV[]
-      setCachedBvs([...all, data as BV])
+      setCachedBvs([...all, bv])
     }
-    return { data: data as BV | null, error: error ? { message: error.message } : null }
+    return { data: data ? (data as unknown as BV) : null, error: error ? { message: error.message } : null }
   }
   const id = crypto.randomUUID()
   addToOutbox({ table: 'bvs', action: 'insert', payload: { ...full, id }, tempId: id })
@@ -353,12 +464,13 @@ export const createObject = async (
 ): Promise<{ data: Obj | null; error: { message: string } | null }> => {
   const full = { ...payload, updated_at: new Date().toISOString() }
   if (isOnline()) {
-    const { data, error } = await supabase.from('objects').insert(full).select().single()
+    const { data, error } = await supabase.from('objects').insert(full).select(OBJECT_COLUMNS).single()
     if (!error && data) {
+      const obj = data as unknown as Obj
       const all = getCachedObjects() as Obj[]
-      setCachedObjects([...all, data as Obj])
+      setCachedObjects([...all, obj])
     }
-    return { data: data as Obj | null, error: error ? { message: error.message } : null }
+    return { data: data ? (data as unknown as Obj) : null, error: error ? { message: error.message } : null }
   }
   const id = crypto.randomUUID()
   addToOutbox({ table: 'objects', action: 'insert', payload: { ...full, id }, tempId: id })
@@ -409,13 +521,13 @@ export const fetchMaintenanceReports = async (
   if (isOnline()) {
     const { data, error } = await supabase
       .from('maintenance_reports')
-      .select('*')
+      .select(MAINTENANCE_REPORT_COLUMNS)
       .eq('object_id', objectId)
       .order('maintenance_date', { ascending: false })
     if (!error && data) {
-      setCachedMaintenanceReports(objectId, data)
-      const merged = mergeMaintenanceCacheWithOutbox(objectId, data as MaintenanceReport[])
-      return merged
+      const reports = data as unknown as MaintenanceReport[]
+      setCachedMaintenanceReports(objectId, reports)
+      return mergeMaintenanceCacheWithOutbox(objectId, reports)
     }
   }
   const cached = getCachedMaintenanceReports(objectId) as MaintenanceReport[]
@@ -473,10 +585,10 @@ export const fetchMaintenanceReportSmokeDetectors = async (
   if (isOnline()) {
     const { data, error } = await supabase
       .from('maintenance_report_smoke_detectors')
-      .select('*')
+      .select(MAINTENANCE_REPORT_SMOKE_DETECTOR_COLUMNS)
       .eq('report_id', reportId)
     if (error) return []
-    return (data ?? []) as MaintenanceReportSmokeDetector[]
+    return (data ?? []) as unknown as MaintenanceReportSmokeDetector[]
   }
   return []
 }
@@ -506,26 +618,27 @@ export const createMaintenanceReport = async (
   const { data: report, error } = await supabase
     .from('maintenance_reports')
     .insert(full)
-    .select()
+    .select(MAINTENANCE_REPORT_COLUMNS)
     .single()
   if (error) return { data: null, error: { message: error.message } }
+  const reportTyped = report as unknown as MaintenanceReport
   if (report && smokeDetectors.length > 0) {
     const rows = smokeDetectors.map((sd) => ({
-      report_id: report.id,
+      report_id: reportTyped.id,
       smoke_detector_label: sd.label,
       status: sd.status,
     }))
     await supabase.from('maintenance_report_smoke_detectors').insert(rows)
   }
   const cached = getCachedMaintenanceReports(payload.object_id) as MaintenanceReport[]
-  setCachedMaintenanceReports(payload.object_id, [report, ...cached])
+  setCachedMaintenanceReports(payload.object_id, [reportTyped, ...cached])
   notifyDataChange()
 
   supabase.functions.invoke('notify-portal-on-report', {
-    body: { report_id: report.id },
+    body: { report_id: reportTyped.id },
   }).catch(() => { /* fire-and-forget */ })
 
-  return { data: report as MaintenanceReport, error: null }
+  return { data: reportTyped, error: null }
 }
 
 export const updateMaintenanceReportSignatures = async (
@@ -602,10 +715,10 @@ export const fetchMaintenanceReportPhotos = async (
   if (isOnline()) {
     const { data, error } = await supabase
       .from('maintenance_report_photos')
-      .select('*')
+      .select(MAINTENANCE_REPORT_PHOTO_COLUMNS)
       .eq('report_id', reportId)
     if (error) return []
-    return (data ?? []) as MaintenanceReportPhotoDisplay[]
+    return (data ?? []) as unknown as MaintenanceReportPhotoDisplay[]
   }
   const cached = (getCachedMaintenancePhotos() as MaintenanceReportPhoto[]).filter(
     (p) => p.report_id === reportId
@@ -662,9 +775,9 @@ export const uploadMaintenancePhoto = async (
   const { data: photo, error } = await supabase
     .from('maintenance_report_photos')
     .insert({ report_id: reportId, storage_path: path, caption: caption?.trim() || null })
-    .select()
+    .select(MAINTENANCE_REPORT_PHOTO_COLUMNS)
     .single()
-  return { data: photo as MaintenanceReportPhotoDisplay, error: error ? { message: error.message } : null }
+  return { data: photo ? (photo as unknown as MaintenanceReportPhotoDisplay) : null, error: error ? { message: error.message } : null }
 }
 
 export const getMaintenancePhotoUrl = (storagePath: string): string => {
@@ -796,11 +909,11 @@ export const fetchObjectPhotos = async (objectId: string): Promise<ObjectPhotoDi
   if (isOnline()) {
     const { data, error } = await supabase
       .from('object_photos')
-      .select('*')
+      .select(OBJECT_PHOTO_COLUMNS)
       .eq('object_id', objectId)
       .order('created_at', { ascending: false })
     if (error) return []
-    return (data ?? []) as ObjectPhotoDisplay[]
+    return (data ?? []) as unknown as ObjectPhotoDisplay[]
   }
   const cached = (getCachedObjectPhotos() as ObjectPhoto[]).filter((p) => p.object_id === objectId)
   const outbox = getObjectPhotoOutbox().filter((o) => o.object_id === objectId)
@@ -855,9 +968,9 @@ export const uploadObjectPhoto = async (
   const { data: photo, error } = await supabase
     .from('object_photos')
     .insert({ object_id: objectId, storage_path: path, caption: caption?.trim() || null })
-    .select()
+    .select(OBJECT_PHOTO_COLUMNS)
     .single()
-  return { data: photo as ObjectPhotoDisplay, error: error ? { message: error.message } : null }
+  return { data: photo ? (photo as unknown as ObjectPhotoDisplay) : null, error: error ? { message: error.message } : null }
 }
 
 export const deleteObjectPhoto = async (
@@ -909,11 +1022,11 @@ export const fetchObjectDocuments = async (objectId: string): Promise<ObjectDocu
   if (isOnline()) {
     const { data, error } = await supabase
       .from('object_documents')
-      .select('*')
+      .select(OBJECT_DOCUMENT_COLUMNS)
       .eq('object_id', objectId)
       .order('created_at', { ascending: false })
     if (error) return []
-    return (data ?? []) as ObjectDocumentDisplay[]
+    return (data ?? []) as unknown as ObjectDocumentDisplay[]
   }
   const cached = (getCachedObjectDocuments() as ObjectDocument[]).filter((d) => d.object_id === objectId)
   const outbox = getObjectDocumentOutbox().filter((o) => o.object_id === objectId)
@@ -981,9 +1094,9 @@ export const uploadObjectDocument = async (
       title: title?.trim() || null,
       file_name: fileName,
     })
-    .select()
+    .select(OBJECT_DOCUMENT_COLUMNS)
     .single()
-  return { data: doc as ObjectDocumentDisplay, error: error ? { message: error.message } : null }
+  return { data: doc ? (doc as unknown as ObjectDocumentDisplay) : null, error: error ? { message: error.message } : null }
 }
 
 export const deleteObjectDocument = async (
@@ -1040,11 +1153,11 @@ export const fetchPortalUsers = async (customerId: string): Promise<PortalUser[]
   if (!isOnline()) return []
   const { data, error } = await supabase
     .from('customer_portal_users')
-    .select('*')
+    .select(PORTAL_USER_COLUMNS)
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false })
   if (error) return []
-  return (data ?? []) as PortalUser[]
+  return (data ?? []) as unknown as PortalUser[]
 }
 
 export const invitePortalUser = async (
@@ -1068,22 +1181,101 @@ export const deletePortalUser = async (
   return { error: error ? { message: error.message } : null }
 }
 
+export type PortalUserAssignment = {
+  id: string
+  user_id: string | null
+  customer_id: string
+  email: string
+}
+
+const PORTAL_ASSIGNMENT_COLUMNS = 'id, user_id, customer_id, email'
+
+export const fetchAllPortalUserAssignments = async (): Promise<PortalUserAssignment[]> => {
+  if (!isOnline()) return []
+  const { data, error } = await supabase
+    .from('customer_portal_users')
+    .select(PORTAL_ASSIGNMENT_COLUMNS)
+  if (error) return []
+  return (data ?? []) as PortalUserAssignment[]
+}
+
+export const linkPortalUserToCustomer = async (
+  userId: string,
+  email: string,
+  customerId: string
+): Promise<{ error: string | null }> => {
+  if (!isOnline()) return { error: 'Offline: Nicht möglich' }
+  const { error } = await supabase.from('customer_portal_users').insert({
+    user_id: userId,
+    email,
+    customer_id: customerId,
+  })
+  return { error: error?.message ?? null }
+}
+
+// --- Portal-Objekt/BV-Sichtbarkeit (Whitelist) ---
+
+export type PortalVisibilityRow = { user_id: string; customer_id: string; bv_id: string }
+
+export const fetchPortalVisibility = async (userId: string): Promise<PortalVisibilityRow[]> => {
+  if (!isOnline()) return []
+  const { data, error } = await supabase
+    .from('portal_user_object_visibility')
+    .select('user_id, customer_id, bv_id')
+    .eq('user_id', userId)
+  if (error) return []
+  return (data ?? []) as PortalVisibilityRow[]
+}
+
+export const setPortalVisibilityForCustomer = async (
+  userId: string,
+  customerId: string,
+  bvIds: string[]
+): Promise<{ error: string | null }> => {
+  if (!isOnline()) return { error: 'Offline: Nicht möglich' }
+  const { error: delErr } = await supabase
+    .from('portal_user_object_visibility')
+    .delete()
+    .eq('user_id', userId)
+    .eq('customer_id', customerId)
+  if (delErr) return { error: delErr.message }
+  if (bvIds.length === 0) return { error: null }
+  const rows = bvIds.map((bv_id) => ({ user_id: userId, customer_id: customerId, bv_id }))
+  const { error: insErr } = await supabase.from('portal_user_object_visibility').insert(rows)
+  return { error: insErr?.message ?? null }
+}
+
 // --- Aufträge (Orders) ---
 
 export const fetchOrders = async (): Promise<Order[]> => {
   if (isOnline()) {
     const { data, error } = await supabase
       .from('orders')
-      .select('*')
+      .select(ORDER_COLUMNS)
       .order('order_date', { ascending: false })
     if (!error && data) {
-      setCachedOrders(data)
-      return (data ?? []) as Order[]
+      const orders = data as unknown as Order[]
+      setCachedOrders(orders)
+      return orders
     }
   }
   return (getCachedOrders() as Order[]).sort(
     (a, b) => (b.order_date || '').localeCompare(a.order_date || '')
   )
+}
+
+export const fetchOrderById = async (orderId: string): Promise<Order | null> => {
+  if (!isOnline()) {
+    const cached = getCachedOrders() as Order[]
+    return cached.find((o) => o.id === orderId) ?? null
+  }
+  const { data, error } = await supabase
+    .from('orders')
+    .select(ORDER_COLUMNS)
+    .eq('id', orderId)
+    .single()
+  if (error || !data) return null
+  return data as unknown as Order
 }
 
 export const fetchOrdersAssignedTo = async (userId: string): Promise<Order[]> => {
@@ -1114,13 +1306,56 @@ export const createOrder = async (
     notifyDataChange()
     return { data: full as Order, error: null }
   }
-  const { data, error } = await supabase.from('orders').insert(full).select().single()
+  const { data, error } = await supabase.from('orders').insert(full).select(ORDER_COLUMNS).single()
   if (!error && data) {
+    const order = data as unknown as Order
     const cached = getCachedOrders() as Order[]
-    setCachedOrders([data as Order, ...cached])
+    setCachedOrders([order, ...cached])
     notifyDataChange()
+    return { data: order, error: null }
   }
-  return { data: data as Order | null, error: error ? { message: error.message } : null }
+  return { data: null, error: error ? { message: error.message } : null }
+}
+
+// --- Order Completions (Monteursbericht) ---
+
+export const fetchCompletionByOrderId = async (orderId: string): Promise<OrderCompletion | null> => {
+  if (!isOnline()) return null
+  const { data, error } = await supabase
+    .from('order_completions')
+    .select(ORDER_COMPLETION_COLUMNS)
+    .eq('order_id', orderId)
+    .maybeSingle()
+  if (error) return null
+  return data as unknown as OrderCompletion | null
+}
+
+export const createOrderCompletion = async (
+  payload: Omit<OrderCompletion, 'id' | 'created_at' | 'updated_at'>
+): Promise<{ data: OrderCompletion | null; error: { message: string } | null }> => {
+  if (!isOnline()) {
+    return { data: null, error: { message: 'Offline: Nicht möglich' } }
+  }
+  const { data, error } = await supabase
+    .from('order_completions')
+    .insert(payload)
+    .select(ORDER_COMPLETION_COLUMNS)
+    .single()
+  return { data: data ? (data as unknown as OrderCompletion) : null, error: error ? { message: error.message } : null }
+}
+
+export const updateOrderCompletion = async (
+  id: string,
+  updates: Partial<Omit<OrderCompletion, 'id' | 'order_id' | 'created_at'>>
+): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) {
+    return { error: { message: 'Offline: Nicht möglich' } }
+  }
+  const { error } = await supabase
+    .from('order_completions')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  return { error: error ? { message: error.message } : null }
 }
 
 export const updateOrderStatus = async (

@@ -11,6 +11,76 @@
  */
 
 const STORAGE_KEY = 'vico-license-number'
+const STORAGE_LAST_CHECK_PREFIX = 'vico-license-last-check-'
+const STORAGE_CHECK_INTERVAL_PREFIX = 'vico-license-check-interval-'
+const STORAGE_CACHE = 'vico-license-cache'
+
+type CachedLicense = { data: LicenseApiResponse; ts: number; licenseNumber: string }
+
+export const getCachedLicenseResponse = (licenseNumber: string): LicenseApiResponse | null => {
+  const meta = getCachedLicenseWithMeta(licenseNumber)
+  return meta?.data ?? null
+}
+
+/** Cache inkl. Zeitstempel für „Cache frisch?“-Prüfung (z. B. < 5 Min = sofort nutzen). */
+export const getCachedLicenseWithMeta = (
+  licenseNumber: string
+): { data: LicenseApiResponse; ts: number } | null => {
+  if (typeof window === 'undefined') return null
+  const raw = localStorage.getItem(STORAGE_CACHE)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as CachedLicense
+    if (!parsed?.data?.license || parsed.licenseNumber !== licenseNumber) return null
+    return { data: parsed.data, ts: parsed.ts ?? 0 }
+  } catch {
+    return null
+  }
+}
+
+export const setCachedLicenseResponse = (
+  data: LicenseApiResponse,
+  licenseNumber: string
+): void => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(
+      STORAGE_CACHE,
+      JSON.stringify({ data, ts: Date.now(), licenseNumber })
+    )
+  }
+}
+
+export const getLastLicenseCheck = (licenseNumber: string): number | null => {
+  if (typeof window === 'undefined') return null
+  const raw = localStorage.getItem(`${STORAGE_LAST_CHECK_PREFIX}${licenseNumber}`)
+  if (!raw) return null
+  const ts = parseInt(raw, 10)
+  return Number.isFinite(ts) ? ts : null
+}
+
+export const setLastLicenseCheck = (timestamp: number, licenseNumber: string): void => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(`${STORAGE_LAST_CHECK_PREFIX}${licenseNumber}`, String(timestamp))
+  }
+}
+
+export const getStoredCheckInterval = (
+  licenseNumber: string
+): 'on_start' | 'daily' | 'weekly' | null => {
+  if (typeof window === 'undefined') return null
+  const raw = localStorage.getItem(`${STORAGE_CHECK_INTERVAL_PREFIX}${licenseNumber}`)
+  if (raw !== 'on_start' && raw !== 'daily' && raw !== 'weekly') return null
+  return raw
+}
+
+export const setStoredCheckInterval = (
+  interval: 'on_start' | 'daily' | 'weekly',
+  licenseNumber: string
+): void => {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(`${STORAGE_CHECK_INTERVAL_PREFIX}${licenseNumber}`, interval)
+  }
+}
 
 export const getStoredLicenseNumber = (): string | null => {
   if (typeof window === 'undefined') return null
@@ -33,12 +103,14 @@ export type LicenseApiResponse = {
   license: {
     tier: string
     valid_until: string | null
+    grace_period_days?: number
     max_users: number | null
     max_customers: number | null
     check_interval: 'on_start' | 'daily' | 'weekly'
     features: Record<string, boolean>
     valid: boolean
     expired: boolean
+    read_only?: boolean
   }
   design: {
     app_name: string
@@ -70,8 +142,10 @@ const DEFAULT_DESIGN: LicenseApiResponse['design'] = {
   favicon_url: null,
 }
 
+/** Timeout in ms (Standard 10s für schnellere Fehlerbehandlung). */
 export const fetchLicenseFromApi = async (
-  licenseNumber: string
+  licenseNumber: string,
+  timeoutMs = 10_000
 ): Promise<LicenseApiResponse | null> => {
   const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
   if (!apiUrl) return null
@@ -81,7 +155,7 @@ export const fetchLicenseFromApi = async (
   url.searchParams.set('licenseNumber', licenseNumber.trim())
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 15_000)
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
   const apiKey = (import.meta.env.VITE_LICENSE_API_KEY ?? '').trim()
   const headers: Record<string, string> = { Accept: 'application/json' }

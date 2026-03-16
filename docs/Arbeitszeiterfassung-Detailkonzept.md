@@ -239,37 +239,38 @@ Für Nachvollziehbarkeit bei Admin/Teamleiter-Bearbeitungen:
 
 ### Phase 1 – MVP (5–6 T)
 
-- [ ] Lizenz-Feature `arbeitszeiterfassung`
-- [ ] Component Setting `arbeitszeiterfassung`
-- [ ] Tabellen: `time_entries`, `time_breaks`
-- [ ] RLS, Audit-Trigger für time_entries
-- [ ] Route `/arbeitszeit`, Menüpunkt
-- [ ] Tagesansicht: Start, Pause, Ende
-- [ ] Manuelle Pausen (time_breaks)
-- [ ] ArbZG §4-Hinweis bei >6h; §3-Hinweis bei 8h; §5-Warnung bei <11h Ruhezeit
-- [ ] Minutengenau speichern (keine Rundung)
-- [ ] „Vergessen auszustempeln“-Hinweis (z.B. nach 10h oder 20 Uhr)
-- [ ] Wochen-Summe in Ansicht
-- [ ] Offline: Cache + Outbox
-- [ ] Nur eigene Zeiten sichtbar (Admin sieht alle)
+- [x] Lizenz-Feature `arbeitszeiterfassung`
+- [x] Component Setting `arbeitszeiterfassung`
+- [x] Tabellen: `time_entries`, `time_breaks`
+- [x] RLS, Audit-Trigger für time_entries
+- [x] Route `/arbeitszeit`, Menüpunkt
+- [x] Tagesansicht: Start, Pause, Ende
+- [x] Manuelle Pausen (time_breaks)
+- [x] ArbZG §4-Hinweis bei >6h; §3-Hinweis bei 8h; §5-Warnung bei <11h Ruhezeit
+- [x] Minutengenau speichern (keine Rundung)
+- [x] „Vergessen auszustempeln“-Hinweis (z.B. nach 10h oder 20 Uhr)
+- [x] Wochen-Summe in Ansicht
+- [x] Offline: Cache + Outbox
+- [x] Nur eigene Zeiten sichtbar (Admin sieht alle)
 
 ### Phase 2 (2–3 T)
 
-- [ ] `time_entry_edit_log` + Grund-Auswahl
-- [ ] Admin/Teamleiter: Bearbeiten mit Grund
-- [ ] Wochenansicht
-- [ ] Monatsansicht
-- [ ] Separates Zeiterfassungs-LOG (Übersicht Änderungen)
-- [ ] Arbeitszeitkonto (Überstunden)
+- [x] `time_entry_edit_log` + Grund-Auswahl
+- [x] Admin/Teamleiter: Bearbeiten mit Grund
+- [x] Wochenansicht
+- [x] Monatsansicht
+- [x] Separates Zeiterfassungs-LOG (Übersicht Änderungen)
+- [x] Arbeitszeitkonto (Überstunden): Soll pro User/Monat (`profiles.soll_minutes_per_month`), Anzeige Soll/Ist/Saldo in Monatsansicht; Admin kann Soll in Benutzerverwaltung setzen
 - [ ] Rolle Teamleiter (optional)
 - [ ] Abwesenheits-Grund (optional)
-- [ ] **Optional:** Auftragszuordnung (order_id) – Vico-spezifisch
+- [x] **Optional:** Auftragszuordnung (order_id) – Vico-spezifisch: Beim Start optional Auftrag wählen, im Admin-Bearbeiten-Modal, Anzeige in Tagesansicht
 
 ### Phase 3
 
 - [ ] Export CSV/Excel (mit Roadmap Punkt 3)
 - [ ] ArbZG-Vorschlag automatisch („Pause jetzt starten?“)
 - [ ] Genehmigungsworkflow
+- [ ] **Ortung (GPS):** Standort bei Start/Ende erfassen, gesetzeskonform mit Informationspflicht und Einwilligung; Anzeige im Zeiterfassungs-Portal. Siehe `docs/Zeiterfassung-Ortung-GPS-Recht-und-Planung.md`.
 
 ---
 
@@ -295,6 +296,8 @@ Für Nachvollziehbarkeit bei Admin/Teamleiter-Bearbeitungen:
 
 **Phase:** Optional in Phase 2. Spalte `order_id` kann in Phase 1 bereits im Schema vorgesehen werden (NULL).
 
+**Aktueller Stand (Februar 2025):** Die Auftragszuordnung ist **technisch umgesetzt** (order_id, Start mit optionalem Auftrag, Bearbeiten-Modal, Anzeige in der Tagesansicht). In der UI wird sie **vorerst ausgeblendet** (Feature-Flag), da sie an der Zeiterfassung als verwirrend empfunden wird. **Nicht vergessen:** Vor Release entscheiden – entweder wieder einblenden oder bei endgültigem Nichtbedarf die Implementierung gezielt entfernen (UI, optionale Parameter in APIs; Spalte `order_id` kann aus Kompatibilität bleiben). Siehe auch `docs/Zeiterfassung-Offene-Punkte-und-IONOS.md` Abschnitt 5.
+
 ---
 
 ## 12. Weitere Aspekte
@@ -305,6 +308,7 @@ Für Nachvollziehbarkeit bei Admin/Teamleiter-Bearbeitungen:
 | **DSGVO** | Zeitdaten sind personenbezogen. Zweckbindung dokumentieren. Löschkonzept: Nach 2 Jahren Aufbewahrung optional Anonymisierung/Löschung (nach Prüfung). |
 | **Soll-Arbeitszeit** | Pro User/Monat konfigurierbar für Arbeitszeitkonto (z.B. 40 h/Woche). In Phase 2. |
 | **Mobile** | Responsive Design – Techniker erfassen oft mobil. Touch-freundliche Buttons. |
+| **Ortung (GPS)** | Optionale Standorterfassung bei Start/Ende; erfordert Einwilligung, Informationspflicht (Art. 13 DSGVO), ggf. Betriebsvereinbarung und DSFA. Vollständiger Plan: `docs/Zeiterfassung-Ortung-GPS-Recht-und-Planung.md`. |
 
 ### 12.1 Regelmäßige Sicherung (Datenverlust vermeiden)
 

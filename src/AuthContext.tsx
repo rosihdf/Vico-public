@@ -1,9 +1,9 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
-import { supabase, setRememberMe } from './supabase'
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
+import { supabase, setRememberMe, warmUpConnection } from './supabase'
 import { getSupabaseErrorMessage } from './supabaseErrors'
-import type { User, Session } from '@supabase/supabase-js'
+import type { User } from '@supabase/supabase-js'
 
-type UserRole = 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
+type UserRole = 'admin' | 'teamleiter' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
 
 type Profile = {
   id: string
@@ -29,9 +29,11 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+const VALID_ROLES: readonly string[] = ['admin', 'teamleiter', 'mitarbeiter', 'operator', 'leser', 'demo', 'kunde']
+
 const fetchProfileSupabase = async (userId: string): Promise<Profile | null> => {
   const { data: roleData, error: roleError } = await supabase.rpc('get_my_role')
-  if (!roleError && roleData != null && (roleData === 'admin' || roleData === 'mitarbeiter' || roleData === 'operator' || roleData === 'leser' || roleData === 'demo' || roleData === 'kunde')) {
+  if (!roleError && roleData != null && VALID_ROLES.includes(roleData as string)) {
     return { id: userId, email: null, role: roleData as UserRole }
   }
   const { data, error } = await supabase
@@ -48,6 +50,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [loginError, setLoginError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const authInFlight = useRef(false)
 
   const userEmail = user?.email ?? null
   const isAuthenticated = !!user
@@ -197,31 +200,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!u) return
     const profile = await fetchProfileSupabase(u.id)
     setUserRole(profile?.role ?? 'mitarbeiter')
-  }, [user])
+  }, [])
 
   useEffect(() => {
-    const initSupabaseAuth = async (session: Session | null) => {
-      try {
-        if (!session?.user) {
-          setUser(null)
-          setUserRole(null)
-          setIsLoading(false)
-          return
-        }
-        setUser(session.user)
-        try {
-          const profile = await fetchProfileSupabase(session.user.id)
-          setUserRole(profile?.role ?? 'mitarbeiter')
-        } catch {
-          setUserRole('mitarbeiter')
-        }
-      } catch {
-        setUser(null)
-        setUserRole(null)
-      } finally {
-        setIsLoading(false)
-      }
-    }
+    warmUpConnection()
 
     const url = import.meta.env.VITE_SUPABASE_URL
     const key = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -232,16 +214,43 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const safetyTimeoutId = setTimeout(() => {
       setIsLoading(false)
-    }, 4000)
+    }, 30_000)
 
     const loadSession = async (retryCount = 0) => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session && retryCount < 1) {
-        await new Promise((r) => setTimeout(r, 200))
-        return loadSession(1)
+      if (authInFlight.current) return
+      authInFlight.current = true
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) {
+          if (retryCount < 2) {
+            authInFlight.current = false
+            await new Promise((r) => setTimeout(r, 500))
+            return loadSession(retryCount + 1)
+          }
+          setUser(null)
+          setUserRole(null)
+          return
+        }
+        setUser(session.user)
+        try {
+          const profile = await fetchProfileSupabase(session.user.id)
+          setUserRole(profile?.role ?? 'mitarbeiter')
+        } catch {
+          setUserRole('mitarbeiter')
+        }
+      } catch {
+        if (retryCount < 2) {
+          authInFlight.current = false
+          await new Promise((r) => setTimeout(r, 500))
+          return loadSession(retryCount + 1)
+        }
+        setUser(null)
+        setUserRole(null)
+      } finally {
+        authInFlight.current = false
       }
-      await initSupabaseAuth(session)
     }
+
     loadSession()
       .catch(() => {
         setUser(null)
@@ -253,8 +262,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        await initSupabaseAuth(session)
+      (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          setUser(null)
+          setUserRole(null)
+          setIsLoading(false)
+          return
+        }
+        if (session?.user) setUser(session.user)
       }
     )
 

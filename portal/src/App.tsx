@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { supabase } from './lib/supabase'
+import { supabase, warmUpConnection } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
@@ -10,28 +10,58 @@ import Datenschutz from './pages/Datenschutz'
 import Impressum from './pages/Impressum'
 import Layout from './components/Layout'
 
+const AUTH_TIMEOUT_MS = 30_000
+
 const App = () => {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [loadingHint, setLoadingHint] = useState(false)
+  const authInFlight = useRef(false)
 
-  const initAuth = useCallback(async () => {
+  const initAuth = useCallback(async (retryCount = 0) => {
+    if (authInFlight.current) return
+    authInFlight.current = true
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      setUser(session?.user ?? null)
+      const sessionPromise = supabase.auth.getSession()
+      const result = await Promise.race([
+        sessionPromise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Zeitüberschreitung')), AUTH_TIMEOUT_MS)
+        ),
+      ])
+      setUser(result.data?.session?.user ?? null)
     } catch {
+      if (retryCount < 2) {
+        authInFlight.current = false
+        await new Promise((r) => setTimeout(r, 1_000))
+        return initAuth(retryCount + 1)
+      }
       setUser(null)
     } finally {
+      authInFlight.current = false
       setIsLoading(false)
     }
   }, [])
 
   useEffect(() => {
+    if (!isLoading) return
+    const timer = setTimeout(() => setLoadingHint(true), 5_000)
+    return () => clearTimeout(timer)
+  }, [isLoading])
+
+  useEffect(() => {
+    warmUpConnection()
     initAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          setUser(null)
+          setIsLoading(false)
+          return
+        }
         setUser(session?.user ?? null)
-        setIsLoading(false)
+        if (isLoading) setIsLoading(false)
       }
     )
 
@@ -48,7 +78,12 @@ const App = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-vico-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-slate-500 dark:text-slate-400">Lade Vico Türen & Tore Kundenportal…</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Lade Kundenportal…</p>
+          {loadingHint && (
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 max-w-xs">
+              Verbindung dauert… Bei inaktivem Server kann das Aufwecken etwas dauern.
+            </p>
+          )}
         </div>
       </div>
     )

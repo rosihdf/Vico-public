@@ -10,12 +10,15 @@ type LicenseResponse = {
   license: {
     tier: string
     valid_until: string | null
+    grace_period_days: number
     max_users: number | null
     max_customers: number | null
     check_interval: 'on_start' | 'daily' | 'weekly'
     features: Record<string, boolean>
     valid: boolean
     expired: boolean
+    read_only: boolean
+    is_trial: boolean
   }
   design: {
     app_name: string
@@ -68,6 +71,8 @@ serve(async (req) => {
         tenant_id,
         tier,
         valid_until,
+        is_trial,
+        grace_period_days,
         max_users,
         max_customers,
         check_interval,
@@ -104,17 +109,25 @@ serve(async (req) => {
     const tenant = licenseRow.tenants as Record<string, unknown> | null
     const validUntil = licenseRow.valid_until ? new Date(licenseRow.valid_until) : null
     const isExpired = validUntil !== null && validUntil < new Date()
+    const graceDays = Math.max(0, Number(licenseRow.grace_period_days) ?? 0)
+    const graceEnd = validUntil && graceDays > 0 ? new Date(validUntil) : null
+    if (graceEnd) graceEnd.setDate(graceEnd.getDate() + graceDays)
+    const withinGrace = isExpired && graceEnd !== null && graceEnd >= new Date()
+    const readOnly = withinGrace
 
     const response: LicenseResponse = {
       license: {
         tier: licenseRow.tier ?? 'professional',
         valid_until: licenseRow.valid_until,
+        grace_period_days: graceDays,
         max_users: licenseRow.max_users,
         max_customers: licenseRow.max_customers,
         check_interval: (licenseRow.check_interval as 'on_start' | 'daily' | 'weekly') ?? 'daily',
         features: (licenseRow.features as Record<string, boolean>) ?? {},
-        valid: !isExpired,
+        valid: !isExpired || withinGrace,
         expired: isExpired,
+        read_only: readOnly,
+        is_trial: Boolean(licenseRow.is_trial),
       },
       design: {
         app_name: (tenant?.app_name as string) ?? 'Vico',
