@@ -65,7 +65,7 @@ export type LimitExceededEntry = {
 }
 
 export const fetchLimitExceededLog = async (signal?: AbortSignal): Promise<LimitExceededEntry[]> => {
-  const { data, error } = await supabase
+  let query = supabase
     .from('limit_exceeded_log')
     .select(`
       id,
@@ -79,14 +79,15 @@ export const fetchLimitExceededLog = async (signal?: AbortSignal): Promise<Limit
       tenants (id, name)
     `)
     .order('created_at', { ascending: false })
-    .abortSignal(signal)
     .limit(100)
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
   if (error) return []
   return (data ?? []) as unknown as LimitExceededEntry[]
 }
 
 export const fetchLicenses = async (signal?: AbortSignal): Promise<LicenseWithTenant[]> => {
-  const { data, error } = await supabase
+  let query = supabase
     .from('licenses')
     .select(`
       id,
@@ -107,7 +108,8 @@ export const fetchLicenses = async (signal?: AbortSignal): Promise<LicenseWithTe
       license_models (id, name)
     `)
     .order('created_at', { ascending: false })
-    .abortSignal(signal)
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
   if (error) throw new Error(error.message)
   return (data ?? []) as unknown as LicenseWithTenant[]
 }

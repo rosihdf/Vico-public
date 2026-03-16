@@ -29,11 +29,12 @@ export type TenantInsert = Omit<Tenant, 'id' | 'created_at' | 'updated_at'> & Pa
 export type TenantUpdate = Partial<Omit<Tenant, 'id' | 'created_at'>>
 
 export const fetchTenants = async (signal?: AbortSignal): Promise<Tenant[]> => {
-  const { data, error } = await supabase
+  let query = supabase
     .from('tenants')
     .select('id, name, app_domain, portal_domain, app_name, primary_color')
     .order('name')
-    .abortSignal(signal)
+  if (signal) query = query.abortSignal(signal)
+  const { data, error } = await query
   if (error) throw new Error(error.message)
   return (data ?? []) as Tenant[]
 }
