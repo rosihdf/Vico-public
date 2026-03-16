@@ -70,7 +70,7 @@ export const fetchTimeEntriesForUser = async (
       .lte('date', toDate)
       .order('start', { ascending: false })
     if (error) return []
-    const entries = (data ?? []) as TimeEntry[]
+    const entries = (data ?? []) as unknown as TimeEntry[]
     const cached = getCachedTimeEntries() as TimeEntry[]
     const otherCached = cached.filter(
       (e) => e.user_id !== userId || e.date < fromDate || e.date > toDate
@@ -123,7 +123,7 @@ export const fetchTimeBreaksForEntry = async (entryId: string): Promise<TimeBrea
       .eq('time_entry_id', entryId)
       .order('start', { ascending: true })
     if (error) return []
-    return (data ?? []) as TimeBreak[]
+    return (data ?? []) as unknown as TimeBreak[]
   }
   return []
 }
@@ -186,7 +186,7 @@ export const startTimeEntry = async (
     .select(TIME_ENTRY_COLUMNS)
     .single()
   if (error) return { data: null, error: { message: error.message } }
-  const entry = data as TimeEntry
+  const entry = data as unknown as TimeEntry
   const cached = getCachedTimeEntries() as TimeEntry[]
   setCachedTimeEntries([entry, ...cached])
   notifyDataChange()

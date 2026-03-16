@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useToast } from '../ToastContext'
 import ConfirmDialog from './ConfirmDialog'
@@ -119,7 +119,7 @@ const ObjectFormModal = ({
   const { showError } = useToast()
   const isEdit = !!object
   /** Zuordnung: null = direkt unter Kunde, string = BV-ID. Wenn Kunde Objekte/BV hat, darf nicht "direkt unter Kunde" gewählt werden. */
-  const bvsList = customerBvs ?? []
+  const bvsList = useMemo(() => customerBvs ?? [], [customerBvs])
   const customerHasBvs = bvsList.length > 0
   const [assignmentBvId, setAssignmentBvId] = useState<string | null>(() => {
     if (effectiveBvId) return effectiveBvId
@@ -131,7 +131,7 @@ const ObjectFormModal = ({
     if (effectiveBvId) setAssignmentBvId(effectiveBvId)
     else if (bvsList.length > 0) setAssignmentBvId(bvsList[0].id)
     else setAssignmentBvId(null)
-  }, [object?.id, effectiveBvId, customerBvs])
+  }, [object, object?.id, effectiveBvId, bvsList])
   const [formData, setFormData] = useState<ObjectFormData>(
     object ? objToFormData(object) : { ...INITIAL_FORM, internal_id: `OBJ-${Date.now().toString(36).toUpperCase()}` }
   )
@@ -157,12 +157,12 @@ const ObjectFormModal = ({
   useEffect(() => {
     if (!object) return
     fetchObjectPhotos(object.id).then(setObjectPhotos)
-  }, [object?.id])
+  }, [object])
 
   useEffect(() => {
     if (!object) return
     fetchObjectDocuments(object.id).then(setObjectDocuments)
-  }, [object?.id])
+  }, [object])
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {

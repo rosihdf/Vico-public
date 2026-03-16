@@ -103,7 +103,7 @@ export const ComponentSettingsProvider = ({
       }
       return result
     },
-    [refresh]
+    [refresh, settings]
   )
 
   return (

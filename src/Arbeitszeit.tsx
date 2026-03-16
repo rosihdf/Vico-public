@@ -240,7 +240,7 @@ const Arbeitszeit = () => {
             Sie können optional Ihren Standort bei Arbeitsbeginn und -ende erfassen lassen. Die Erfassung erfolgt nur zu
             diesen Zeitpunkten, nicht dauerhaft. Rechtsgrundlage ist Ihre Einwilligung (§ 26 Abs. 2 BDSG, Art. 6 Abs. 1
             lit. a DSGVO). Die Angabe ist freiwillig; Sie können die Zeiterfassung auch ohne Ortung nutzen. Sie können
-            die Einwilligung jederzeit widerrufen (z. B. in den Einstellungen).
+            die Einwilligung jederzeit widerrufen (z. B. in den Einstellungen).
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <input

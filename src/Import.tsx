@@ -86,7 +86,7 @@ const Import = () => {
     let bvsCreated = 0
 
     let customers: Customer[] = []
-    let bvsByCustomerId: Map<string, BV[]> = new Map()
+    const bvsByCustomerId = new Map<string, BV[]>()
     try {
       customers = await fetchCustomers()
       for (const c of customers) {

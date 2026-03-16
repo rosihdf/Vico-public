@@ -61,40 +61,42 @@ const Suche = () => {
         setResults([])
         return
       }
-      const mapped: SearchResult[] = data.map((row: any) => {
+      const mapped: SearchResult[] = data.map((row: Record<string, unknown>) => {
+        const str = (v: unknown) => (v != null ? String(v) : '')
+        const strOrNull = (v: unknown) => (v != null ? String(v) : null)
         if (row.entity_type === 'customer') {
           return {
             type: 'customer',
-            customerId: row.customer_id,
-            customerName: row.customer_name,
-            customerStreet: row.customer_street,
-            customerHouseNumber: row.customer_house_number,
-            customerCity: row.customer_city,
+            customerId: str(row.customer_id),
+            customerName: str(row.customer_name),
+            customerStreet: strOrNull(row.customer_street),
+            customerHouseNumber: strOrNull(row.customer_house_number),
+            customerCity: strOrNull(row.customer_city),
           }
         }
         if (row.entity_type === 'bv') {
           return {
             type: 'bv',
-            customerId: row.customer_id,
-            customerName: row.customer_name,
-            bvId: row.bv_id,
-            bvName: row.bv_name,
-            bvStreet: row.bv_street,
-            bvHouseNumber: row.bv_house_number,
-            bvCity: row.bv_city,
+            customerId: str(row.customer_id),
+            customerName: str(row.customer_name),
+            bvId: str(row.bv_id),
+            bvName: str(row.bv_name),
+            bvStreet: strOrNull(row.bv_street),
+            bvHouseNumber: strOrNull(row.bv_house_number),
+            bvCity: strOrNull(row.bv_city),
           }
         }
         return {
           type: 'object',
-          customerId: row.customer_id,
-          customerName: row.customer_name,
-          bvId: row.bv_id,
-          bvName: row.bv_name,
-          objectId: row.object_id,
-          objectName: row.object_name,
-          objectInternalId: row.object_internal_id,
-          objectRoom: row.object_room,
-          objectFloor: row.object_floor,
+          customerId: str(row.customer_id),
+          customerName: str(row.customer_name),
+          bvId: strOrNull(row.bv_id),
+          bvName: str(row.bv_name),
+          objectId: str(row.object_id),
+          objectName: strOrNull(row.object_name),
+          objectInternalId: strOrNull(row.object_internal_id),
+          objectRoom: strOrNull(row.object_room),
+          objectFloor: strOrNull(row.object_floor),
         }
       })
       setResults(mapped)

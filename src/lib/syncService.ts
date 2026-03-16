@@ -368,11 +368,12 @@ const processTimeOutbox = async (): Promise<SyncResult> => {
         .select(TIME_ENTRY_COLUMNS)
         .single()
       if (entryError || !entry) throw new Error(entryError?.message ?? 'Zeiteintrag fehlgeschlagen')
+      const entryData = entry as unknown as { id: string }
       for (const b of item.breaks) {
         const { error: breakError } = await supabase
           .from('time_breaks')
           .insert({
-            time_entry_id: entry.id,
+            time_entry_id: entryData.id,
             start: b.start,
             end: b.end,
           })
@@ -380,8 +381,7 @@ const processTimeOutbox = async (): Promise<SyncResult> => {
       }
       removeTimeOutboxItem(item.id)
       const cached = getCachedTimeEntries() as { id: string }[]
-      const newEntry = entry as { id: string }
-      setCachedTimeEntries([newEntry, ...cached.filter((c) => c.id !== item.tempId)])
+      setCachedTimeEntries([entryData, ...cached.filter((c) => c.id !== item.tempId)])
     } catch (err) {
       return {
         success: false,

@@ -109,7 +109,7 @@ serve(async (req) => {
     const tenant = licenseRow.tenants as Record<string, unknown> | null
     const validUntil = licenseRow.valid_until ? new Date(licenseRow.valid_until) : null
     const isExpired = validUntil !== null && validUntil < new Date()
-    const graceDays = Math.max(0, Number(licenseRow.grace_period_days) ?? 0)
+    const graceDays = Math.max(0, Number(licenseRow.grace_period_days) || 0)
     const graceEnd = validUntil && graceDays > 0 ? new Date(validUntil) : null
     if (graceEnd) graceEnd.setDate(graceEnd.getDate() + graceDays)
     const withinGrace = isExpired && graceEnd !== null && graceEnd >= new Date()

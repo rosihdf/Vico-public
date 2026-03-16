@@ -61,7 +61,7 @@ const App = () => {
           return
         }
         setUser(session?.user ?? null)
-        if (isLoading) setIsLoading(false)
+        setIsLoading(false)
       }
     )
 
