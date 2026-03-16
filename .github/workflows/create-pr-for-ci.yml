@@ -1,3 +1,5 @@
+# Voraussetzung: In Repo-Einstellungen unter Actions → General muss
+# "Allow GitHub Actions to create and approve pull requests" aktiviert sein.
 name: PR für CI erstellen
 
 on:
@@ -9,6 +11,8 @@ on:
 jobs:
   create-pr:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
       contents: read
       pull-requests: write
