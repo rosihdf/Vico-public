@@ -9,7 +9,7 @@ import {
   createBv,
 } from './lib/dataService'
 import { parseCsv } from './lib/csvParse'
-import type { Customer, BV } from './types'
+import type { BV } from './types'
 import { LoadingSpinner } from './components/LoadingSpinner'
 
 const MAPPING_OPTIONS = [
@@ -85,99 +85,97 @@ const Import = () => {
     let customersCreated = 0
     let bvsCreated = 0
 
-    let customers: Customer[] = []
     const bvsByCustomerId = new Map<string, BV[]>()
     try {
-      customers = await fetchCustomers()
+      const customers = await fetchCustomers()
       for (const c of customers) {
         const list = await fetchBvs(c.id)
         bvsByCustomerId.set(c.id, list)
       }
-    } catch {
-      errors.push({ row: 0, message: 'Stammdaten konnten nicht geladen werden.' })
-      setIsProcessing(false)
-      setResult({ customersCreated: 0, bvsCreated: 0, errors })
-      return
-    }
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i]
-      const rowNum = i + 2
-      const name = getRowValue(row, 'name')
-      if (!name) {
-        errors.push({ row: rowNum, message: 'Firma fehlt' })
-        continue
-      }
-      let customer = customers.find((c) => c.name.trim().toLowerCase() === name.toLowerCase())
-      if (!customer) {
-        const payload = {
-          name,
-          street: getRowValue(row, 'street') || null,
-          house_number: getRowValue(row, 'house_number') || null,
-          postal_code: getRowValue(row, 'postal_code') || null,
-          city: getRowValue(row, 'city') || null,
-          email: getRowValue(row, 'email') || null,
-          phone: getRowValue(row, 'phone') || null,
-          contact_name: getRowValue(row, 'contact_name') || null,
-          contact_email: null,
-          contact_phone: null,
-          maintenance_report_email: true,
-          maintenance_report_email_address: null,
-        }
-        const { data: newCustomer, error } = await createCustomer(payload)
-        if (error) {
-          errors.push({ row: rowNum, message: getSupabaseErrorMessage(error) })
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        const rowNum = i + 2
+        const name = getRowValue(row, 'name')
+        if (!name) {
+          errors.push({ row: rowNum, message: 'Firma fehlt' })
           continue
         }
-        if (newCustomer) {
-          customer = newCustomer
-          customers.push(customer)
-          customersCreated++
-          bvsByCustomerId.set(customer.id, [])
-        }
-      }
-      if (!customer) continue
-
-      const bvName = getRowValue(row, 'bv_name')
-      if (bvName) {
-        let bvList = bvsByCustomerId.get(customer.id) ?? []
-        let bv = bvList.find((b) => b.name.trim().toLowerCase() === bvName.toLowerCase())
-        if (!bv) {
-          if (!createUnknownBv) {
-            errors.push({ row: rowNum, message: `Objekt/BV „${bvName}“ nicht gefunden und Anlegen deaktiviert` })
-            continue
-          }
-          const { data: newBv, error } = await createBv({
-            customer_id: customer.id,
-            name: bvName,
-            street: null,
-            house_number: null,
-            postal_code: null,
-            city: null,
-            email: null,
-            phone: null,
-            contact_name: null,
+        let customer = customers.find((c) => c.name.trim().toLowerCase() === name.toLowerCase())
+        if (!customer) {
+          const payload = {
+            name,
+            street: getRowValue(row, 'street') || null,
+            house_number: getRowValue(row, 'house_number') || null,
+            postal_code: getRowValue(row, 'postal_code') || null,
+            city: getRowValue(row, 'city') || null,
+            email: getRowValue(row, 'email') || null,
+            phone: getRowValue(row, 'phone') || null,
+            contact_name: getRowValue(row, 'contact_name') || null,
             contact_email: null,
             contact_phone: null,
             maintenance_report_email: true,
             maintenance_report_email_address: null,
-          })
+          }
+          const { data: newCustomer, error } = await createCustomer(payload)
           if (error) {
             errors.push({ row: rowNum, message: getSupabaseErrorMessage(error) })
             continue
           }
-          if (newBv) {
-            bv = newBv
-            bvList = [...bvList, bv]
-            bvsByCustomerId.set(customer.id, bvList)
-            bvsCreated++
+          if (newCustomer) {
+            customer = newCustomer
+            customers.push(customer)
+            customersCreated++
+            bvsByCustomerId.set(customer.id, [])
+          }
+        }
+        if (!customer) continue
+
+        const bvName = getRowValue(row, 'bv_name')
+        if (bvName) {
+          let bvList = bvsByCustomerId.get(customer.id) ?? []
+          let bv = bvList.find((b) => b.name.trim().toLowerCase() === bvName.toLowerCase())
+          if (!bv) {
+            if (!createUnknownBv) {
+              errors.push({ row: rowNum, message: `Objekt/BV „${bvName}“ nicht gefunden und Anlegen deaktiviert` })
+              continue
+            }
+            const { data: newBv, error } = await createBv({
+              customer_id: customer.id,
+              name: bvName,
+              street: null,
+              house_number: null,
+              postal_code: null,
+              city: null,
+              email: null,
+              phone: null,
+              contact_name: null,
+              contact_email: null,
+              contact_phone: null,
+              maintenance_report_email: true,
+              maintenance_report_email_address: null,
+            })
+            if (error) {
+              errors.push({ row: rowNum, message: getSupabaseErrorMessage(error) })
+              continue
+            }
+            if (newBv) {
+              bv = newBv
+              bvList = [...bvList, bv]
+              bvsByCustomerId.set(customer.id, bvList)
+              bvsCreated++
+            }
           }
         }
       }
-    }
 
-    setIsProcessing(false)
-    setResult({ customersCreated, bvsCreated, errors })
+      setIsProcessing(false)
+      setResult({ customersCreated, bvsCreated, errors })
+    } catch {
+      errors.push({ row: 0, message: 'Stammdaten konnten nicht geladen werden.' })
+      setIsProcessing(false)
+      setResult({ customersCreated: 0, bvsCreated: 0, errors })
+    }
   }
 
   if (!canWrite) {
