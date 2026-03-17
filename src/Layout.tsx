@@ -117,7 +117,7 @@ const Layout = () => {
             className="bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 text-center py-2 px-4 text-sm font-medium border-b border-amber-200 dark:border-amber-700"
             aria-live="polite"
           >
-            Speicher zu 80 % ausgelastet ({storageUsageMb.toFixed(1)} MB von {license.max_storage_mb} MB). Bitte Speicherkontingent prüfen.
+            Speicher zu 80 % ausgelastet ({storageUsageMb.toFixed(1)} MB von {license.max_storage_mb} MB). Bitte Speicherkontingent prüfen.
           </div>
         )}
       {userRole === 'demo' && (

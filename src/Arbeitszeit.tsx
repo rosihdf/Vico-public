@@ -165,7 +165,10 @@ const Arbeitszeit = () => {
     [weekEntries, selectedDate]
   )
   const activeEntry = getActiveEntry(entries)
-  const activeBreaks = activeEntry ? breaksMap[activeEntry.id] ?? [] : []
+  const activeBreaks = useMemo(
+    () => (activeEntry ? breaksMap[activeEntry.id] ?? [] : []),
+    [activeEntry, breaksMap]
+  )
   const activeBreak = activeEntry ? getActiveBreak(activeEntry, activeBreaks) : null
   const todayWorkMinutes = useMemo(
     () =>
@@ -340,7 +343,7 @@ const Arbeitszeit = () => {
     if (!activeBreak) return
     const id = setInterval(() => setTick((t) => t + 1), 30000)
     return () => clearInterval(id)
-  }, [activeBreak?.id])
+  }, [activeBreak])
 
   const arbzg6hHint = todayWorkMinutes >= 360 && totalBreakMinutes < 30 && !activeBreak && activeEntry
   const arbzg9hHint = todayWorkMinutes >= 540 && totalBreakMinutes < 45 && !activeBreak && activeEntry

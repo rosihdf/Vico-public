@@ -248,7 +248,7 @@ export const reportLimitExceeded = async (payload: LimitExceededPayload): Promis
   const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
   const apiEndpoint = apiUrl ? `${apiUrl.replace(/\/$/, '')}/limit-exceeded` : null
 
-  let localOk = false
+  let localOk: boolean
   try {
     const { supabase } = await import('../supabase')
     const { error } = await supabase.rpc('report_limit_exceeded', {

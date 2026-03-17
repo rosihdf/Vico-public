@@ -93,7 +93,8 @@ export const fetchStorageUsageMb = async (): Promise<number> => {
   try {
     const { data, error } = await supabase.rpc('get_storage_usage')
     if (error) return 0
-    return Number(data) ?? 0
+    const n = Number(data)
+    return Number.isFinite(n) ? n : 0
   } catch {
     return 0
   }
