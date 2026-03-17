@@ -12,6 +12,9 @@ export type TimeEntry = {
   location_start_lon?: number | null
   location_end_lat?: number | null
   location_end_lon?: number | null
+  approval_status?: 'submitted' | 'approved' | 'rejected' | null
+  approved_by?: string | null
+  approved_at?: string | null
 }
 
 export type TimeBreak = {

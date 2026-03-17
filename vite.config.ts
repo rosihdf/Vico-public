@@ -43,8 +43,8 @@ export default defineConfig(({ mode }) => {
         // Ohne mode: 'development' kann die SW-Generierung (terser) hängen und „Unable to write the service worker file“ auslösen.
         mode: 'development',
         manifest: {
-          name: 'Vico Türen & Tore',
-          short_name: 'Vico',
+          name: 'AMRtech Türen & Tore',
+          short_name: 'AMRtech',
           description: 'Wartungs- und Mängeldokumentation für Türen und Tore',
           theme_color: '#5b7895',
           background_color: '#5b7895',

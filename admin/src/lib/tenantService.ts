@@ -21,6 +21,7 @@ export type Tenant = {
   datenschutz_dsb_email: string | null
   supabase_project_ref: string | null
   supabase_url: string | null
+  allowed_domains: string[] | null
   created_at: string
   updated_at: string
 }
@@ -60,7 +61,7 @@ export const createTenant = async (payload: Partial<Tenant>): Promise<{ id: stri
       primary_color: payload.primary_color ?? '#5b7895',
       secondary_color: payload.secondary_color ?? null,
       favicon_url: payload.favicon_url ?? null,
-      app_name: payload.app_name ?? 'Vico',
+      app_name: payload.app_name ?? 'AMRtech',
       impressum_company_name: payload.impressum_company_name ?? null,
       impressum_address: payload.impressum_address ?? null,
       impressum_contact: payload.impressum_contact ?? null,
@@ -72,6 +73,7 @@ export const createTenant = async (payload: Partial<Tenant>): Promise<{ id: stri
       datenschutz_dsb_email: payload.datenschutz_dsb_email ?? null,
       supabase_project_ref: payload.supabase_project_ref ?? null,
       supabase_url: payload.supabase_url ?? null,
+      allowed_domains: Array.isArray(payload.allowed_domains) ? payload.allowed_domains : [],
     })
     .select('id')
     .single()

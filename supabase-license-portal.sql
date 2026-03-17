@@ -98,9 +98,22 @@ create table if not exists public.tenants (
   -- Supabase (Mandanten-DB)
   supabase_project_ref text,
   supabase_url text,
+  -- Domain-Bindung: Lizenz nur von diesen Domains nutzbar (leer = keine Prüfung)
+  allowed_domains jsonb default '[]'::jsonb,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- allowed_domains: Spalte nachträglich hinzufügen
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'allowed_domains'
+  ) then
+    alter table public.tenants add column allowed_domains jsonb default '[]'::jsonb;
+  end if;
+end $$;
 
 alter table public.tenants enable row level security;
 
@@ -125,6 +138,7 @@ create table if not exists public.licenses (
   grace_period_days int default 0 check (grace_period_days >= 0),
   max_users int,
   max_customers int,
+  max_storage_mb int,
   check_interval text default 'daily' check (check_interval in ('on_start', 'daily', 'weekly')),
   features jsonb default '{}'::jsonb,
   created_at timestamptz default now(),
@@ -153,6 +167,17 @@ begin
   end if;
 end $$;
 
+-- max_storage_mb: Spalte nachträglich hinzufügen
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'licenses' and column_name = 'max_storage_mb'
+  ) then
+    alter table public.licenses add column max_storage_mb int;
+  end if;
+end $$;
+
 alter table public.licenses enable row level security;
 
 do $$ declare r record; begin
@@ -175,6 +200,7 @@ create table if not exists public.license_models (
   tier text default 'professional' check (tier in ('free', 'professional', 'enterprise')),
   max_users int,
   max_customers int,
+  max_storage_mb int,
   check_interval text default 'daily' check (check_interval in ('on_start', 'daily', 'weekly')),
   features jsonb default '{}'::jsonb,
   sort_order int default 0,
@@ -200,15 +226,26 @@ end $$;
 
 alter table public.licenses add column if not exists license_model_id uuid references public.license_models(id) on delete set null;
 
+-- max_storage_mb für license_models: Spalte nachträglich hinzufügen
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'license_models' and column_name = 'max_storage_mb'
+  ) then
+    alter table public.license_models add column max_storage_mb int;
+  end if;
+end $$;
+
 -- Standard-Lizenzmodelle (nur wenn Tabelle leer)
 do $$
 begin
   if not exists (select 1 from public.license_models limit 1) then
-    insert into public.license_models (name, tier, max_users, max_customers, check_interval, features, sort_order)
+    insert into public.license_models (name, tier, max_users, max_customers, max_storage_mb, check_interval, features, sort_order)
     values
-      ('Free', 'free', 2, 5, 'daily', '{"kundenportal": false, "historie": false, "arbeitszeiterfassung": false}'::jsonb, 1),
-      ('Professional', 'professional', 10, 50, 'daily', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true}'::jsonb, 2),
-      ('Enterprise', 'enterprise', null, null, 'weekly', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true}'::jsonb, 3);
+      ('Free', 'free', 2, 5, 100, 'daily', '{"kundenportal": false, "historie": false, "arbeitszeiterfassung": false}'::jsonb, 1),
+      ('Professional', 'professional', 10, 50, 500, 'daily', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true}'::jsonb, 2),
+      ('Enterprise', 'enterprise', null, null, null, 'weekly', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true}'::jsonb, 3);
   end if;
 end $$;
 
@@ -224,8 +261,20 @@ create table if not exists public.limit_exceeded_log (
   current_value int not null,
   max_value int not null,
   license_number text,
+  reported_from text,
   created_at timestamptz default now()
 );
+
+-- reported_from: Domain/Origin, von der die Meldung kam (für Doppelnutzung-Erkennung)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'limit_exceeded_log' and column_name = 'reported_from'
+  ) then
+    alter table public.limit_exceeded_log add column reported_from text;
+  end if;
+end $$;
 
 alter table public.limit_exceeded_log enable row level security;
 
@@ -252,7 +301,57 @@ begin
 end $$;
 
 -- =============================================================================
--- 5. INDIZES
+-- 5. PLATFORM_CONFIG (Speicher-Kontingent)
+-- =============================================================================
+
+create table if not exists public.platform_config (
+  key text primary key,
+  value jsonb not null
+);
+
+alter table public.platform_config enable row level security;
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'platform_config' loop
+    execute format('drop policy if exists %I on public.platform_config', r.policyname);
+  end loop;
+end $$;
+create policy "Admins can manage platform_config" on public.platform_config for all using (public.is_admin());
+
+-- Standard: 10.000 MB (10 GB) Gesamtspeicher
+insert into public.platform_config (key, value) values ('total_storage_mb', '10000') on conflict (key) do nothing;
+
+-- RPC: Speicher-Zusammenfassung (verfügbar, zugewiesen, frei)
+-- Zugewiesen = Summe aus licenses.max_storage_mb, Fallback auf license_models.max_storage_mb wenn Lizenz kein eigenes hat
+create or replace function public.get_storage_summary()
+returns jsonb
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  with assigned as (
+    select coalesce(sum(coalesce(l.max_storage_mb, lm.max_storage_mb)), 0) as mb
+    from public.licenses l
+    left join public.license_models lm on l.license_model_id = lm.id
+    where coalesce(l.max_storage_mb, lm.max_storage_mb) is not null
+  ),
+  total as (
+    select coalesce((value::text)::int, 10000) as mb
+    from public.platform_config
+    where key = 'total_storage_mb'
+    limit 1
+  )
+  select jsonb_build_object(
+    'total_available_mb', coalesce((select mb from total), 10000),
+    'assigned_mb', (select mb from assigned),
+    'remaining_mb', greatest(0, coalesce((select mb from total), 10000) - (select mb from assigned))
+  );
+$$;
+grant execute on function public.get_storage_summary() to authenticated;
+
+-- =============================================================================
+-- 6. INDIZES
 -- =============================================================================
 
 create index if not exists tenants_name_idx on public.tenants (name);

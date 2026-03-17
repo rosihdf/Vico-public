@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import { supabase } from './supabase'
-import { fetchProfiles, updateProfileRole, updateProfileName, updateProfileSollMinutes, getProfileDisplayName, updateProfileRoleByEmail, fetchTeams, updateProfileTeam, createTeam } from './lib/userService'
+import { fetchProfiles, updateProfileRole, updateProfileName, updateProfileSollMinutes, getProfileDisplayName, updateProfileRoleByEmail, fetchTeams, updateProfileTeam, createTeam, deleteTeam } from './lib/userService'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalBadge from './components/PortalBadge'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
@@ -59,7 +59,8 @@ const Benutzerverwaltung = () => {
   const [editLastName, setEditLastName] = useState('')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [portalAssignments, setPortalAssignments] = useState<PortalUserAssignment[]>([])
-  const [expandingPortalUserId, setExpandingPortalUserId] = useState<string | null>(null)
+  const [expandedPortalUserId, setExpandedPortalUserId] = useState<string | null>(null)
+  const [visibilityExpandedUserId, setVisibilityExpandedUserId] = useState<string | null>(null)
   const [visibilityByUser, setVisibilityByUser] = useState<Record<string, Record<string, string[]>>>({})
   const [bvsByCustomer, setBvsByCustomer] = useState<Record<string, BV[]>>({})
   const [savingVisibilityUserId, setSavingVisibilityUserId] = useState<string | null>(null)
@@ -70,6 +71,7 @@ const Benutzerverwaltung = () => {
   const [savingTeamId, setSavingTeamId] = useState<string | null>(null)
   const [newTeamName, setNewTeamName] = useState('')
   const [isCreatingTeam, setIsCreatingTeam] = useState(false)
+  const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null)
 
   const handleSollBlur = async (profileId: string, value: string) => {
     setEditingSoll((prev) => {
@@ -107,6 +109,22 @@ const Benutzerverwaltung = () => {
       await loadTeams()
       await loadProfiles()
       setFormMessage(`Team „${name}" wurde angelegt.`)
+      setTimeout(() => setFormMessage(null), 3000)
+    } else {
+      setFormError(getSupabaseErrorMessage(error.message))
+    }
+  }
+
+  const handleDeleteTeam = async (teamId: string, teamName: string) => {
+    if (!confirm(`Team „${teamName}" wirklich löschen? Zugewiesene Mitglieder werden dem Team entzogen.`)) return
+    setDeletingTeamId(teamId)
+    setFormError(null)
+    const { error } = await deleteTeam(teamId)
+    setDeletingTeamId(null)
+    if (!error) {
+      await loadTeams()
+      await loadProfiles()
+      setFormMessage(`Team „${teamName}" wurde gelöscht.`)
       setTimeout(() => setFormMessage(null), 3000)
     } else {
       setFormError(getSupabaseErrorMessage(error.message))
@@ -159,6 +177,7 @@ const Benutzerverwaltung = () => {
             limit_type: 'users',
             current_value: currentUsers,
             max_value: license.max_users,
+            reported_from: typeof window !== 'undefined' ? window.location.origin : undefined,
           })
         }
       }
@@ -286,11 +305,11 @@ const Benutzerverwaltung = () => {
   }
 
   const handleOpenVisibility = async (userId: string) => {
-    if (expandingPortalUserId === userId) {
-      setExpandingPortalUserId(null)
+    if (visibilityExpandedUserId === userId) {
+      setVisibilityExpandedUserId(null)
       return
     }
-    setExpandingPortalUserId(userId)
+    setVisibilityExpandedUserId(userId)
     const assignments = portalAssignments.filter((a) => a.user_id === userId)
     const [vis, ...bvsResults] = await Promise.all([
       fetchPortalVisibility(userId),
@@ -526,35 +545,127 @@ const Benutzerverwaltung = () => {
 
             return (
               <div className="mt-4 space-y-6">
-                <section className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      value={newTeamName}
-                      onChange={(e) => setNewTeamName(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleCreateTeam()}
-                      placeholder="Neues Team (Name)"
-                      className="px-3 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white w-48"
-                      aria-label="Name für neues Team"
-                      disabled={isCreatingTeam}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleCreateTeam}
-                      disabled={!newTeamName.trim() || isCreatingTeam}
-                      className="px-3 py-1.5 text-sm rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:pointer-events-none"
-                      aria-label="Team anlegen"
-                    >
-                      Team anlegen
-                    </button>
-                  </div>
+                <section aria-labelledby="teams-heading">
+                  {teams.length === 0 ? (
+                    <>
+                      <h3 id="teams-heading" className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                        Teams
+                      </h3>
+                      <p className="text-xs text-slate-500 mb-2">Noch keine Teams. Neues Team anlegen:</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={newTeamName}
+                          onChange={(e) => setNewTeamName(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleCreateTeam()}
+                          placeholder="Neues Team (Name)"
+                          className="px-3 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white w-48"
+                          aria-label="Name für neues Team"
+                          disabled={isCreatingTeam}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCreateTeam}
+                          disabled={!newTeamName.trim() || isCreatingTeam}
+                          className="px-3 py-1.5 text-sm rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:pointer-events-none"
+                          aria-label="Team anlegen"
+                        >
+                          Team anlegen
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h3 id="teams-heading" className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                        Teams ({teams.length})
+                      </h3>
+                      <p className="text-xs text-slate-500 mb-2">
+                        Teamleiter sehen nur Zeiten ihres Teams. Mitglieder pro Team zuweisen.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                        <input
+                          type="text"
+                          value={newTeamName}
+                          onChange={(e) => setNewTeamName(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleCreateTeam()}
+                          placeholder="Neues Team (Name)"
+                          className="px-3 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white w-48"
+                          aria-label="Name für neues Team"
+                          disabled={isCreatingTeam}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCreateTeam}
+                          disabled={!newTeamName.trim() || isCreatingTeam}
+                          className="px-3 py-1.5 text-sm rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:pointer-events-none"
+                          aria-label="Team anlegen"
+                        >
+                          Team anlegen
+                        </button>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {teams.map((team) => {
+                          const members = appProfiles.filter((p) => p.team_id === team.id)
+                          const teamleiter = members.filter((p) => p.role === 'teamleiter')
+                          const isDeleting = deletingTeamId === team.id
+                          return (
+                            <div
+                              key={team.id}
+                              className="p-4 rounded-xl border border-slate-200 bg-white dark:bg-slate-800 dark:border-slate-600"
+                            >
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <h4 className="font-medium text-slate-800 dark:text-slate-100">{team.name}</h4>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteTeam(team.id, team.name)}
+                                  disabled={isDeleting}
+                                  className="shrink-0 p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:pointer-events-none"
+                                  aria-label={`Team „${team.name}" löschen`}
+                                  title="Team löschen"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                {members.length} {members.length === 1 ? 'Mitglied' : 'Mitglieder'}
+                                {teamleiter.length > 0 && (
+                                  <span className="ml-1">
+                                    ({teamleiter.length} {teamleiter.length === 1 ? 'Teamleiter' : 'Teamleiter'})
+                                  </span>
+                                )}
+                              </p>
+                              {members.length === 0 ? (
+                                <p className="text-sm text-slate-400 dark:text-slate-500 italic">Keine Mitglieder</p>
+                              ) : (
+                                <ul className="space-y-1 text-sm">
+                                  {members.map((p) => (
+                                    <li
+                                      key={p.id}
+                                      className="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-300"
+                                    >
+                                      <span className="truncate">{getProfileDisplayName(p)}</span>
+                                      <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                                        {ROLE_LABELS[p.role]}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
                 </section>
                 <section>
                   <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
                     App-Benutzer ({appProfiles.length})
                   </h3>
                   <p className="text-xs text-slate-500 mb-2">
-                    Zugriff auf die Vico Web-App (Admin, Mitarbeiter, Operator, Leser, Demo). Team-Zuordnung für Teamleiter und Mitarbeiter.
+                    Zugriff auf die AMRtech Web-App (Admin, Mitarbeiter, Operator, Leser, Demo). Team-Zuordnung für Teamleiter und Mitarbeiter.
                   </p>
                   {renderUserList(appProfiles, APP_ROLES, true)}
                 </section>
@@ -570,104 +681,128 @@ const Benutzerverwaltung = () => {
                       const assignments = assignmentsForUser(p.id)
                       const assignedCustomerIds = assignments.map((a) => a.customer_id)
                       const availableCustomers = customers.filter((c) => !assignedCustomerIds.includes(c.id))
-                      const isExpanded = expandingPortalUserId === p.id
+                      const isExpanded = expandedPortalUserId === p.id
                       const userVis = visibilityByUser[p.id] ?? {}
                       return (
                         <li
                           key={p.id}
-                          className="flex flex-col gap-2 p-3 bg-white rounded-lg border border-slate-200"
+                          className="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 overflow-hidden"
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-slate-800">
-                                  {getProfileDisplayName(p)}
-                                  {(p.first_name || p.last_name) && p.email && (
-                                    <span className="text-slate-400 font-normal"> ({p.email})</span>
-                                  )}
+                          <button
+                            type="button"
+                            onClick={() => setExpandedPortalUserId((prev) => (prev === p.id ? null : p.id))}
+                            className="w-full flex flex-wrap items-center justify-between gap-2 p-3 text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                            aria-expanded={isExpanded}
+                            aria-label={isExpanded ? `${getProfileDisplayName(p)} Details ausblenden` : `${getProfileDisplayName(p)} Details anzeigen`}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0 flex-1">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`inline-block transition-transform shrink-0 ${isExpanded ? 'rotate-90' : ''}`} aria-hidden="true">
+                                  ▶
                                 </span>
+                                <span className="font-medium text-slate-800 dark:text-slate-100 truncate">
+                                  {getProfileDisplayName(p)}
+                                </span>
+                                {p.email && (
+                                  <span className="text-slate-400 dark:text-slate-500 text-sm truncate hidden sm:inline">
+                                    {p.email}
+                                  </span>
+                                )}
+                                <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+                                  {assignments.length} {assignments.length === 1 ? 'Kunde' : 'Kunden'}
+                                </span>
+                              </div>
+                              {assignments.length > 0 && (
+                                <span className="text-xs text-slate-500 dark:text-slate-400 truncate pl-5 sm:pl-0">
+                                  {assignments.map((a) => customerName(a.customer_id)).join(', ')}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                          {isExpanded && (
+                            <div className="flex flex-col gap-3 p-3 pt-0 border-t border-slate-100 dark:border-slate-600">
+                              <div className="flex items-center gap-2">
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditName(p)}
                                   className="text-xs text-vico-primary hover:underline"
                                   aria-label="Name bearbeiten"
                                 >
-                                  bearbeiten
+                                  Name bearbeiten
                                 </button>
+                                <span className="text-slate-500 dark:text-slate-400">·</span>
+                                <span className="text-sm text-slate-500 dark:text-slate-400">
+                                  {ROLE_LABELS[p.role]}
+                                  <PortalBadge />
+                                </span>
                               </div>
-                              <span className="ml-2 text-sm text-slate-500 flex items-center gap-1.5">
-                                {ROLE_LABELS[p.role]}
-                                <PortalBadge />
-                              </span>
-                            </div>
-                            <span className="px-3 py-1.5 text-sm text-slate-600 min-w-[140px]">
-                              {ROLE_LABELS[p.role]}
-                            </span>
-                          </div>
-                          <div className="text-sm text-slate-600">
-                            <span className="font-medium">Zuordnung: </span>
-                            {assignments.length === 0 ? (
-                              <span className="text-slate-400">Kein Kunde zugewiesen</span>
-                            ) : (
-                              <span className="flex flex-wrap gap-1.5 items-center">
-                                {assignments.map((a) => (
-                                  <span
-                                    key={a.id}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700"
-                                  >
-                                    {customerName(a.customer_id)}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUnlinkPortalUser(a.id)}
-                                      className="text-red-600 hover:text-red-800 font-medium"
-                                      aria-label={`${customerName(a.customer_id)} entfernen`}
-                                    >
-                                      ×
-                                    </button>
+                              <div className="text-sm text-slate-600 dark:text-slate-300">
+                                <span className="font-medium">Zuordnung: </span>
+                                {assignments.length === 0 ? (
+                                  <span className="text-slate-400">Kein Kunde zugewiesen</span>
+                                ) : (
+                                  <span className="flex flex-wrap gap-1.5 items-center">
+                                    {assignments.map((a) => (
+                                      <span
+                                        key={a.id}
+                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                                      >
+                                        {customerName(a.customer_id)}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleUnlinkPortalUser(a.id)
+                                          }}
+                                          className="text-red-600 hover:text-red-800 font-medium"
+                                          aria-label={`${customerName(a.customer_id)} entfernen`}
+                                        >
+                                          ×
+                                        </button>
+                                      </span>
+                                    ))}
                                   </span>
-                                ))}
-                              </span>
-                            )}
-                            {availableCustomers.length > 0 && (
-                              <span className="inline-flex items-center gap-2 mt-1.5">
-                                <label htmlFor={`portal-add-${p.id}`} className="sr-only">
-                                  Kunde zuweisen
-                                </label>
-                                <select
-                                  id={`portal-add-${p.id}`}
-                                  value=""
-                                  onChange={(e) => {
-                                    const cid = e.target.value
-                                    if (cid) {
-                                      handleLinkPortalUserToCustomer(p, cid)
-                                      e.target.value = ''
-                                    }
-                                  }}
-                                  disabled={linkingUserId === p.id}
-                                  className="text-sm rounded border border-slate-300 text-slate-700 bg-white disabled:opacity-50"
-                                  aria-label="Kunde zuweisen"
-                                >
-                                  <option value="">+ Kunde zuweisen</option>
-                                  {availableCustomers.map((c) => (
-                                    <option key={c.id} value={c.id}>
-                                      {c.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </span>
-                            )}
-                          </div>
-                          {assignments.length > 0 && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenVisibility(p.id)}
-                                className="text-sm text-vico-primary hover:underline text-left"
-                                aria-expanded={isExpanded}
-                              >
-                                {isExpanded ? '▼ Sichtbare Objekte/BV ausblenden' : '▶ Sichtbare Objekte/BV bearbeiten'}
-                              </button>
-                              {isExpanded && (
+                                )}
+                                {availableCustomers.length > 0 && (
+                                  <span className="inline-flex items-center gap-2 mt-1.5">
+                                    <label htmlFor={`portal-add-${p.id}`} className="sr-only">
+                                      Kunde zuweisen
+                                    </label>
+                                    <select
+                                      id={`portal-add-${p.id}`}
+                                      value=""
+                                      onChange={(e) => {
+                                        const cid = e.target.value
+                                        if (cid) {
+                                          handleLinkPortalUserToCustomer(p, cid)
+                                          e.target.value = ''
+                                        }
+                                      }}
+                                      disabled={linkingUserId === p.id}
+                                      className="text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 disabled:opacity-50"
+                                      aria-label="Kunde zuweisen"
+                                    >
+                                      <option value="">+ Kunde zuweisen</option>
+                                      {availableCustomers.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                          {c.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </span>
+                                )}
+                              </div>
+                              {assignments.length > 0 && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenVisibility(p.id)}
+                                    className="text-sm text-vico-primary hover:underline text-left"
+                                    aria-expanded={visibilityExpandedUserId === p.id}
+                                  >
+                                    {visibilityExpandedUserId === p.id ? '▼ Sichtbare Objekte/BV ausblenden' : '▶ Sichtbare Objekte/BV bearbeiten'}
+                                  </button>
+                                  {visibilityExpandedUserId === p.id && (
                                 <div className="pl-2 border-l-2 border-slate-200 space-y-3">
                                   {assignments.map((a) => {
                                     const bvs = bvsByCustomer[a.customer_id] ?? []
@@ -726,6 +861,8 @@ const Benutzerverwaltung = () => {
                                 </div>
                               )}
                             </>
+                          )}
+                            </div>
                           )}
                         </li>
                       )

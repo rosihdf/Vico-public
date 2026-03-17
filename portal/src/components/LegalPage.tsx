@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useTheme } from '../ThemeContext'
+import { useDesign } from '../DesignContext'
 
 type LegalPageProps = {
   title: string
@@ -10,6 +11,7 @@ type LegalPageProps = {
 
 const LegalPage = ({ title, children, backTo = '/', backLabel = 'Zurück' }: LegalPageProps) => {
   const { resolvedTheme, cycleTheme } = useTheme()
+  const { appName } = useDesign()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 px-4 py-10">
@@ -47,7 +49,7 @@ const LegalPage = ({ title, children, backTo = '/', backLabel = 'Zurück' }: Leg
           Impressum
         </Link>
         <span>·</span>
-        <span>Vico Türen & Tore</span>
+        <span>{appName} Türen & Tore</span>
       </div>
     </div>
   )

@@ -11,6 +11,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
   const isMandanten = location.pathname === '/' || location.pathname.startsWith('/mandanten')
   const isGrenzen = location.pathname.startsWith('/grenzueberschreitungen')
   const isLizenzmodelle = location.pathname.startsWith('/lizenzmodelle')
+  const isEinstellungen = location.pathname.startsWith('/einstellungen')
   const navClass = (active: boolean) =>
     active
       ? 'px-3 py-1.5 text-sm font-medium text-vico-primary bg-vico-primary/10 rounded-lg'
@@ -20,11 +21,12 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
     <div className="min-h-screen flex flex-col bg-slate-100">
       <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-lg font-bold text-slate-800">Vico Lizenz-Admin</h1>
+          <h1 className="text-lg font-bold text-slate-800">AMRtech Lizenzmodul</h1>
           <nav className="flex gap-1">
             <Link to="/" className={navClass(isMandanten)}>Mandanten</Link>
             <Link to="/lizenzmodelle" className={navClass(isLizenzmodelle)}>Lizenzmodelle</Link>
             <Link to="/grenzueberschreitungen" className={navClass(isGrenzen)}>Grenzüberschreitungen</Link>
+            <Link to="/einstellungen" className={navClass(isEinstellungen)}>Einstellungen</Link>
           </nav>
         </div>
         <div className="flex items-center gap-4">

@@ -1,11 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { useTheme } from './ThemeContext'
+import type { Theme } from './ThemeContext'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import MfaSettings from './components/MfaSettings'
 import { fetchMyProfile, updateProfileName, getProfileDisplayName } from './lib/userService'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import type { Profile } from './lib/userService'
+
+const THEME_LABELS: Record<Theme, string> = {
+  light: 'Hell',
+  dark: 'Dunkel',
+  system: 'System',
+}
 
 const ROLE_LABELS: Record<'admin' | 'teamleiter' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde', string> = {
   admin: 'Admin',
@@ -19,6 +27,7 @@ const ROLE_LABELS: Record<'admin' | 'teamleiter' | 'mitarbeiter' | 'operator' | 
 
 const Profil = () => {
   const { isAuthenticated, user, userEmail, userRole, logout } = useAuth()
+  const { theme, setTheme } = useTheme()
   const navigate = useNavigate()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -145,6 +154,33 @@ const Profil = () => {
               <p className="font-medium text-slate-800 dark:text-slate-100">{ROLE_LABELS[userRole]}</p>
             </div>
           )}
+
+          <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600">
+            <h3 id="darstellung-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+              Darstellung
+            </h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+              Farbschema der App anpassen.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(['light', 'dark', 'system'] as Theme[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTheme(t)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    theme === t
+                      ? 'bg-vico-primary text-white'
+                      : 'border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                  aria-pressed={theme === t}
+                  aria-label={`${THEME_LABELS[t]} auswählen`}
+                >
+                  {THEME_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <MfaSettings />
 

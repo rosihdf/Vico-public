@@ -8,6 +8,7 @@ type LicenseResponse = {
     grace_period_days: number
     max_users: number | null
     max_customers: number | null
+    max_storage_mb: number | null
     check_interval: 'on_start' | 'daily' | 'weekly'
     features: Record<string, boolean>
     valid: boolean
@@ -65,6 +66,7 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
         primary_color,
         secondary_color,
         favicon_url,
+        allowed_domains,
         impressum_company_name,
         impressum_address,
         impressum_contact,
@@ -84,6 +86,33 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
   }
 
   const tenant = licenseRow.tenants as Record<string, unknown> | null
+  const allowedDomains = tenant?.allowed_domains as string[] | null | undefined
+  if (Array.isArray(allowedDomains) && allowedDomains.length > 0) {
+    const origin = event.headers?.origin ?? event.headers?.Origin ?? event.headers?.referer ?? event.headers?.Referer ?? ''
+    let requestHost = ''
+    try {
+      requestHost = origin ? new URL(origin).host : ''
+    } catch {
+      requestHost = ''
+    }
+    const isAllowed = requestHost && allowedDomains.some((d) => {
+      const domain = String(d).trim().toLowerCase()
+      if (!domain) return false
+      if (domain.startsWith('*.')) {
+        const suffix = domain.slice(1)
+        return requestHost === suffix || requestHost.endsWith(suffix)
+      }
+      return requestHost === domain
+    })
+    if (!isAllowed) {
+      return {
+        statusCode: 403,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ error: 'Domain nicht für diese Lizenz freigegeben' }),
+      }
+    }
+  }
+
   const validUntil = licenseRow.valid_until ? new Date(licenseRow.valid_until) : null
   const isExpired = validUntil !== null && validUntil < new Date()
   const graceDays = Math.max(0, Number(licenseRow.grace_period_days) || 0)
@@ -99,6 +128,7 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
       grace_period_days: graceDays,
       max_users: licenseRow.max_users,
       max_customers: licenseRow.max_customers,
+      max_storage_mb: licenseRow.max_storage_mb ?? null,
       check_interval: (licenseRow.check_interval as 'on_start' | 'daily' | 'weekly') ?? 'daily',
       features: (licenseRow.features as Record<string, boolean>) ?? {},
       valid: !isExpired || withinGrace,
@@ -107,7 +137,7 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
       is_trial: Boolean(licenseRow.is_trial),
     },
     design: {
-      app_name: (tenant?.app_name as string) ?? 'Vico',
+      app_name: (tenant?.app_name as string) ?? 'AMRtech',
       logo_url: (tenant?.logo_url as string) ?? null,
       primary_color: (tenant?.primary_color as string) ?? '#5b7895',
       secondary_color: (tenant?.secondary_color as string) ?? null,

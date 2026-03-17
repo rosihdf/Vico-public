@@ -146,6 +146,12 @@ Supabase läuft als **mehrere Docker-Container** (ca. 12 Services). IONOS Cloud 
 
 **Fazit:** Supabase Self-Host auf IONOS ist machbar und bringt „alles bei IONOS“ ohne die Vico-Architektur zu ändern. Der Aufwand liegt im Betrieb (Backups, Updates, Monitoring) und in der initialen Einrichtung (HTTPS, Domains, ggf. zwei Instanzen für Haupt + Lizenzportal).
 
+### 7.6 Speicherkontingent – automatische Ermittlung (nach Umzug)
+
+**Stand:** Auf IONOS-Umzug verschoben. Aktuell wird der Gesamtspeicher im Lizenzportal manuell gepflegt („Gesamtspeicher anpassen“). Nach dem Umzug zu IONOS soll das verfügbare Speicherkontingent automatisch aus der Datenbank bzw. Storage-API ausgelesen und in `platform_config` eingetragen werden – je nach gewählter Option (Supabase Self-Host, IONOS DBaaS, etc.) die passende API nutzen.
+
+**Referenz:** docs/Entscheidungen-Offene-Punkte.md §11.
+
 ---
 
 ## 8. Nächste Schritte (Abarbeitung)

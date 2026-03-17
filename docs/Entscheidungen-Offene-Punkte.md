@@ -115,6 +115,17 @@
 
 ---
 
+## 11. Speicherkontingent – automatische Ermittlung
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Frage** | Soll das verfügbare Speicherkontingent automatisch aus der Datenbank/Storage-API ausgelesen werden (statt manuell in `platform_config`)? |
+| **Entscheidung** | **Auf IONOS-Umzug verschoben.** Aktuell wird der Gesamtspeicher manuell im Lizenzportal („Gesamtspeicher anpassen“) gepflegt. Die automatische Ermittlung des tatsächlich verfügbaren Speicherkontingents (z. B. über Management API oder IONOS-Storage-API) wird beim Umzug zu IONOS umgesetzt. |
+
+**Referenz:** docs/Zeiterfassung-Offene-Punkte-und-IONOS.md §7 (IONOS Hosting).
+
+---
+
 ## Empfohlene Reihenfolge der Umsetzung
 
 Die folgenden Schritte sind so gewählt, dass Abhängigkeiten beachtet werden und schnelle Erfolge zuerst kommen. Punkte ohne Umsetzungsbedarf (1 App-Name, 8 Lizenz-API) sind nicht aufgeführt.

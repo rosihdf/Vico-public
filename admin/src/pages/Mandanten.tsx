@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchTenants, deleteTenant, type Tenant } from '../lib/tenantService'
-import { fetchLicenses, fetchLimitExceededLog, type LicenseWithTenant, type LimitExceededEntry } from '../lib/licensePortalService'
+import { fetchLicenses, fetchLimitExceededLog, fetchStorageSummary, updateTotalStorageMb, type LicenseWithTenant, type LimitExceededEntry, type StorageSummary } from '../lib/licensePortalService'
 import { exportTenantData, downloadTenantExport } from '../lib/exportService'
 
 const prefetchMandantForm = () => {
@@ -54,10 +54,13 @@ const Mandanten = () => {
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [licenses, setLicenses] = useState<LicenseWithTenant[]>([])
   const [limitExceededEntries, setLimitExceededEntries] = useState<LimitExceededEntry[]>([])
+  const [storageSummary, setStorageSummary] = useState<StorageSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [exportingId, setExportingId] = useState<string | null>(null)
+  const [editingStorageTotal, setEditingStorageTotal] = useState(false)
+  const [storageTotalInput, setStorageTotalInput] = useState('')
 
   const licensesMap = useMemo(() => licensesByTenant(licenses), [licenses])
   const statusByTenant = useMemo(() => latestByTenant(limitExceededEntries), [limitExceededEntries])
@@ -69,15 +72,17 @@ const Mandanten = () => {
     try {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 20_000)
-      const [tenantsData, licensesData, logData] = await Promise.all([
+      const [tenantsData, licensesData, logData, storageData] = await Promise.all([
         fetchTenants(controller.signal),
         fetchLicenses(controller.signal),
         fetchLimitExceededLog(controller.signal),
+        fetchStorageSummary(),
       ])
       clearTimeout(timeoutId)
       setTenants(tenantsData)
       setLicenses(licensesData)
       setLimitExceededEntries(logData)
+      setStorageSummary(storageData)
       console.info(`[Lizenzportal] Mandanten load: ${Math.round(performance.now() - loadStart)}ms`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Laden fehlgeschlagen. Supabase-Verbindung prüfen.'
@@ -109,6 +114,29 @@ const Mandanten = () => {
     }
   }
 
+  const handleSaveStorageTotal = async () => {
+    const val = parseInt(storageTotalInput, 10)
+    if (Number.isNaN(val) || val < 0) {
+      setError('Bitte eine gültige Zahl (MB) eingeben.')
+      return
+    }
+    const result = await updateTotalStorageMb(val)
+    if (result.ok) {
+      setEditingStorageTotal(false)
+      setStorageTotalInput('')
+      load()
+    } else {
+      setError(result.error ?? 'Speichern fehlgeschlagen')
+    }
+  }
+
+  const handleEditStorageTotal = () => {
+    if (storageSummary) {
+      setStorageTotalInput(String(storageSummary.total_available_mb))
+      setEditingStorageTotal(true)
+    }
+  }
+
   const handleDelete = async (t: Tenant) => {
     if (!confirm(`Mandant „${t.name}“ wirklich löschen? Alle zugehörigen Lizenzen werden ebenfalls gelöscht.`)) return
     setDeletingId(t.id)
@@ -124,6 +152,72 @@ const Mandanten = () => {
 
   return (
     <div className="max-w-4xl">
+      {storageSummary && (
+        <div
+          className="mb-6 p-4 rounded-xl border border-slate-200 bg-slate-50/50"
+          role="status"
+          aria-label="Speicher-Kontingent"
+        >
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h3 className="text-sm font-semibold text-slate-700">Speicher-Kontingent</h3>
+            {!editingStorageTotal ? (
+              <button
+                type="button"
+                onClick={handleEditStorageTotal}
+                className="text-xs font-medium text-vico-primary hover:underline"
+                aria-label="Gesamtspeicher anpassen"
+              >
+                Gesamtspeicher anpassen
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  value={storageTotalInput}
+                  onChange={(e) => setStorageTotalInput(e.target.value)}
+                  className="w-24 px-2 py-1 text-sm rounded border border-slate-300"
+                  aria-label="Gesamtspeicher in MB"
+                />
+                <span className="text-xs text-slate-500">MB</span>
+                <button
+                  type="button"
+                  onClick={handleSaveStorageTotal}
+                  className="px-2 py-1 text-xs font-medium bg-vico-primary text-white rounded hover:bg-vico-primary-hover"
+                >
+                  Speichern
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEditingStorageTotal(false); setStorageTotalInput(''); }}
+                  className="px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <span>
+              <span className="text-slate-500">Verfügbar:</span>{' '}
+              <span className="font-medium text-slate-800">{storageSummary.total_available_mb.toLocaleString('de-DE')} MB</span>
+            </span>
+            <span>
+              <span className="text-slate-500">Zugewiesen:</span>{' '}
+              <span className="font-medium text-slate-800">{storageSummary.assigned_mb.toLocaleString('de-DE')} MB</span>
+            </span>
+            <span>
+              <span className="text-slate-500">Frei:</span>{' '}
+              <span className={`font-medium ${storageSummary.remaining_mb < 500 ? 'text-amber-600' : 'text-slate-800'}`}>
+                {storageSummary.remaining_mb.toLocaleString('de-DE')} MB
+              </span>
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Die Summe der „Max. Speicher (MB)“ aller Lizenzen darf den verfügbaren Speicher nicht überschreiten.
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-4 mb-6">
         <h2 className="text-xl font-bold text-slate-800">Mandanten</h2>
         <Link
@@ -190,6 +284,11 @@ const Mandanten = () => {
                       >
                         {expired ? 'Abgelaufen' : 'Gültig'}
                       </span>
+                      {tenantLicenses.some((l) => l.is_trial) && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                          Trial
+                        </span>
+                      )}
                       <span className="text-xs text-slate-500">
                         {primaryLicense.valid_until ? new Date(primaryLicense.valid_until).toLocaleDateString('de-DE') : 'Unbegrenzt'} · {primaryLicense.tier}
                       </span>

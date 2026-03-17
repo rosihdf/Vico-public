@@ -67,15 +67,21 @@ Dann wird nach Signup direkt eine Session erstellt, kein E-Mail-Link nötig.
 
 Damit die Haupt-App (5173) Lizenzen vom Lizenzportal nutzen kann, wird eine **Supabase Edge Function** verwendet (Option D – kein Service-Role-Key in Netlify nötig).
 
-### Edge Function deployen
+### Edge Functions deployen
+
+**Wichtig:** Alle drei Functions müssen deployed sein (Lizenz-Check, Grenzüberschreitungen, Impressum):
 
 ```bash
 cd supabase-license-portal
 supabase link --project-ref ojryoosqwfbzlmdeywzs
 supabase functions deploy license
+supabase functions deploy limit-exceeded
+supabase functions deploy update-impressum
 ```
 
-Die Funktion nutzt automatisch `SUPABASE_URL` und `SUPABASE_SERVICE_ROLE_KEY` des Lizenzportal-Projekts (von Supabase bereitgestellt).
+Oder alle auf einmal: `supabase functions deploy`
+
+Die Functions nutzen automatisch `SUPABASE_URL` und `SUPABASE_SERVICE_ROLE_KEY` des Lizenzportal-Projekts (von Supabase bereitgestellt).
 
 ### Haupt-App konfigurieren
 
@@ -108,9 +114,28 @@ Free-Tier-Projekte pausieren nach 7 Tagen Inaktivität. GitHub Action hält das 
 
 Workflow: `.github/workflows/supabase-license-portal-keepalive.yml` (Mo + Do 9:00 UTC)
 
-### Fallback: Netlify Function (optional)
+### Fallback: Netlify Functions (optional)
 
-Falls die Edge Function nicht genutzt wird, kann die Netlify-Funktion unter `admin/netlify/functions/license.ts` verwendet werden. Dann in Netlify die Env-Vars `SUPABASE_LICENSE_PORTAL_URL` und `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` setzen und in der Haupt-App `VITE_LICENSE_API_URL=https://lizenz.amrtech.de/api` verwenden.
+Falls die Edge Functions nicht genutzt werden, deployet die Admin-App auf Netlify mit den Netlify-Functions (`license`, `limit-exceeded`, `update-impressum`). In Netlify die Env-Vars setzen:
+
+| Variable | Wert |
+|----------|------|
+| `SUPABASE_LICENSE_PORTAL_URL` | `https://<projekt-ref>.supabase.co` |
+| `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` | Service-Role-Key aus Supabase |
+
+In der Haupt-App: `VITE_LICENSE_API_URL=https://lizenz.amrtech.de/api` (oder die Admin-URL + `/api`)
+
+---
+
+## Fehlerbehebung: Grenzüberschreitungen erscheinen nicht im Lizenzportal
+
+| Ursache | Lösung |
+|---------|--------|
+| **limit-exceeded nicht deployed** | `supabase functions deploy limit-exceeded` ausführen (Supabase Edge Functions) |
+| **Netlify: Env-Vars fehlen** | `SUPABASE_LICENSE_PORTAL_URL` und `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` in Netlify setzen |
+| **VITE_LICENSE_API_URL nicht gesetzt** | In der Haupt-App `.env`: `VITE_LICENSE_API_URL` = Supabase Edge Functions URL oder Netlify + `/api` |
+| **Lizenz nicht gefunden (404)** | `license_number` muss in der Lizenzportal-Tabelle `licenses` existieren; Lizenz aktivieren |
+| **CORS** | Supabase Edge Functions erlauben CORS; Netlify: `Access-Control-Allow-Origin: *` in der Function |
 
 ---
 

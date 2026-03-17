@@ -1,7 +1,7 @@
 /** Gemeinsame Zeit-Utilities für Zeiterfassung (Haupt-App, Arbeitszeitenportal) */
 
 export const TIME_ENTRY_COLUMNS =
-  'id, user_id, date, start, end, notes, order_id, created_at, updated_at, location_start_lat, location_start_lon, location_end_lat, location_end_lon'
+  'id, user_id, date, start, end, notes, order_id, created_at, updated_at, location_start_lat, location_start_lon, location_end_lat, location_end_lon, approval_status, approved_by, approved_at'
 export const TIME_BREAK_COLUMNS = 'id, time_entry_id, start, end, created_at'
 
 const toLocalDateStr = (x: Date): string =>

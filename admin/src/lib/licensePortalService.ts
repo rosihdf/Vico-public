@@ -11,6 +11,7 @@ export type License = {
   grace_period_days: number
   max_users: number | null
   max_customers: number | null
+  max_storage_mb: number | null
   check_interval: 'on_start' | 'daily' | 'weekly'
   features: Record<string, boolean>
   created_at: string
@@ -32,6 +33,7 @@ export type LicenseInsert = {
   grace_period_days?: number
   max_users?: number | null
   max_customers?: number | null
+  max_storage_mb?: number | null
   check_interval?: 'on_start' | 'daily' | 'weekly'
   features?: Record<string, boolean>
 }
@@ -60,6 +62,7 @@ export type LimitExceededEntry = {
   current_value: number
   max_value: number
   license_number: string | null
+  reported_from: string | null
   created_at: string
   tenants: { id: string; name: string } | null
 }
@@ -75,6 +78,7 @@ export const fetchLimitExceededLog = async (signal?: AbortSignal): Promise<Limit
       current_value,
       max_value,
       license_number,
+      reported_from,
       created_at,
       tenants (id, name)
     `)
@@ -100,6 +104,7 @@ export const fetchLicenses = async (signal?: AbortSignal): Promise<LicenseWithTe
       grace_period_days,
       max_users,
       max_customers,
+      max_storage_mb,
       check_interval,
       features,
       created_at,
@@ -132,6 +137,7 @@ export const fetchLicensesByTenant = async (tenantId: string): Promise<LicenseWi
       grace_period_days,
       max_users,
       max_customers,
+      max_storage_mb,
       check_interval,
       features,
       created_at,
@@ -142,6 +148,16 @@ export const fetchLicensesByTenant = async (tenantId: string): Promise<LicenseWi
     .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return (data ?? []) as unknown as LicenseWithModel[]
+}
+
+export const checkLicenseNumberExists = async (licenseNumber: string): Promise<boolean> => {
+  const { data, error } = await supabase
+    .from('licenses')
+    .select('id')
+    .eq('license_number', licenseNumber.trim())
+    .maybeSingle()
+  if (error) return false
+  return !!data
 }
 
 export const createLicense = async (payload: LicenseInsert): Promise<{ id: string; license_number: string } | { error: string }> => {
@@ -157,6 +173,7 @@ export const createLicense = async (payload: LicenseInsert): Promise<{ id: strin
       grace_period_days: payload.grace_period_days ?? 0,
       max_users: payload.max_users ?? null,
       max_customers: payload.max_customers ?? null,
+      max_storage_mb: payload.max_storage_mb ?? null,
       check_interval: payload.check_interval ?? 'daily',
       features: payload.features ?? {},
     })
@@ -176,6 +193,7 @@ export const updateLicense = async (id: string, payload: LicenseUpdate): Promise
       ...(payload.grace_period_days !== undefined && { grace_period_days: payload.grace_period_days }),
       ...(payload.max_users !== undefined && { max_users: payload.max_users }),
       ...(payload.max_customers !== undefined && { max_customers: payload.max_customers }),
+      ...(payload.max_storage_mb !== undefined && { max_storage_mb: payload.max_storage_mb }),
       ...(payload.check_interval !== undefined && { check_interval: payload.check_interval }),
       ...(payload.features !== undefined && { features: payload.features }),
       updated_at: new Date().toISOString(),
@@ -201,6 +219,7 @@ export type LicenseModel = {
   tier: string
   max_users: number | null
   max_customers: number | null
+  max_storage_mb: number | null
   check_interval: 'on_start' | 'daily' | 'weekly'
   features: Record<string, boolean>
   sort_order: number
@@ -213,6 +232,7 @@ export type LicenseModelInsert = {
   tier?: string
   max_users?: number | null
   max_customers?: number | null
+  max_storage_mb?: number | null
   check_interval?: 'on_start' | 'daily' | 'weekly'
   features?: Record<string, boolean>
   sort_order?: number
@@ -254,6 +274,7 @@ export const createLicenseModel = async (payload: LicenseModelInsert): Promise<{
       tier: payload.tier ?? 'professional',
       max_users: payload.max_users ?? null,
       max_customers: payload.max_customers ?? null,
+      max_storage_mb: payload.max_storage_mb ?? null,
       check_interval: payload.check_interval ?? 'daily',
       features: payload.features ?? {},
       sort_order: payload.sort_order ?? 0,
@@ -284,6 +305,7 @@ export const updateLicenseModel = async (id: string, payload: LicenseModelUpdate
   if (payload.tier !== undefined) update.tier = payload.tier
   if (payload.max_users !== undefined) update.max_users = payload.max_users
   if (payload.max_customers !== undefined) update.max_customers = payload.max_customers
+  if (payload.max_storage_mb !== undefined) update.max_storage_mb = payload.max_storage_mb
   if (payload.check_interval !== undefined) update.check_interval = payload.check_interval
   if (payload.features !== undefined) update.features = payload.features
   if (payload.sort_order !== undefined) update.sort_order = payload.sort_order
@@ -294,6 +316,37 @@ export const updateLicenseModel = async (id: string, payload: LicenseModelUpdate
 
 export const deleteLicenseModel = async (id: string): Promise<{ ok: boolean; error?: string }> => {
   const { error } = await supabase.from('license_models').delete().eq('id', id)
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+// =============================================================================
+// SPEICHER-KONTINGENT
+// =============================================================================
+
+export type StorageSummary = {
+  total_available_mb: number
+  assigned_mb: number
+  remaining_mb: number
+}
+
+export const fetchStorageSummary = async (): Promise<StorageSummary> => {
+  const { data, error } = await supabase.rpc('get_storage_summary')
+  if (error) {
+    return { total_available_mb: 10000, assigned_mb: 0, remaining_mb: 10000 }
+  }
+  const raw = data as { total_available_mb?: number; assigned_mb?: number; remaining_mb?: number }
+  return {
+    total_available_mb: raw.total_available_mb ?? 10000,
+    assigned_mb: raw.assigned_mb ?? 0,
+    remaining_mb: raw.remaining_mb ?? 10000,
+  }
+}
+
+export const updateTotalStorageMb = async (mb: number): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase
+    .from('platform_config')
+    .upsert({ key: 'total_storage_mb', value: mb }, { onConflict: 'key' })
   if (error) return { ok: false, error: error.message }
   return { ok: true }
 }

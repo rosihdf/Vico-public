@@ -7,6 +7,7 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import Uebersicht from './pages/Uebersicht'
 import AlleZeiten from './pages/AlleZeiten'
+import Urlaub from './pages/Urlaub'
 import Log from './pages/Log'
 import Stammdaten from './pages/Stammdaten'
 
@@ -180,6 +181,7 @@ const App = () => {
           <Route index element={<Uebersicht />} />
           <Route path="uebersicht" element={<Uebersicht />} />
           <Route path="alle-zeiten" element={<AlleZeiten />} />
+          <Route path="urlaub" element={<Urlaub />} />
           <Route path="log" element={<Log />} />
           <Route path="stammdaten" element={<Stammdaten />} />
         </Route>

@@ -16,6 +16,18 @@
   force = true
 
 [[redirects]]
+  from = "/api/update-impressum"
+  to = "/.netlify/functions/update-impressum"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/limit-exceeded"
+  to = "/.netlify/functions/limit-exceeded"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

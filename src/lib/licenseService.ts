@@ -8,12 +8,14 @@ export type LicenseStatus = {
   valid_until: string | null
   max_customers: number | null
   max_users: number | null
+  max_storage_mb: number | null
   current_customers: number
   current_users: number
   features: Record<string, boolean>
   valid: boolean
   expired: boolean
   read_only: boolean
+  is_trial?: boolean
   check_interval?: 'on_start' | 'daily' | 'weekly'
 }
 
@@ -24,10 +26,12 @@ export const mapApiToLicenseStatus = (api: {
     valid_until: string | null
     max_users: number | null
     max_customers: number | null
+    max_storage_mb?: number | null
     features: Record<string, boolean>
     valid: boolean
     expired: boolean
     read_only?: boolean
+    is_trial?: boolean
     check_interval?: 'on_start' | 'daily' | 'weekly'
   }
 }): LicenseStatus => ({
@@ -35,12 +39,14 @@ export const mapApiToLicenseStatus = (api: {
   valid_until: api.license.valid_until,
   max_customers: api.license.max_customers,
   max_users: api.license.max_users,
+  max_storage_mb: api.license.max_storage_mb ?? null,
   current_customers: 0,
   current_users: 0,
   features: api.license.features ?? {},
   valid: api.license.valid,
   expired: api.license.expired,
   read_only: api.license.read_only ?? false,
+  is_trial: api.license.is_trial ?? false,
   check_interval: api.license.check_interval ?? 'daily',
 })
 
@@ -49,6 +55,7 @@ const EMPTY_LICENSE: LicenseStatus = {
   valid_until: null,
   max_customers: null,
   max_users: null,
+  max_storage_mb: null,
   current_customers: 0,
   current_users: 0,
   features: {},
@@ -79,6 +86,17 @@ export const checkCanInviteUser = async (): Promise<boolean> => {
   const { data, error } = await supabase.rpc('check_can_invite_user')
   if (error) return true
   return data as boolean
+}
+
+/** Speichernutzung in MB aus Mandanten-DB (RPC get_storage_usage) */
+export const fetchStorageUsageMb = async (): Promise<number> => {
+  try {
+    const { data, error } = await supabase.rpc('get_storage_usage')
+    if (error) return 0
+    return Number(data) ?? 0
+  } catch {
+    return 0
+  }
 }
 
 /** Nutzungszahlen aus Mandanten-DB (für API-Modus, wenn Lizenz-API keine current_* liefert) */

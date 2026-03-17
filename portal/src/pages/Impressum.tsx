@@ -11,7 +11,7 @@ const Impressum = () => (
       <div>
         <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Angaben gemäß § 5 DDG (Digitale-Dienste-Gesetz)</h2>
         <p>
-          Vico Türen &amp; Tore GmbH<br />
+          AMRtech Türen &amp; Tore GmbH<br />
           Malmsheimer Straße 57–59<br />
           71263 Weil der Stadt
         </p>

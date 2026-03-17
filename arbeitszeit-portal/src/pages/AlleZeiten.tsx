@@ -6,11 +6,14 @@ import {
   getMonthBounds,
   calcWorkMinutes,
   updateTimeEntryAsAdmin,
+  approveTimeEntry,
   type TimeEntryEditReasonCode,
 } from '../lib/timeService'
 import { fetchProfiles, getProfileDisplayName, type Profile } from '../lib/userService'
 import type { TimeEntry, TimeBreak } from '../types/time'
 import { formatTime, formatMinutes } from '../../../shared/format'
+import LocationMapModal from '../components/LocationMapModal'
+import { exportZollCsv, exportZollPdf } from '../lib/exportCompliance'
 
 const EDIT_REASON_OPTIONS: { value: TimeEntryEditReasonCode; label: string }[] = [
   { value: 'korrektur', label: 'Korrektur (falsche Zeit)' },
@@ -32,8 +35,6 @@ const hasLocationStart = (e: TimeEntry): boolean =>
   e.location_start_lat != null && e.location_start_lon != null
 const hasLocationEnd = (e: TimeEntry): boolean =>
   e.location_end_lat != null && e.location_end_lon != null
-const osmLink = (lat: number, lon: number): string =>
-  `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=17`
 
 const getWeekDayDates = (weekFrom: string): string[] => {
   const from = new Date(weekFrom + 'T12:00:00')
@@ -64,6 +65,8 @@ const AlleZeiten = () => {
   const [editReasonText, setEditReasonText] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+  const [locationModal, setLocationModal] = useState<{ lat: number; lon: number; label: string } | null>(null)
+  const [approvingId, setApprovingId] = useState<string | null>(null)
 
   const userId = selectedUserId || (profiles[0]?.id ?? '')
   const { from: weekFrom, to: weekTo } = getWeekBounds(selectedDate)
@@ -132,6 +135,23 @@ const AlleZeiten = () => {
     setEditEntry(null)
   }
 
+  const handleApprove = async (entry: TimeEntry, status: 'approved' | 'rejected') => {
+    setApprovingId(entry.id)
+    const { error } = await approveTimeEntry(entry.id, status)
+    setApprovingId(null)
+    if (error) {
+      setEditError(error.message)
+      return
+    }
+    setEntries((prev) =>
+      prev.map((x) =>
+        x.id === entry.id
+          ? { ...x, approval_status: status, approved_by: '', approved_at: new Date().toISOString() }
+          : x
+      )
+    )
+  }
+
   const handleSaveEdit = async () => {
     if (!editEntry || !editStart.trim()) return
     setEditSaving(true)
@@ -155,6 +175,31 @@ const AlleZeiten = () => {
   }
 
   const dayDates = useMemo(() => getWeekDayDates(weekFrom), [weekFrom])
+
+  const handleExportCsv = () => {
+    const profile = profilesWithZeiterfassung.find((p) => p.id === userId)
+    const name = profile ? getProfileDisplayName(profile) : 'Unbekannt'
+    const header = 'Datum;Mitarbeiter;Start;Ende;Pausen (Min);Arbeitszeit (Min);Notizen'
+    const rows = entries.map((e) => {
+      const breaks = breaksMap[e.id] ?? []
+      const breakMin = breaks.reduce((s, b) => {
+        if (!b.end) return s
+        return s + Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000)
+      }, 0)
+      const workMin = calcWorkMinutes(e, breaks)
+      const startStr = e.start ? new Date(e.start).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : ''
+      const endStr = e.end ? new Date(e.end).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : ''
+      return [e.date, name, startStr, endStr, breakMin, workMin, (e.notes ?? '').replace(/;/g, ',')].join(';')
+    })
+    const csv = [header, ...rows].join('\n')
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Zeiterfassung_${name.replace(/\s+/g, '_')}_${rangeFrom}_${rangeTo}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="space-y-4">
@@ -207,6 +252,41 @@ const AlleZeiten = () => {
             aria-label={viewMode === 'month' ? 'Monat' : 'Datum'}
           />
         </div>
+        <button
+          type="button"
+          onClick={handleExportCsv}
+          disabled={entries.length === 0}
+          className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+          aria-label="Als CSV exportieren"
+        >
+          Export CSV
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const name = getProfileDisplayName(profiles.find((p) => p.id === userId) ?? { email: null, first_name: null, last_name: null })
+            exportZollCsv(entries, breaksMap, name, rangeFrom, rangeTo)
+          }}
+          disabled={entries.length === 0}
+          className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+          aria-label="Export für Zollprüfung (CSV)"
+          title="MiLoG § 17 – Format für Zoll-/Mindestlohnprüfung"
+        >
+          Zollprüfung CSV
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const name = getProfileDisplayName(profiles.find((p) => p.id === userId) ?? { email: null, first_name: null, last_name: null })
+            exportZollPdf(entries, breaksMap, name, rangeFrom, rangeTo)
+          }}
+          disabled={entries.length === 0}
+          className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+          aria-label="Export für Zollprüfung (PDF)"
+          title="MiLoG § 17 – PDF für Zoll-/Mindestlohnprüfung"
+        >
+          Zollprüfung PDF
+        </button>
       </div>
 
       {viewMode === 'day' && (
@@ -252,38 +332,78 @@ const AlleZeiten = () => {
                     {(hasLocationStart(e) || hasLocationEnd(e)) && (
                       <div className="mt-1.5 flex flex-wrap gap-2 text-xs text-slate-500">
                         {hasLocationStart(e) && (
-                          <a
-                            href={osmLink(e.location_start_lat!, e.location_start_lon!)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:text-vico-primary underline"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLocationModal({
+                                lat: e.location_start_lat!,
+                                lon: e.location_start_lon!,
+                                label: 'Standort Start',
+                              })
+                            }
+                            className="hover:text-vico-primary underline text-left"
                             aria-label="Standort Start auf Karte anzeigen"
                           >
                             Standort Start
-                          </a>
+                          </button>
                         )}
                         {hasLocationEnd(e) && (
-                          <a
-                            href={osmLink(e.location_end_lat!, e.location_end_lon!)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:text-vico-primary underline"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLocationModal({
+                                lat: e.location_end_lat!,
+                                lon: e.location_end_lon!,
+                                label: 'Standort Ende',
+                              })
+                            }
+                            className="hover:text-vico-primary underline text-left"
                             aria-label="Standort Ende auf Karte anzeigen"
                           >
                             Standort Ende
-                          </a>
+                          </button>
                         )}
                       </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEdit(e)}
-                    className="text-sm px-2 py-1 rounded bg-slate-200 text-slate-700 hover:bg-slate-300 shrink-0"
-                    aria-label="Eintrag bearbeiten"
-                  >
-                    Bearbeiten
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {e.approval_status === 'submitted' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(e, 'approved')}
+                          disabled={approvingId === e.id}
+                          className="text-sm px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                          aria-label="Freigeben"
+                        >
+                          Freigeben
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(e, 'rejected')}
+                          disabled={approvingId === e.id}
+                          className="text-sm px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                          aria-label="Ablehnen"
+                        >
+                          Ablehnen
+                        </button>
+                      </>
+                    )}
+                    {(e.approval_status === 'approved' || !e.approval_status) && (
+                      <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">Freigegeben</span>
+                    )}
+                    {e.approval_status === 'rejected' && (
+                      <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-800">Abgelehnt</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(e)}
+                      className="text-sm px-2 py-1 rounded bg-slate-200 text-slate-700 hover:bg-slate-300"
+                      aria-label="Eintrag bearbeiten"
+                    >
+                      Bearbeiten
+                    </button>
+                  </div>
                 </li>
               )
             })
@@ -314,9 +434,37 @@ const AlleZeiten = () => {
                       <li key={e.id} className="flex justify-between items-start gap-1 text-xs">
                         <span>
                           {formatTime(e.start)}–{e.end ? formatTime(e.end) : '…'}
+                          {e.approval_status === 'submitted' && (
+                            <span className="ml-1 text-amber-600" title="Eingereicht">●</span>
+                          )}
+                          {e.approval_status === 'rejected' && (
+                            <span className="ml-1 text-red-600" title="Abgelehnt">●</span>
+                          )}
                         </span>
                         <span className="flex items-center gap-1">
                           {formatMinutes(min)}
+                          {e.approval_status === 'submitted' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleApprove(e, 'approved')}
+                                disabled={approvingId === e.id}
+                                className="text-green-600 hover:underline"
+                                aria-label="Freigeben"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleApprove(e, 'rejected')}
+                                disabled={approvingId === e.id}
+                                className="text-red-600 hover:underline"
+                                aria-label="Ablehnen"
+                              >
+                                ✗
+                              </button>
+                            </>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(e)}
@@ -463,6 +611,15 @@ const AlleZeiten = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {locationModal && (
+        <LocationMapModal
+          lat={locationModal.lat}
+          lon={locationModal.lon}
+          label={locationModal.label}
+          onClose={() => setLocationModal(null)}
+        />
       )}
     </div>
   )

@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
-import { fetchProfileByEmail } from './lib/userService'
 import { formatLicenseDate, isLimitReached } from './lib/licenseService'
 import {
   isLicenseApiConfigured,
@@ -13,12 +12,9 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 
 const Info = () => {
   const { userRole, refreshUserRole } = useAuth()
-  const { license, refresh: refreshLicense } = useLicense()
+  const { license, storageUsageMb, refresh: refreshLicense } = useLicense()
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'current'>('idle')
   const [updateInfo, setUpdateInfo] = useState<{ version: string; releaseNotes: string[] } | null>(null)
-  const [checkEmail, setCheckEmail] = useState('')
-  const [checkResult, setCheckResult] = useState<{ email: string; role: string } | null>(null)
-  const [isChecking, setIsChecking] = useState(false)
   const [licenseNumberInput, setLicenseNumberInput] = useState(getStoredLicenseNumber() ?? '')
   const [isSavingLicense, setIsSavingLicense] = useState(false)
   const [licenseNumberMessage, setLicenseNumberMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -42,19 +38,6 @@ const Info = () => {
     } catch {
       setUpdateStatus('idle')
     }
-  }
-
-  const handleCheckUser = async () => {
-    if (!checkEmail.trim()) return
-    setCheckResult(null)
-    setIsChecking(true)
-    const profile = await fetchProfileByEmail(checkEmail.trim())
-    setIsChecking(false)
-    setCheckResult(
-      profile
-        ? { email: profile.email ?? '(keine E-Mail)', role: profile.role }
-        : { email: checkEmail.trim(), role: '(nicht gefunden)' }
-    )
   }
 
   const handleSaveLicenseNumber = async () => {
@@ -164,46 +147,6 @@ const Info = () => {
         </div>
       </section>
 
-      {/* Benutzeranleitung */}
-      <section
-        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
-        aria-labelledby="anleitung-heading"
-      >
-        <h3 id="anleitung-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
-          Benutzeranleitung
-        </h3>
-        <button
-          type="button"
-          onClick={() => window.open('/BENUTZERANLEITUNG.md', '_blank', 'noopener,noreferrer')}
-          className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-          aria-label="Benutzeranleitung öffnen"
-        >
-          Benutzeranleitung öffnen
-        </button>
-      </section>
-
-      {/* Dokumentation */}
-      <section
-        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
-        aria-labelledby="dokumentation-heading"
-      >
-        <h3 id="dokumentation-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
-          Dokumentation
-        </h3>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-          Projekt-Dokumentation mit Architektur, Features, Roadmap und technischen Details.
-        </p>
-        <a
-          href="/Vico-Dokumentation.pdf"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-          aria-label="Vico-Dokumentation als PDF öffnen"
-        >
-          Vico-Dokumentation (PDF)
-        </a>
-      </section>
-
       {/* Lizenz (Admin) */}
       {userRole === 'admin' && (
         <section
@@ -268,7 +211,14 @@ const Info = () => {
               )}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="text-slate-500 dark:text-slate-400">Tier</div>
-                <div className="text-slate-800 dark:text-slate-100 font-medium capitalize">{license.tier}</div>
+                <div className="text-slate-800 dark:text-slate-100 font-medium flex items-center gap-2">
+                  <span className="capitalize">{license.tier}</span>
+                  {license.is_trial && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                      Trial
+                    </span>
+                  )}
+                </div>
                 <div className="text-slate-500 dark:text-slate-400">Gültig bis</div>
                 <div className="text-slate-800 dark:text-slate-100 font-medium">{formatLicenseDate(license.valid_until)}</div>
                 <div className="text-slate-500 dark:text-slate-400">Kunden</div>
@@ -279,6 +229,14 @@ const Info = () => {
                 <div className={`font-medium ${isLimitReached(license.current_users, license.max_users) ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}>
                   {license.current_users} / {license.max_users ?? '∞'}
                 </div>
+                {license.max_storage_mb != null && (
+                  <>
+                    <div className="text-slate-500 dark:text-slate-400">Speicher</div>
+                    <div className={`font-medium ${storageUsageMb >= license.max_storage_mb * 0.8 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                      {storageUsageMb.toFixed(1)} MB / {license.max_storage_mb} MB
+                    </div>
+                  </>
+                )}
                 <div className="text-slate-500 dark:text-slate-400">Kundenportal</div>
                 <div className="text-slate-800 dark:text-slate-100 font-medium">
                   {license.features?.kundenportal ? '✓ Aktiv' : '✗ Nicht enthalten'}
@@ -301,41 +259,6 @@ const Info = () => {
                 Neu laden
               </button>
             </>
-          )}
-        </section>
-      )}
-
-      {/* Benutzer-Rolle prüfen (Admin) */}
-      {userRole === 'admin' && (
-        <section
-          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
-          aria-labelledby="rolle-pruefen-heading"
-        >
-          <h3 id="rolle-pruefen-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
-            Benutzer-Rolle prüfen
-          </h3>
-          <div className="flex gap-2">
-            <input
-              type="email"
-              value={checkEmail}
-              onChange={(e) => setCheckEmail(e.target.value)}
-              placeholder="E-Mail eingeben"
-              className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm"
-              aria-label="E-Mail zum Prüfen"
-            />
-            <button
-              type="button"
-              onClick={handleCheckUser}
-              disabled={isChecking}
-              className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
-            >
-              {isChecking ? '…' : 'Prüfen'}
-            </button>
-          </div>
-          {checkResult && (
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-              <strong>{checkResult.email}</strong> → {checkResult.role}
-            </p>
           )}
         </section>
       )}

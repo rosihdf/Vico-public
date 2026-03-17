@@ -18,6 +18,15 @@ const Uebersicht = () => {
           </p>
         </Link>
         <Link
+          to="/urlaub"
+          className="block p-4 bg-white border border-slate-200 rounded-lg hover:border-vico-primary hover:bg-slate-50 transition-colors"
+        >
+          <h3 className="font-medium text-slate-800">Urlaub</h3>
+          <p className="text-sm text-slate-500 mt-1">
+            Urlaubsanträge stellen, genehmigen oder ablehnen
+          </p>
+        </Link>
+        <Link
           to="/log"
           className="block p-4 bg-white border border-slate-200 rounded-lg hover:border-vico-primary hover:bg-slate-50 transition-colors"
         >

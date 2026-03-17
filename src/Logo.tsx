@@ -23,7 +23,7 @@ const Logo = ({ variant = 'header', className = '' }: LogoProps) => {
   const licenseContext = useLicenseOptional()
   const design = licenseContext?.design
   const logoUrl = design?.logo_url || DEFAULT_LOGO
-  const appName = design?.app_name || 'Vico Türen & Tore'
+  const appName = design?.app_name || 'AMRtech Türen & Tore'
 
   const img = (
     <img

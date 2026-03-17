@@ -11,6 +11,7 @@ type LimitExceededBody = {
   limit_type: 'users' | 'customers'
   current_value: number
   max_value: number
+  reported_from?: string
 }
 
 serve(async (req) => {
@@ -27,7 +28,7 @@ serve(async (req) => {
 
   try {
     const body = (await req.json()) as LimitExceededBody
-    const { licenseNumber, limit_type, current_value, max_value } = body
+    const { licenseNumber, limit_type, current_value, max_value, reported_from } = body
 
     if (!licenseNumber?.trim() || !limit_type || typeof current_value !== 'number' || typeof max_value !== 'number') {
       return new Response(
@@ -74,6 +75,7 @@ serve(async (req) => {
       current_value,
       max_value,
       license_number: licenseNumber.trim(),
+      reported_from: reported_from?.trim() || null,
     })
 
     if (insertError) {

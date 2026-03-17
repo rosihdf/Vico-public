@@ -57,6 +57,39 @@ export const updateTimeEntryAsAdmin = async (
   return { error: null }
 }
 
+export const submitTimeEntryForApproval = async (entryId: string): Promise<{ error: { message: string } | null }> => {
+  const { error } = await supabase
+    .from('time_entries')
+    .update({
+      approval_status: 'submitted',
+      approved_by: null,
+      approved_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', entryId)
+  if (error) return { error: { message: error.message } }
+  return { error: null }
+}
+
+export const approveTimeEntry = async (
+  entryId: string,
+  status: 'approved' | 'rejected'
+): Promise<{ error: { message: string } | null }> => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user?.id) return { error: { message: 'Nicht angemeldet' } }
+  const { error } = await supabase
+    .from('time_entries')
+    .update({
+      approval_status: status,
+      approved_by: user.id,
+      approved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', entryId)
+  if (error) return { error: { message: error.message } }
+  return { error: null }
+}
+
 export type TimeEntryEditLogFilters = {
   dateFrom?: string
   dateTo?: string

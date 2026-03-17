@@ -100,6 +100,14 @@ create policy "User can read own profile" on public.profiles for select using (a
 create policy "User can update own profile" on public.profiles for update using (auth.uid() = id);
 create policy "Admins can read all profiles" on public.profiles for select using (public.is_admin());
 create policy "Admins can update profile roles" on public.profiles for update using (public.is_admin());
+create policy "Teamleiter can update soll_minutes for team members" on public.profiles for update using (
+  public.is_teamleiter()
+  and exists (
+    select 1 from public.profiles me
+    where me.id = auth.uid() and me.team_id is not null
+    and me.team_id = profiles.team_id
+  )
+);
 create policy "Authenticated users can read profiles for assignment" on public.profiles for select using (auth.uid() is not null);
 
 -- Trigger: Mindestens ein Admin
@@ -567,6 +575,15 @@ alter table public.time_entries add column if not exists location_start_lat doub
 alter table public.time_entries add column if not exists location_start_lon double precision default null;
 alter table public.time_entries add column if not exists location_end_lat double precision default null;
 alter table public.time_entries add column if not exists location_end_lon double precision default null;
+alter table public.time_entries add column if not exists approval_status text default 'approved';
+alter table public.time_entries add column if not exists approved_by uuid references public.profiles(id) on delete set null;
+alter table public.time_entries add column if not exists approved_at timestamptz default null;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'time_entries_approval_status_check') then
+    alter table public.time_entries add constraint time_entries_approval_status_check
+      check (approval_status in ('submitted', 'approved', 'rejected'));
+  end if;
+end $$;
 alter table public.time_entries enable row level security;
 
 do $$ declare r record; begin
@@ -660,6 +677,146 @@ create policy "Teamleiter can insert time_entry_edit_log for team" on public.tim
     where te.id = time_entry_id
   )
 );
+
+-- =============================================================================
+-- Soll-Berechnung: Feiertage, Arbeitseinstellungen, freie Tage
+-- =============================================================================
+
+create table if not exists public.public_holidays (
+  id uuid default gen_random_uuid() primary key,
+  bundesland text not null,
+  "date" date not null,
+  name text,
+  created_at timestamptz default now(),
+  unique (bundesland, "date")
+);
+create index if not exists idx_public_holidays_bundesland_date on public.public_holidays(bundesland, "date");
+alter table public.public_holidays enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'public_holidays' loop
+    execute format('drop policy if exists %I on public.public_holidays', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated can read public_holidays" on public.public_holidays for select using (auth.uid() is not null);
+create policy "Admins can manage public_holidays" on public.public_holidays for all using (public.is_admin());
+
+-- Seed: Berlin Feiertage 2024–2026 (idempotent)
+insert into public.public_holidays (bundesland, "date", name) values
+  ('BE','2024-01-01','Neujahr'),('BE','2024-03-08','Frauentag'),('BE','2024-03-29','Karfreitag'),('BE','2024-04-01','Ostermontag'),
+  ('BE','2024-05-01','Tag der Arbeit'),('BE','2024-05-09','Christi Himmelfahrt'),('BE','2024-05-20','Pfingstmontag'),
+  ('BE','2024-10-03','Tag der Deutschen Einheit'),('BE','2024-12-25','1. Weihnachtstag'),('BE','2024-12-26','2. Weihnachtstag'),
+  ('BE','2025-01-01','Neujahr'),('BE','2025-03-08','Frauentag'),('BE','2025-04-18','Karfreitag'),('BE','2025-04-21','Ostermontag'),
+  ('BE','2025-05-01','Tag der Arbeit'),('BE','2025-05-08','Befreiungstag'),('BE','2025-05-29','Christi Himmelfahrt'),
+  ('BE','2025-06-09','Pfingstmontag'),('BE','2025-10-03','Tag der Deutschen Einheit'),('BE','2025-12-25','1. Weihnachtstag'),('BE','2025-12-26','2. Weihnachtstag'),
+  ('BE','2026-01-01','Neujahr'),('BE','2026-03-08','Frauentag'),('BE','2026-04-03','Karfreitag'),('BE','2026-04-06','Ostermontag'),
+  ('BE','2026-05-01','Tag der Arbeit'),('BE','2026-05-14','Christi Himmelfahrt'),('BE','2026-05-25','Pfingstmontag'),
+  ('BE','2026-10-03','Tag der Deutschen Einheit'),('BE','2026-12-25','1. Weihnachtstag'),('BE','2026-12-26','2. Weihnachtstag')
+on conflict (bundesland, "date") do nothing;
+
+create table if not exists public.work_settings (
+  id uuid default gen_random_uuid() primary key,
+  bundesland text default 'BE',
+  work_days int[] default array[1,2,3,4,5],
+  hours_per_day numeric(4,2) default 8,
+  updated_at timestamptz default now()
+);
+insert into public.work_settings (id, bundesland, work_days, hours_per_day)
+select gen_random_uuid(), 'BE', array[1,2,3,4,5], 8
+where not exists (select 1 from public.work_settings limit 1);
+alter table public.work_settings enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'work_settings' loop
+    execute format('drop policy if exists %I on public.work_settings', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated can read work_settings" on public.work_settings for select using (auth.uid() is not null);
+create policy "Admins can manage work_settings" on public.work_settings for all using (public.is_admin());
+
+create table if not exists public.work_free_days (
+  id uuid default gen_random_uuid() primary key,
+  "date" date not null unique,
+  type text not null,
+  label text,
+  created_at timestamptz default now()
+);
+alter table public.work_free_days enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'work_free_days' loop
+    execute format('drop policy if exists %I on public.work_free_days', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated can read work_free_days" on public.work_free_days for select using (auth.uid() is not null);
+create policy "Admins can manage work_free_days" on public.work_free_days for all using (public.is_admin());
+
+-- Phase 2: Urlaubsverwaltung
+create table if not exists public.leave_requests (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  from_date date not null,
+  to_date date not null,
+  leave_type text not null default 'urlaub' check (leave_type in ('urlaub', 'krank', 'sonderurlaub', 'unbezahlt', 'sonstiges')),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  days_count numeric(4,2),
+  approved_by uuid references public.profiles(id),
+  approved_at timestamptz,
+  rejection_reason text,
+  notes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  constraint leave_requests_dates check (to_date >= from_date)
+);
+create index if not exists idx_leave_requests_user_id on public.leave_requests(user_id);
+create index if not exists idx_leave_requests_dates on public.leave_requests(from_date, to_date);
+create index if not exists idx_leave_requests_status on public.leave_requests(status);
+alter table public.leave_requests enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'leave_requests' loop
+    execute format('drop policy if exists %I on public.leave_requests', r.policyname);
+  end loop;
+end $$;
+create policy "User can read own leave_requests" on public.leave_requests for select using (user_id = auth.uid());
+create policy "User can insert own leave_requests" on public.leave_requests for insert with check (user_id = auth.uid());
+create policy "Admin and teamleiter can insert leave_requests" on public.leave_requests for insert with check (
+  public.is_admin()
+  or (public.is_teamleiter() and user_id in (
+    select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null
+  ))
+);
+create policy "Admin and teamleiter can read all leave_requests" on public.leave_requests for select using (
+  public.is_admin() or (public.is_teamleiter() and user_id in (select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null))
+);
+create policy "Admin and teamleiter can update leave_requests" on public.leave_requests for update using (
+  public.is_admin() or (public.is_teamleiter() and user_id in (select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null))
+);
+
+create table if not exists public.leave_entitlements (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  year int not null,
+  days_total numeric(4,2) not null default 0,
+  days_carried_over numeric(4,2) not null default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (user_id, year)
+);
+create index if not exists idx_leave_entitlements_user_year on public.leave_entitlements(user_id, year);
+alter table public.leave_entitlements enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'leave_entitlements' loop
+    execute format('drop policy if exists %I on public.leave_entitlements', r.policyname);
+  end loop;
+end $$;
+create policy "User can read own leave_entitlements" on public.leave_entitlements for select using (user_id = auth.uid());
+create policy "Admin and teamleiter can read leave_entitlements" on public.leave_entitlements for select using (
+  public.is_admin() or (public.is_teamleiter() and user_id in (select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null))
+);
+create policy "Admins can manage leave_entitlements" on public.leave_entitlements for all using (public.is_admin());
+
+alter table public.profiles add column if not exists vacation_days_per_year numeric(4,2) default null;
+
+alter table public.profiles add column if not exists bundesland text default null;
+alter table public.profiles add column if not exists work_days int[] default null;
+alter table public.profiles add column if not exists hours_per_day numeric(4,2) default null;
 
 -- RPC: Admin aktualisiert time_entry und schreibt Eintrag in time_entry_edit_log (eine Transaktion). order_id optional.
 create or replace function public.update_time_entry_admin(
@@ -908,16 +1065,349 @@ $$;
 grant execute on function public.get_all_profiles_for_admin() to authenticated;
 
 -- Für Arbeitszeitenportal: nur Profile, die der User sehen darf (Admin: alle mit Zeiterfassung-Rollen, Teamleiter: gleiches Team).
+drop function if exists public.get_profiles_for_zeiterfassung();
 create or replace function public.get_profiles_for_zeiterfassung()
-returns table (id uuid, email text, first_name text, last_name text, role text, soll_minutes_per_month int, soll_minutes_per_week int)
+returns table (id uuid, email text, first_name text, last_name text, role text, soll_minutes_per_month int, soll_minutes_per_week int, vacation_days_per_year numeric)
 language sql security definer set search_path = public stable as $$
-  select p.id, p.email, p.first_name, p.last_name, p.role, p.soll_minutes_per_month, p.soll_minutes_per_week
+  select p.id, p.email, p.first_name, p.last_name, p.role, p.soll_minutes_per_month, p.soll_minutes_per_week, p.vacation_days_per_year
   from public.profiles p
   where p.role in ('admin', 'teamleiter', 'mitarbeiter', 'operator', 'leser')
   and (public.is_admin() or (public.is_teamleiter() and p.team_id = public.get_my_team_id() and p.team_id is not null))
   order by p.email nulls last;
 $$;
 grant execute on function public.get_profiles_for_zeiterfassung() to authenticated;
+
+-- RPC: Berechnet Soll-Minuten für User/Monat (inkl. genehmigter Urlaubstage)
+create or replace function public.calc_soll_minutes_for_month(
+  p_user_id uuid,
+  p_year int,
+  p_month int
+)
+returns int
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  v_bundesland text;
+  v_work_days int[];
+  v_hours_per_day numeric;
+  v_first date;
+  v_last date;
+  v_d date;
+  v_dow int;
+  v_count int := 0;
+  v_ws record;
+  v_p record;
+begin
+  select bundesland, work_days, hours_per_day into v_ws from public.work_settings limit 1;
+  select p.bundesland, p.work_days, p.hours_per_day into v_p from public.profiles p where p.id = p_user_id limit 1;
+  v_bundesland := coalesce(v_p.bundesland, v_ws.bundesland, 'BE');
+  v_work_days := coalesce(v_p.work_days, v_ws.work_days, array[1,2,3,4,5]);
+  v_hours_per_day := coalesce(v_p.hours_per_day, v_ws.hours_per_day, 8);
+  v_first := make_date(p_year, p_month, 1);
+  v_last := (v_first + interval '1 month' - interval '1 day')::date;
+  for v_d in select generate_series(v_first, v_last, '1 day'::interval)::date loop
+    v_dow := extract(dow from v_d)::int;
+    if v_dow = any(v_work_days) then
+      if not exists (select 1 from public.public_holidays where bundesland = v_bundesland and "date" = v_d) then
+        if not exists (select 1 from public.work_free_days where "date" = v_d) then
+          if not exists (
+            select 1 from public.leave_requests lr
+            where lr.user_id = p_user_id and lr.status = 'approved'
+            and v_d >= lr.from_date and v_d <= lr.to_date
+          ) then
+            v_count := v_count + 1;
+          end if;
+        end if;
+      end if;
+    end if;
+  end loop;
+  return (v_count * v_hours_per_day * 60)::int;
+end;
+$$;
+grant execute on function public.calc_soll_minutes_for_month(uuid, int, int) to authenticated;
+
+-- RPC: Soll-Minuten für ein ganzes Jahr (Summe aller 12 Monate)
+create or replace function public.calc_soll_minutes_for_year(
+  p_user_id uuid,
+  p_year int
+)
+returns int
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  v_sum int := 0;
+  v_m int;
+begin
+  for v_m in 1..12 loop
+    v_sum := v_sum + public.calc_soll_minutes_for_month(p_user_id, p_year, v_m);
+  end loop;
+  return v_sum;
+end;
+$$;
+grant execute on function public.calc_soll_minutes_for_year(uuid, int) to authenticated;
+
+-- RPC: Summe Arbeitsminuten (ohne Pausen) für User in Datumsbereich
+create or replace function public.get_work_minutes_for_user_in_range(
+  p_user_id uuid,
+  p_from_date date,
+  p_to_date date
+)
+returns int
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select coalesce(sum(
+    greatest(0,
+      extract(epoch from (te."end" - te.start))::int / 60
+      - coalesce((
+        select sum(extract(epoch from (tb."end" - tb.start))::int / 60)
+        from public.time_breaks tb
+        where tb.time_entry_id = te.id and tb."end" is not null
+      ), 0)
+    )
+  ), 0)::int
+  from public.time_entries te
+  where te.user_id = p_user_id
+    and te.date >= p_from_date and te.date <= p_to_date
+    and te."end" is not null;
+$$;
+grant execute on function public.get_work_minutes_for_user_in_range(uuid, date, date) to authenticated;
+
+-- RPC: Zählt Arbeitstage in einem Datumsbereich (für Urlaubsanträge)
+create or replace function public.count_work_days_in_range(
+  p_user_id uuid,
+  p_from_date date,
+  p_to_date date
+)
+returns numeric
+language plpgsql security definer set search_path = public stable as $$
+declare
+  v_bundesland text;
+  v_work_days int[];
+  v_d date;
+  v_dow int;
+  v_count int := 0;
+  v_ws record;
+  v_p record;
+begin
+  select bundesland, work_days into v_ws from public.work_settings limit 1;
+  select p.bundesland, p.work_days into v_p from public.profiles p where p.id = p_user_id limit 1;
+  v_bundesland := coalesce(v_p.bundesland, v_ws.bundesland, 'BE');
+  v_work_days := coalesce(v_p.work_days, v_ws.work_days, array[1,2,3,4,5]);
+  for v_d in select generate_series(p_from_date, p_to_date, '1 day'::interval)::date loop
+    v_dow := extract(dow from v_d)::int;
+    if v_dow = any(v_work_days) then
+      if not exists (select 1 from public.public_holidays where bundesland = v_bundesland and "date" = v_d) then
+        if not exists (select 1 from public.work_free_days where "date" = v_d) then
+          v_count := v_count + 1;
+        end if;
+      end if;
+    end if;
+  end loop;
+  return v_count;
+end;
+$$;
+grant execute on function public.count_work_days_in_range(uuid, date, date) to authenticated;
+
+-- RPC: Urlaubsantrag genehmigen oder ablehnen
+create or replace function public.approve_leave_request(
+  p_request_id uuid,
+  p_approved boolean,
+  p_rejection_reason text default null
+)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_user_id uuid;
+  v_from_date date;
+  v_to_date date;
+  v_days numeric;
+begin
+  if auth.uid() is null then
+    raise exception 'Nicht authentifiziert';
+  end if;
+  if not public.is_admin() and not (
+    public.is_teamleiter() and exists (
+      select 1 from public.leave_requests lr
+      join public.profiles p on p.id = lr.user_id and p.team_id = public.get_my_team_id() and p.team_id is not null
+      where lr.id = p_request_id
+    )
+  ) then
+    raise exception 'Nur Admin oder Teamleiter (eigenes Team) darf Urlaubsanträge bearbeiten';
+  end if;
+  select user_id, from_date, to_date into v_user_id, v_from_date, v_to_date
+  from public.leave_requests where id = p_request_id;
+  if v_user_id is null then
+    raise exception 'Antrag nicht gefunden';
+  end if;
+  if p_approved then
+    v_days := public.count_work_days_in_range(v_user_id, v_from_date, v_to_date);
+    update public.leave_requests
+    set status = 'approved', days_count = v_days, approved_by = auth.uid(), approved_at = now(),
+        rejection_reason = null, updated_at = now()
+    where id = p_request_id;
+  else
+    update public.leave_requests
+    set status = 'rejected', approved_by = auth.uid(), approved_at = now(),
+        rejection_reason = nullif(trim(p_rejection_reason), ''), updated_at = now()
+    where id = p_request_id;
+  end if;
+end;
+$$;
+grant execute on function public.approve_leave_request(uuid, boolean, text) to authenticated;
+
+-- RPC: Urlaubsanträge abrufen (Admin: alle/gefiltert, Teamleiter: Team, User: eigene)
+create or replace function public.get_leave_requests(
+  p_user_id uuid default null,
+  p_date_from date default null,
+  p_date_to date default null,
+  p_status text default null
+)
+returns table (
+  id uuid,
+  user_id uuid,
+  user_email text,
+  user_name text,
+  from_date date,
+  to_date date,
+  leave_type text,
+  status text,
+  days_count numeric,
+  approved_by uuid,
+  approved_at timestamptz,
+  rejection_reason text,
+  notes text,
+  created_at timestamptz
+)
+language sql security definer set search_path = public stable as $$
+  select lr.id, lr.user_id, p.email as user_email,
+    trim(concat_ws(' ', p.first_name, p.last_name)) as user_name,
+    lr.from_date, lr.to_date, lr.leave_type, lr.status, lr.days_count,
+    lr.approved_by, lr.approved_at, lr.rejection_reason, lr.notes, lr.created_at
+  from public.leave_requests lr
+  join public.profiles p on p.id = lr.user_id
+  where (
+    (p_user_id is null and (
+      lr.user_id = auth.uid()
+      or public.is_admin()
+      or (public.is_teamleiter() and p.team_id = public.get_my_team_id() and p.team_id is not null)
+    ))
+    or (p_user_id is not null and lr.user_id = p_user_id and (
+      auth.uid() = p_user_id
+      or public.is_admin()
+      or (public.is_teamleiter() and p.team_id = public.get_my_team_id() and p.team_id is not null)
+    ))
+  )
+  and (p_date_from is null or lr.to_date >= p_date_from)
+  and (p_date_to is null or lr.from_date <= p_date_to)
+  and (p_status is null or lr.status = p_status)
+  order by lr.from_date desc, lr.created_at desc;
+$$;
+grant execute on function public.get_leave_requests(uuid, date, date, text) to authenticated;
+
+-- RPC für Sollwerte-Update (umgeht RLS, prüft Berechtigung intern)
+create or replace function public.update_profile_soll_minutes(
+  p_profile_id uuid,
+  p_soll_minutes_per_month int,
+  p_soll_minutes_per_week int
+)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_caller_admin boolean;
+  v_caller_team_id uuid;
+  v_target_team_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Nicht authentifiziert';
+  end if;
+  v_caller_admin := public.is_admin();
+  if v_caller_admin then
+    update public.profiles
+    set soll_minutes_per_month = p_soll_minutes_per_month,
+        soll_minutes_per_week = p_soll_minutes_per_week,
+        updated_at = now()
+    where id = p_profile_id;
+    return;
+  end if;
+  if public.is_teamleiter() then
+    select team_id into v_caller_team_id from public.profiles where id = auth.uid() limit 1;
+    select team_id into v_target_team_id from public.profiles where id = p_profile_id limit 1;
+    if v_caller_team_id is not null and v_caller_team_id = v_target_team_id then
+      update public.profiles
+      set soll_minutes_per_month = p_soll_minutes_per_month,
+          soll_minutes_per_week = p_soll_minutes_per_week,
+          updated_at = now()
+      where id = p_profile_id;
+      return;
+    end if;
+  end if;
+  raise exception 'Keine Berechtigung, Sollwerte zu ändern';
+end;
+$$;
+grant execute on function public.update_profile_soll_minutes(uuid, int, int) to authenticated;
+
+create or replace function public.update_profile_vacation_days(p_profile_id uuid, p_vacation_days numeric)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_caller_admin boolean;
+  v_caller_team_id uuid;
+  v_target_team_id uuid;
+  v_year int;
+begin
+  if auth.uid() is null then
+    raise exception 'Nicht authentifiziert';
+  end if;
+  v_caller_admin := public.is_admin();
+  if v_caller_admin then
+    update public.profiles set vacation_days_per_year = p_vacation_days, updated_at = now() where id = p_profile_id;
+    -- leave_entitlements für aktuelles und nächstes Jahr aus Stammdaten übernehmen
+    v_year := extract(year from current_date)::int;
+    insert into public.leave_entitlements (user_id, year, days_total, days_carried_over, updated_at)
+    values (p_profile_id, v_year, coalesce(p_vacation_days, 0), 0, now())
+    on conflict (user_id, year) do update set days_total = coalesce(p_vacation_days, 0), updated_at = now();
+    insert into public.leave_entitlements (user_id, year, days_total, days_carried_over, updated_at)
+    values (p_profile_id, v_year + 1, coalesce(p_vacation_days, 0), 0, now())
+    on conflict (user_id, year) do update set days_total = coalesce(p_vacation_days, 0), updated_at = now();
+    return;
+  end if;
+  if public.is_teamleiter() then
+    select team_id into v_caller_team_id from public.profiles where id = auth.uid() limit 1;
+    select team_id into v_target_team_id from public.profiles where id = p_profile_id limit 1;
+    if v_caller_team_id is not null and v_caller_team_id = v_target_team_id then
+      update public.profiles set vacation_days_per_year = p_vacation_days, updated_at = now() where id = p_profile_id;
+      v_year := extract(year from current_date)::int;
+      insert into public.leave_entitlements (user_id, year, days_total, days_carried_over, updated_at)
+      values (p_profile_id, v_year, coalesce(p_vacation_days, 0), 0, now())
+      on conflict (user_id, year) do update set days_total = coalesce(p_vacation_days, 0), updated_at = now();
+      insert into public.leave_entitlements (user_id, year, days_total, days_carried_over, updated_at)
+      values (p_profile_id, v_year + 1, coalesce(p_vacation_days, 0), 0, now())
+      on conflict (user_id, year) do update set days_total = coalesce(p_vacation_days, 0), updated_at = now();
+      return;
+    end if;
+  end if;
+  raise exception 'Keine Berechtigung, Urlaubstage zu ändern';
+end;
+$$;
+grant execute on function public.update_profile_vacation_days(uuid, numeric) to authenticated;
+
+-- Einmal-Migration: Bestehende Urlaubstage aus Stammdaten in leave_entitlements übernehmen
+insert into public.leave_entitlements (user_id, year, days_total, days_carried_over, updated_at)
+select p.id, extract(year from current_date)::int, p.vacation_days_per_year, 0, now()
+from public.profiles p
+where p.vacation_days_per_year is not null and p.vacation_days_per_year > 0
+on conflict (user_id, year) do update set days_total = excluded.days_total, updated_at = now();
+insert into public.leave_entitlements (user_id, year, days_total, days_carried_over, updated_at)
+select p.id, extract(year from current_date)::int + 1, p.vacation_days_per_year, 0, now()
+from public.profiles p
+where p.vacation_days_per_year is not null and p.vacation_days_per_year > 0
+on conflict (user_id, year) do update set days_total = excluded.days_total, updated_at = now();
 
 create or replace function public.get_audit_log(limit_rows int default 200, offset_rows int default 0)
 returns table (id uuid, user_id uuid, user_email text, action text, table_name text, record_id text, created_at timestamptz)
@@ -1226,6 +1716,59 @@ end;
 $$;
 grant execute on function public.check_can_invite_user() to authenticated;
 
+-- Grenzüberschreitungen: lokale Tabelle + RPC (Prüfung über Datenbank)
+-- Für HTTP-POST ans Lizenzportal: pg_net in Supabase Dashboard aktivieren (Database → Extensions)
+create table if not exists public.limit_exceeded_log (
+  id uuid primary key default gen_random_uuid(),
+  limit_type text not null check (limit_type in ('users', 'customers')),
+  current_value int not null,
+  max_value int not null,
+  license_number text,
+  reported_from text,
+  created_at timestamptz default now()
+);
+create index if not exists idx_limit_exceeded_log_created on public.limit_exceeded_log(created_at desc);
+alter table public.limit_exceeded_log enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'limit_exceeded_log' loop
+    execute format('drop policy if exists %I on public.limit_exceeded_log', r.policyname);
+  end loop;
+end $$;
+create policy "Admins can read limit_exceeded_log" on public.limit_exceeded_log for select using (public.is_admin());
+
+create or replace function public.report_limit_exceeded(
+  p_license_number text,
+  p_limit_type text,
+  p_current_value int,
+  p_max_value int,
+  p_reported_from text default null,
+  p_api_url text default null
+)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.limit_exceeded_log (limit_type, current_value, max_value, license_number, reported_from)
+  values (p_limit_type, p_current_value, p_max_value, nullif(trim(p_license_number), ''), nullif(trim(p_reported_from), ''));
+  if p_api_url is not null and trim(p_api_url) != '' then
+    begin
+      perform net.http_post(
+        url := trim(p_api_url),
+        headers := jsonb_build_object('Content-Type', 'application/json'),
+        body := jsonb_build_object(
+          'licenseNumber', nullif(trim(p_license_number), ''),
+          'limit_type', p_limit_type,
+          'current_value', p_current_value,
+          'max_value', p_max_value,
+          'reported_from', nullif(trim(p_reported_from), '')
+        )
+      );
+    exception when others then
+      null;
+    end;
+  end if;
+end;
+$$;
+grant execute on function public.report_limit_exceeded(text, text, int, int, text, text) to authenticated;
+
 -- =============================================================================
 -- 6. KUNDENPORTAL
 -- =============================================================================
@@ -1356,6 +1899,27 @@ grant execute on function public.get_portal_pdf_path(uuid) to authenticated;
 insert into storage.buckets (id, name, public) values ('object-photos', 'object-photos', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('object-documents', 'object-documents', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('maintenance-photos', 'maintenance-photos', true) on conflict (id) do nothing;
+
+-- RPC: Speichernutzung in MB (für Speicherkontingent-Warnung)
+create or replace function public.get_storage_usage()
+returns numeric
+language sql
+security definer
+set search_path = public, storage
+stable
+as $$
+  select coalesce(
+    round(
+      (sum((metadata->>'size')::bigint) / 1048576.0)::numeric,
+      2
+    ),
+    0
+  )
+  from storage.objects
+  where bucket_id in ('object-photos', 'object-documents', 'maintenance-photos');
+$$;
+grant execute on function public.get_storage_usage() to authenticated;
+grant execute on function public.get_storage_usage() to service_role;
 
 drop policy if exists "Authenticated users can read object-photos" on storage.objects;
 drop policy if exists "Authenticated users can upload object-photos" on storage.objects;

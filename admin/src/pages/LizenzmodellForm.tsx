@@ -16,6 +16,7 @@ const DEFAULT_FORM: LicenseModelInsert & { sort_order: number } = {
   tier: 'professional',
   max_users: null,
   max_customers: null,
+  max_storage_mb: null,
   check_interval: 'daily',
   features: { kundenportal: false, historie: false, arbeitszeiterfassung: false },
   sort_order: 0,
@@ -54,6 +55,7 @@ const LizenzmodellForm = () => {
             tier: m.tier,
             max_users: m.max_users,
             max_customers: m.max_customers,
+            max_storage_mb: m.max_storage_mb,
             check_interval: m.check_interval ?? 'daily',
             features: ensureFeatures(m.features),
             sort_order: m.sort_order ?? 0,
@@ -85,6 +87,7 @@ const LizenzmodellForm = () => {
         tier: form.tier,
         max_users: form.max_users,
         max_customers: form.max_customers,
+        max_storage_mb: form.max_storage_mb,
         check_interval: form.check_interval,
         features: form.features,
         sort_order: form.sort_order,
@@ -213,6 +216,22 @@ const LizenzmodellForm = () => {
                 setForm((f) => ({
                   ...f,
                   max_customers: e.target.value === '' ? null : parseInt(e.target.value, 10),
+                }))
+              }
+              placeholder="∞"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Max. Speicher (MB)</label>
+            <input
+              type="number"
+              min={0}
+              value={form.max_storage_mb ?? ''}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  max_storage_mb: e.target.value === '' ? null : parseInt(e.target.value, 10),
                 }))
               }
               placeholder="∞"

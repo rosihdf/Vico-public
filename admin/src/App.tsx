@@ -11,6 +11,7 @@ const MandantForm = lazy(() => import('./pages/MandantForm'))
 const Grenzueberschreitungen = lazy(() => import('./pages/Grenzueberschreitungen'))
 const Lizenzmodelle = lazy(() => import('./pages/Lizenzmodelle'))
 const LizenzmodellForm = lazy(() => import('./pages/LizenzmodellForm'))
+const Einstellungen = lazy(() => import('./pages/Einstellungen'))
 
 const PageFallback = () => (
   <div className="flex flex-col items-center justify-center py-12 gap-4">
@@ -253,6 +254,11 @@ const App = () => {
           <Route path="lizenzmodelle/:id" element={
             <Suspense fallback={<PageFallback />}>
               <LizenzmodellForm />
+            </Suspense>
+          } />
+          <Route path="einstellungen" element={
+            <Suspense fallback={<PageFallback />}>
+              <Einstellungen />
             </Suspense>
           } />
         </Route>

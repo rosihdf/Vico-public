@@ -25,7 +25,7 @@ const MfaEnroll = ({ onEnrolled, onCancelled }: MfaEnrollProps) => {
     setError(null)
     const { data, error: enrollError } = await supabase.auth.mfa.enroll({
       factorType: 'totp',
-      friendlyName: 'Vico Authenticator',
+      friendlyName: 'AMRtech Authenticator',
     })
     setIsLoading(false)
     if (enrollError) {

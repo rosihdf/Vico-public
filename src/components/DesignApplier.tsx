@@ -47,7 +47,7 @@ const clearDesignFromDom = () => {
   root.style.removeProperty('--vico-primary')
   root.style.removeProperty('--vico-primary-hover')
 
-  document.title = 'Vico Türen & Tore'
+  document.title = 'AMRtech Türen & Tore'
 
   const themeColorMeta = document.querySelector('meta[name="theme-color"]')
   if (themeColorMeta) {

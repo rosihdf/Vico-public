@@ -14,6 +14,16 @@ const Grenzueberschreitungen = () => {
     return entries.filter((e) => e.tenant_id === filterTenantId)
   }, [entries, filterTenantId])
 
+  const hasMultipleDomainsPerLicense = useMemo(() => {
+    const byLicense = new Map<string, Set<string>>()
+    for (const e of filteredEntries) {
+      const key = e.license_id ?? e.license_number ?? e.id
+      if (!byLicense.has(key)) byLicense.set(key, new Set())
+      if (e.reported_from?.trim()) byLicense.get(key)!.add(e.reported_from.trim())
+    }
+    return [...byLicense.values()].some((s) => s.size > 1)
+  }, [filteredEntries])
+
   const load = useCallback(async () => {
     setIsLoading(true)
     setError(null)
@@ -61,6 +71,11 @@ const Grenzueberschreitungen = () => {
       <h2 className="text-xl font-bold text-slate-800 mb-2">Grenzüberschreitungen</h2>
       <p className="text-sm text-slate-600 mb-4">
         Meldungen von Mandanten-Apps, wenn Benutzer- oder Kunden-Limit erreicht wurde.
+        {hasMultipleDomainsPerLicense && (
+          <span className="block mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm" role="alert">
+            ⚠️ Mehrere unterschiedliche Domains melden für dieselbe Lizenz – mögliche Doppelnutzung.
+          </span>
+        )}
         {filterTenantId && (
           <span className="block mt-2">
             Gefiltert nach Mandant. <Link to="/grenzueberschreitungen" className="text-vico-primary hover:underline">Filter aufheben</Link>
@@ -106,6 +121,9 @@ const Grenzueberschreitungen = () => {
               <div className="flex items-center gap-3 text-sm">
                 {e.license_number && (
                   <span className="font-mono text-slate-600">{e.license_number}</span>
+                )}
+                {e.reported_from && (
+                  <span className="text-slate-500" title="Domain der Meldung">{e.reported_from}</span>
                 )}
                 <span className="text-slate-500">{formatDate(e.created_at)}</span>
               </div>

@@ -24,6 +24,7 @@ const Einstellungen = lazy(() => import('./Einstellungen'))
 const Benutzerverwaltung = lazy(() => import('./Benutzerverwaltung'))
 const Historie = lazy(() => import('./Historie'))
 const Fehlerberichte = lazy(() => import('./Fehlerberichte'))
+const Ladezeiten = lazy(() => import('./pages/Ladezeiten'))
 const Scan = lazy(() => import('./Scan'))
 const AuftragAnlegen = lazy(() => import('./AuftragAnlegen'))
 const Auftragsdetail = lazy(() => import('./Auftragsdetail'))
@@ -71,6 +72,7 @@ const App = () => {
                 <Route path="benutzerverwaltung" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="benutzerverwaltung"><ProtectedRoute><Benutzerverwaltung /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="historie" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><Historie /></ProtectedRoute></Suspense>} />
                 <Route path="fehlerberichte" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><Fehlerberichte /></ProtectedRoute></Suspense>} />
+                <Route path="ladezeiten" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><Ladezeiten /></ProtectedRoute></Suspense>} />
                 <Route path="scan" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="scan"><ProtectedRoute><Scan /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="auftrag" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="auftrag"><ProtectedRoute><AuftragAnlegen /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="auftrag/:orderId" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="auftrag"><ProtectedRoute><Auftragsdetail /></ProtectedRoute></ComponentGuard></Suspense>} />

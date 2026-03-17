@@ -1,5 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import type { User } from '@supabase/supabase-js'
+import { useDesign } from '../DesignContext'
 
 type LayoutProps = {
   user: User
@@ -8,6 +9,7 @@ type LayoutProps = {
 
 const Layout = ({ user, onLogout }: LayoutProps) => {
   const location = useLocation()
+  const { appName } = useDesign()
   const isÜbersicht = location.pathname === '/' || location.pathname === '/uebersicht'
   const navClass = (active: boolean) =>
     active
@@ -18,10 +20,11 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
     <div className="min-h-screen flex flex-col bg-slate-100">
       <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-lg font-bold text-slate-800">Arbeitszeitenportal</h1>
+          <h1 className="text-lg font-bold text-slate-800">{appName} Arbeitszeitenportal</h1>
           <nav className="flex gap-1" aria-label="Hauptnavigation">
             <Link to="/" className={navClass(isÜbersicht)}>Übersicht</Link>
             <Link to="/alle-zeiten" className={navClass(location.pathname.startsWith('/alle-zeiten'))}>Alle Zeiten</Link>
+            <Link to="/urlaub" className={navClass(location.pathname.startsWith('/urlaub'))}>Urlaub</Link>
             <Link to="/log" className={navClass(location.pathname.startsWith('/log'))}>Log</Link>
             <Link to="/stammdaten" className={navClass(location.pathname.startsWith('/stammdaten'))}>Stammdaten AZK</Link>
           </nav>

@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
 import type { User } from '@supabase/supabase-js'
 import { useTheme } from '../ThemeContext'
+import { useDesign } from '../DesignContext'
 import type { Theme } from '../ThemeContext'
 
 const THEME_LABELS: Record<Theme, string> = {
@@ -22,6 +23,7 @@ const navLinkClass = (active: boolean) =>
 const Layout = ({ user, onLogout }: LayoutProps) => {
   const location = useLocation()
   const { theme, resolvedTheme, cycleTheme } = useTheme()
+  const { appName } = useDesign()
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
@@ -33,7 +35,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <div>
-                <h1 className="text-lg font-bold leading-tight">Vico Türen & Tore Kundenportal</h1>
+                <h1 className="text-lg font-bold leading-tight">{appName} Türen & Tore Kundenportal</h1>
                 <p className="text-xs text-white/70">Wartungsberichte</p>
               </div>
             </Link>
@@ -96,7 +98,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
           Impressum
         </Link>
         <span>·</span>
-        <span>Vico Türen & Tore</span>
+        <span>{appName} Türen & Tore</span>
       </footer>
     </div>
   )

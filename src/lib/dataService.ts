@@ -1,4 +1,5 @@
 import { supabase } from '../supabase'
+import { compressImageFile } from './imageCompression'
 import type {
   Customer,
   BV,
@@ -767,10 +768,12 @@ export const uploadMaintenancePhoto = async (
       error: null,
     }
   }
-  const path = `${reportId}/${crypto.randomUUID()}.${ext}`
+  const blob = await compressImageFile(file)
+  const uploadExt = blob.type === 'image/jpeg' ? 'jpg' : ext
+  const path = `${reportId}/${crypto.randomUUID()}.${uploadExt}`
   const { error: uploadError } = await supabase.storage
     .from(MAINTENANCE_PHOTOS_BUCKET)
-    .upload(path, file, { upsert: false })
+    .upload(path, blob, { upsert: false, contentType: blob.type })
   if (uploadError) return { data: null, error: { message: uploadError.message } }
   const { data: photo, error } = await supabase
     .from('maintenance_report_photos')
@@ -960,10 +963,12 @@ export const uploadObjectPhoto = async (
       error: null,
     }
   }
-  const path = `${objectId}/${crypto.randomUUID()}.${ext}`
+  const blob = await compressImageFile(file)
+  const uploadExt = blob.type === 'image/jpeg' ? 'jpg' : ext
+  const path = `${objectId}/${crypto.randomUUID()}.${uploadExt}`
   const { error: uploadError } = await supabase.storage
     .from(OBJECT_PHOTOS_BUCKET)
-    .upload(path, file, { upsert: false })
+    .upload(path, blob, { upsert: false, contentType: blob.type })
   if (uploadError) return { data: null, error: { message: uploadError.message } }
   const { data: photo, error } = await supabase
     .from('object_photos')

@@ -21,6 +21,7 @@ export type Profile = {
   updated_at?: string
   soll_minutes_per_month?: number | null
   soll_minutes_per_week?: number | null
+  vacation_days_per_year?: number | null
   team_id?: string | null
   team_name?: string | null
   gps_consent_at?: string | null
@@ -40,7 +41,7 @@ export const fetchMyProfile = async (userId: string): Promise<Profile | null> =>
   }
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, team_id, gps_consent_at, gps_consent_revoked_at')
+    .select('id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, vacation_days_per_year, team_id, gps_consent_at, gps_consent_revoked_at')
     .eq('id', userId)
     .single()
   if (error || !data) return null
@@ -194,6 +195,12 @@ export const createTeam = async (name: string): Promise<{ error: { message: stri
     .single()
   if (error) return { error: { message: error.message } }
   return { error: null, id: data?.id }
+}
+
+export const deleteTeam = async (teamId: string): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) return { error: { message: 'Offline – Team kann nicht gelöscht werden.' } }
+  const { error } = await supabase.from('teams').delete().eq('id', teamId)
+  return { error: error ? { message: error.message } : null }
 }
 
 export const setGpsConsent = async (profileId: string): Promise<{ error: { message: string } | null }> => {

@@ -195,6 +195,9 @@ export const TIME_ENTRY_COLUMNS = [
   'location_start_lon',
   'location_end_lat',
   'location_end_lon',
+  'approval_status',
+  'approved_by',
+  'approved_at',
 ].join(', ')
 
 export const TIME_BREAK_COLUMNS = [

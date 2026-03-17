@@ -106,11 +106,13 @@ export type LicenseApiResponse = {
     grace_period_days?: number
     max_users: number | null
     max_customers: number | null
+    max_storage_mb?: number | null
     check_interval: 'on_start' | 'daily' | 'weekly'
     features: Record<string, boolean>
     valid: boolean
     expired: boolean
     read_only?: boolean
+    is_trial?: boolean
   }
   design: {
     app_name: string
@@ -135,7 +137,7 @@ export type LicenseApiResponse = {
 }
 
 const DEFAULT_DESIGN: LicenseApiResponse['design'] = {
-  app_name: 'Vico',
+  app_name: 'AMRtech',
   logo_url: null,
   primary_color: '#5b7895',
   secondary_color: null,
@@ -191,21 +193,90 @@ export type LimitExceededPayload = {
   limit_type: 'users' | 'customers'
   current_value: number
   max_value: number
+  reported_from?: string
+}
+
+export type ImpressumUpdate = {
+  company_name?: string | null
+  address?: string | null
+  contact?: string | null
+  represented_by?: string | null
+  register?: string | null
+  vat_id?: string | null
+}
+
+export type DatenschutzUpdate = {
+  responsible?: string | null
+  contact_email?: string | null
+  dsb_email?: string | null
+}
+
+export const updateImpressum = async (
+  licenseNumber: string,
+  payload: { impressum?: ImpressumUpdate; datenschutz?: DatenschutzUpdate }
+): Promise<{ ok: boolean; error?: string }> => {
+  const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
+  if (!apiUrl) return { ok: false, error: 'Lizenz-API nicht konfiguriert' }
+
+  const base = apiUrl.replace(/\/$/, '')
+  const url = `${base}/update-impressum`
+
+  const apiKey = (import.meta.env.VITE_LICENSE_API_KEY ?? '').trim()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  }
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+
+  try {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ licenseNumber: licenseNumber.trim(), ...payload }),
+    })
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string }
+      return { ok: false, error: err.error ?? `Fehler ${res.status}` }
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Netzwerkfehler' }
+  }
 }
 
 export const reportLimitExceeded = async (payload: LimitExceededPayload): Promise<boolean> => {
   const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
-  if (!apiUrl) return false
+  const apiEndpoint = apiUrl ? `${apiUrl.replace(/\/$/, '')}/limit-exceeded` : null
 
-  const url = `${apiUrl.replace(/\/$/, '')}/limit-exceeded`
+  let localOk = false
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(payload),
+    const { supabase } = await import('../supabase')
+    const { error } = await supabase.rpc('report_limit_exceeded', {
+      p_license_number: payload.licenseNumber,
+      p_limit_type: payload.limit_type,
+      p_current_value: payload.current_value,
+      p_max_value: payload.max_value,
+      p_reported_from: payload.reported_from ?? null,
+      p_api_url: null,
     })
-    return res.ok
+    localOk = !error
   } catch {
-    return false
+    localOk = false
   }
+
+  let apiOk = false
+  if (apiEndpoint) {
+    try {
+      const res = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      apiOk = res.ok
+    } catch {
+      apiOk = false
+    }
+  }
+
+  return localOk || apiOk
 }

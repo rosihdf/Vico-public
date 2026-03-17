@@ -44,6 +44,7 @@ import {
 } from './offlineStorage'
 import { fetchLicenseStatus } from './licenseService'
 import { uploadMaintenancePdf, sendMaintenanceReportEmail } from './dataService'
+import { compressImageBase64 } from './imageCompression'
 
 const OBJECT_PHOTOS_BUCKET = 'object-photos'
 const OBJECT_DOCUMENTS_BUCKET = 'object-documents'
@@ -128,7 +129,9 @@ export const processOutbox = async (): Promise<SyncResult> => {
   return { success: true, pendingCount: 0 }
 }
 
-export const pullFromServer = async (): Promise<void> => {
+export type PullMetrics = { batch1Ms: number; batch2Ms: number; totalMs: number }
+
+export const pullFromServer = async (): Promise<PullMetrics> => {
   const pullStart = performance.now()
 
   const [custRes, bvRes, objRes, ordersRes, photosRes, docsRes, maintPhotosRes] = await Promise.all([
@@ -212,6 +215,7 @@ export const pullFromServer = async (): Promise<void> => {
   console.info(
     `[Sync] pullFromServer: Batch1 (Stammdaten) ${batch1Ms}ms, Batch2 (Einstellungen/Profile/Lizenz/Audit/Reminders) ${batch2Ms}ms, gesamt ${totalMs}ms`
   )
+  return { batch1Ms, batch2Ms, totalMs }
 }
 
 const processMaintenanceOutbox = async (): Promise<SyncResult> => {
@@ -239,12 +243,11 @@ const processMaintenanceOutbox = async (): Promise<SyncResult> => {
       }
       const photoOutbox = getMaintenancePhotoOutbox().filter((p) => p.report_id === item.tempId)
       for (const photoItem of photoOutbox) {
-        const path = `${reportRow.id}/${crypto.randomUUID()}.${photoItem.ext}`
-        const binary = Uint8Array.from(atob(photoItem.fileBase64), (c) => c.charCodeAt(0))
-        const blob = new Blob([binary], { type: `image/${photoItem.ext === 'jpg' ? 'jpeg' : photoItem.ext}` })
+        const { blob, ext } = await compressImageBase64(photoItem.fileBase64, photoItem.ext)
+        const path = `${reportRow.id}/${crypto.randomUUID()}.${ext}`
         const { error: uploadError } = await supabase.storage
           .from(MAINTENANCE_PHOTOS_BUCKET)
-          .upload(path, blob, { upsert: false })
+          .upload(path, blob, { upsert: false, contentType: blob.type })
         if (uploadError) throw new Error(uploadError.message)
         const { error: photoError } = await supabase
           .from('maintenance_report_photos')
@@ -276,12 +279,11 @@ const processObjectPhotoOutbox = async (): Promise<SyncResult> => {
   const box = getObjectPhotoOutbox()
   for (const item of [...box]) {
     try {
-      const path = `${item.object_id}/${crypto.randomUUID()}.${item.ext}`
-      const binary = Uint8Array.from(atob(item.fileBase64), (c) => c.charCodeAt(0))
-      const blob = new Blob([binary], { type: `image/${item.ext === 'jpg' ? 'jpeg' : item.ext}` })
+      const { blob, ext } = await compressImageBase64(item.fileBase64, item.ext)
+      const path = `${item.object_id}/${crypto.randomUUID()}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from(OBJECT_PHOTOS_BUCKET)
-        .upload(path, blob, { upsert: false })
+        .upload(path, blob, { upsert: false, contentType: blob.type })
       if (uploadError) throw new Error(uploadError.message)
       const { error } = await supabase
         .from('object_photos')
@@ -444,9 +446,20 @@ export const runSync = async (): Promise<SyncResult> => {
   if (!emailResult.success) return emailResult
   const pushMs = Math.round(performance.now() - syncStart)
   try {
-    await withTimeout(pullFromServer(), 60000)
+    const pullMetrics = await withTimeout(pullFromServer(), 60000)
     const totalMs = Math.round(performance.now() - syncStart)
     console.info(`[Sync] runSync: Push ${pushMs}ms, Pull siehe oben, gesamt ${totalMs}ms`)
+    try {
+      const { recordSyncMetrics } = await import('./performanceMetricsService')
+      recordSyncMetrics({
+        batch1Ms: pullMetrics.batch1Ms,
+        batch2Ms: pullMetrics.batch2Ms,
+        totalMs: pullMetrics.totalMs,
+        pushMs,
+      })
+    } catch {
+      // ignore metrics recording errors
+    }
     return { success: true, pendingCount: 0 }
   } catch (err) {
     return {

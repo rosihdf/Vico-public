@@ -2,15 +2,16 @@ import { useState, useEffect } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { fetchPortalUserData } from '../lib/portalService'
 import { Link } from 'react-router-dom'
+import { useDesign } from '../DesignContext'
 
 const LOESCH_EMAIL = 'info@vico-tueren.de'
-const LOESCH_SUBJECT = 'Antrag auf Löschung meiner Daten – Vico Türen & Tore Kundenportal'
 
 type MeineDatenProps = {
   user: User | null
 }
 
 const MeineDaten = ({ user }: MeineDatenProps) => {
+  const { appName } = useDesign()
   const [data, setData] = useState<{ email: string; customer_names: string[] } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -26,9 +27,9 @@ const MeineDaten = ({ user }: MeineDatenProps) => {
   }, [user])
 
   const handleLoeschantrag = () => {
-    const mailto = `mailto:${LOESCH_EMAIL}?subject=${encodeURIComponent(LOESCH_SUBJECT)}&body=${encodeURIComponent(
-      `Sehr geehrtes Team,\n\nhiermit beantrage ich die Löschung meiner personenbezogenen Daten im Vico Türen & Tore Kundenportal.\n\nE-Mail-Adresse: ${data?.email ?? ''}\n\nMit freundlichen Grüßen`
-    )}`
+    const subject = `Antrag auf Löschung meiner Daten – ${appName} Türen & Tore Kundenportal`
+    const body = `Sehr geehrtes Team,\n\nhiermit beantrage ich die Löschung meiner personenbezogenen Daten im ${appName} Türen & Tore Kundenportal.\n\nE-Mail-Adresse: ${data?.email ?? ''}\n\nMit freundlichen Grüßen`
+    const mailto = `mailto:${LOESCH_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
     window.location.href = mailto
   }
 

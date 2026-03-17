@@ -65,7 +65,7 @@ const ObjectQRCodeModal = ({
         const data = encoder
           .initialize()
           .align('center')
-          .line('Vico Türen & Tore')
+          .line('AMRtech Türen & Tore')
           .newline()
           .line(customerName)
           .line(bvName || '–')
@@ -136,7 +136,7 @@ const ObjectQRCodeModal = ({
             className="print-content bg-white p-4 rounded-lg border border-slate-200 flex flex-col items-center print:border-0 print:p-0"
           >
             <div className="hidden print:flex print:justify-center print:mb-2">
-              <img src={LOGO_SRC} alt="Vico" className="h-10 object-contain" />
+              <img src={LOGO_SRC} alt="AMRtech" className="h-10 object-contain" />
             </div>
             <QRCodeCanvas
               value={url}

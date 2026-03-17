@@ -303,6 +303,7 @@ const Kunden = () => {
             limit_type: 'customers',
             current_value: count,
             max_value: license.max_customers,
+            reported_from: typeof window !== 'undefined' ? window.location.origin : undefined,
           })
         }
       }

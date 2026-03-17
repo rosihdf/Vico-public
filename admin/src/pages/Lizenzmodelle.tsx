@@ -127,6 +127,7 @@ const Lizenzmodelle = () => {
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                     <span>Max. Benutzer: {m.max_users ?? '∞'}</span>
                     <span>Max. Kunden: {m.max_customers ?? '∞'}</span>
+                    <span>Max. Speicher: {m.max_storage_mb != null ? `${m.max_storage_mb} MB` : '∞'}</span>
                     {activeFeatures.length > 0 && (
                       <span>Features: {activeFeatures.join(', ')}</span>
                     )}

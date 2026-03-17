@@ -85,6 +85,7 @@ serve(async (req) => {
           primary_color,
           secondary_color,
           favicon_url,
+          allowed_domains,
           impressum_company_name,
           impressum_address,
           impressum_contact,
@@ -107,6 +108,32 @@ serve(async (req) => {
     }
 
     const tenant = licenseRow.tenants as Record<string, unknown> | null
+    const allowedDomains = tenant?.allowed_domains as string[] | null | undefined
+    if (Array.isArray(allowedDomains) && allowedDomains.length > 0) {
+      const origin = req.headers.get('origin') ?? req.headers.get('referer') ?? ''
+      let requestHost = ''
+      try {
+        requestHost = origin ? new URL(origin).host : ''
+      } catch {
+        requestHost = ''
+      }
+      const isAllowed = requestHost && allowedDomains.some((d) => {
+        const domain = String(d).trim().toLowerCase()
+        if (!domain) return false
+        if (domain.startsWith('*.')) {
+          const suffix = domain.slice(1)
+          return requestHost === suffix || requestHost.endsWith(suffix)
+        }
+        return requestHost === domain
+      })
+      if (!isAllowed) {
+        return new Response(
+          JSON.stringify({ error: 'Domain nicht für diese Lizenz freigegeben' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    }
+
     const validUntil = licenseRow.valid_until ? new Date(licenseRow.valid_until) : null
     const isExpired = validUntil !== null && validUntil < new Date()
     const graceDays = Math.max(0, Number(licenseRow.grace_period_days) || 0)
@@ -130,7 +157,7 @@ serve(async (req) => {
         is_trial: Boolean(licenseRow.is_trial),
       },
       design: {
-        app_name: (tenant?.app_name as string) ?? 'Vico',
+        app_name: (tenant?.app_name as string) ?? 'AMRtech',
         logo_url: (tenant?.logo_url as string) ?? null,
         primary_color: (tenant?.primary_color as string) ?? '#5b7895',
         secondary_color: (tenant?.secondary_color as string) ?? null,

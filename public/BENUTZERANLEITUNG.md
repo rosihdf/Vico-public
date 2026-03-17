@@ -142,7 +142,6 @@ Nach dem Login sehen Sie die Startseite mit:
 - **Rolle** – Ihre Benutzerrolle (Admin, Mitarbeiter, Operator, Leser).
 - **Auf Updates prüfen** – prüft auf neue Versionen.
 - **Synchronisation** – manuell synchronisieren oder Sync-Status testen.
-- **Checklisten** – Web-App-Test-Checkliste als PDF herunterladen.
 - **Komponenten** (nur Admin) – Bereiche an- oder ausblenden.
 - **Benutzerverwaltung** (nur Admin) – Benutzer und Rollen verwalten.
 
@@ -184,4 +183,4 @@ Nach dem Login sehen Sie die Startseite mit:
 
 - **Menü** – über das Hamburger-Icon öffnen Sie die Navigation.
 - **Update-Banner** – bei neuer Version erscheint ein Hinweis, die Seite neu zu laden.
-- **Checkliste** – in Einstellungen können Sie die Web-App-Test-Checkliste als PDF herunterladen.
+- **Checklisten, Benutzeranleitung, Dokumentation** – im Lizenz-Admin unter Einstellungen verfügbar (Web-App-Test-Checkliste, Benutzeranleitung, Vico-Dokumentation PDF).

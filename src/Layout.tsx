@@ -12,7 +12,7 @@ import { hasFeature } from './lib/licenseService'
 const Layout = () => {
   const { syncStatus, pendingCount } = useSync()
   const { isAuthenticated, logout, userRole } = useAuth()
-  const { license } = useLicense()
+  const { license, storageUsageMb } = useLicense()
   const { isEnabled } = useComponentSettings()
   const showArbeitszeit =
     license &&
@@ -48,23 +48,18 @@ const Layout = () => {
     }
   }
 
-  const showImport = isEnabled('kunden') && (userRole === 'admin' || userRole === 'mitarbeiter')
-  const arbeitszeitPortalUrl = (import.meta.env.VITE_ARBEITSZEIT_PORTAL_URL ?? '').trim()
-  const showArbeitszeitPortal = showArbeitszeit && arbeitszeitPortalUrl.length > 0 && (userRole === 'admin' || userRole === 'teamleiter')
-
   const menuLinks = [
     ...(isEnabled('dashboard') ? [{ to: '/', label: 'Dashboard' }] : []),
     ...(isEnabled('kunden') ? [{ to: '/kunden', label: 'Kunden' }] : []),
-    ...(showImport ? [{ to: '/import', label: 'Import' }] : []),
     ...(isEnabled('suche') ? [{ to: '/suche', label: 'Suche' }] : []),
     ...(isEnabled('auftrag') ? [{ to: '/auftrag', label: 'Auftrag' }] : []),
     ...(userRole === 'admin' && isEnabled('benutzerverwaltung') ? [{ to: '/benutzerverwaltung', label: 'Benutzerverwaltung' }] : []),
     ...(userRole === 'admin' ? [{ to: '/historie', label: 'Historie' }] : []),
     ...(userRole === 'admin' ? [{ to: '/fehlerberichte', label: 'Fehlerberichte' }] : []),
+    ...(userRole === 'admin' ? [{ to: '/ladezeiten', label: 'Ladezeiten' }] : []),
     ...(showArbeitszeit ? [{ to: '/arbeitszeit', label: 'Arbeitszeit' }] : []),
-    ...(showArbeitszeitPortal ? [{ to: arbeitszeitPortalUrl, label: 'Arbeitszeitenportal', external: true }] : []),
-    ...(isEnabled('info') ? [{ to: '/info', label: 'Info' }] : []),
     ...(isEnabled('einstellungen') ? [{ to: '/einstellungen', label: 'Einstellungen' }] : []),
+    ...(isEnabled('info') ? [{ to: '/info', label: 'Info' }] : []),
   ]
 
   const bottomLinks = [
@@ -114,6 +109,17 @@ const Layout = () => {
             : 'Lizenz abgelaufen – einige Funktionen sind eingeschränkt. Bitte Lizenz verlängern.'}
         </div>
       )}
+      {license?.max_storage_mb != null &&
+        storageUsageMb >= license.max_storage_mb * 0.8 &&
+        storageUsageMb < license.max_storage_mb && (
+          <div
+            role="alert"
+            className="bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 text-center py-2 px-4 text-sm font-medium border-b border-amber-200 dark:border-amber-700"
+            aria-live="polite"
+          >
+            Speicher zu 80 % ausgelastet ({storageUsageMb.toFixed(1)} MB von {license.max_storage_mb} MB). Bitte Speicherkontingent prüfen.
+          </div>
+        )}
       {userRole === 'demo' && (
         <div
           role="status"

@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
-import { useTheme } from './ThemeContext'
 import { useLicense } from './LicenseContext'
 import { useComponentSettings } from './ComponentSettingsContext'
-import type { Theme } from './ThemeContext'
-import { downloadWebAppChecklist } from './lib/downloadChecklist'
-import { getCachedLicenseResponse, getStoredLicenseNumber } from './lib/licensePortalApi'
+import {
+  getCachedLicenseResponse,
+  getStoredLicenseNumber,
+  updateImpressum,
+  isLicenseApiConfigured,
+} from './lib/licensePortalApi'
 import { fetchMyProfile, revokeGpsConsent } from './lib/userService'
 import { hasFeature } from './lib/licenseService'
 import type { SyncStatus } from './types'
@@ -18,18 +21,11 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
   synced: '🔵 Synchronisiert',
 }
 
-const THEME_LABELS: Record<Theme, string> = {
-  light: 'Hell',
-  dark: 'Dunkel',
-  system: 'System',
-}
-
 const Einstellungen = () => {
   const { syncStatus, setSyncStatus, syncNow, pendingCount, lastSyncError, clearSyncError } = useSync()
   const { userRole, user } = useAuth()
-  const { theme, setTheme } = useTheme()
-  const { design, license } = useLicense()
-  const { settingsList, updateSetting, refresh } = useComponentSettings()
+  const { design, license, refresh: refreshLicense } = useLicense()
+  const { settingsList, updateSetting, refresh, isEnabled } = useComponentSettings()
   const licenseNumber = getStoredLicenseNumber()
   const cachedLicense = licenseNumber ? getCachedLicenseResponse(licenseNumber) : null
   const impressum = cachedLicense?.impressum
@@ -38,6 +34,20 @@ const Einstellungen = () => {
   const [updatingKey, setUpdatingKey] = useState<string | null>(null)
   const [myProfile, setMyProfile] = useState<Profile | null>(null)
   const [gpsRevoking, setGpsRevoking] = useState(false)
+  const [showStammdatenEdit, setShowStammdatenEdit] = useState(false)
+  const [stammdatenSaving, setStammdatenSaving] = useState(false)
+  const [stammdatenError, setStammdatenError] = useState<string | null>(null)
+  const [stammdatenForm, setStammdatenForm] = useState({
+    company_name: '',
+    address: '',
+    contact: '',
+    represented_by: '',
+    register: '',
+    vat_id: '',
+    responsible: '',
+    contact_email: '',
+    dsb_email: '',
+  })
 
   const loadProfile = useCallback(async () => {
     if (user?.id) {
@@ -51,6 +61,15 @@ const Einstellungen = () => {
   useEffect(() => {
     loadProfile()
   }, [loadProfile])
+
+  useEffect(() => {
+    if (!showStammdatenEdit) return
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !stammdatenSaving) setShowStammdatenEdit(false)
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [showStammdatenEdit, stammdatenSaving])
 
   const hasGpsConsent =
     myProfile?.gps_consent_at != null && myProfile?.gps_consent_revoked_at == null
@@ -71,61 +90,77 @@ const Einstellungen = () => {
     setIsSyncing(false)
   }
 
+  const handleOpenStammdatenEdit = () => {
+    const imp = cachedLicense?.impressum
+    const dat = cachedLicense?.datenschutz
+    setStammdatenForm({
+      company_name: imp?.company_name ?? '',
+      address: imp?.address ?? '',
+      contact: imp?.contact ?? '',
+      represented_by: imp?.represented_by ?? '',
+      register: imp?.register ?? '',
+      vat_id: imp?.vat_id ?? '',
+      responsible: dat?.responsible ?? '',
+      contact_email: dat?.contact_email ?? '',
+      dsb_email: dat?.dsb_email ?? '',
+    })
+    setStammdatenError(null)
+    setShowStammdatenEdit(true)
+  }
+
+  const handleSaveStammdaten = async () => {
+    if (!licenseNumber || stammdatenSaving) return
+    setStammdatenSaving(true)
+    setStammdatenError(null)
+    const result = await updateImpressum(licenseNumber, {
+      impressum: {
+        company_name: stammdatenForm.company_name || null,
+        address: stammdatenForm.address || null,
+        contact: stammdatenForm.contact || null,
+        represented_by: stammdatenForm.represented_by || null,
+        register: stammdatenForm.register || null,
+        vat_id: stammdatenForm.vat_id || null,
+      },
+      datenschutz: {
+        responsible: stammdatenForm.responsible || null,
+        contact_email: stammdatenForm.contact_email || null,
+        dsb_email: stammdatenForm.dsb_email || null,
+      },
+    })
+    setStammdatenSaving(false)
+    if (result.ok) {
+      setShowStammdatenEdit(false)
+      await refreshLicense({ force: true })
+    } else {
+      setStammdatenError(result.error ?? 'Speichern fehlgeschlagen')
+    }
+  }
+
   return (
     <div className="p-4 max-w-xl">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">Einstellungen</h2>
 
-      {/* Darstellung */}
-      <section
-        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
-        aria-labelledby="darstellung-heading"
-      >
-        <h3 id="darstellung-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
-          Darstellung
-        </h3>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-          Farbschema der App anpassen.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {(['light', 'dark', 'system'] as Theme[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTheme(t)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                theme === t
-                  ? 'bg-vico-primary text-white'
-                  : 'border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-              aria-pressed={theme === t}
-              aria-label={`${THEME_LABELS[t]} auswählen`}
-            >
-              {THEME_LABELS[t]}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Checklisten */}
-      <section
-        className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
-        aria-labelledby="checklisten-heading"
-      >
-        <h3 id="checklisten-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
-          Checklisten
-        </h3>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-          Web-App-Test-Checkliste als PDF erstellen und herunterladen.
-        </p>
-        <button
-          type="button"
-          onClick={downloadWebAppChecklist}
-          className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-          aria-label="Web-App-Test-Checkliste herunterladen"
+      {/* Stammdaten importieren */}
+      {isEnabled('kunden') && (userRole === 'admin' || userRole === 'mitarbeiter') && (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+          aria-labelledby="import-heading"
         >
-          Web-App-Test-Checkliste
-        </button>
-      </section>
+          <h3 id="import-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
+            Stammdaten importieren
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            Kunden und Objekte/BV aus CSV oder Excel importieren.
+          </p>
+          <Link
+            to="/import"
+            className="inline-flex px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover transition-colors"
+            aria-label="Zum Import"
+          >
+            Import öffnen
+          </Link>
+        </section>
+      )}
 
       {/* Sync */}
       <section
@@ -214,17 +249,31 @@ const Einstellungen = () => {
         </section>
       )}
 
-      {/* Stammdaten / Impressum (Admin, Self-Service später) */}
+      {/* Stammdaten / Impressum (Admin, Self-Service) */}
       {userRole === 'admin' && (design || impressum) && (
         <section
           className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
           aria-labelledby="stammdaten-heading"
         >
-          <h3 id="stammdaten-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
-            Stammdaten / Impressum
-          </h3>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h3 id="stammdaten-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Stammdaten / Impressum
+            </h3>
+            {isLicenseApiConfigured() && (
+              <button
+                type="button"
+                onClick={handleOpenStammdatenEdit}
+                className="text-xs font-medium text-vico-primary hover:underline"
+                aria-label="Stammdaten bearbeiten"
+              >
+                Bearbeiten
+              </button>
+            )}
+          </div>
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-            Anzeige aus dem Lizenzportal. Bearbeiten: derzeit nur im Lizenzportal durch den Betreiber; Self-Service (Bearbeiten hier) ist geplant.
+            {isLicenseApiConfigured()
+              ? 'Impressum und Datenschutz können Sie hier bearbeiten.'
+              : 'Anzeige aus dem Lizenzportal.'}
           </p>
           <dl className="space-y-1 text-sm">
             {design?.app_name && (
@@ -252,6 +301,145 @@ const Einstellungen = () => {
               </>
             )}
           </dl>
+
+          {showStammdatenEdit && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="stammdaten-modal-heading"
+              onClick={() => !stammdatenSaving && setShowStammdatenEdit(false)}
+            >
+              <div
+                className="max-w-lg w-full max-h-[90vh] overflow-auto p-6 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h4 id="stammdaten-modal-heading" className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">
+                  Stammdaten bearbeiten
+                </h4>
+                {stammdatenError && (
+                  <p className="mb-4 p-3 text-sm text-red-800 bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-lg" role="alert">
+                    {stammdatenError}
+                  </p>
+                )}
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="stammdaten-company" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Firmenname</label>
+                    <input
+                      id="stammdaten-company"
+                      type="text"
+                      value={stammdatenForm.company_name}
+                      onChange={(e) => setStammdatenForm((f) => ({ ...f, company_name: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="stammdaten-address" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Adresse</label>
+                    <textarea
+                      id="stammdaten-address"
+                      value={stammdatenForm.address}
+                      onChange={(e) => setStammdatenForm((f) => ({ ...f, address: e.target.value }))}
+                      rows={2}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="stammdaten-contact" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Kontakt</label>
+                    <input
+                      id="stammdaten-contact"
+                      type="text"
+                      value={stammdatenForm.contact}
+                      onChange={(e) => setStammdatenForm((f) => ({ ...f, contact: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="stammdaten-represented" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Vertreten durch</label>
+                    <input
+                      id="stammdaten-represented"
+                      type="text"
+                      value={stammdatenForm.represented_by}
+                      onChange={(e) => setStammdatenForm((f) => ({ ...f, represented_by: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="stammdaten-register" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Handelsregister</label>
+                    <input
+                      id="stammdaten-register"
+                      type="text"
+                      value={stammdatenForm.register}
+                      onChange={(e) => setStammdatenForm((f) => ({ ...f, register: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="stammdaten-vat" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">USt-ID</label>
+                    <input
+                      id="stammdaten-vat"
+                      type="text"
+                      value={stammdatenForm.vat_id}
+                      onChange={(e) => setStammdatenForm((f) => ({ ...f, vat_id: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="pt-4 border-t border-slate-200 dark:border-slate-600">
+                    <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Datenschutz</h5>
+                    <div className="space-y-3">
+                      <div>
+                        <label htmlFor="stammdaten-verantwortlich" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Verantwortlicher</label>
+                        <input
+                          id="stammdaten-verantwortlich"
+                          type="text"
+                          value={stammdatenForm.responsible}
+                          onChange={(e) => setStammdatenForm((f) => ({ ...f, responsible: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="stammdaten-dsb-email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Kontakt-E-Mail</label>
+                        <input
+                          id="stammdaten-dsb-email"
+                          type="email"
+                          value={stammdatenForm.contact_email}
+                          onChange={(e) => setStammdatenForm((f) => ({ ...f, contact_email: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="stammdaten-dsb" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">DSB-E-Mail</label>
+                        <input
+                          id="stammdaten-dsb"
+                          type="email"
+                          value={stammdatenForm.dsb_email}
+                          onChange={(e) => setStammdatenForm((f) => ({ ...f, dsb_email: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-6">
+                  <button
+                    type="button"
+                    onClick={handleSaveStammdaten}
+                    disabled={stammdatenSaving}
+                    className="px-4 py-2 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover disabled:opacity-50"
+                  >
+                    {stammdatenSaving ? 'Speichern…' : 'Speichern'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowStammdatenEdit(false)}
+                    disabled={stammdatenSaving}
+                    className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  >
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom'
 import { requestMagicLink } from '../lib/portalService'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../ThemeContext'
+import { useDesign } from '../DesignContext'
 
 const Login = () => {
   const { resolvedTheme, cycleTheme } = useTheme()
+  const { appName } = useDesign()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [mode, setMode] = useState<'magic' | 'password'>('magic')
@@ -74,7 +76,7 @@ const Login = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Vico Türen & Tore Kundenportal</h1>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{appName} Türen & Tore Kundenportal</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Zugriff auf Ihre Wartungsberichte</p>
         </div>
 
@@ -277,7 +279,7 @@ const Login = () => {
             Impressum
           </Link>
           <span>·</span>
-          <span>Vico Türen & Tore</span>
+          <span>{appName} Türen & Tore</span>
         </div>
       </div>
     </div>

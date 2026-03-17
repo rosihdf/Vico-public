@@ -22,6 +22,52 @@ const toDateStr = (d: Date): string => d.toISOString().slice(0, 10)
 
 export { getWeekBounds, getMonthBounds, calcWorkMinutes }
 
+/** Berechnet Soll-Minuten für User/Monat (Arbeitstage − Feiertage − freie Tage). */
+export const calcSollMinutesForMonth = async (
+  userId: string,
+  year: number,
+  month: number
+): Promise<number | null> => {
+  if (!isOnline()) return null
+  const { data, error } = await supabase.rpc('calc_soll_minutes_for_month', {
+    p_user_id: userId,
+    p_year: year,
+    p_month: month,
+  })
+  if (error || data == null) return null
+  return typeof data === 'number' ? data : null
+}
+
+/** Berechnet Soll-Minuten für User/Jahr (Summe aller 12 Monate). */
+export const calcSollMinutesForYear = async (
+  userId: string,
+  year: number
+): Promise<number | null> => {
+  if (!isOnline()) return null
+  const { data, error } = await supabase.rpc('calc_soll_minutes_for_year', {
+    p_user_id: userId,
+    p_year: year,
+  })
+  if (error || data == null) return null
+  return typeof data === 'number' ? data : null
+}
+
+/** Summe Arbeitsminuten (ohne Pausen) für User in Datumsbereich. */
+export const getWorkMinutesForUserInRange = async (
+  userId: string,
+  fromDate: string,
+  toDate: string
+): Promise<number> => {
+  if (!isOnline()) return 0
+  const { data, error } = await supabase.rpc('get_work_minutes_for_user_in_range', {
+    p_user_id: userId,
+    p_from_date: fromDate,
+    p_to_date: toDate,
+  })
+  if (error || data == null) return 0
+  return typeof data === 'number' ? Math.max(0, data) : 0
+}
+
 /** Letzter beendeter Eintrag (für §5 ArbZG Ruhezeit-Prüfung). */
 export const getLastEndedEntry = async (userId: string): Promise<TimeEntry | null> => {
   if (isOnline()) {

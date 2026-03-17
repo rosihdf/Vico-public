@@ -4,10 +4,12 @@ import { fetchTenant, createTenant, updateTenant } from '../lib/tenantService'
 import {
   fetchLicensesByTenant,
   createLicense,
+  checkLicenseNumberExists,
   updateLicense,
   deleteLicense,
   generateLicenseNumber,
   fetchLicenseModels,
+  fetchStorageSummary,
   type License,
   type LicenseUpdate,
   type LicenseModel,
@@ -27,6 +29,7 @@ const DEFAULT_CREATE_FORM: {
   grace_period_days: number
   max_users: number | null
   max_customers: number | null
+  max_storage_mb: number | null
   check_interval: 'on_start' | 'daily' | 'weekly'
   features: Record<string, boolean>
 } = {
@@ -38,6 +41,7 @@ const DEFAULT_CREATE_FORM: {
   grace_period_days: 0,
   max_users: null,
   max_customers: null,
+  max_storage_mb: null,
   check_interval: 'daily',
   features: { kundenportal: false, historie: false, arbeitszeiterfassung: false },
 }
@@ -68,12 +72,13 @@ const MandantForm = () => {
     app_domain: '',
     portal_domain: '',
     primary_color: '#5b7895',
-    app_name: 'Vico',
+    app_name: 'AMRtech',
     impressum_company_name: '',
     impressum_address: '',
     impressum_contact: '',
     datenschutz_responsible: '',
     datenschutz_contact_email: '',
+    allowed_domains: '',
   })
 
   const loadLicenses = useCallback(async (tenantId: string) => {
@@ -118,12 +123,15 @@ const MandantForm = () => {
             app_domain: t.app_domain ?? '',
             portal_domain: t.portal_domain ?? '',
             primary_color: t.primary_color ?? '#5b7895',
-            app_name: t.app_name ?? 'Vico',
+            app_name: t.app_name ?? 'AMRtech',
             impressum_company_name: t.impressum_company_name ?? '',
             impressum_address: t.impressum_address ?? '',
             impressum_contact: t.impressum_contact ?? '',
             datenschutz_responsible: t.datenschutz_responsible ?? '',
             datenschutz_contact_email: t.datenschutz_contact_email ?? '',
+            allowed_domains: Array.isArray(t.allowed_domains)
+              ? t.allowed_domains.join('\n')
+              : (t.allowed_domains ? String(t.allowed_domains) : ''),
           })
         }
         setTenantLicenses(licensesData)
@@ -156,6 +164,7 @@ const MandantForm = () => {
           valid_until: lic.valid_until,
           max_users: lic.max_users,
           max_customers: lic.max_customers,
+          max_storage_mb: lic.max_storage_mb,
           check_interval: lic.check_interval ?? 'daily',
           features: lic.features ?? {},
         })
@@ -175,6 +184,12 @@ const MandantForm = () => {
           name: form.name,
           app_domain: form.app_domain || null,
           portal_domain: form.portal_domain || null,
+          allowed_domains: form.allowed_domains
+            ? form.allowed_domains
+                .split(/[\n,]/)
+                .map((d) => d.trim().toLowerCase())
+                .filter(Boolean)
+            : [],
           primary_color: form.primary_color,
           app_name: form.app_name,
           impressum_company_name: form.impressum_company_name || null,
@@ -193,6 +208,12 @@ const MandantForm = () => {
           name: form.name,
           app_domain: form.app_domain || null,
           portal_domain: form.portal_domain || null,
+          allowed_domains: form.allowed_domains
+            ? form.allowed_domains
+                .split(/[\n,]/)
+                .map((d) => d.trim().toLowerCase())
+                .filter(Boolean)
+            : [],
           primary_color: form.primary_color,
           app_name: form.app_name,
           impressum_company_name: form.impressum_company_name || null,
@@ -218,6 +239,20 @@ const MandantForm = () => {
       setError('Lizenznummer ist erforderlich.')
       return
     }
+    const exists = await checkLicenseNumberExists(createForm.license_number.trim())
+    if (exists) {
+      setError(`Lizenznummer „${createForm.license_number.trim()}“ ist bereits vergeben.`)
+      return
+    }
+    if (createForm.max_storage_mb != null && createForm.max_storage_mb > 0) {
+      const summary = await fetchStorageSummary()
+      if (createForm.max_storage_mb > summary.remaining_mb) {
+        setError(
+          `Nicht genügend Speicher verfügbar. Frei: ${summary.remaining_mb.toLocaleString('de-DE')} MB, angefordert: ${createForm.max_storage_mb.toLocaleString('de-DE')} MB.`
+        )
+        return
+      }
+    }
     setError(null)
     const result = await createLicense({
       tenant_id: id,
@@ -229,6 +264,7 @@ const MandantForm = () => {
       grace_period_days: createForm.grace_period_days,
       max_users: createForm.max_users,
       max_customers: createForm.max_customers,
+      max_storage_mb: createForm.max_storage_mb,
       check_interval: createForm.check_interval,
       features: createForm.features,
     })
@@ -244,6 +280,13 @@ const MandantForm = () => {
 
   const handleStartTrial = async () => {
     if (!id) return
+    const summary = await fetchStorageSummary()
+    if (500 > summary.remaining_mb) {
+      setError(
+        `Nicht genügend Speicher für Trial (500 MB). Frei: ${summary.remaining_mb.toLocaleString('de-DE')} MB.`
+      )
+      return
+    }
     const trialEnd = new Date()
     trialEnd.setDate(trialEnd.getDate() + 14)
     const validUntil = trialEnd.toISOString().slice(0, 10)
@@ -258,6 +301,7 @@ const MandantForm = () => {
       grace_period_days: 0,
       max_users: 10,
       max_customers: 50,
+      max_storage_mb: 500,
       check_interval: 'daily',
       features: allFeatures,
     })
@@ -277,6 +321,7 @@ const MandantForm = () => {
       grace_period_days: lic.grace_period_days ?? 0,
       max_users: lic.max_users,
       max_customers: lic.max_customers,
+      max_storage_mb: lic.max_storage_mb,
       check_interval: lic.check_interval ?? 'daily',
       features: lic.features ?? {},
     })
@@ -285,6 +330,18 @@ const MandantForm = () => {
   const handleUpdateLicense = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingLicenseId || !id) return
+    if (editForm.max_storage_mb != null && editForm.max_storage_mb > 0) {
+      const summary = await fetchStorageSummary()
+      const editingLic = tenantLicenses.find((l) => l.id === editingLicenseId)
+      const currentMax = editingLic?.max_storage_mb ?? 0
+      const availableForThis = summary.remaining_mb + currentMax
+      if (editForm.max_storage_mb > availableForThis) {
+        setError(
+          `Nicht genügend Speicher verfügbar. Frei (inkl. aktueller Lizenz): ${availableForThis.toLocaleString('de-DE')} MB, angefordert: ${editForm.max_storage_mb.toLocaleString('de-DE')} MB.`
+        )
+        return
+      }
+    }
     setError(null)
     const result = await updateLicense(editingLicenseId, editForm)
     if (result.ok) {
@@ -324,6 +381,7 @@ const MandantForm = () => {
       tier: (model.tier as 'free' | 'professional' | 'enterprise') ?? f.tier,
       max_users: model.max_users,
       max_customers: model.max_customers,
+      max_storage_mb: model.max_storage_mb,
       check_interval: (model.check_interval as 'on_start' | 'daily' | 'weekly') ?? f.check_interval,
       features: { ...f.features, ...(model.features ?? {}) },
     }))
@@ -508,6 +566,17 @@ const MandantForm = () => {
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Max. Speicher (MB)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={createForm.max_storage_mb ?? ''}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, max_storage_mb: e.target.value === '' ? null : parseInt(e.target.value, 10) }))}
+                      placeholder="∞"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Prüfintervall</label>
@@ -646,6 +715,16 @@ const MandantForm = () => {
                               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
                             />
                           </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Max. Speicher (MB)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={editForm.max_storage_mb ?? ''}
+                              onChange={(e) => setEditForm((f) => ({ ...f, max_storage_mb: e.target.value === '' ? null : parseInt(e.target.value, 10) }))}
+                              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+                            />
+                          </div>
                         </div>
                         <div>
                           <span className="block text-sm font-medium text-slate-700 mb-2">Features</span>
@@ -719,6 +798,10 @@ const MandantForm = () => {
                             <p className="font-medium text-slate-800">{lic.max_customers ?? '∞'}</p>
                           </div>
                           <div>
+                            <span className="text-slate-500">Max. Speicher (MB)</span>
+                            <p className="font-medium text-slate-800">{lic.max_storage_mb ?? '∞'}</p>
+                          </div>
+                          <div>
                             <span className="text-slate-500">Features</span>
                             <p className="font-medium text-slate-800">
                               {activeFeatures.length > 0 ? activeFeatures.join(', ') : '–'}
@@ -785,6 +868,22 @@ const MandantForm = () => {
             placeholder="portal.amrtech.de"
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
           />
+        </div>
+        <div>
+          <label htmlFor="allowed_domains" className="block text-sm font-medium text-slate-700 mb-1">
+            Domain-Bindung (erlaubte Domains)
+          </label>
+          <textarea
+            id="allowed_domains"
+            value={form.allowed_domains}
+            onChange={(e) => setForm((f) => ({ ...f, allowed_domains: e.target.value }))}
+            placeholder={'app.firma.de\nlocalhost:5173'}
+            rows={3}
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Eine Domain pro Zeile. Leer = keine Prüfung. Wildcard: <code className="bg-slate-100 px-1 rounded">*.firma.de</code>
+          </p>
         </div>
         <div>
           <label htmlFor="primary_color" className="block text-sm font-medium text-slate-700 mb-1">Primärfarbe</label>
