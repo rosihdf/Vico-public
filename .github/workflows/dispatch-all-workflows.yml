@@ -30,13 +30,24 @@ jobs:
               'supabase-license-portal-keepalive.yml',
             ];
             const ref = context.ref.replace('refs/heads/', '');
+            const failures = [];
             for (const workflow_id of workflows) {
               console.log(`Dispatch ${workflow_id} @ ${ref}`);
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id,
-                ref,
-              });
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id,
+                  ref,
+                });
+                console.log(`OK: ${workflow_id}`);
+              } catch (e) {
+                console.error(`Fehler ${workflow_id}:`, e.message);
+                failures.push(`${workflow_id}: ${e.message}`);
+              }
             }
-            console.log('Alle Dispatch-Anfragen gesendet (Runs erscheinen in der Actions-Liste).');
+            if (failures.length) {
+              core.setFailed(`Dispatch fehlgeschlagen:\n${failures.join('\n')}`);
+            } else {
+              console.log('Alle Dispatch-Anfragen gesendet.');
+            }
