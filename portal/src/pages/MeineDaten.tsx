@@ -27,8 +27,8 @@ const MeineDaten = ({ user }: MeineDatenProps) => {
   }, [user])
 
   const handleLoeschantrag = () => {
-    const subject = `Antrag auf Löschung meiner Daten – ${appName} Türen & Tore Kundenportal`
-    const body = `Sehr geehrtes Team,\n\nhiermit beantrage ich die Löschung meiner personenbezogenen Daten im ${appName} Türen & Tore Kundenportal.\n\nE-Mail-Adresse: ${data?.email ?? ''}\n\nMit freundlichen Grüßen`
+    const subject = `Antrag auf Löschung meiner Daten – ${appName} Kundenportal`
+    const body = `Sehr geehrtes Team,\n\nhiermit beantrage ich die Löschung meiner personenbezogenen Daten im ${appName} Kundenportal.\n\nE-Mail-Adresse: ${data?.email ?? ''}\n\nMit freundlichen Grüßen`
     const mailto = `mailto:${LOESCH_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
     window.location.href = mailto
   }

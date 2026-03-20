@@ -14,9 +14,8 @@ import {
   addToOutbox,
 } from './offlineStorage'
 import { notifyDataChange } from './dataService'
+import { isOnline } from '../../shared/networkUtils'
 import type { TimeEntry, TimeBreak, TimeEntryEditLogRow } from '../types'
-
-const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
 
 const toDateStr = (d: Date): string => d.toISOString().slice(0, 10)
 

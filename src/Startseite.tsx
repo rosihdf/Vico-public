@@ -286,7 +286,7 @@ const Startseite = () => {
   const dayNames = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
 
   return (
-    <div className="p-4">
+    <div className="p-4 min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Dashboard</h2>
       <p className="mt-2 text-slate-600 dark:text-slate-400">
         {profile
@@ -364,7 +364,8 @@ const Startseite = () => {
           <h3 id="kalender-woche-heading" className="text-lg font-semibold text-slate-800 mb-3">
             Aufträge diese Woche
           </h3>
-          <div className="grid grid-cols-7 gap-2 mb-4">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="grid grid-cols-7 gap-2 mb-4 min-w-[280px]">
             {weekDates.map((d, i) => {
               const dayOrders = ordersByWeekDay[d] ?? []
               const dayNum = new Date(d + 'T12:00:00').getDate()
@@ -393,6 +394,7 @@ const Startseite = () => {
                 </div>
               )
             })}
+            </div>
           </div>
           <Link
             to="/auftrag"

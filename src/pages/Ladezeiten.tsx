@@ -10,12 +10,7 @@ import {
   type PerformanceMetric,
   type StartseiteMetric,
 } from '../lib/performanceMetricsService'
-
-const formatTime = (ts: number) =>
-  new Date(ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-
-const formatDate = (ts: number) =>
-  new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })
+import { formatTimeFromTs, formatDateFromTs } from '../../shared/format'
 
 const Bar = ({ value, max, label }: { value: number; max: number; label: string }) => {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
@@ -46,7 +41,7 @@ const SyncMetricRow = ({ m }: { m: PerformanceMetric }) => {
     <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-          {formatDate(m.ts)} {formatTime(m.ts)}
+          {formatDateFromTs(m.ts)} {formatTimeFromTs(m.ts)}
         </span>
         <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{m.totalMs} ms gesamt</span>
       </div>
@@ -62,7 +57,7 @@ const SyncMetricRow = ({ m }: { m: PerformanceMetric }) => {
 const StartseiteMetricRow = ({ m }: { m: StartseiteMetric }) => (
   <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 flex items-center justify-between">
     <span className="text-xs text-slate-500 dark:text-slate-400">
-      {formatDate(m.ts)} {formatTime(m.ts)}
+      {formatDateFromTs(m.ts)} {formatTimeFromTs(m.ts)}
     </span>
     <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{m.loadDataMs} ms</span>
   </div>
@@ -100,7 +95,7 @@ const Ladezeiten = () => {
   const latestStartseite = startseiteMetrics[startseiteMetrics.length - 1]
 
   return (
-    <div className="p-4 max-w-2xl">
+    <div className="p-4 max-w-2xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">Ladezeiten</h2>
 
       <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">

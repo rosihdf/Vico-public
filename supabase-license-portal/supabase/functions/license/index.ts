@@ -77,6 +77,7 @@ serve(async (req) => {
         max_customers,
         check_interval,
         features,
+        license_model_id,
         tenants (
           id,
           name,
@@ -95,7 +96,8 @@ serve(async (req) => {
           datenschutz_responsible,
           datenschutz_contact_email,
           datenschutz_dsb_email
-        )
+        ),
+        license_models (features)
       `)
       .eq('license_number', licenseNumber)
       .maybeSingle()
@@ -142,6 +144,17 @@ serve(async (req) => {
     const withinGrace = isExpired && graceEnd !== null && graceEnd >= new Date()
     const readOnly = withinGrace
 
+    const licenseFeatures = (licenseRow.features as Record<string, boolean>) ?? {}
+    const modelFeatures = (licenseRow.license_models as { features?: Record<string, boolean> } | null)?.features ?? {}
+    const tier = (licenseRow.tier as string) ?? 'professional'
+    const tierDefaults: Record<string, Record<string, boolean>> = {
+      free: { kundenportal: false, historie: false, arbeitszeiterfassung: false, standortabfrage: false },
+      professional: { kundenportal: true, historie: true, arbeitszeiterfassung: true, standortabfrage: true },
+      enterprise: { kundenportal: true, historie: true, arbeitszeiterfassung: true, standortabfrage: true },
+    }
+    const baseFeatures = Object.keys(modelFeatures).length > 0 ? modelFeatures : (tierDefaults[tier] ?? tierDefaults.professional)
+    const features = { ...baseFeatures, ...licenseFeatures }
+
     const response: LicenseResponse = {
       license: {
         tier: licenseRow.tier ?? 'professional',
@@ -150,7 +163,7 @@ serve(async (req) => {
         max_users: licenseRow.max_users,
         max_customers: licenseRow.max_customers,
         check_interval: (licenseRow.check_interval as 'on_start' | 'daily' | 'weekly') ?? 'daily',
-        features: (licenseRow.features as Record<string, boolean>) ?? {},
+        features,
         valid: !isExpired || withinGrace,
         expired: isExpired,
         read_only: readOnly,

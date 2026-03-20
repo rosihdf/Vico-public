@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { isNewerVersion } from './lib/versionUtils'
+import { isNewerVersion } from './versionUtils'
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.1'
 

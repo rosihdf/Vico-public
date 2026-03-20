@@ -8,7 +8,7 @@
 ## 1. Rechte (Phase 1) – Überarbeitung
 
 - **Aktuell:** User sieht nur eigene Zeiten; Admin sieht alle (User-Dropdown). Admin darf bearbeiten (mit Grund), User nicht.
-- **Entscheidung:** Teamleiter-Rolle einführen – sieht/bearbeitet nur Zeiten des zugewiesenen Teams. Rollenname ggf. später umbenennen. Siehe `docs/Entscheidungen-Offene-Punkte.md` §5.
+- **Entscheidung:** Teamleiter-Rolle einführen – sieht/bearbeitet nur Zeiten des zugewiesenen Teams. Rollenname ggf. später umbenennen. Siehe **`Vico.md` §11.1** (Punkt 5 – Teamleiter).
 
 ---
 
@@ -18,14 +18,14 @@
 |-------|---------------|-----------|
 | **Rolle Teamleiter** | Eigene Rolle: sieht/bearbeitet nur Zeiten des zugewiesenen Teams. Aktuell: Teamleiter = Admin. | Optional |
 | **Abwesenheits-Grund** | Optionaler Grund für Tage ohne Erfassung (Dienstreise, Homeoffice, Schulung). Eigenes Feld oder Tabelle. | Optional |
-| **Ortung (GPS)** | Standort bei Start/Ende erfassen; Nutzer muss Informationspflicht erhalten und Einwilligung bestätigen; Anzeige im Zeiterfassungs-Portal. Rechtlich: DSGVO Art. 13, BDSG § 26, BetrVG § 87 Abs. 1 Nr. 6, DSFA. Siehe `docs/Zeiterfassung-Ortung-GPS-Recht-und-Planung.md`. | Geplant |
+| **Ortung (GPS)** | Standort bei Start/Ende erfassen; Nutzer muss Informationspflicht erhalten und Einwilligung bestätigen; Anzeige im Zeiterfassungs-Portal. Rechtlich: DSGVO Art. 13, BDSG § 26, BetrVG § 87 Abs. 1 Nr. 6, DSFA. Siehe **`Vico.md` §11.7**. | Geplant |
 
 ---
 
 ## 3. Arbeitszeitkonto (AZK) – Ergänzungen
 
 - **Bereits umgesetzt:** `profiles.soll_minutes_per_month`, Anzeige Soll/Ist/Saldo in Monatsansicht, Admin setzt Soll in Benutzerverwaltung („Soll Min/Monat“).
-- **Entscheidung:** **Option B – zusätzlich Soll pro Woche oder Tag.** Felder in Stammdaten AZK (Portal/Benutzerverwaltung); Monatssoll daraus berechnet oder separat. Siehe `docs/Entscheidungen-Offene-Punkte.md` §6.
+- **Entscheidung:** **Option B – zusätzlich Soll pro Woche oder Tag.** Felder in Stammdaten AZK (Portal/Benutzerverwaltung); Monatssoll daraus berechnet oder separat. Siehe **`Vico.md` §11.1** (Punkt 6 – Soll).
 
 ---
 
@@ -44,7 +44,7 @@
 
 - **Entscheidung:** Auftragszuordnung an der Zeiterfassung ist derzeit verwirrend und wird **ausgeblendet** (nicht gelöscht).
 - **Technisch:** Code und Datenmodell (`order_id` in `time_entries`, Start mit optionalem Auftrag, Bearbeiten-Modal mit Auftrag, Anzeige in Tagesansicht) bleiben erhalten, werden aber in der UI **nicht angezeigt** (Feature-Flag/Konstante).
-- **Entscheidung:** **Entfernen** – Code/UI für Auftragszuordnung in Haupt-App und Arbeitszeitenportal entfernen. Spalte `order_id` kann aus Kompatibilität bleiben. Siehe `docs/Entscheidungen-Offene-Punkte.md` §7.
+- **Entscheidung:** **Entfernen** – Code/UI für Auftragszuordnung in Haupt-App und Arbeitszeitenportal entfernen. Spalte `order_id` kann aus Kompatibilität bleiben. Siehe **`Vico.md` §11.1** (Punkt 7 – Auftragszuordnung).
 - **Dateien/Stellen die betroffen sind (zum gezielten Löschen falls nicht gebraucht):**  
   `src/Arbeitszeit.tsx` (Dropdown Auftrag beim Start, Edit-Modal Auftrag, Anzeige „Auftrag: …“), `src/lib/timeService.ts` (Parameter `orderId` bei `startTimeEntry`, `updateTimeEntryAsAdmin`), `src/lib/offlineStorage.ts` (`order_id` in TimeOutboxItem), `src/lib/syncService.ts` (order_id beim Insert aus Outbox), `supabase-complete.sql` (RPC `update_time_entry_admin` Parameter `p_order_id`, Spalte `time_entries.order_id`). Schema/Spalte kann aus Kompatibilität bleiben.
 
@@ -56,11 +56,11 @@
 |------------|--------------|--------|
 | §4 ArbZG >9 h | Hinweis 45 Min Pause bei >9 h Arbeitszeit | Nicht umgesetzt |
 | Überlappende Einträge | Prüfung: kein zweiter aktiver Eintrag; bei neuem Start Hinweis oder automatisch beenden | Nicht umgesetzt |
-| Pausen-Mindestdauer 15 Min | Konzept: Pausenblock mind. 15 Min; keine Frontend-Validierung | Nicht umgesetzt |
+| Pausen-Mindestdauer 15 Min | Pausenblock mind. 15 Min; Frontend-Validierung in Arbeitszeit.tsx | ✅ Erledigt |
 | Schnellzugriff PWA | Start/Ende vom Home-Screen (PWA vorhanden, kein eigener Shortcut) | Offen |
-| Export CSV/Excel | Zeiterfassung exportieren (kann mit J3 Buchhaltung zusammengeführt werden) | Phase 3 |
-| ArbZG-Vorschlag automatisch | „Pause jetzt starten?“ bei >6 h ohne Pause | Phase 3 |
-| Genehmigungsworkflow | Teamleiter/Admin genehmigt Zeiten vor Abrechnung | Phase 3 |
+| Export CSV/Excel | Zeiterfassung exportieren (Arbeitszeitenportal AlleZeiten) | ✅ Erledigt |
+| ArbZG-Vorschlag automatisch | „Pause jetzt starten?“ bei >6 h ohne Pause | ✅ Erledigt |
+| Genehmigungsworkflow | Teamleiter/Admin genehmigt Zeiten vor Abrechnung | ✅ Erledigt |
 | Admin-Export „Zeiterfassung sichern“ | Manueller Download aller Zeiten als CSV/JSON (Konzept 12.1) | Offen |
 
 ---
@@ -150,7 +150,7 @@ Supabase läuft als **mehrere Docker-Container** (ca. 12 Services). IONOS Cloud 
 
 **Stand:** Auf IONOS-Umzug verschoben. Aktuell wird der Gesamtspeicher im Lizenzportal manuell gepflegt („Gesamtspeicher anpassen“). Nach dem Umzug zu IONOS soll das verfügbare Speicherkontingent automatisch aus der Datenbank bzw. Storage-API ausgelesen und in `platform_config` eingetragen werden – je nach gewählter Option (Supabase Self-Host, IONOS DBaaS, etc.) die passende API nutzen.
 
-**Referenz:** docs/Entscheidungen-Offene-Punkte.md §11.
+**Referenz:** **`Vico.md` §11.1** (Punkt 11 – Speicherkontingent).
 
 ---
 

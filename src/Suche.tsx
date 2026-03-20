@@ -113,7 +113,7 @@ const Suche = () => {
   }
 
   return (
-    <div className="p-4">
+    <div className="p-4 min-w-0">
       <h2 className="text-xl font-bold text-slate-800">Suche</h2>
       <p className="mt-1 text-sm text-slate-600">
         Durchsuche Kunden, BVs und Objekte (min. 2 Zeichen).

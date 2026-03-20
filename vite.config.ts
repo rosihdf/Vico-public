@@ -1,24 +1,14 @@
 /// <reference types="vitest" />
-import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import { VitePWA } from 'vite-plugin-pwa'
+import { vicoVersionPlugin, getAppVersion } from './scripts/vite-plugin-version.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const pkg = JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf-8'))
-const appVersion = pkg.version ?? '0.0.1'
-
-let releaseNotes: string[] = []
-if (existsSync(path.join(__dirname, 'release-notes.json'))) {
-  try {
-    const rn = JSON.parse(readFileSync(path.join(__dirname, 'release-notes.json'), 'utf-8')) as Record<string, string[]>
-    releaseNotes = rn[appVersion] ?? []
-  } catch {
-    // ignore
-  }
-}
+const appVersion = getAppVersion(__dirname)
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
@@ -35,13 +25,21 @@ export default defineConfig(({ mode }) => {
       strictPort: false,
     },
     plugins: [
+      basicSsl(),
       react(),
       VitePWA({
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.ts',
         registerType: 'autoUpdate',
         devOptions: { enabled: false },
         includeAssets: ['favicon.svg'],
         // Ohne mode: 'development' kann die SW-Generierung (terser) hängen und „Unable to write the service worker file“ auslösen.
         mode: 'development',
+        injectManifest: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          injectionPoint: undefined, // Kein Precache – stattdessen Runtime-Caching (NetworkFirst) + Prefetch
+        },
         manifest: {
           name: 'AMRtech Türen & Tore',
           short_name: 'AMRtech',
@@ -51,32 +49,14 @@ export default defineConfig(({ mode }) => {
           display: 'standalone',
           start_url: '/',
         },
-        workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-          skipWaiting: true,
-          clientsClaim: true,
-        },
       }),
-      {
-        name: 'vico-version',
-        generateBundle() {
-          const versionPayload = JSON.stringify({
-            version: appVersion,
-            buildTime: new Date().toISOString(),
-            releaseNotes,
-          })
-          this.emitFile({
-            type: 'asset',
-            fileName: 'version.json',
-            source: versionPayload,
-          })
-        },
-      },
+      vicoVersionPlugin(__dirname),
     ],
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY ?? ''),
+      'import.meta.env.VITE_VAPID_PUBLIC_KEY': JSON.stringify(env.VITE_VAPID_PUBLIC_KEY ?? ''),
     },
     build: {
       rollupOptions: {

@@ -70,7 +70,7 @@
 
 ### 4.2 Konkrete Vorschläge
 
-1. **Suche – Option A (Quick-Win):** Spalten in dataService für customers/bvs/objects ohnehin reduzieren (siehe Abschnitt 2); dann profitiert auch die Suche ohne weitere Änderung. **Entscheidung:** Zuerst Option A; Option B bei Bedarf später. Siehe `docs/Entscheidungen-Offene-Punkte.md` §10.
+1. **Suche – Option A (Quick-Win):** Spalten in dataService für customers/bvs/objects ohnehin reduzieren (siehe Abschnitt 2); dann profitiert auch die Suche ohne weitere Änderung. **Entscheidung:** Zuerst Option A; Option B bei Bedarf später. Siehe **`Vico.md` §11.1** (Entscheidungen, Punkt 10 – Suche).
 2. **Suche – Option B (größerer Schritt):** Server-seitige Suche (Supabase Full-Text oder `ilike` auf einem Such-Endpoint/RPC), der nur Treffer zurückgibt. Dann keine vollen Tabellen mehr beim Öffnen der Suche; dafür Such-UI an „Ergebnisse laden“ anpassen und ggf. Offline-Fallback (z. B. gecachte letzte Ergebnisse oder Hinweis „Suche nur online“).
 3. **Startseite:** Wenn Dashboard nur Aggregationen/Listen-Ausschnitte braucht, RPC oder schlankere Abfragen (z. B. nur IDs/ Namen für Dropdowns) prüfen; Reminders-RPC ist bereits sinnvoll.
 4. **Kunden:** Lazy-Loading der BVs/Objekte ist bereits gut; Optimierung vor allem über schlankere customer-Liste (Spalten) und ggf. Paginierung, wenn Kundenanzahl sehr groß wird.

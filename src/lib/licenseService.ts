@@ -1,7 +1,6 @@
 import { supabase } from '../supabase'
 import { getCachedLicense, setCachedLicense } from './offlineStorage'
-
-const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
+import { isOnline } from '../../shared/networkUtils'
 
 export type LicenseStatus = {
   tier: string
@@ -86,6 +85,22 @@ export const checkCanInviteUser = async (): Promise<boolean> => {
   const { data, error } = await supabase.rpc('check_can_invite_user')
   if (error) return true
   return data as boolean
+}
+
+/** Lizenznummer aus Mandanten-DB (für eingeloggte Nutzer). */
+export const getLicenseNumberFromDb = async (): Promise<string | null> => {
+  const { data, error } = await supabase.rpc('get_license_number')
+  if (error || !data) return null
+  const s = String(data).trim()
+  return s || null
+}
+
+/** Lizenznummer in Mandanten-DB speichern (nur Admin). */
+export const setLicenseNumberInDb = async (licenseNumber: string): Promise<{ error: string | null }> => {
+  const { error } = await supabase.rpc('set_license_number', {
+    p_number: licenseNumber.trim(),
+  })
+  return { error: error?.message ?? null }
 }
 
 /** Speichernutzung in MB aus Mandanten-DB (RPC get_storage_usage) */

@@ -9,7 +9,7 @@ import {
 
 const TIER_OPTIONS = ['free', 'professional', 'enterprise'] as const
 const CHECK_INTERVAL_OPTIONS = ['on_start', 'daily', 'weekly'] as const
-const FEATURE_KEYS = ['kundenportal', 'historie', 'arbeitszeiterfassung'] as const
+const FEATURE_KEYS = ['kundenportal', 'historie', 'arbeitszeiterfassung', 'standortabfrage'] as const
 
 const DEFAULT_FORM: LicenseModelInsert & { sort_order: number } = {
   name: '',
@@ -18,7 +18,7 @@ const DEFAULT_FORM: LicenseModelInsert & { sort_order: number } = {
   max_customers: null,
   max_storage_mb: null,
   check_interval: 'daily',
-  features: { kundenportal: false, historie: false, arbeitszeiterfassung: false },
+  features: { kundenportal: false, historie: false, arbeitszeiterfassung: false, standortabfrage: false },
   sort_order: 0,
 }
 

@@ -22,7 +22,7 @@ import { getObjectDisplayName } from './lib/objectUtils'
 import { OrderCalendar } from './components/OrderCalendar'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import ConfirmDialog from './components/ConfirmDialog'
-import EmptyState from './components/EmptyState'
+import EmptyState from '../shared/EmptyState'
 import type { Order, Customer, BV, Object as Obj, OrderType, OrderStatus } from './types'
 import type { Profile } from './lib/userService'
 
@@ -280,7 +280,7 @@ const AuftragAnlegen = () => {
   }, [showForm])
 
   return (
-    <div className="p-4">
+    <div className="p-4 min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <h2 className="text-xl font-bold text-slate-800">Aufträge</h2>
         <div className="flex flex-wrap gap-2">
@@ -468,17 +468,18 @@ const AuftragAnlegen = () => {
 
       {showForm && (
         <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
+          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
           onClick={handleCloseForm}
           onKeyDown={(e) => e.key === 'Escape' && handleCloseForm()}
           role="dialog"
           aria-modal
           aria-labelledby="auftrag-form-title"
         >
-          <div
-            className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div
+          className="bg-white rounded-xl shadow-xl max-w-md w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto p-6"
+          onClick={(e) => e.stopPropagation()}
+        >
             <h3 id="auftrag-form-title" className="text-lg font-bold text-slate-800 mb-4">
               Neuer Auftrag
             </h3>

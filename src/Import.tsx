@@ -190,7 +190,7 @@ const Import = () => {
   }
 
   return (
-    <div className="p-4 max-w-3xl">
+    <div className="p-4 max-w-3xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Stammdaten importieren</h2>
       <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
         CSV-Datei mit Kopfzeile hochladen und Spalten den Feldern zuordnen. Fehlerzeilen werden übersprungen und am Ende aufgelistet.

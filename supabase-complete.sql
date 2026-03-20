@@ -1,8 +1,8 @@
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- Vico – Datenbank-Schema (vollständig)
 -- Supabase SQL Editor: Inhalt einfügen und Run ausführen. Idempotent.
--- Zuletzt geprüft/aufgeräumt: 2025-03
--- =============================================================================
+-- Zuletzt geprüft/aufgeräumt: 2025-03 (Standortabfrage, admin_config)
+-- -----------------------------------------------------------------------------
 --
 -- Struktur:
 --   1. Profiles + Rollen (admin, mitarbeiter, operator, leser, demo, kunde)
@@ -13,13 +13,14 @@
 --   5. RPC: get_my_role, get_all_profiles_for_admin, get_audit_log, get_audit_log_detail,
 --      get_maintenance_reminders, search_entities, resolve_object_to_navigation, cleanup_demo
 --   5b. Lizenzmodell: license, get_license_status, check_can_create_customer, check_can_invite_user
+--   5c. Standortabfrage: employee_current_location, admin_config, update_my_current_location, get_employee_locations
 --   6. Kundenportal: customer_portal_users RLS, portal_user_object_visibility, Portal-Helfer, get_portal_*
 --   7. Storage Buckets + Policies
 --   8. Indizes (Stammdaten, Wartung, Aufträge, Lizenz, Audit, Kundenportal), Realtime
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 1. PROFILES & ROLLEN
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.profiles (
   id uuid references auth.users(id) primary key,
@@ -47,6 +48,8 @@ alter table public.profiles add constraint profiles_role_check
 alter table public.profiles add column if not exists team_id uuid default null;
 alter table public.profiles add column if not exists gps_consent_at timestamptz default null;
 alter table public.profiles add column if not exists gps_consent_revoked_at timestamptz default null;
+alter table public.profiles add column if not exists standortabfrage_consent_at timestamptz default null;
+alter table public.profiles add column if not exists standortabfrage_consent_revoked_at timestamptz default null;
 
 -- Rollen-Helper (SECURITY DEFINER, keine RLS-Rekursion)
 create or replace function public.is_admin()
@@ -153,9 +156,9 @@ begin
   end if;
 end $$;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 2. STAMMDATEN
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 -- 2.1 Customers
 create table if not exists public.customers (
@@ -414,9 +417,9 @@ create policy "Insert maintenance_contracts" on public.maintenance_contracts for
 create policy "Update maintenance_contracts" on public.maintenance_contracts for update using (auth.uid() is not null and (public.can_write_master_data() or public.maintenance_contract_visible_to_user(customer_id, bv_id)));
 create policy "Delete maintenance_contracts" on public.maintenance_contracts for delete using (auth.uid() is not null and (public.is_admin() or (public.is_demo() and public.maintenance_contract_visible_to_user(customer_id, bv_id))));
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 3. WARTUNGSPROTOKOLLE
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.maintenance_reports (
   id uuid default gen_random_uuid() primary key,
@@ -475,9 +478,9 @@ end $$;
 create policy "Authenticated users can read maintenance_report_smoke_detectors" on public.maintenance_report_smoke_detectors for select using (auth.uid() is not null);
 create policy "Non-leser can insert maintenance_report_smoke_detectors" on public.maintenance_report_smoke_detectors for insert with check (auth.uid() is not null and not public.is_leser());
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 4. AUFTRÄGE, SETTINGS, AUDIT
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.orders (
   id uuid default gen_random_uuid() primary key,
@@ -678,9 +681,9 @@ create policy "Teamleiter can insert time_entry_edit_log for team" on public.tim
   )
 );
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- Soll-Berechnung: Feiertage, Arbeitseinstellungen, freie Tage
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.public_holidays (
   id uuid default gen_random_uuid() primary key,
@@ -1042,9 +1045,9 @@ begin
   end loop;
 end $$;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 5. RPC FUNCTIONS
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create or replace function public.get_my_role()
 returns text language sql security definer set search_path = public stable as $$
@@ -1623,9 +1626,9 @@ end;
 $$;
 grant execute on function public.cleanup_demo_customers_older_than_24h() to authenticated;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 5b. LIZENZMODELL
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.license (
   id uuid primary key default gen_random_uuid(),
@@ -1634,9 +1637,16 @@ create table if not exists public.license (
   max_customers int,
   max_users int,
   features jsonb default '{}'::jsonb,
+  license_number text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+do $$ begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'license' and column_name = 'license_number') then
+    alter table public.license add column license_number text;
+  end if;
+end $$;
 alter table public.license enable row level security;
 
 do $$ declare r record; begin
@@ -1716,6 +1726,274 @@ end;
 $$;
 grant execute on function public.check_can_invite_user() to authenticated;
 
+-- Lizenznummer in DB: Admin speichert einmalig, alle Nutzer holen sie nach Login
+drop function if exists public.get_license_number();
+create or replace function public.get_license_number()
+returns text language sql security definer set search_path = public stable as $$
+  select nullif(trim(license_number), '') from public.license limit 1;
+$$;
+grant execute on function public.get_license_number() to authenticated;
+
+drop function if exists public.set_license_number(text);
+create or replace function public.set_license_number(p_number text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Nur Admins dürfen die Lizenznummer setzen.';
+  end if;
+  update public.license set license_number = nullif(trim(p_number), ''), updated_at = now();
+  if not found then
+    insert into public.license (tier, license_number) values ('professional', nullif(trim(p_number), ''));
+  end if;
+end;
+$$;
+grant execute on function public.set_license_number(text) to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- 5c. Standortabfrage (Mitarbeiter senden Standort, Admin/Teamleiter können abrufen)
+-- -----------------------------------------------------------------------------
+
+-- admin_config muss vor employee_current_location-Policies existieren (Policy referenziert get_standortabfrage_teamleiter_allowed)
+create table if not exists public.admin_config (
+  key text primary key,
+  value jsonb not null
+);
+alter table public.admin_config enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'admin_config' loop
+    execute format('drop policy if exists %I on public.admin_config', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated read" on public.admin_config for select using (auth.uid() is not null);
+create policy "Admin manage" on public.admin_config for all using (public.is_admin());
+insert into public.admin_config (key, value) values ('standortabfrage_teamleiter_allowed', 'false') on conflict (key) do nothing;
+
+-- Migration: standortabfrage_config → admin_config (falls vorhanden)
+do $$ begin
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'standortabfrage_config') then
+    insert into public.admin_config (key, value)
+      select 'standortabfrage_teamleiter_allowed', value from public.standortabfrage_config where key = 'teamleiter_allowed'
+      on conflict (key) do update set value = excluded.value;
+    drop table public.standortabfrage_config;
+  end if;
+end $$;
+
+-- Cleanup: veraltete Keys entfernen (falls aus früherer Migration)
+delete from public.admin_config where key = 'teamleiter_visible_only_to_admin';
+
+drop function if exists public.get_standortabfrage_teamleiter_allowed() cascade;
+create or replace function public.get_standortabfrage_teamleiter_allowed()
+returns boolean language sql security definer set search_path = public stable as $$
+  select coalesce((select (value #>> '{}')::boolean from public.admin_config where key = 'standortabfrage_teamleiter_allowed'), false);
+$$;
+grant execute on function public.get_standortabfrage_teamleiter_allowed() to authenticated;
+
+drop function if exists public.set_standortabfrage_teamleiter_allowed(boolean);
+create or replace function public.set_standortabfrage_teamleiter_allowed(p_allowed boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Nur Admins dürfen diese Einstellung ändern.';
+  end if;
+  insert into public.admin_config (key, value) values ('standortabfrage_teamleiter_allowed', to_jsonb(p_allowed))
+  on conflict (key) do update set value = to_jsonb(p_allowed);
+end;
+$$;
+grant execute on function public.set_standortabfrage_teamleiter_allowed(boolean) to authenticated;
+
+create table if not exists public.employee_current_location (
+  user_id uuid references public.profiles(id) on delete cascade primary key,
+  lat double precision not null,
+  lon double precision not null,
+  accuracy double precision,
+  updated_at timestamptz default now()
+);
+alter table public.employee_current_location enable row level security;
+
+-- Standort-Anfragen: Admin/Teamleiter fordert Standort an, Mitarbeiter sendet beim nächsten App-Öffnen
+create table if not exists public.location_requests (
+  id uuid primary key default gen_random_uuid(),
+  requested_by uuid references public.profiles(id) on delete cascade not null,
+  requested_user_id uuid references public.profiles(id) on delete cascade not null,
+  created_at timestamptz default now(),
+  fulfilled_at timestamptz default null
+);
+create index if not exists idx_location_requests_user on public.location_requests(requested_user_id) where fulfilled_at is null;
+alter table public.location_requests enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'location_requests' loop
+    execute format('drop policy if exists %I on public.location_requests', r.policyname);
+  end loop;
+end $$;
+create policy "Admin can manage location_requests" on public.location_requests for all using (public.is_admin());
+create policy "Teamleiter can manage team location_requests" on public.location_requests for all using (
+  public.is_teamleiter() and public.get_standortabfrage_teamleiter_allowed()
+  and requested_user_id in (select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null)
+);
+create policy "User can read own pending requests" on public.location_requests for select using (auth.uid() = requested_user_id and fulfilled_at is null);
+
+-- Web Push: Abonnements für Standortanfrage-Benachrichtigungen
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  endpoint text not null,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz default now(),
+  unique (user_id, endpoint)
+);
+create index if not exists idx_push_subscriptions_user on public.push_subscriptions(user_id);
+alter table public.push_subscriptions enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'push_subscriptions' loop
+    execute format('drop policy if exists %I on public.push_subscriptions', r.policyname);
+  end loop;
+end $$;
+create policy "User can manage own push subscriptions" on public.push_subscriptions for all using (auth.uid() = user_id);
+
+create or replace function public.upsert_push_subscription(
+  p_endpoint text,
+  p_p256dh text,
+  p_auth text
+)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.push_subscriptions (user_id, endpoint, p256dh, auth)
+  values (auth.uid(), p_endpoint, p_p256dh, p_auth)
+  on conflict (user_id, endpoint) do update set p256dh = excluded.p256dh, auth = excluded.auth;
+end;
+$$;
+grant execute on function public.upsert_push_subscription(text, text, text) to authenticated;
+
+create or replace function public.delete_push_subscription(p_endpoint text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  delete from public.push_subscriptions where user_id = auth.uid() and endpoint = p_endpoint;
+end;
+$$;
+grant execute on function public.delete_push_subscription(text) to authenticated;
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'employee_current_location' loop
+    execute format('drop policy if exists %I on public.employee_current_location', r.policyname);
+  end loop;
+end $$;
+create policy "User can upsert own location" on public.employee_current_location for all using (auth.uid() = user_id);
+create policy "Admin can read all locations" on public.employee_current_location for select using (public.is_admin());
+create policy "Teamleiter can read team locations" on public.employee_current_location for select using (
+  public.is_teamleiter() and public.get_standortabfrage_teamleiter_allowed() and user_id in (
+    select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null
+  )
+);
+
+drop function if exists public.update_my_current_location(double precision, double precision, double precision);
+create or replace function public.update_my_current_location(
+  p_lat double precision,
+  p_lon double precision,
+  p_accuracy double precision default null
+)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_consent boolean;
+begin
+  select p.standortabfrage_consent_at is not null and p.standortabfrage_consent_revoked_at is null
+  into v_consent from public.profiles p where p.id = auth.uid();
+  if not coalesce(v_consent, false) then
+    raise exception 'Standortabfrage erfordert Ihre Einwilligung. Bitte in den Einstellungen erteilen.';
+  end if;
+  insert into public.employee_current_location (user_id, lat, lon, accuracy, updated_at)
+  values (auth.uid(), p_lat, p_lon, p_accuracy, now())
+  on conflict (user_id) do update set lat = excluded.lat, lon = excluded.lon, accuracy = excluded.accuracy, updated_at = now();
+  update public.location_requests set fulfilled_at = now() where requested_user_id = auth.uid() and fulfilled_at is null;
+end;
+$$;
+grant execute on function public.update_my_current_location(double precision, double precision, double precision) to authenticated;
+
+drop function if exists public.request_employee_location(uuid);
+create or replace function public.request_employee_location(p_user_id uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_id uuid;
+  v_consent boolean;
+  v_can_request boolean := false;
+begin
+  if p_user_id is null or p_user_id = auth.uid() then
+    raise exception 'Ungültige Anfrage.';
+  end if;
+  select p.standortabfrage_consent_at is not null and p.standortabfrage_consent_revoked_at is null
+  into v_consent from public.profiles p where p.id = p_user_id;
+  if not coalesce(v_consent, false) then
+    raise exception 'Mitarbeiter hat keine Einwilligung für Standortabfrage.';
+  end if;
+  if public.is_admin() then
+    v_can_request := true;
+  elsif public.is_teamleiter() and public.get_standortabfrage_teamleiter_allowed() then
+    select exists (select 1 from public.profiles where id = p_user_id and team_id = public.get_my_team_id() and team_id is not null) into v_can_request;
+  end if;
+  if not v_can_request then
+    raise exception 'Keine Berechtigung für Standortanfrage.';
+  end if;
+  insert into public.location_requests (requested_by, requested_user_id)
+  values (auth.uid(), p_user_id)
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+grant execute on function public.request_employee_location(uuid) to authenticated;
+
+drop function if exists public.get_my_pending_location_request();
+create or replace function public.get_my_pending_location_request()
+returns uuid language sql security definer set search_path = public stable as $$
+  select id from public.location_requests where requested_user_id = auth.uid() and fulfilled_at is null order by created_at desc limit 1;
+$$;
+grant execute on function public.get_my_pending_location_request() to authenticated;
+
+drop function if exists public.get_employee_locations();
+create or replace function public.get_employee_locations()
+returns table (
+  user_id uuid,
+  first_name text,
+  last_name text,
+  email text,
+  lat double precision,
+  lon double precision,
+  accuracy double precision,
+  updated_at timestamptz,
+  has_pending_request boolean
+) language plpgsql security definer set search_path = public stable as $$
+begin
+  if public.is_admin() then
+    null;
+  elsif public.is_teamleiter() and public.get_standortabfrage_teamleiter_allowed() then
+    null;
+  else
+    raise exception 'Keine Berechtigung für Standortabfrage.';
+  end if;
+  return query
+  select
+    p.id,
+    p.first_name,
+    p.last_name,
+    p.email,
+    ecl.lat,
+    ecl.lon,
+    ecl.accuracy,
+    ecl.updated_at,
+    exists (select 1 from public.location_requests lr where lr.requested_user_id = p.id and lr.fulfilled_at is null)
+  from public.profiles p
+  left join public.employee_current_location ecl on ecl.user_id = p.id
+  where p.standortabfrage_consent_at is not null
+    and p.standortabfrage_consent_revoked_at is null
+    and p.id != auth.uid()
+    and (
+      public.is_admin()
+      or (public.is_teamleiter() and public.get_standortabfrage_teamleiter_allowed() and p.team_id = public.get_my_team_id() and p.team_id is not null)
+    )
+  order by ecl.updated_at desc nulls last, p.last_name nulls last, p.first_name nulls last;
+end;
+$$;
+grant execute on function public.get_employee_locations() to authenticated;
+
 -- Grenzüberschreitungen: lokale Tabelle + RPC (Prüfung über Datenbank)
 -- Für HTTP-POST ans Lizenzportal: pg_net in Supabase Dashboard aktivieren (Database → Extensions)
 create table if not exists public.limit_exceeded_log (
@@ -1769,9 +2047,9 @@ end;
 $$;
 grant execute on function public.report_limit_exceeded(text, text, int, int, text, text) to authenticated;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 6. KUNDENPORTAL
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- Tabelle customer_portal_users wurde bereits in Sektion 2 angelegt (Trigger handle_new_user).
 -- Hier: Unique-Constraint, RLS, Policies, Helper-Funktionen, Indizes.
 
@@ -1892,9 +2170,9 @@ returns text language sql security definer set search_path = public stable as $$
 $$;
 grant execute on function public.get_portal_pdf_path(uuid) to authenticated;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 7. STORAGE BUCKETS
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 insert into storage.buckets (id, name, public) values ('object-photos', 'object-photos', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('object-documents', 'object-documents', true) on conflict (id) do nothing;
@@ -1942,9 +2220,9 @@ create policy "Authenticated users can read maintenance-photos" on storage.objec
 create policy "Authenticated users can upload maintenance-photos" on storage.objects for insert with check (bucket_id = 'maintenance-photos' and auth.uid() is not null);
 create policy "Authenticated users can delete maintenance-photos" on storage.objects for delete using (bucket_id = 'maintenance-photos' and auth.uid() is not null);
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 8. INDIZES & REALTIME
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- Indizes nach Domäne gruppiert; partial indices wo sinnvoll (z. B. demo_user_id is null).
 
 -- Stammdaten & Lizenz-Counts

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
+import { formatCoords } from '../../../shared/geolocationUtils'
 import iconUrl from 'leaflet/dist/images/marker-icon.png'
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png'
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png'
@@ -23,12 +24,6 @@ const MapCenterUpdater = ({ center }: { center: [number, number] }) => {
     map.setView(center, 17)
   }, [map, center])
   return null
-}
-
-const formatCoords = (lat: number, lon: number): string => {
-  const latDir = lat >= 0 ? 'N' : 'S'
-  const lonDir = lon >= 0 ? 'O' : 'W'
-  return `${Math.abs(lat).toFixed(4)}° ${latDir}, ${Math.abs(lon).toFixed(4)}° ${lonDir}`
 }
 
 type LocationMapModalProps = {

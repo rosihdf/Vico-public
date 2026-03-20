@@ -16,6 +16,7 @@ import type {
   ObjectDocumentType,
 } from '../types'
 import { CUSTOMER_COLUMNS, BV_COLUMNS, OBJECT_COLUMNS, MAINTENANCE_CONTRACT_COLUMNS, ORDER_COLUMNS, ORDER_COMPLETION_COLUMNS, OBJECT_PHOTO_COLUMNS, OBJECT_DOCUMENT_COLUMNS, MAINTENANCE_REPORT_COLUMNS, MAINTENANCE_REPORT_PHOTO_COLUMNS, MAINTENANCE_REPORT_SMOKE_DETECTOR_COLUMNS, PORTAL_USER_COLUMNS } from './dataColumns'
+import { isOnline } from '../../shared/networkUtils'
 import {
   getCachedCustomers,
   setCachedCustomers,
@@ -62,8 +63,6 @@ export const subscribeToDataChange = (fn: Listener) => {
     if (i >= 0) listeners.splice(i, 1)
   }
 }
-
-const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
 
 export const fetchCustomers = async (): Promise<Customer[]> => {
   if (isOnline()) {

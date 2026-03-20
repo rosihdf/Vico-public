@@ -274,7 +274,7 @@ const Mandanten = () => {
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium text-slate-800 truncate">{t.name}</h3>
                   <p className="text-sm text-slate-500 truncate">
-                    {t.app_domain || '–'} · {t.portal_domain || '–'}
+                    {t.app_domain || '–'} · {t.portal_domain || '–'} · {t.arbeitszeitenportal_domain || '–'}
                   </p>
                   {primaryLicense ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2">

@@ -5,6 +5,7 @@ import { withTimeoutReject, checkRole as checkRoleUtil } from '../../shared/auth
 import type { User } from '@supabase/supabase-js'
 import Layout from './components/Layout'
 import Mandanten from './pages/Mandanten'
+import UpdateBanner from '../../shared/UpdateBanner'
 
 const Login = lazy(() => import('./pages/Login'))
 const MandantForm = lazy(() => import('./pages/MandantForm'))
@@ -169,6 +170,7 @@ const App = () => {
 
   return (
     <BrowserRouter>
+      <UpdateBanner />
       <Routes>
         <Route path="/login" element={
           user && isAdmin ? (

@@ -1,6 +1,6 @@
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- Vico Lizenzportal – Datenbank-Schema
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- Eigenes Supabase-Projekt für Mandanten & Lizenzen.
 -- Im Supabase SQL Editor ausführen (neues Projekt anlegen oder bestehendes).
 -- Idempotent. Zuletzt geprüft/aufgeräumt: 2025-03
@@ -15,11 +15,11 @@
 --   3b. License_models (Vorlagen), FK licenses.license_model_id, Standard-Seeds
 --   4. limit_exceeded_log (Grenzüberschreitungs-Meldungen)
 --   5. Indizes
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 1. PROFILES (Admin-Benutzer für Lizenzportal)
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.profiles (
   id uuid references auth.users(id) primary key,
@@ -70,15 +70,16 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 2. TENANTS (Mandanten)
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.tenants (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   app_domain text,
   portal_domain text,
+  arbeitszeitenportal_domain text,
   logo_url text,
   primary_color text default '#5b7895',
   secondary_color text,
@@ -115,6 +116,17 @@ begin
   end if;
 end $$;
 
+-- arbeitszeitenportal_domain: Spalte nachträglich hinzufügen
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'arbeitszeitenportal_domain'
+  ) then
+    alter table public.tenants add column arbeitszeitenportal_domain text;
+  end if;
+end $$;
+
 alter table public.tenants enable row level security;
 
 do $$ declare r record; begin
@@ -124,9 +136,9 @@ do $$ declare r record; begin
 end $$;
 create policy "Admins can manage tenants" on public.tenants for all using (public.is_admin());
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 3. LICENSES (Lizenzen pro Mandant)
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.licenses (
   id uuid primary key default gen_random_uuid(),
@@ -190,9 +202,9 @@ create policy "Admins can manage licenses" on public.licenses for all using (pub
 -- Hinweis: Eindeutigkeit „eine aktive Lizenz pro Mandant“ ggf. per Trigger/App-Logik prüfen.
 -- Partieller Index mit current_date nicht möglich (current_date ist STABLE, Index-Prädikat braucht IMMUTABLE).
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 3b. LICENSE_MODELS (Lizenzmodelle – Vorlagen für Lizenzen)
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.license_models (
   id uuid primary key default gen_random_uuid(),
@@ -243,15 +255,15 @@ begin
   if not exists (select 1 from public.license_models limit 1) then
     insert into public.license_models (name, tier, max_users, max_customers, max_storage_mb, check_interval, features, sort_order)
     values
-      ('Free', 'free', 2, 5, 100, 'daily', '{"kundenportal": false, "historie": false, "arbeitszeiterfassung": false}'::jsonb, 1),
-      ('Professional', 'professional', 10, 50, 500, 'daily', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true}'::jsonb, 2),
-      ('Enterprise', 'enterprise', null, null, null, 'weekly', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true}'::jsonb, 3);
+      ('Free', 'free', 2, 5, 100, 'daily', '{"kundenportal": false, "historie": false, "arbeitszeiterfassung": false, "standortabfrage": false}'::jsonb, 1),
+      ('Professional', 'professional', 10, 50, 500, 'daily', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true, "standortabfrage": true}'::jsonb, 2),
+      ('Enterprise', 'enterprise', null, null, null, 'weekly', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true, "standortabfrage": true}'::jsonb, 3);
   end if;
 end $$;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 4. LIMIT_EXCEEDED_LOG (Grenzüberschreitung-Meldungen)
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.limit_exceeded_log (
   id uuid primary key default gen_random_uuid(),
@@ -300,9 +312,9 @@ begin
   end if;
 end $$;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 5. PLATFORM_CONFIG (Speicher-Kontingent)
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create table if not exists public.platform_config (
   key text primary key,
@@ -350,9 +362,9 @@ as $$
 $$;
 grant execute on function public.get_storage_summary() to authenticated;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- 6. INDIZES
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 create index if not exists tenants_name_idx on public.tenants (name);
 create index if not exists licenses_tenant_created_idx on public.licenses (tenant_id, created_at desc);

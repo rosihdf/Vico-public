@@ -9,6 +9,7 @@ import {
   updateCustomer,
   deleteCustomer,
   fetchBvs,
+  fetchAllBvs,
   createBv,
   updateBv,
   deleteBv,
@@ -30,7 +31,7 @@ import ObjectFormModal from './components/ObjectFormModal'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalInviteSection from './components/PortalInviteSection'
 import ConfirmDialog from './components/ConfirmDialog'
-import EmptyState from './components/EmptyState'
+import EmptyState from '../shared/EmptyState'
 import MaintenanceContractModal from './components/MaintenanceContractModal'
 import type { Customer, CustomerFormData, BV, BVFormData } from './types'
 import type { MaintenanceReminder, MaintenanceContract } from './types'
@@ -80,7 +81,13 @@ const Kunden = () => {
   const canCreateBv = userRole === 'admin' || userRole === 'demo'
 
   const [customers, setCustomers] = useState<Customer[]>([])
+  const [allBvs, setAllBvs] = useState<BV[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [filterPlz, setFilterPlz] = useState('')
+  const [filterWartungsstatus, setFilterWartungsstatus] = useState<'all' | 'overdue' | 'due_soon' | 'ok' | 'none'>('all')
+  const [filterBvMin, setFilterBvMin] = useState<string>('')
+  const [filterBvMax, setFilterBvMax] = useState<string>('')
+  const [showFilters, setShowFilters] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -132,14 +139,43 @@ const Kunden = () => {
     return map
   }, [maintenanceReminders])
 
+  const bvCountByCustomerId = useMemo(() => {
+    const map = new Map<string, number>()
+    allBvs.forEach((bv) => {
+      const cid = bv.customer_id
+      map.set(cid, (map.get(cid) ?? 0) + 1)
+    })
+    return map
+  }, [allBvs])
+
+  const customerWartungsstatus = useMemo(() => {
+    const map = new Map<string, 'overdue' | 'due_soon' | 'ok' | 'none'>()
+    const priority = { overdue: 3, due_soon: 2, ok: 1 }
+    maintenanceReminders.forEach((r) => {
+      const cid = r.customer_id
+      const current = map.get(cid)
+      const status = r.status
+      const currentP = current && current !== 'none' ? priority[current as keyof typeof priority] : 0
+      const newP = priority[status as keyof typeof priority] ?? 0
+      if (newP > currentP) map.set(cid, status)
+      else if (!current) map.set(cid, status)
+    })
+    customers.forEach((c) => {
+      if (!map.has(c.id)) map.set(c.id, 'none')
+    })
+    return map
+  }, [maintenanceReminders, customers])
+
   const loadCustomers = useCallback(async () => {
     setIsLoading(true)
-    const [customerData, reminderData] = await Promise.all([
+    const [customerData, reminderData, bvsData] = await Promise.all([
       fetchCustomers(),
       fetchMaintenanceReminders(),
+      fetchAllBvs(),
     ])
     setCustomers(customerData ?? [])
     setMaintenanceReminders(reminderData ?? [])
+    setAllBvs(bvsData ?? [])
     setIsLoading(false)
   }, [])
 
@@ -247,8 +283,10 @@ const Kunden = () => {
   const searchLower = searchQuery.trim().toLowerCase()
   const matchStr = (v: string | null | undefined) =>
     (v ?? '').toLowerCase().includes(searchLower)
-  const filteredCustomers = searchLower
-    ? customers.filter((c) =>
+  const filteredCustomers = useMemo(() => {
+    let list = customers
+    if (searchLower) {
+      list = list.filter((c) =>
         matchStr(c.name) ||
         matchStr(c.street) ||
         matchStr(c.house_number) ||
@@ -260,7 +298,33 @@ const Kunden = () => {
         matchStr(c.contact_email) ||
         matchStr(c.contact_phone)
       )
-    : customers
+    }
+    if (filterPlz.trim()) {
+      const plzLower = filterPlz.trim().toLowerCase()
+      list = list.filter((c) => (c.postal_code ?? '').toLowerCase().includes(plzLower))
+    }
+    if (filterWartungsstatus !== 'all') {
+      list = list.filter((c) => customerWartungsstatus.get(c.id) === filterWartungsstatus)
+    }
+    const bvMin = filterBvMin.trim() ? parseInt(filterBvMin, 10) : null
+    const bvMax = filterBvMax.trim() ? parseInt(filterBvMax, 10) : null
+    if (bvMin != null && !Number.isNaN(bvMin)) {
+      list = list.filter((c) => (bvCountByCustomerId.get(c.id) ?? 0) >= bvMin)
+    }
+    if (bvMax != null && !Number.isNaN(bvMax)) {
+      list = list.filter((c) => (bvCountByCustomerId.get(c.id) ?? 0) <= bvMax)
+    }
+    return list
+  }, [
+    customers,
+    searchLower,
+    filterPlz,
+    filterWartungsstatus,
+    filterBvMin,
+    filterBvMax,
+    customerWartungsstatus,
+    bvCountByCustomerId,
+  ])
 
   const filteredBvs = searchLower && expandedBvs.length > 0
     ? expandedBvs.filter((b) =>
@@ -288,6 +352,19 @@ const Kunden = () => {
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value)
   }
+
+  const handleResetFilters = () => {
+    setFilterPlz('')
+    setFilterWartungsstatus('all')
+    setFilterBvMin('')
+    setFilterBvMax('')
+  }
+
+  const hasActiveFilters =
+    filterPlz.trim() !== '' ||
+    filterWartungsstatus !== 'all' ||
+    filterBvMin.trim() !== '' ||
+    filterBvMax.trim() !== ''
 
   // --- Customer CRUD ---
 
@@ -641,7 +718,7 @@ const Kunden = () => {
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
         <h2 className="text-xl font-bold text-slate-800">Kunden</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <input
             type="search"
             placeholder="Name, Ort, Adresse, Kontakt…"
@@ -726,15 +803,113 @@ const Kunden = () => {
               )}
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            className={`px-3 py-2 rounded-lg border text-sm font-medium flex items-center gap-1.5 ${
+              hasActiveFilters
+                ? 'bg-vico-primary/20 border-vico-primary text-slate-800'
+                : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
+            }`}
+            aria-expanded={showFilters}
+            aria-label="Filter anzeigen"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            Filter
+            {hasActiveFilters && (
+              <span className="w-2 h-2 rounded-full bg-vico-primary" aria-hidden="true" />
+            )}
+          </button>
         </div>
       </div>
+
+      {showFilters && (
+        <div className="mb-4 p-4 rounded-xl border border-slate-200 bg-slate-50/50">
+          <div className="flex flex-wrap gap-4 items-end">
+            <label className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-slate-700">PLZ</span>
+              <input
+                type="text"
+                placeholder="z.B. 10115"
+                value={filterPlz}
+                onChange={(e) => setFilterPlz(e.target.value)}
+                className="w-28 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                aria-label="PLZ filtern"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-slate-700">Wartungsstatus</span>
+              <select
+                value={filterWartungsstatus}
+                onChange={(e) => setFilterWartungsstatus(e.target.value as typeof filterWartungsstatus)}
+                className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary bg-white min-w-[140px]"
+                aria-label="Wartungsstatus filtern"
+              >
+                <option value="all">Alle</option>
+                <option value="overdue">Überfällig</option>
+                <option value="due_soon">Demnächst fällig</option>
+                <option value="ok">In Ordnung</option>
+                <option value="none">Keine Wartung</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-sm font-medium text-slate-700">BV-Anzahl</span>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="Min"
+                  value={filterBvMin}
+                  onChange={(e) => setFilterBvMin(e.target.value)}
+                  className="w-20 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  aria-label="Mindestanzahl BVs"
+                />
+                <span className="text-slate-500">–</span>
+                <input
+                  type="number"
+                  min={0}
+                  placeholder="Max"
+                  value={filterBvMax}
+                  onChange={(e) => setFilterBvMax(e.target.value)}
+                  className="w-20 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  aria-label="Maximalanzahl BVs"
+                />
+              </div>
+            </label>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="px-3 py-2 text-sm text-slate-600 hover:text-slate-800 underline"
+                aria-label="Filter zurücksetzen"
+              >
+                Filter zurücksetzen
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <LoadingSpinner message="Lade Kunden…" className="py-8" />
       ) : filteredCustomers.length === 0 ? (
         <EmptyState
-          title={searchQuery ? 'Keine Kunden gefunden.' : 'Noch keine Kunden angelegt.'}
-          description={!searchQuery ? 'Klicken Sie auf „+ Neu“ → „Neuer Kunde“, um zu starten.' : undefined}
+          title={
+            searchQuery
+              ? 'Keine Kunden gefunden.'
+              : hasActiveFilters
+                ? 'Keine Kunden entsprechen den Filtern.'
+                : 'Noch keine Kunden angelegt.'
+          }
+          description={
+            !searchQuery && !hasActiveFilters
+              ? 'Klicken Sie auf „+ Neu" → „Neuer Kunde“, um zu starten.'
+              : hasActiveFilters
+                ? 'Filter anpassen oder zurücksetzen.'
+                : undefined
+          }
           className="py-8"
         />
       ) : (
@@ -763,7 +938,12 @@ const Kunden = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                     <div className="min-w-0">
-                      <p className="font-medium text-slate-800">{customer.name}</p>
+                      <p className="font-medium text-slate-800">
+                        {customer.name}
+                        <span className="ml-2 text-slate-400 font-normal text-sm">
+                          ({bvCountByCustomerId.get(customer.id) ?? 0} BV{bvCountByCustomerId.get(customer.id) !== 1 ? 's' : ''})
+                        </span>
+                      </p>
                       {(customer.street || customer.house_number || customer.postal_code || customer.city) && (
                         <p className="text-sm text-slate-500">
                           {[
@@ -1435,11 +1615,12 @@ const Kunden = () => {
       {/* Kunde Formular Modal */}
       {showForm && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
+          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
           onClick={handleCloseForm}
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col"
             role="dialog"
             aria-modal
             onClick={(e) => e.stopPropagation()}
@@ -1450,8 +1631,8 @@ const Kunden = () => {
                 {editingId ? 'Kunde bearbeiten' : 'Kunde anlegen'}
               </h3>
             </div>
-            <form onSubmit={handleSubmit} className="p-4 space-y-4">
-              <div>
+            <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
+              <div className="min-w-0">
                 <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">
                   Name *
                 </label>
@@ -1460,7 +1641,7 @@ const Kunden = () => {
                   type="text"
                   value={formData.name}
                   onChange={(e) => handleFormChange('name', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   required
                 />
               </div>
@@ -1478,8 +1659,8 @@ const Kunden = () => {
                 postalCodeId="postal_code"
                 cityId="city"
               />
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="min-w-0">
                   <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
                     E-Mail
                   </label>
@@ -1488,10 +1669,10 @@ const Kunden = () => {
                     type="email"
                     value={formData.email}
                     onChange={(e) => handleFormChange('email', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">
                     Telefon
                   </label>
@@ -1500,7 +1681,7 @@ const Kunden = () => {
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => handleFormChange('phone', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 </div>
               </div>
@@ -1512,22 +1693,22 @@ const Kunden = () => {
                     placeholder="Name"
                     value={formData.contact_name}
                     onChange={(e) => handleFormChange('contact_name', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
                       type="email"
                       placeholder="E-Mail"
                       value={formData.contact_email}
                       onChange={(e) => handleFormChange('contact_email', e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     />
                     <input
                       type="tel"
                       placeholder="Telefon"
                       value={formData.contact_phone}
                       onChange={(e) => handleFormChange('contact_phone', e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     />
                   </div>
                 </div>
@@ -1550,7 +1731,7 @@ const Kunden = () => {
                     placeholder="Wartungsbericht E-Mail-Adresse"
                     value={formData.maintenance_report_email_address}
                     onChange={(e) => handleFormChange('maintenance_report_email_address', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 )}
               </div>
@@ -1591,11 +1772,12 @@ const Kunden = () => {
       {/* BV Formular Modal */}
       {showBvForm && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
+          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
           onClick={handleCloseBvForm}
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col"
             role="dialog"
             aria-modal
             onClick={(e) => e.stopPropagation()}
@@ -1606,7 +1788,7 @@ const Kunden = () => {
                 {bvEditingId ? 'Objekt/BV bearbeiten' : 'Objekt/BV anlegen'}
               </h3>
             </div>
-            <form onSubmit={handleBvSubmit} className="p-4 space-y-4">
+            <form onSubmit={handleBvSubmit} className="p-4 space-y-4 min-w-0">
               {!bvEditingId && (
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1623,7 +1805,7 @@ const Kunden = () => {
                   </span>
                 </label>
               )}
-              <div>
+              <div className="min-w-0">
                 <label htmlFor="bv-name" className="block text-sm font-medium text-slate-700 mb-1">
                   Name *
                 </label>
@@ -1632,7 +1814,7 @@ const Kunden = () => {
                   type="text"
                   value={bvFormData.name}
                   onChange={(e) => handleBvFormChange('name', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   required
                 />
               </div>
@@ -1650,8 +1832,8 @@ const Kunden = () => {
                 postalCodeId="bv-postal_code"
                 cityId="bv-city"
               />
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="min-w-0">
                   <label htmlFor="bv-email" className="block text-sm font-medium text-slate-700 mb-1">
                     E-Mail
                   </label>
@@ -1660,10 +1842,10 @@ const Kunden = () => {
                     type="email"
                     value={bvFormData.email}
                     onChange={(e) => handleBvFormChange('email', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label htmlFor="bv-phone" className="block text-sm font-medium text-slate-700 mb-1">
                     Telefon
                   </label>
@@ -1672,7 +1854,7 @@ const Kunden = () => {
                     type="tel"
                     value={bvFormData.phone}
                     onChange={(e) => handleBvFormChange('phone', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 </div>
               </div>
@@ -1684,22 +1866,22 @@ const Kunden = () => {
                     placeholder="Name"
                     value={bvFormData.contact_name}
                     onChange={(e) => handleBvFormChange('contact_name', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
                       type="email"
                       placeholder="E-Mail"
                       value={bvFormData.contact_email}
                       onChange={(e) => handleBvFormChange('contact_email', e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     />
                     <input
                       type="tel"
                       placeholder="Telefon"
                       value={bvFormData.contact_phone}
                       onChange={(e) => handleBvFormChange('contact_phone', e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     />
                   </div>
                 </div>
@@ -1722,7 +1904,7 @@ const Kunden = () => {
                     placeholder="Wartungsbericht E-Mail-Adresse"
                     value={bvFormData.maintenance_report_email_address}
                     onChange={(e) => handleBvFormChange('maintenance_report_email_address', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 )}
               </div>

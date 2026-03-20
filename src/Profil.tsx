@@ -121,7 +121,7 @@ const Profil = () => {
       {isLoading ? (
         <LoadingSpinner message="Lade Profil…" className="mt-4 py-8" />
       ) : (
-        <div className="mt-4 space-y-4 max-w-md">
+        <div className="mt-4 space-y-4 max-w-md min-w-0">
           <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>

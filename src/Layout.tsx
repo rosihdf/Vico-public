@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import SyncStatusIndicator from './SyncStatus'
 import Logo from './Logo'
-import UpdateBanner from './UpdateBanner'
+import UpdateBanner from '../shared/UpdateBanner'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
@@ -54,9 +54,7 @@ const Layout = () => {
     ...(isEnabled('suche') ? [{ to: '/suche', label: 'Suche' }] : []),
     ...(isEnabled('auftrag') ? [{ to: '/auftrag', label: 'Auftrag' }] : []),
     ...(userRole === 'admin' && isEnabled('benutzerverwaltung') ? [{ to: '/benutzerverwaltung', label: 'Benutzerverwaltung' }] : []),
-    ...(userRole === 'admin' ? [{ to: '/historie', label: 'Historie' }] : []),
-    ...(userRole === 'admin' ? [{ to: '/fehlerberichte', label: 'Fehlerberichte' }] : []),
-    ...(userRole === 'admin' ? [{ to: '/ladezeiten', label: 'Ladezeiten' }] : []),
+    ...(userRole === 'admin' ? [{ to: '/system', label: 'System', matchPrefix: true }] : []),
     ...(showArbeitszeit ? [{ to: '/arbeitszeit', label: 'Arbeitszeit' }] : []),
     ...(isEnabled('einstellungen') ? [{ to: '/einstellungen', label: 'Einstellungen' }] : []),
     ...(isEnabled('info') ? [{ to: '/info', label: 'Info' }] : []),
@@ -193,9 +191,10 @@ const Layout = () => {
       >
         <div className="flex flex-col pt-16 px-2">
           {menuLinks.map((item) => {
-            const { to, label, external } = item as { to: string; label: string; external?: boolean }
+            const { to, label, external, matchPrefix } = item as { to: string; label: string; external?: boolean; matchPrefix?: boolean }
+            const isActive = matchPrefix ? location.pathname.startsWith(to) : location.pathname === to
             const className = `px-4 py-3 rounded-lg font-medium transition-colors ${
-              external ? 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100' : location.pathname === to
+              external ? 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100' : isActive
                 ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100'
                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 hover:text-slate-800 dark:hover:text-slate-100'
             }`

@@ -10,10 +10,21 @@ import {
   updateImpressum,
   isLicenseApiConfigured,
 } from './lib/licensePortalApi'
-import { fetchMyProfile, revokeGpsConsent } from './lib/userService'
+import { fetchMyProfile, revokeGpsConsent, setStandortabfrageConsent, revokeStandortabfrageConsent } from './lib/userService'
 import { hasFeature } from './lib/licenseService'
+import {
+  getStandortabfrageTeamleiterAllowed,
+  setStandortabfrageTeamleiterAllowed,
+} from './lib/locationService'
+import {
+  isPushSupported,
+  hasPushSubscription,
+  subscribeToPush,
+  unsubscribeFromPush,
+} from './lib/pushService'
 import type { SyncStatus } from './types'
 import type { Profile } from './lib/userService'
+import { BetaBadge } from '../shared/BetaBadge'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   offline: '🔴 Offline',
@@ -22,7 +33,7 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
 }
 
 const Einstellungen = () => {
-  const { syncStatus, setSyncStatus, syncNow, pendingCount, lastSyncError, clearSyncError } = useSync()
+  const { syncStatus, isOffline, setSyncStatus, syncNow, pendingCount, lastSyncError, clearSyncError } = useSync()
   const { userRole, user } = useAuth()
   const { design, license, refresh: refreshLicense } = useLicense()
   const { settingsList, updateSetting, refresh, isEnabled } = useComponentSettings()
@@ -37,6 +48,12 @@ const Einstellungen = () => {
   const [showStammdatenEdit, setShowStammdatenEdit] = useState(false)
   const [stammdatenSaving, setStammdatenSaving] = useState(false)
   const [stammdatenError, setStammdatenError] = useState<string | null>(null)
+  const [standortTeamleiterAllowed, setStandortTeamleiterAllowed] = useState(false)
+  const [standortTeamleiterLoading, setStandortTeamleiterLoading] = useState(false)
+  const [standortTeamleiterSaving, setStandortTeamleiterSaving] = useState(false)
+  const [standortConsentSaving, setStandortConsentSaving] = useState(false)
+  const [pushEnabled, setPushEnabled] = useState<boolean | null>(null)
+  const [pushSaving, setPushSaving] = useState(false)
   const [stammdatenForm, setStammdatenForm] = useState({
     company_name: '',
     address: '',
@@ -76,11 +93,56 @@ const Einstellungen = () => {
   const showGpsRevoke =
     license && hasFeature(license, 'arbeitszeiterfassung') && user?.id && hasGpsConsent
 
+  const showStandortabfrageSettings =
+    userRole === 'admin' && license && hasFeature(license, 'standortabfrage')
+
+  const hasStandortabfrageConsent =
+    myProfile?.standortabfrage_consent_at != null && myProfile?.standortabfrage_consent_revoked_at == null
+  const showStandortabfrageConsent =
+    license && hasFeature(license, 'standortabfrage') && user?.id && userRole !== 'kunde'
+
+  useEffect(() => {
+    if (!showStandortabfrageSettings) return
+    setStandortTeamleiterLoading(true)
+    getStandortabfrageTeamleiterAllowed()
+      .then(setStandortTeamleiterAllowed)
+      .finally(() => setStandortTeamleiterLoading(false))
+  }, [showStandortabfrageSettings])
+
   const handleRevokeGps = async () => {
     if (!user?.id || gpsRevoking) return
     setGpsRevoking(true)
     await revokeGpsConsent(user.id)
     setGpsRevoking(false)
+    await loadProfile()
+  }
+
+  const handleStandortabfrageConsent = async () => {
+    if (!user?.id || standortConsentSaving) return
+    setStandortConsentSaving(true)
+    await setStandortabfrageConsent(user.id)
+    setStandortConsentSaving(false)
+    await loadProfile()
+  }
+
+  const handlePushToggle = async (enable: boolean) => {
+    if (pushSaving) return
+    setPushSaving(true)
+    if (enable) {
+      const { error } = await subscribeToPush()
+      if (!error) setPushEnabled(true)
+    } else {
+      await unsubscribeFromPush()
+      setPushEnabled(false)
+    }
+    setPushSaving(false)
+  }
+
+  const handleRevokeStandortabfrageConsent = async () => {
+    if (!user?.id || standortConsentSaving) return
+    setStandortConsentSaving(true)
+    await revokeStandortabfrageConsent(user.id)
+    setStandortConsentSaving(false)
     await loadProfile()
   }
 
@@ -137,7 +199,7 @@ const Einstellungen = () => {
   }
 
   return (
-    <div className="p-4 max-w-xl">
+    <div className="p-4 max-w-xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">Einstellungen</h2>
 
       {/* Stammdaten importieren */}
@@ -181,10 +243,18 @@ const Einstellungen = () => {
           </span>
         </div>
         {lastSyncError && (
-          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-800 font-medium">Sync-Fehler</p>
-            <p className="text-sm text-red-700 mt-1">{lastSyncError}</p>
-            <p className="text-xs text-red-600 mt-2">Möglicher Konflikt: Server-Daten wurden zwischenzeitlich geändert. Nach Pull werden lokale Änderungen überschrieben (Last-Write-Wins).</p>
+          <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-sm text-red-800 dark:text-red-200 font-medium">Sync-Fehler</p>
+            <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+              {lastSyncError === 'TypeError: Load failed' || lastSyncError.includes('Failed to fetch') || lastSyncError.includes('Load failed')
+                ? 'Netzwerkfehler. Bitte Verbindung prüfen. Bei Supabase Free-Tier: Projekt kann nach Inaktivität pausieren (Aufwecken dauert oft 1–2 Min.).'
+                : lastSyncError}
+            </p>
+            {(lastSyncError.includes('duplicate') || lastSyncError.includes('conflict') || lastSyncError.includes('unique') || lastSyncError.includes('violates')) && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-2">
+                Möglicher Konflikt: Server-Daten wurden zwischenzeitlich geändert. Nach Pull werden lokale Änderungen überschrieben (Last-Write-Wins).
+              </p>
+            )}
             <button
               type="button"
               onClick={clearSyncError}
@@ -197,7 +267,8 @@ const Einstellungen = () => {
         <button
           type="button"
           onClick={handleSyncNow}
-          disabled={isSyncing || !navigator.onLine}
+          disabled={isSyncing || isOffline}
+          title={isOffline ? 'Offline – Sync erst bei Verbindung möglich' : undefined}
           className="mt-3 px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isSyncing ? 'Synchronisiere…' : 'Jetzt synchronisieren'}
@@ -230,12 +301,17 @@ const Einstellungen = () => {
           className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
           aria-labelledby="ortung-heading"
         >
-          <h3 id="ortung-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
-            Zeiterfassung – Ortung
+          <h3
+            id="ortung-heading"
+            className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex flex-wrap items-center gap-2"
+          >
+            <span>Zeiterfassung – Ortung (Stempeln)</span>
+            <BetaBadge aria-hidden="true" />
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
             Sie haben die Standorterfassung bei Arbeitsbeginn/-ende aktiviert. Sie können die Einwilligung jederzeit
-            widerrufen; danach wird kein Standort mehr erfasst.
+            widerrufen; danach wird kein Standort mehr erfasst. Anzeige und Erfassung sind derzeit{' '}
+            <strong>Beta</strong> – nach Live-Gang erneut prüfen; lokal kann das Verhalten abweichen.
           </p>
           <button
             type="button"
@@ -246,6 +322,117 @@ const Einstellungen = () => {
           >
             {gpsRevoking ? 'Wird deaktiviert…' : 'Ortung deaktivieren (Einwilligung widerrufen)'}
           </button>
+        </section>
+      )}
+
+      {/* Standortabfrage – Einwilligung (Mitarbeiter/Teamleiter/Admin) */}
+      {showStandortabfrageConsent && (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+          aria-labelledby="standortabfrage-consent-heading"
+        >
+          <h3
+            id="standortabfrage-consent-heading"
+            className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex flex-wrap items-center gap-2"
+          >
+            <span>Standortabfrage – Ihre Einwilligung</span>
+            <BetaBadge aria-hidden="true" />
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            Wenn Sie einwilligen, können Sie Ihren aktuellen Standort an Admin bzw. Teamleiter senden. Diese können Ihren
+            Standort im Arbeitszeitenportal abrufen, wenn Sie ihn gesendet haben. Die Einwilligung ist freiwillig und
+            jederzeit widerrufbar. <strong>Beta</strong> – vor produktivem Einsatz siehe interne Checkliste (Doku §3a).
+          </p>
+          {hasStandortabfrageConsent ? (
+            <div>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                Sie haben eingewilligt. Sie können Ihren Standort in der Zeiterfassung senden.
+              </p>
+              {isPushSupported() && (
+                <label className={`flex items-center gap-3 mb-3 ${isOffline ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                  <input
+                    type="checkbox"
+                    checked={pushEnabled ?? false}
+                    disabled={pushSaving || isOffline}
+                    onChange={(e) => !isOffline && handlePushToggle(e.target.checked)}
+                    className="w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary disabled:opacity-50"
+                    aria-label="Benachrichtigungen bei Standortanfrage"
+                    title={isOffline ? 'Offline – Push-Einstellung erst bei Verbindung möglich' : undefined}
+                  />
+                  <span className="text-sm text-slate-700 dark:text-slate-200">
+                    Benachrichtigungen bei Standortanfrage (Push)
+                  </span>
+                </label>
+              )}
+              <button
+                type="button"
+                onClick={handleRevokeStandortabfrageConsent}
+                disabled={standortConsentSaving || isOffline}
+                title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-amber-500 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/30 disabled:opacity-50"
+                aria-label="Einwilligung widerrufen"
+              >
+                {standortConsentSaving ? 'Wird gespeichert…' : 'Einwilligung widerrufen'}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleStandortabfrageConsent}
+              disabled={standortConsentSaving || isOffline}
+              title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
+              aria-label="Einwilligung erteilen"
+            >
+              {standortConsentSaving ? 'Wird gespeichert…' : 'Einwilligung erteilen'}
+            </button>
+          )}
+        </section>
+      )}
+
+      {/* Standortabfrage – Teamleiter-Berechtigung (nur Admin, nur wenn Lizenz-Feature aktiv) */}
+      {showStandortabfrageSettings && (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+          aria-labelledby="standortabfrage-heading"
+        >
+          <h3
+            id="standortabfrage-heading"
+            className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex flex-wrap items-center gap-2"
+          >
+            <span>Standortabfrage (Admin)</span>
+            <BetaBadge aria-hidden="true" />
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            Mitarbeiter können ihren aktuellen Standort an Admin/Teamleiter senden. Hier legen Sie fest, ob auch Teamleiter
+            die Standorte ihrer Teammitglieder abfragen dürfen oder nur Sie als Admin. Lizenz-Feature{' '}
+            <strong>standortabfrage</strong> nur bewusst aktivieren; siehe Doku §3a (Beta / rechtliche Prüfung).
+          </p>
+          {standortTeamleiterLoading ? (
+            <p className="text-sm text-slate-500">Lade Einstellung…</p>
+          ) : (
+            <label className={`flex items-center gap-3 ${isOffline ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+              <input
+                type="checkbox"
+                checked={standortTeamleiterAllowed}
+                disabled={standortTeamleiterSaving || isOffline}
+                onChange={async (e) => {
+                  if (isOffline) return
+                  const checked = e.target.checked
+                  setStandortTeamleiterSaving(true)
+                  const { error } = await setStandortabfrageTeamleiterAllowed(checked)
+                  setStandortTeamleiterSaving(false)
+                  if (!error) setStandortTeamleiterAllowed(checked)
+                }}
+                className="w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary disabled:opacity-50"
+                aria-label="Teamleiter dürfen Standort abfragen"
+                title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
+              />
+              <span className="text-sm text-slate-700 dark:text-slate-200">
+                Teamleiter dürfen Standort abfragen
+              </span>
+            </label>
+          )}
         </section>
       )}
 
@@ -263,7 +450,9 @@ const Einstellungen = () => {
               <button
                 type="button"
                 onClick={handleOpenStammdatenEdit}
-                className="text-xs font-medium text-vico-primary hover:underline"
+                disabled={isOffline}
+                title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
+                className={`text-xs font-medium ${isOffline ? 'text-slate-400 cursor-not-allowed' : 'text-vico-primary hover:underline'}`}
                 aria-label="Stammdaten bearbeiten"
               >
                 Bearbeiten
@@ -311,7 +500,7 @@ const Einstellungen = () => {
               onClick={() => !stammdatenSaving && setShowStammdatenEdit(false)}
             >
               <div
-                className="max-w-lg w-full max-h-[90vh] overflow-auto p-6 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-xl"
+                className="max-w-lg w-full min-w-0 max-h-[min(90vh,90dvh)] overflow-auto p-6 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-xl"
                 onClick={(e) => e.stopPropagation()}
               >
                 <h4 id="stammdaten-modal-heading" className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">

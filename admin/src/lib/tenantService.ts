@@ -5,6 +5,7 @@ export type Tenant = {
   name: string
   app_domain: string | null
   portal_domain: string | null
+  arbeitszeitenportal_domain: string | null
   logo_url: string | null
   primary_color: string | null
   secondary_color: string | null
@@ -32,7 +33,7 @@ export type TenantUpdate = Partial<Omit<Tenant, 'id' | 'created_at'>>
 export const fetchTenants = async (signal?: AbortSignal): Promise<Tenant[]> => {
   let query = supabase
     .from('tenants')
-    .select('id, name, app_domain, portal_domain, app_name, primary_color')
+    .select('id, name, app_domain, portal_domain, arbeitszeitenportal_domain, app_name, primary_color')
     .order('name')
   if (signal) query = query.abortSignal(signal)
   const { data, error } = await query
@@ -57,6 +58,7 @@ export const createTenant = async (payload: Partial<Tenant>): Promise<{ id: stri
       name: payload.name ?? '',
       app_domain: payload.app_domain ?? null,
       portal_domain: payload.portal_domain ?? null,
+      arbeitszeitenportal_domain: payload.arbeitszeitenportal_domain ?? null,
       logo_url: payload.logo_url ?? null,
       primary_color: payload.primary_color ?? '#5b7895',
       secondary_color: payload.secondary_color ?? null,

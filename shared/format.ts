@@ -51,3 +51,11 @@ export const formatDateTimeShort = (iso: string): string => {
 }
 
 export const toDateStr = (d: Date): string => d.toISOString().slice(0, 10)
+
+/** Zeitformat für Timestamp (ms) – z. B. Ladezeiten-Dashboard */
+export const formatTimeFromTs = (ts: number): string =>
+  new Date(ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
+/** Datumsformat für Timestamp (ms) */
+export const formatDateFromTs = (ts: number): string =>
+  new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' })

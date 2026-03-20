@@ -204,6 +204,10 @@ const AlleZeiten = () => {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-slate-800">Alle Zeiten</h2>
+      <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 dark:bg-amber-950/30 dark:text-amber-100 dark:border-amber-800">
+        <strong className="font-semibold">Stempel-Standorte (GPS):</strong> Beta – Kartenlinks nur, wenn Koordinaten
+        gespeichert sind. Nach Live-Betrieb erneut prüfen; in der Entwicklung kann die Anzeige abweichen.
+      </p>
 
       <div className="flex flex-wrap items-end gap-4">
         <div>

@@ -89,7 +89,7 @@ const Fehlerberichte = () => {
 
   if (userRole !== 'admin') {
     return (
-      <div className="p-4 max-w-xl">
+      <div className="p-4 max-w-xl min-w-0">
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Fehlerberichte</h2>
         <p className="text-slate-600 dark:text-slate-400">Nur für Administratoren sichtbar.</p>
       </div>
@@ -97,7 +97,7 @@ const Fehlerberichte = () => {
   }
 
   return (
-    <div className="p-4 max-w-4xl">
+    <div className="p-4 max-w-4xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">Fehlerberichte</h2>
       <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
         Automatisch erfasste Fehler aus der App (JavaScript-Fehler, abgelehnte Promises, React Error Boundary).
@@ -202,7 +202,7 @@ const Fehlerberichte = () => {
           onClick={() => setDetail(null)}
         >
           <div
-            className="max-w-2xl w-full max-h-[90vh] overflow-auto rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-xl p-4"
+            className="max-w-2xl w-full min-w-0 max-h-[min(90vh,90dvh)] overflow-auto rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-xl p-4"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 id="fehler-detail-title" className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">

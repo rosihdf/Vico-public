@@ -10,6 +10,8 @@ import AlleZeiten from './pages/AlleZeiten'
 import Urlaub from './pages/Urlaub'
 import Log from './pages/Log'
 import Stammdaten from './pages/Stammdaten'
+import Standort from './pages/Standort'
+import UpdateBanner from '../../shared/UpdateBanner'
 
 const PORTAL_ALLOWED_ROLES = ['admin', 'teamleiter'] as const
 const AUTH_TIMEOUT_MS = 30_000
@@ -163,6 +165,7 @@ const App = () => {
 
   return (
     <BrowserRouter>
+      <UpdateBanner />
       <Routes>
         <Route path="/login" element={
           user && canAccess ? (
@@ -184,6 +187,7 @@ const App = () => {
           <Route path="urlaub" element={<Urlaub />} />
           <Route path="log" element={<Log />} />
           <Route path="stammdaten" element={<Stammdaten />} />
+          <Route path="standort" element={<Standort />} />
         </Route>
         <Route path="*" element={<Navigate to={user && canAccess ? '/' : '/login'} replace />} />
       </Routes>

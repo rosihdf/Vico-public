@@ -30,7 +30,7 @@ const useDebounce = <T,>(value: T, delay: number): T => {
 }
 
 const inputClass =
-  'w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary'
+  'w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary'
 
 export const AddressLookupFields = ({
   street,
@@ -111,8 +111,8 @@ export const AddressLookupFields = ({
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="min-w-0">
           <label htmlFor={postalCodeId} className="block text-sm font-medium text-slate-700 mb-1">
             {postalCodeLabel}
           </label>
@@ -132,7 +132,7 @@ export const AddressLookupFields = ({
             <p className="mt-1 text-xs text-slate-500">Ort wird ermittelt…</p>
           )}
         </div>
-        <div>
+        <div className="min-w-0">
           <label htmlFor={cityId} className="block text-sm font-medium text-slate-700 mb-1">
             {cityLabel}
           </label>
@@ -147,8 +147,8 @@ export const AddressLookupFields = ({
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="relative">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="relative min-w-0">
           <label htmlFor={streetId} className="block text-sm font-medium text-slate-700 mb-1">
             {streetLabel}
           </label>
@@ -203,7 +203,7 @@ export const AddressLookupFields = ({
             <span className="absolute right-3 top-9 text-xs text-slate-400">…</span>
           )}
         </div>
-        <div>
+        <div className="min-w-0">
           <label htmlFor={houseNumberId} className="block text-sm font-medium text-slate-700 mb-1">
             {houseNumberLabel}
           </label>

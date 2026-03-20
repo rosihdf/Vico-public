@@ -171,7 +171,7 @@ const Auftragsdetail = () => {
   }
 
   return (
-    <div className="p-4 max-w-2xl mx-auto">
+    <div className="p-4 max-w-2xl min-w-0 mx-auto">
       <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
         <Link
           to="/auftrag"

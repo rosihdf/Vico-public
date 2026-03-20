@@ -8,6 +8,7 @@ import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalBadge from './components/PortalBadge'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { useLicense } from './LicenseContext'
+import { useSync } from './SyncContext'
 import { checkCanInviteUser, getUsageLevel, getUsageMessage } from './lib/licenseService'
 import { getStoredLicenseNumber, reportLimitExceeded, isLicenseApiConfigured } from './lib/licensePortalApi'
 import {
@@ -42,6 +43,7 @@ const Benutzerverwaltung = () => {
   const navigate = useNavigate()
   const { userRole, signUp, logout } = useAuth()
   const { license } = useLicense()
+  const { isOffline } = useSync()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -420,7 +422,11 @@ const Benutzerverwaltung = () => {
         <button
           type="button"
           onClick={handleOpenCreate}
-          className="px-4 py-2 rounded-lg font-medium bg-vico-primary text-white hover:bg-vico-primary-hover border border-slate-700"
+          disabled={isOffline}
+          title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
+          className={`px-4 py-2 rounded-lg font-medium border border-slate-700 ${
+            isOffline ? 'bg-slate-300 dark:bg-slate-600 text-slate-500 cursor-not-allowed' : 'bg-vico-primary text-white hover:bg-vico-primary-hover'
+          }`}
           aria-label="Neuen Benutzer anlegen"
         >
           + Benutzer anlegen
@@ -561,12 +567,13 @@ const Benutzerverwaltung = () => {
                           placeholder="Neues Team (Name)"
                           className="px-3 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white w-48"
                           aria-label="Name für neues Team"
-                          disabled={isCreatingTeam}
+                          disabled={isCreatingTeam || isOffline}
                         />
                         <button
                           type="button"
                           onClick={handleCreateTeam}
-                          disabled={!newTeamName.trim() || isCreatingTeam}
+                          disabled={!newTeamName.trim() || isCreatingTeam || isOffline}
+                          title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
                           className="px-3 py-1.5 text-sm rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:pointer-events-none"
                           aria-label="Team anlegen"
                         >
@@ -591,12 +598,13 @@ const Benutzerverwaltung = () => {
                           placeholder="Neues Team (Name)"
                           className="px-3 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white w-48"
                           aria-label="Name für neues Team"
-                          disabled={isCreatingTeam}
+                          disabled={isCreatingTeam || isOffline}
                         />
                         <button
                           type="button"
                           onClick={handleCreateTeam}
-                          disabled={!newTeamName.trim() || isCreatingTeam}
+                          disabled={!newTeamName.trim() || isCreatingTeam || isOffline}
+                          title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
                           className="px-3 py-1.5 text-sm rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:pointer-events-none"
                           aria-label="Team anlegen"
                         >
@@ -618,10 +626,10 @@ const Benutzerverwaltung = () => {
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteTeam(team.id, team.name)}
-                                  disabled={isDeleting}
+                                  disabled={isDeleting || isOffline}
+                                  title={isOffline ? 'Offline – erst bei Verbindung möglich' : 'Team löschen'}
                                   className="shrink-0 p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:pointer-events-none"
                                   aria-label={`Team „${team.name}" löschen`}
-                                  title="Team löschen"
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -877,7 +885,8 @@ const Benutzerverwaltung = () => {
 
       {showForm && (
         <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
+          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
           onClick={handleCloseForm}
           onKeyDown={(e) => e.key === 'Escape' && handleCloseForm()}
           role="dialog"
@@ -885,14 +894,14 @@ const Benutzerverwaltung = () => {
           aria-labelledby="create-user-title"
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6"
+            className="bg-white rounded-xl shadow-xl max-w-sm w-full min-w-0 p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 id="create-user-title" className="text-lg font-bold text-slate-800">
               Neuen Benutzer anlegen
             </h3>
             <form onSubmit={handleCreateUser} className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="user-first-name" className="block text-sm font-medium text-slate-700 mb-1">
                     Vorname
@@ -1008,7 +1017,8 @@ const Benutzerverwaltung = () => {
 
       {editingProfile && (
         <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
+          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
           onClick={handleCloseEditName}
           onKeyDown={(e) => e.key === 'Escape' && handleCloseEditName()}
           role="dialog"
@@ -1016,7 +1026,7 @@ const Benutzerverwaltung = () => {
           aria-labelledby="edit-name-title"
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6"
+            className="bg-white rounded-xl shadow-xl max-w-sm w-full min-w-0 p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 id="edit-name-title" className="text-lg font-bold text-slate-800">

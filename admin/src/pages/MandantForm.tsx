@@ -18,7 +18,7 @@ import {
 
 const TIER_OPTIONS = ['free', 'professional', 'enterprise'] as const
 const CHECK_INTERVAL_OPTIONS = ['on_start', 'daily', 'weekly'] as const
-const FEATURE_KEYS = ['kundenportal', 'historie', 'arbeitszeiterfassung'] as const
+const FEATURE_KEYS = ['kundenportal', 'historie', 'arbeitszeiterfassung', 'standortabfrage'] as const
 
 const DEFAULT_CREATE_FORM: {
   license_number: string
@@ -43,7 +43,7 @@ const DEFAULT_CREATE_FORM: {
   max_customers: null,
   max_storage_mb: null,
   check_interval: 'daily',
-  features: { kundenportal: false, historie: false, arbeitszeiterfassung: false },
+  features: { kundenportal: false, historie: false, arbeitszeiterfassung: false, standortabfrage: false },
 }
 
 type LocationState = { editLicenseId?: string; openCreateLicense?: boolean } | null
@@ -71,6 +71,7 @@ const MandantForm = () => {
     name: '',
     app_domain: '',
     portal_domain: '',
+    arbeitszeitenportal_domain: '',
     primary_color: '#5b7895',
     app_name: 'AMRtech',
     impressum_company_name: '',
@@ -122,6 +123,7 @@ const MandantForm = () => {
             name: t.name ?? '',
             app_domain: t.app_domain ?? '',
             portal_domain: t.portal_domain ?? '',
+            arbeitszeitenportal_domain: t.arbeitszeitenportal_domain ?? '',
             primary_color: t.primary_color ?? '#5b7895',
             app_name: t.app_name ?? 'AMRtech',
             impressum_company_name: t.impressum_company_name ?? '',
@@ -184,6 +186,7 @@ const MandantForm = () => {
           name: form.name,
           app_domain: form.app_domain || null,
           portal_domain: form.portal_domain || null,
+          arbeitszeitenportal_domain: form.arbeitszeitenportal_domain || null,
           allowed_domains: form.allowed_domains
             ? form.allowed_domains
                 .split(/[\n,]/)
@@ -208,6 +211,7 @@ const MandantForm = () => {
           name: form.name,
           app_domain: form.app_domain || null,
           portal_domain: form.portal_domain || null,
+          arbeitszeitenportal_domain: form.arbeitszeitenportal_domain || null,
           allowed_domains: form.allowed_domains
             ? form.allowed_domains
                 .split(/[\n,]/)
@@ -859,13 +863,24 @@ const MandantForm = () => {
           />
         </div>
         <div>
-          <label htmlFor="portal_domain" className="block text-sm font-medium text-slate-700 mb-1">Portal-Domain</label>
+          <label htmlFor="portal_domain" className="block text-sm font-medium text-slate-700 mb-1">Kundenportal-Domain</label>
           <input
             id="portal_domain"
             type="text"
             value={form.portal_domain}
             onChange={(e) => setForm((f) => ({ ...f, portal_domain: e.target.value }))}
             placeholder="portal.amrtech.de"
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+          />
+        </div>
+        <div>
+          <label htmlFor="arbeitszeitenportal_domain" className="block text-sm font-medium text-slate-700 mb-1">Arbeitszeitenportal-Domain</label>
+          <input
+            id="arbeitszeitenportal_domain"
+            type="text"
+            value={form.arbeitszeitenportal_domain}
+            onChange={(e) => setForm((f) => ({ ...f, arbeitszeitenportal_domain: e.target.value }))}
+            placeholder="arbeitszeit.amrtech.de"
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
           />
         </div>

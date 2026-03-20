@@ -101,7 +101,7 @@ const Login = () => {
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm p-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-lg">
+      <div className="w-full max-w-sm min-w-0 p-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-lg">
         <Logo variant="login" />
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">
           {showMfaChallenge ? 'Zwei-Faktor-Authentifizierung' : showForgotPassword ? 'Passwort zurücksetzen' : showRegister ? 'Konto anlegen' : 'Anmelden'}

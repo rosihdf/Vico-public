@@ -1,6 +1,6 @@
 import { generateChecklistPdf } from './generateChecklistPdf'
 import type { ChecklistData } from './generateChecklistPdf'
-import checklistDataWebApp from './checklistDataWebApp.json'
+import checklistDataWebApp from '../../shared/checklistDataWebApp.json'
 
 const triggerDownload = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob)

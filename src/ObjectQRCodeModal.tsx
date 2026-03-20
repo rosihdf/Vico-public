@@ -122,7 +122,7 @@ const ObjectQRCodeModal = ({
       aria-label="QR-Code für Tür/Tor"
     >
       <div
-        className="bg-white rounded-xl shadow-xl max-w-sm w-full"
+        className="bg-white rounded-xl shadow-xl max-w-sm w-full min-w-0"
         onClick={(e) => e.stopPropagation()}
         role="document"
       >

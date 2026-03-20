@@ -22,7 +22,7 @@ import SignatureField from './SignatureField'
 import { useAuth } from './AuthContext'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import ConfirmDialog from './components/ConfirmDialog'
-import EmptyState from './components/EmptyState'
+import EmptyState from '../shared/EmptyState'
 import { fetchMyProfile, getProfileDisplayName } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
 import type {
@@ -582,11 +582,12 @@ const Wartungsprotokolle = () => {
 
       {showForm && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
+          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
           onClick={handleCloseForm}
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-xl shadow-xl max-w-2xl w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col"
             role="dialog"
             aria-modal
             aria-labelledby="wartung-title"
@@ -597,9 +598,9 @@ const Wartungsprotokolle = () => {
                 Neues Wartungsprotokoll
               </h3>
             </div>
-            <form onSubmit={handleSubmit} className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+            <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="min-w-0">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Datum der Wartung
                   </label>
@@ -612,7 +613,7 @@ const Wartungsprotokolle = () => {
                     aria-label="Datum der Wartung"
                   />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Uhrzeit
                   </label>

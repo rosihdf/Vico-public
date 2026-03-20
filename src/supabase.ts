@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createSupabaseClient } from '../shared/createSupabaseClient'
 import { warmUpConnection as doWarmUp } from '../shared/warmUpConnection'
 
 const REMEMBER_ME_KEY = 'vico-remember-me'
@@ -38,15 +38,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const warmUpConnection = (): void => doWarmUp(supabaseUrl, supabaseAnonKey)
 
-// Ladezeiten: Supabase-Projekt-Region (Dashboard → Settings → General) nah an Nutzern wählen (z. B. Frankfurt für EU).
-export const supabase: SupabaseClient = createClient(
-  supabaseUrl || 'https://example.supabase.co',
-  supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.placeholder',
-  {
-    auth: {
-      storage: customStorage,
-      persistSession: true,
-      autoRefreshToken: true,
-    },
-  }
-)
+const PLACEHOLDER_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.placeholder'
+
+export const supabase = createSupabaseClient({
+  url: supabaseUrl || 'https://example.supabase.co',
+  anonKey: supabaseAnonKey || PLACEHOLDER_KEY,
+  customStorage,
+  warnMessage: 'Supabase: VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY in .env prüfen.',
+})

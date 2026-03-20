@@ -59,7 +59,7 @@ Diese Teile werden in der Haupt-App **nicht mehr angezeigt** (per Feature-Flag o
 
 | Funktion | Status |
 |----------|--------|
-| **Auftragszuordnung** | **Entscheidung: Entfernen.** Code/UI in Haupt-App und Portal entfernen; `order_id` ggf. bleiben. Siehe `docs/Entscheidungen-Offene-Punkte.md` §7. |
+| **Auftragszuordnung** | **Entscheidung: Entfernen.** Code/UI in Haupt-App und Portal entfernen; `order_id` ggf. bleiben. Siehe **`Vico.md` §11.1** (Punkt 7 – Auftragszuordnung). |
 
 ---
 

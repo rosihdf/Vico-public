@@ -16,8 +16,9 @@ Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2025.
 8. [Projektstruktur](#8-projektstruktur)
 9. [Plan: Mandantenfähigkeit & Lizenzportal](#9-plan-mandantenfähigkeit--lizenzportal)
 10. [Konzept: Geplante Änderungen Hauptapp](#10-konzept-geplante-änderungen-hauptapp)
+11. [Konzepte & Planungsdokumente (konsolidiert)](#11-konzepte--planungsdokumente-konsolidiert)
 
-**Getroffene Entscheidungen** zu zuvor offenen Punkten (App-Name, Lizenz, Zeiterfassung, Etikettendrucker, Suche, etc.): `docs/Entscheidungen-Offene-Punkte.md`.
+**Getroffene Entscheidungen** und weitergehende Konzepte (ehemals viele Einzeldateien unter `docs/`): **Abschnitt 11** in dieser Datei. Operative Checklisten und Setup-Hilfen verbleiben in `docs/` (siehe §11.12).
 
 ---
 
@@ -54,6 +55,7 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 | Tests | `npm run test` / `npm run test:run` |
 | Lint | `npm run lint` |
 | Vico-Dokumentation als PDF | `npm run generate-vico-pdf` |
+| Komponenten & Funktionen (PDF) | `npm run generate-komponenten-pdf` (auch beim Admin-Build) |
 
 ---
 
@@ -231,13 +233,9 @@ Die Web-App läuft in einer nativen Hülle (Capacitor). **Parallel zur PWA** –
 
 **Hinweis:** Nach Änderungen an der Web-App immer `npm run build:mobile` (oder `npm run build` + `npm run cap:sync`) ausführen, bevor in Android Studio/Xcode gebaut wird.
 
-**Geplant: Ladezeiten-Dashboard (Roadmap J9)**
+**Ladezeiten-Dashboard (Roadmap J9) – ✅ umgesetzt**
 
-Optional ein kleines **Performance-Dashboard** (z. B. unter Einstellungen oder eigener Menüpunkt „Performance“, nur für Admin):
-
-- Ladezeiten sammeln (z. B. in localStorage oder optional Backend) statt nur Konsole.
-- **Grafische Anzeige:** Verlauf von Sync Batch1, Batch2, Gesamt-Sync, Startseite loadData (Balken, Sparklines oder einfache Linien über die letzten N Syncs/Loads).
-- Ziel: Flaschenhälse auf einen Blick erkennen, ohne DevTools zu öffnen. Details siehe Roadmap **J9** (Abschnitt 7.1).
+`src/pages/Ladezeiten.tsx` – Performance-Dashboard (nur Admin): Ladezeiten in localStorage, grafische Anzeige von Sync Batch1/Batch2/Gesamt und Startseite loadData. Ziel: Flaschenhälse auf einen Blick erkennen.
 
 ### Demo-Account (24h-Löschung)
 
@@ -249,7 +247,7 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 
 ### Implementiert
 
-- versionUtils, UpdateBanner, objectUtils
+- shared/versionUtils, shared/UpdateBanner, objectUtils
 - Objekt-Anzeige (Suche, Auftrag, Wartung, PDF, QR, Wartungsstatus-Ampel)
 - Rechte (Admin, Demo-Rolle, BV nur Admin)
 - UX: Dunkelmodus, LoadingSpinner, Toast, Touch-Targets
@@ -283,8 +281,8 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 | 13 | Dokumente/Anhänge pro Objekt | Niedrig | 4 T | ~~Zeichnungen, Zertifikate pro Objekt~~ ✅ |
 | 14 | Bulk-Operationen | Niedrig | 3 T | Mehrere Objekte/Kunden gleichzeitig bearbeiten |
 | 15 | Portal: Push-Benachrichtigungen | Niedrig | 2–3 T | Kunden bei neuem Wartungsbericht informieren |
-| 16 | Ladezeiten-Monitoring / Performance-Dashboard | Niedrig | 1–2 T | Sync- und Startseiten-Ladezeiten grafisch anzeigen (Admin); optional kleines Dashboard mit Verlauf (Batch1/Batch2/Gesamt, loadData). Siehe Abschnitt 5 (Supabase-Region) und Roadmap J9. |
-| 17 | **Bug-Erfassungsmodul** | Niedrig | 1–2 T | Automatische Erfassung von JS-Fehlern (onerror, unhandledrejection, ErrorBoundary) und Speicherung in DB; Admin-Ansicht „Fehlerberichte“. Siehe `docs/Bug-Erfassungsmodul-Planung.md`. |
+| 16 | ✅ Ladezeiten-Monitoring / Performance-Dashboard | – | – | Umgesetzt: `src/pages/Ladezeiten.tsx` – Sync- und Startseiten-Metriken (Admin). |
+| 17 | **Bug-Erfassungsmodul** | Niedrig | 1–2 T | Automatische Erfassung von JS-Fehlern (onerror, unhandledrejection, ErrorBoundary) und Speicherung in DB; Admin unter **System → Fehlerberichte**. Konzept: **§11.3**. |
 
 **Aufwand:** T = Tage (geschätzt, 1 Entwickler)
 
@@ -300,10 +298,10 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 
 **Aktivierung:** Lizenzmodul über admin/. **Ablauf:** Start/Ende Arbeitszeit, Pausen (manuell oder automatisch nach ArbZG § 4). **Technisch:** Tabelle `time_entries`, `time_breaks`, Feature-Flag, Component Setting, Route `/arbeitszeit`, RLS.
 
-**Phase 1 (MVP) abgeschlossen:** Tagesansicht, Start/Pause/Ende, ArbZG §3/§4/§5, Wochen-Summe, „Vergessen auszustempeln“-Hinweis, Admin sieht alle (User-Dropdown), Offline/Outbox. Detail siehe `docs/Arbeitszeiterfassung-Detailkonzept.md`.
+**Phase 1 (MVP) abgeschlossen:** Tagesansicht, Start/Pause/Ende, ArbZG §3/§4/§5, Wochen-Summe, „Vergessen auszustempeln“-Hinweis, Admin sieht alle (User-Dropdown), Offline/Outbox. **Details:** **§11.6**.
 
-**Phase 2 (umgesetzt):** Bearbeiten mit Grund (`time_entry_edit_log`, RPC `update_time_entry_admin`), Admin-Modal mit Grund-Auswahl (Korrektur/Nachreichung/Fehler/Sonstiges), **Wochenansicht** (Mo–So, Vorherige/Nächste Woche), **Monatsansicht** (Kalender-Grid mit Stundensummen pro Tag). **LOG-Übersicht:** Tab „Log“ mit Filter (Zeitraum, Benutzer), Paginierung, „Filter zurücksetzen“. **Auftragszuordnung:** Technisch umgesetzt, in der UI derzeit **ausgeblendet** (Feature-Flag); bei Nichtbedarf vor Release entfernen – siehe `docs/Zeiterfassung-Offene-Punkte-und-IONOS.md`. **Arbeitszeitkonto:** Spalte `profiles.soll_minutes_per_month`; Monatsansicht zeigt Soll/Ist/Saldo; Admin setzt Soll in Benutzerverwaltung („Soll Min/Monat“).  
-**Offene Punkte, Admin-Modul-Gliederung, tägl./wöchentl. Soll, IONOS-Hosting:** siehe `docs/Zeiterfassung-Offene-Punkte-und-IONOS.md`. **Ortung (GPS)** mit gesetzlichen Anforderungen (Informationspflicht, Einwilligung, Anzeige im Portal): `docs/Zeiterfassung-Ortung-GPS-Recht-und-Planung.md`.
+**Phase 2 (umgesetzt):** Bearbeiten mit Grund (`time_entry_edit_log`, RPC `update_time_entry_admin`), Admin-Modal mit Grund-Auswahl (Korrektur/Nachreichung/Fehler/Sonstiges), **Wochenansicht** (Mo–So, Vorherige/Nächste Woche), **Monatsansicht** (Kalender-Grid mit Stundensummen pro Tag). **LOG-Übersicht:** Tab „Log“ mit Filter (Zeitraum, Benutzer), Paginierung, „Filter zurücksetzen“. **Auftragszuordnung:** per Entscheidung **entfernt** (UI/Code); Spalte `order_id` kann in der DB bleiben – **§11.1 §7**. **Arbeitszeitkonto:** `profiles.soll_minutes_per_month` / `soll_minutes_per_week`; Monatsansicht Soll/Ist/Saldo; Admin in Benutzerverwaltung.
+**IONOS-Hosting, weitere AZK-Themen:** **§11.8**. **Ortung (GPS):** **§11.7**. **Standortabfrage** (Arbeitszeitenportal): **§11.9**.
 
 ---
 
@@ -316,7 +314,7 @@ Alle noch offenen Punkte aus Vico.md (Abschnitte 7, 9, 10) in einer sinnvollen R
 | **A – Menü & Einstellungen** | A1 | ✅ Neuer Menüpunkt **„Info“** (oder „App-Info“): Appversion, Lizenz, Anleitung. Diese Inhalte aus Einstellungen entfernen. | 10.5 | 0,5–1 T |
 | | A2 | ✅ Aus **Einstellungen:** Benutzerverwaltung-Link entfernen. Aus **Benutzerverwaltung:** Einstellungen-Link entfernen. | 10.5 | 0,25 T |
 | **B – Lizenzportal (Abschluss)** | B1 | ✅ **Grenzwarnungen** (80 %/90 %/100 %) in Benutzerverwaltung + ggf. Einstellungen/Dashboard. | 9.17 | 1 T |
-| | B2 | ✅ **Verhalten bei abgelaufener Lizenz:** Schonfrist Nur-Lesen (Tage im Lizenzportal konfigurierbar), danach Redirect. Siehe `docs/Entscheidungen-Offene-Punkte.md` §2. | 9.10, 9.17 | 1–2 T |
+| | B2 | ✅ **Verhalten bei abgelaufener Lizenz:** Schonfrist Nur-Lesen (Tage im Lizenzportal konfigurierbar), danach Redirect. **§11.1 §2.** | 9.10, 9.17 | 1–2 T |
 | | B3 | ✅ **Lizenzportal-Supabase-Projekt** anlegen, Schema `supabase-license-portal.sql` im neuen Projekt ausführen (operativer Schritt). | 9.17 | 0,5 T |
 | **C – Benutzerverwaltung** | C1 | ✅ **Benutzer anlegen:** Auswahl der Rolle (Rollenliste abhängig von Lizenz/Modulen). | 10.6, 10.12 | 0,5 T |
 | | C2 | ✅ **Portalbenutzer:** Anzeige/Bearbeitung zu welchem Kunde; Auswahl der Objekte/BV für Zugriff (Whitelist-UI). | 10.3, 10.6 | 1–2 T |
@@ -332,17 +330,17 @@ Alle noch offenen Punkte aus Vico.md (Abschnitte 7, 9, 10) in einer sinnvollen R
 | **G – Historie** | G1 | ✅ **Historie:** Details on-demand (Klick auf Zeile → RPC `get_audit_log_detail(id)`). Optional: audit_log um Vorher/Nachher erweitern. | 10.4, 10.12 | 1–2 T |
 | **H – Stammdatenimport** | H1 | ✅ **Menüpunkt „Import“** (oder unter Kunden). CSV/Excel-Upload, Spalten-Mapping (Firma, PLZ, Straße, Stadt, Mail, Tel, Anprechpartner, Objekt/BV). Objekt/BV verknüpfen oder neu anlegen; Fehlerzeilen überspringen, Fehlerliste am Ende. | 10.7, 10.12 | 2–3 T |
 | **I – Mobile (Capacitor + APK/iOS)** | I1 | ✅ **Capacitor** einbinden; Web-App in native Hülle; **Android-APK** + **iOS** von Anfang an mitgeplant. Parallel zur PWA. (Siehe Abschnitt 5: Mobile-Build.) | 10.1, 10.12 | 3–5 T |
-| | I2 | Optional: **Bluetooth-Drucker-Plugin** für QR-Etikettendruck aus der App (siehe `docs/Etikettendrucker-Planung.md`). | 10.1, docs | 1–2 T |
+| | I2 | Optional: **Bluetooth-Drucker-Plugin** für QR-Etikettendruck aus der App (**§11.4**). | 10.1, docs | 1–2 T |
 | **J – Optionale Auswertungen & Sonstiges** | J1 | Wartungsplanung / Erinnerungen (z. B. 30 Tage vorher), optional E-Mail. | 7 | 3–5 T |
 | | J2 | Wartungsstatistik / Auswertung (pro Kunde/BV/Objekt, überfällige Wartungen). | 7 | 3–4 T |
 | | J3 | Export für Buchhaltung (CSV/Excel). | 7 | 2–3 T |
 | | J4 | Schnellzugriff / Zuletzt bearbeitet auf Startseite. | 7 | 1–2 T |
-| | J5 | Erweiterte Filter Kundenliste (PLZ, Wartungsstatus, BV-Anzahl). | 7 | 2 T |
+| | J5 | ✅ **Erweiterte Filter Kundenliste** (PLZ, Wartungsstatus, BV-Anzahl). | 7 | 2 T |
 | | J6 | Umbau Wartung (MVP) – Auftrag → Monteursbericht → Freigabe → Portal (Phasen 1–4, Detail in Abschnitt 7). | 7 | 15–20 T |
 | | J7 | Mängel-Follow-up, Kalender-Sync (iCal), Bulk-Operationen, Portal Push-Benachrichtigungen. | 7 | je 2–3 T |
 | | J8 | ✅ **Lizenzportal: Daten-Export bei Mandantenkündigung;** ggf. manuelle Statusabfrage pro Mandant. (Export: Button „Daten exportieren (JSON, z. B. bei Kündigung)“ in Mandanten, `exportService.ts`.) | 9.11, 9.12 | 1–2 T |
-| | J9 | **Ladezeiten-Monitoring / Performance-Dashboard:** Supabase-Sync- und Startseiten-Ladezeiten (bereits in Konsole geloggt). Optional: kleines Admin-Dashboard mit grafischer Anzeige (z. B. Verlauf Sync-Batch1/Batch2/Gesamt, Startseite loadData; Balken/Sparklines; nur für Admin-Rolle). | 5 (Supabase-Region), 10.12 | 1–2 T |
-| | J10 | **Bug-Erfassungsmodul:** Automatische Erfassung von Fehlern (window.onerror, unhandledrejection, ErrorBoundary) und Speicherung in DB; Admin-Ansicht „Fehlerberichte“. Siehe `docs/Bug-Erfassungsmodul-Planung.md`. | docs | 1–2 T |
+| | J9 | ✅ **Ladezeiten-Monitoring / Performance-Dashboard:** `src/pages/Ladezeiten.tsx` – Sync- und Startseiten-Metriken, grafische Anzeige (Admin). | 5 (Supabase-Region), 10.12 | 1–2 T |
+| | J10 | **Bug-Erfassungsmodul:** Automatische Erfassung von Fehlern und Speicherung in DB; Admin unter **System → Fehlerberichte**. **§11.3.** | docs | 1–2 T |
 | **Lizenzportal** | L1 | ✅ **Lizenzportal-Supabase** anlegen, Schema `supabase-license-portal.sql` ausführen (operativer Schritt, siehe B3). | 9.17 | 0,5 T |
 | | L2 | ✅ **Status pro Mandant:** Letzte Grenzüberschreitungs-Meldung in Mandantenliste; Link „Grenzüberschreitungen anzeigen“ (Filter nach Mandant). | 9.12 | 1 T |
 | | L3 | ✅ **Daten-Export bei Kündigung:** Button „Export“ pro Mandant → JSON-Download (Mandant, Lizenzen, limit_exceeded_log). | 9.11 | 1–2 T |
@@ -380,11 +378,11 @@ Alle Punkte ohne ✅ wurden im Code geprüft. Ergebnis:
 | **J2** Wartungsstatistik | Keine dedizierte Statistik-/Auswertungsseite. | ❌ Nicht umgesetzt. |
 | **J3** Export Buchhaltung | Nur Import (CSV), kein Export für Buchhaltung. | ❌ Nicht umgesetzt. |
 | **J4** Schnellzugriff/Zuletzt bearbeitet | Startseite: Aufträge, Erinnerungen; kein „Zuletzt bearbeitet“. | ❌ Nicht umgesetzt. |
-| **J5** Erweiterte Filter Kundenliste | Keine Filter für PLZ, Wartungsstatus, BV-Anzahl. | ❌ Nicht umgesetzt. |
+| **J5** Erweiterte Filter Kundenliste | `Kunden.tsx`: Filter-Panel PLZ, Wartungsstatus, BV Min/Max. | ✅ Umgesetzt (März 2026). |
 | **J6** Umbau Wartung MVP | `order_completions`, Auftragsdetail, Unterschriften vorhanden. | ⚠️ Teilweise: Monteursbericht ja; Freigabe-Workflow & Portal-Integration offen. |
 | **J7** Mängel-Follow-up, iCal, Bulk, Push | Kein iCal, kein Mängel-Tracking, keine Bulk-UI, kein Portal-Push. | ❌ Nicht umgesetzt. |
 | **J8** Lizenzportal Export Kündigung | `admin/exportService.ts`, Button „Daten exportieren“ in Mandanten. | ✅ Umgesetzt → als erledigt markiert. |
-| **J9** Ladezeiten-Dashboard | Nur Konsole-Logging (Sync/Startseite); kein grafisches Dashboard. | ❌ Dashboard nicht umgesetzt (nur Messung). |
+| **J9** Ladezeiten-Dashboard | `src/pages/Ladezeiten.tsx` – Sync- und Startseiten-Metriken, grafisches Dashboard (Admin). | ✅ Umgesetzt. |
 
 ---
 
@@ -431,7 +429,7 @@ Vico/
 - **Farbliche Anpassung:** Individuell pro Mandant, Steuerung über Lizenzportal.
 
 **Frage 1:** Welcher Projektname? (Vorschläge: WartungsLog, TürWart, TorCheck, MängelLog, WartungsApp – oder eigener Vorschlag?)  
-→ **Entscheidung:** Bleibt auf später verschoben. App-Name kommt aus API; bei Festlegung Anpassung in Lizenzportal, package.json, Manifest. Siehe `docs/Entscheidungen-Offene-Punkte.md` §1.
+→ **Entscheidung:** Bleibt auf später verschoben. App-Name kommt aus API; bei Festlegung Anpassung in Lizenzportal, package.json, Manifest. **§11.1 §1.**
 
 **Frage 2:** Soll die App branchenspezifisch bleiben (Türen & Tore) oder generisch werden?  
 → **Entscheidung:** Hybrid – Kern branchenspezifisch, Labels konfigurierbar für spätere Erweiterung.
@@ -645,7 +643,7 @@ Schwellwerte (80 %, 90 %) pro Mandant im Lizenzportal konfigurierbar oder fest. 
 
 ### 9.10 Offene Punkte & weitere Vorschläge
 
-**Entscheidung (abgelaufene Lizenz):** Schonfrist Nur-Lesen (konfigurierbare Tage), danach Redirect/Sperre. **Steuerung der Schonfrist (Anzahl Tage) im Lizenzportal** pro Mandant/Lizenz. Siehe `docs/Entscheidungen-Offene-Punkte.md` §2.
+**Entscheidung (abgelaufene Lizenz):** Schonfrist Nur-Lesen (konfigurierbare Tage), danach Redirect/Sperre. **Steuerung der Schonfrist (Anzahl Tage) im Lizenzportal** pro Mandant/Lizenz. **§11.1 §2.**
 
 **Vorschlag 1 – Lizenz-Caching:** Lizenz nach Aktivierung lokal speichern; optional periodische Prüfung (z.B. täglich) ob Lizenz noch gültig ist.
 
@@ -657,7 +655,7 @@ Schwellwerte (80 %, 90 %) pro Mandant im Lizenzportal konfigurierbar oder fest. 
 
 **Frage 21:** Welche dieser Vorschläge sind relevant oder sollen berücksichtigt werden?
 
-→ **Entscheidung:** **Umsetzen:** Vorschlag 1 (Lizenz-Caching), Vorschlag 4 (Daten-Export). **Trial (Vorschlag 2):** Ja – 14 Tage, alle Module; genaue Trial-Definition bei Umsetzung. **Self-Service (Vorschlag 3):** Erstmal nur Betreiber; später Self-Service – **Ort in Haupt-App:** Einstellungen, Bereich „Stammdaten / Impressum“ (nur Admin). Siehe `docs/Entscheidungen-Offene-Punkte.md` §3, §4.
+→ **Entscheidung:** **Umsetzen:** Vorschlag 1 (Lizenz-Caching), Vorschlag 4 (Daten-Export). **Trial (Vorschlag 2):** Ja – 14 Tage, alle Module; genaue Trial-Definition bei Umsetzung. **Self-Service (Vorschlag 3):** Erstmal nur Betreiber; später Self-Service – **Ort in Haupt-App:** Einstellungen, Bereich „Stammdaten / Impressum“ (nur Admin). **§11.1 §3, §4.**
 
 ---
 
@@ -748,7 +746,7 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 
 ### 9.14 Status: Alle Fragen geklärt
 
-**Auf später verschoben (nicht blockierend):** Frage 1 (App-Name). Trial und Self-Service sind umgesetzt bzw. geplant – siehe `docs/Entscheidungen-Offene-Punkte.md` §3, §4.
+**Auf später verschoben (nicht blockierend):** Frage 1 (App-Name). Trial und Self-Service sind umgesetzt bzw. geplant – **§11.1 §3, §4.**
 
 **Alle übrigen Fragen (2–22) beantwortet.** Planung vollständig für Start Phase 1.
 
@@ -848,12 +846,12 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 
 ## 10. Konzept: Geplante Änderungen Hauptapp
 
-Die folgenden Punkte sind als Konzept für die Hauptapp vorgesehen. Referenzierte Detailplanungen liegen in `docs/` (z. B. Etikettendrucker, Arbeitszeiterfassung, Optimierungsplan).
+Die folgenden Punkte sind als Konzept für die Hauptapp vorgesehen. **Fachliche Konzepte** (Etikettendrucker, Arbeitszeit, Briefbogen, Entscheidungen, …) sind in **Abschnitt 11** gebündelt. Technische Optimierung: `docs/Optimierungsplan.md`.
 
 ### 10.1 React Native / APK
 
 - **Ausbaustufe:** Erstellung einer nativen Android-APK über React Native (oder vergleichbaren Ansatz) einplanen.
-- **Ziel:** Installierbare App aus einem Store oder als APK, bessere Integration z. B. für Bluetooth-Drucker (siehe `docs/Etikettendrucker-Planung.md`).
+- **Ziel:** Installierbare App aus einem Store oder als APK, bessere Integration z. B. für Bluetooth-Drucker (**§11.4**).
 
 ### 10.2 Begriffe & Datenmodell: BV → Objekt/BV, Objekt → Tür/Tor
 
@@ -926,15 +924,16 @@ Die folgenden Punkte sind als Konzept für die Hauptapp vorgesehen. Referenziert
 
 ### 10.11 Verweise auf weitere Dokumentation
 
-| Thema | Datei | Inhalt |
-|-------|--------|--------|
-| Etikettendrucker / QR-Druck | `docs/Etikettendrucker-Planung.md` | Anforderungen, Modellvorschläge, Wrapper vs. Helper-App, Integration |
-| Arbeitszeiterfassung | `docs/Arbeitszeiterfassung-Detailkonzept.md` | Phasen, RLS, ArbZG, Zeitmodell |
-| Optimierung | `docs/Optimierungsplan.md` | Data-Layer, Sync, Suche, Vite, Historie |
-| Lizenzportal / Mandanten | Abschnitt 9 dieser Datei | Mandantenfähigkeit, Lizenz-API, Aktivierung |
+| Thema | Ort | Inhalt |
+|-------|-----|--------|
+| **Konzepte gesammelt** | **Vico.md §11** | Entscheidungen, Briefbogen-PDF, Bug-Modul, Etikettendrucker, Domain-Bindung, Arbeitszeit/GPS/Standort, Modul-Ideen |
+| Optimierung (technisch) | `docs/Optimierungsplan.md` | Data-Layer, Sync, Suche, Vite, Historie |
+| Lizenzportal / Mandanten | Vico.md §9 | Mandantenfähigkeit, Lizenz-API, Aktivierung |
 | Lizenzportal-Setup | `docs/Lizenzportal-Setup.md` | Setup Admin-App, Domain, API, Betrieb |
 | Demokunde | `docs/Demokunde-Setup.md` | Demo-Mandant einrichten, 24h-Löschung |
 | Release | `docs/Release-Checkliste.md` | Checkliste vor Release |
+| Updates & Versionierung | `docs/App-Updates-und-Versionierung.md` | SemVer, `version.json`, Release Notes, Multi-App, DB/Capacitor |
+| Roadmap-Reihenfolge | `docs/Roadmap-Abarbeitung-Vorschlag.md` | Vorschlag Phasen 0–7 aus Noch-zu-erledigen + Vico §7 |
 
 ### 10.12 Umsetzungsfragen & Vorschläge
 
@@ -1051,3 +1050,285 @@ Die folgenden Punkte sollten vor der Umsetzung entschieden werden. Pro Frage ist
 | 10.2 | Rollenauswahl beim Anlegen: abhängig von Lizenz? | **Ja** – Nur Rollen anbieten, die durch Lizenz/Module freigegeben sind (z. B. „Kunde“ nur wenn Kundenportal-Modul aktiv). | |
 
 **Entscheidung:** Wie Vorschlag – Reihenfolge wie oben, Rollenauswahl abhängig von Lizenz/Modulen.
+
+
+---
+
+## 11. Konzepte & Planungsdokumente (konsolidiert)
+
+Hier sind die wichtigsten **fachlichen Konzepte** gebündelt, die zuvor als einzelne Dateien unter `docs/` lagen. **Operative** Dokumente (Setup, Checklisten, SQL-Hinweise) bleiben in `docs/` – siehe **§11.12**.
+
+---
+
+### 11.1 Getroffene Entscheidungen (offene Punkte)
+
+**Stand:** Februar 2025  
+**Zweck:** Verbindliche Entscheidungen zu App-Name, Lizenz, Zeiterfassung, Etikettendrucker, Suche, Speicher usw.
+
+#### 1. App-Name (Projektname)
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Frage** | Welcher Projektname? |
+| **Entscheidung** | **Auf später verschoben.** Kundenseitiger App-Name aus Lizenz-API (Stammdaten Mandant). |
+
+**Referenz:** Vico.md §9.2 (Frage 1).
+
+#### 2. Verhalten bei abgelaufener Lizenz
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Frage** | Hinweis, Sperre, Schonfrist Nur-Lesen, Redirect? |
+| **Entscheidung** | **Schonfrist Nur-Lesen:** Nach Ablauf für konfigurierbare Tage nur Lesen, danach Redirect zum Aktivierungs-Screen. **Schonfrist** im **Lizenzportal** pro Mandant/Lizenz (`grace_period_days`). |
+
+**Referenz:** Vico.md §9.10, §9.17 (Roadmap B2).
+
+#### 3. Lizenz-Trial (14 Tage)
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Entscheidung** | **Ja – Trial anbieten.** 14 Tage, alle Module; Details bei Umsetzung im Lizenzportal („Trial starten“). |
+
+**Referenz:** Vico.md §9.10, §9.13.
+
+#### 4. Mandanten-Self-Service
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Entscheidung** | **Erstmal nur Betreiber im Lizenzportal.** Self-Service später. **Stammdaten-Self-Service (wenn):** Einstellungen → „Stammdaten / Impressum“ (nur Admin). |
+
+**Referenz:** Vico.md §9.10, §9.13.
+
+#### 5. Rechte Zeiterfassung / Teamleiter
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Entscheidung** | **Teamleiter-Rolle** (`teamleiter`): sieht/bearbeitet nur Zeiten des zugewiesenen Teams. |
+
+**Referenz:** §11.8 (Zeiterfassung/Portal).
+
+#### 6. Soll täglich/wöchentlich (Arbeitszeitkonto)
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Entscheidung** | **Zusätzlich Soll pro Woche oder Tag** in Stammdaten AZK; Monatssoll ableitbar oder separat. |
+
+**Referenz:** §11.8.
+
+#### 7. Auftragszuordnung (Zeiterfassung)
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Entscheidung** | **Entfernen (Option B).** Code/UI in Haupt-App und Portal entfernen. Spalte `order_id` in `time_entries` kann bleiben. |
+
+**Referenz:** §11.8, `docs/Arbeitszeit-Umstrukturierung-Portal.md`.
+
+#### 8. Lizenz-API (Edge Function vs. Netlify)
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Entscheidung** | **Auf später verschoben.** Edge Function bleibt. |
+
+**Referenz:** `docs/Release-Checkliste.md`.
+
+#### 9. Etikettendrucker – Integrationsweg
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Entscheidung** | **Option A:** Capacitor-Wrapper + Bluetooth-Plugin. Option B (Helper-App) nur bei bewusst reiner PWA. |
+
+**Referenz:** §11.4.
+
+#### 10. Suche – Optimierung
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Entscheidung** | **Zuerst Option A** (weniger Spalten im Data-Layer). **Option B** (server-seitige Suche) später bei Bedarf. |
+
+**Referenz:** `docs/Optimierungsplan.md` §4.
+
+#### 11. Speicherkontingent – automatische Ermittlung
+
+| Thema | Entscheidung |
+|--------|---------------|
+| **Entscheidung** | **Auf IONOS-Umzug verschoben.** Aktuell manuell im Lizenzportal. |
+
+**Referenz:** §11.8 (IONOS).
+
+#### Empfohlene Reihenfolge der Umsetzung
+
+| Reihenfolge | Entscheidung | Begründung | Geschätzter Aufwand |
+|-------------|--------------|------------|---------------------|
+| **1** | §7 Auftragszuordnung entfernen | Aufräumen | 0,5–1 T |
+| **2** | §10 Suche Quick-Win | Data-Layer | 1–2 T |
+| **3** | §2 Abgelaufene Lizenz: Schonfrist | Lizenzportal + App | 1–2 T |
+| **4** | §3 Lizenz-Trial | Portal + API | 1–2 T |
+| **5** | §5 Teamleiter-Rolle | RLS, UI | 2–3 T |
+| **6** | §6 Soll täglich/wöchentlich | Schema, Portal | 1–2 T |
+| **7** | §4 Mandanten-Self-Service Stammdaten | Einstellungen | 1,5–2,5 T |
+| **8** | §9 Etikettendrucker (Capacitor-Plugin) | Bei Roadmap I2 | 1–2 T |
+
+#### Umsetzungsstand (alle 8 Schritte)
+
+| # | Schritt | Status | Hinweise |
+|---|--------|--------|----------|
+| 1 | Auftragszuordnung entfernen | ✅ | Kein orderId mehr an API; `order_id` in DB optional |
+| 2 | Suche Quick-Win | ✅ | `TIME_ENTRY_COLUMNS` / `TIME_BREAK_COLUMNS` reduziert |
+| 3 | Schonfrist + Lizenzportal | ✅ | `grace_period_days`, App Nur-Lesen |
+| 4 | Lizenz-Trial | ✅ | `is_trial`, Admin „Trial starten“ |
+| 5 | Teamleiter-Rolle | ✅ | `teamleiter`, `team_id`, RLS, RPC |
+| 6 | Soll täglich/wöchentlich | ✅ | `soll_minutes_per_week` u. a. |
+| 7 | Stammdaten in Einstellungen | ✅ | „Stammdaten / Impressum“; Bearbeiten später |
+| 8 | Etikettendrucker (Grundgerüst) | ✅ | `src/lib/etikettendrucker.ts`; natives Android-Plugin ggf. offen |
+
+**Schema:** `supabase-complete.sql`, `supabase-license-portal.sql` – im jeweiligen Projekt nachziehen.
+
+*Änderungen an diesen Entscheidungen: hier in §11.1 und ggf. Querverweise in Vico.md §9 aktualisieren.*
+
+---
+
+### 11.2 PDF-Ausgabe mit Mandanten-Briefbogen
+
+**Ziel:** PDFs (Wartungsprotokolle, Zoll-Export, Urlaubsbescheinigung) auf dem **Briefbogen des Mandanten** statt neutralem Weiß.
+
+**Konzept:** Admin lädt Briefbogen hoch (Einstellungen oder Lizenzportal/Design). **Speicherung:** Supabase Storage, pro Mandant. **Bei PDF-Erzeugung:** Briefbogen als erste Seite oder **Hintergrund** (Variante B empfohlen: PNG/JPEG + jsPDF).
+
+**Datenmodell (Vorschlag):** `briefbogen_storage_path` in `design_config` oder `admin_config`. Bucket z. B. `briefbogen`, Pfad `{tenant_id}/briefbogen.png`.
+
+**Umsetzung:** `generateMaintenancePdf` / `exportCompliance` – gemeinsame Hilfsfunktion z. B. `addLetterheadToPdf`. **Aufwand:** ca. 1–2 Tage.
+
+---
+
+### 11.3 Bug-Erfassungsmodul
+
+**Ziel:** JS-Fehler (`window.onerror`, `unhandledrejection`), Error-Boundary → DB; Admin unter **System → Fehlerberichte**.
+
+**Kern:** Tabelle `app_errors` (message, stack, source `main_app|portal|admin`, path, user_agent, status, fingerprint), RLS (Insert authentifiziert, Select/Update Admin), **Debounce/Deduplizierung** clientseitig, Service z. B. `errorReportService`.
+
+---
+
+### 11.4 Etikettendrucker (QR aus der App)
+
+**Anforderungen:** Mobil, Akku, kleine Etiketten, **Bluetooth**, **Android**, Druck **aus der Vico-App** (nicht nur Hersteller-App). Web/PWA allein reicht nicht zuverlässig → **native Schicht nötig**.
+
+**Modellvorschläge (mit Android-SDK):** Zebra ZQ220/ZQ320 (Link-OS SDK), Brother RJ-2150 (Brother SDK), Bixolon SPP-R200III. **Consumer-Drucker** ohne SDK: ungeeignet.
+
+**Integration:** **Option A (entschieden):** Capacitor + Plugin. Option B: Helper-App + Intent. Option C: Share an Hersteller-App (Workaround).
+
+**Code:** `src/lib/etikettendrucker.ts` – `isEtikettendruckerAvailable()`, `printLabel(qrPayload)`.
+
+**Etikettendesign (Planung, Detail in `docs/Noch-zu-erledigen.md`):** Ein **mandantenweites Layout** (wie Druckvorlagen), **Presets mini/mid/max** für Bixolon 2″ (ca. 50×25 / 50×30 / 58×40 mm; **Druckbreite ~48 mm** beachten), **separates Etiketten-Logo** neben dem allgemeinen Mandantenlogo, **Vorschau** vor Druck. **Render:** ein farbfähiges Layout; **Thermo** druckt **Graustufen**. **Später:** **A4-PDF** mit vielen QR (Objekt-Mehrfachauswahl in der Haupt-App); **Berechtigung:** Lizenz-Feature (z. B. `qr_batch_a4`) **plus** vom Admin definierte **erlaubte Rollen**; **kein** Etikettendruck im Kundenportal. **A4-Bogenmaße:** HERMA/Avery-Referenzartikel siehe `Noch-zu-erledigen.md` (A4-Referenzetiketten).
+
+---
+
+### 11.5 Domain-Bindung & Doppelnutzung-Erkennung
+
+**Stand:** März 2025
+
+1. **Domain-Bindung:** `tenants.allowed_domains` (jsonb). API prüft `Origin`/`Referer`; leer = keine Prüfung. Admin: „Domain-Bindung“ im Mandanten-Formular; `localhost:PORT` für Entwicklung; Wildcard `*.firma.de` möglich.
+2. **Monitoring:** `limit_exceeded_log.reported_from` – Domain bei Grenzüberschreitung; Hinweis bei mehreren Domains pro Lizenz.
+3. **Duplikat-Lizenz:** Admin prüft Lizenznummer beim Anlegen.
+
+**Deploy:** `supabase-license-portal.sql` idempotent; Functions `license`, `limit-exceeded` deployen (siehe Datei für Befehle).
+
+---
+
+### 11.6 Arbeitszeiterfassung (Konzeptüberblick)
+
+**Lizenz:** Feature `arbeitszeiterfassung`; Route `/arbeitszeit`; Offline/Outbox wie bestehendes Muster.
+
+**ArbZG § 4 – Pausen (Orientierung):**
+
+| Arbeitszeit | Mindestpause |
+|-------------|--------------|
+| ≤ 6 h | keine |
+| 6–9 h | 30 Min |
+| > 9 h | 45 Min |
+
+**Datenmodell (Ist):** `time_entries`, `time_breaks`, Bearbeitungslog, Admin-RPC, Wochen-/Monatsansicht, Soll-Felder auf `profiles`.
+
+**Fragen aus dem ursprünglichen KONZEPT** (größtenteils geklärt): Pausen als `time_breaks`, Lizenz + ggf. Component Settings, eigene Zeiten / Admin & Teamleiter, Outbox-Sync.
+
+---
+
+### 11.7 Ortung (GPS) bei der Zeiterfassung
+
+**Kurzüberblick:**
+
+| Thema | Inhalt |
+|-------|--------|
+| **Recht** | DSGVO, BDSG § 26, BetrVG § 87 Abs. 1 Nr. 6 |
+| **Rechtsgrundlage** | Bei optionaler Ortung: **Einwilligung** (§ 26 Abs. 2 BDSG) typisch |
+| **Betriebsrat** | Mitbestimmung – **Betriebsvereinbarung empfohlen** |
+| **Information** | Art. 13 DSGVO vor Erhebung |
+| **Einwilligung** | Freiwillig, widerrufbar; Zeiterfassung **ohne** Ortung muss möglich sein |
+| **DSFA** | Bei systematischer Ortung in der Regel **erforderlich** |
+| **Portal** | Anzeige des Standorts nur bei Einwilligung / technischer Erfassung |
+
+**Ablauf (nutzergeführt):** Informationsblock → Checkbox + aktive Bestätigung → Speicherung Einwilligungszeitpunkt; Widerruf in Einstellungen.
+
+---
+
+### 11.8 Zeiterfassungsportal, IONOS, weitere AZ-Themen
+
+- **Teamleiter, Soll Woche/Tag, Auftragszuordnung entfernt:** siehe **§11.1**.
+- **Admin-Modul-Gliederung, Portal-Routen, Deploy:** operative Details in `docs/Zeiterfassung-Offene-Punkte-und-IONOS.md`, `docs/Arbeitszeit-Umstrukturierung-Portal.md`.
+- **IONOS / Speicher automatisch:** verschoben; manuelle Pflege bis Umzug.
+- **Feature-Listen / Soll-Urlaub / Compliance:** `docs/Arbeitszeit-Feature-Liste.md`, `docs/Arbeitszeit-Soll-Urlaub-Planung.md`, `docs/Arbeitszeit-Rechtliche-Compliance.md` (fachliche Vertiefung, in `docs/` belassen).
+
+---
+
+### 11.9 Standortabfrage (Arbeitszeitenportal)
+
+**Zweck:** Admin/Teamleiter können **aktuelle** Standorte von Mitarbeitern anfordern (separates Feature von GPS beim **Stempeln** – siehe §11.7).
+
+- **Route:** `/standort`; Feature `standortabfrage` in der Lizenz.
+- **Teamleiter:** nur wenn `admin_config.standortabfrage_teamleiter_allowed` (Haupt-App Einstellungen).
+- **Ablauf:** Einwilligung „Standortabfrage“ in Einstellungen → optional Web-Push → „Standort senden“ in der App → Portal „Standort anfordern“.
+- **Fehlerbehebung:** Link fehlt → Lizenz-Feature, `.env` Portal, `VITE_LICENSE_NUMBER`. **Hintergrund-Standort:** Web/PWA nicht möglich; nativ nur mit Plugin (siehe `docs/Standort-Abfrage-Arbeitszeitenportal.md`).
+
+---
+
+### 11.10 Offene Modul-Vorschläge (Kurzüberblick)
+
+| Kategorie | Anzahl (ca.) | Aufwand gesamt (ca.) |
+|-----------|----------------|----------------------|
+| Wartung & Auswertung | 5 | 26–36 T |
+| UX & Produktivität | 4 | 6–9 T |
+| Zeiterfassung | 6 | 8–15 T |
+| Sicherheit & Betrieb | 4 | 5–9 T |
+| Infrastruktur | 2 | 1–2 T |
+
+Details zu J1–J10 u. a.: **Vico.md §7** (Roadmap) und `docs/Noch-zu-erledigen.md`. `docs/Offene-Module-Vorschlaege.md` ist nur noch ein Stub-Verweis.
+
+---
+
+### 11.11 Ehemalige Konzeptdateien → Verweis
+
+| Frühere Datei | Inhalt jetzt |
+|---------------|----------------|
+| `docs/Entscheidungen-Offene-Punkte.md` | **§11.1** |
+| `docs/PDF-Briefbogen-Konzept.md` | **§11.2** |
+| `docs/Bug-Erfassungsmodul-Planung.md` | **§11.3** |
+| `docs/Etikettendrucker-Planung.md` | **§11.4** |
+| `docs/Domain-Bindung-Lizenz.md` | **§11.5** |
+| `docs/KONZEPT-Arbeitszeiterfassung.md`, `docs/Arbeitszeiterfassung-Detailkonzept.md` | **§11.6** (+ Umsetzung in App) |
+| `docs/Zeiterfassung-Ortung-GPS-Recht-und-Planung.md` | **§11.7** |
+| `docs/Zeiterfassung-Offene-Punkte-und-IONOS.md`, `docs/Arbeitszeit-Umstrukturierung-Portal.md` | **§11.8** + weiterführend in `docs/` |
+| `docs/Standort-Abfrage-Arbeitszeitenportal.md` | **§11.9** + Details in `docs/` |
+| `docs/Offene-Module-Vorschlaege.md` | **§11.10** (Stub-Verweis) |
+
+---
+
+### 11.12 Dokumentation, die bewusst in `docs/` bleibt
+
+- **Setup & Betrieb:** `Lizenzportal-Setup.md`, `Demokunde-Setup.md`, `Release-Checkliste.md`, `App-Updates-und-Versionierung.md`
+- **Technik/Performance:** `Optimierungsplan.md`
+- **Migrationen / SQL-Hinweise:** wie in Repo dokumentiert (`supabase-*.sql`)
+- **Vertiefung Arbeitszeit:** `Arbeitszeit-Feature-Liste.md`, `Arbeitszeit-Soll-Urlaub-Planung.md`, `Arbeitszeit-Rechtliche-Compliance.md`
+- **Aufgabenliste:** `Noch-zu-erledigen.md`
+- **Roadmap-Reihenfolge (Vorschlag):** `Roadmap-Abarbeitung-Vorschlag.md`
+
+---
+
+*Ende Abschnitt 11.*

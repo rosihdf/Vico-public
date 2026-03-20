@@ -9,8 +9,9 @@ type LayoutProps = {
 
 const Layout = ({ user, onLogout }: LayoutProps) => {
   const location = useLocation()
-  const { appName } = useDesign()
+  const { appName, features } = useDesign()
   const isÜbersicht = location.pathname === '/' || location.pathname === '/uebersicht'
+  const showStandort = features.standortabfrage
   const navClass = (active: boolean) =>
     active
       ? 'px-3 py-1.5 text-sm font-medium text-vico-primary bg-vico-primary/10 rounded-lg'
@@ -27,6 +28,9 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
             <Link to="/urlaub" className={navClass(location.pathname.startsWith('/urlaub'))}>Urlaub</Link>
             <Link to="/log" className={navClass(location.pathname.startsWith('/log'))}>Log</Link>
             <Link to="/stammdaten" className={navClass(location.pathname.startsWith('/stammdaten'))}>Stammdaten AZK</Link>
+            {showStandort && (
+              <Link to="/standort" className={navClass(location.pathname.startsWith('/standort'))}>Standort</Link>
+            )}
           </nav>
         </div>
         <div className="flex items-center gap-4">

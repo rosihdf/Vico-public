@@ -111,7 +111,7 @@ const MaintenanceContractModal = ({
       aria-label="Modal schließen"
     >
       <div
-        className="bg-white rounded-xl shadow-xl max-w-md w-full"
+        className="bg-white rounded-xl shadow-xl max-w-md w-full min-w-0"
         role="dialog"
         aria-modal
         aria-labelledby="contract-modal-title"

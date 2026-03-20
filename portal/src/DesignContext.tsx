@@ -48,7 +48,7 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
   }, [load])
 
   useEffect(() => {
-    document.title = `${appName} Türen & Tore Kundenportal`
+    document.title = `${appName} Kundenportal`
   }, [appName])
 
   return (

@@ -1,5 +1,6 @@
-import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { prefetchAllChunks } from './lib/prefetchChunks'
 import { ToastProvider } from './ToastContext'
 import { ThemeProvider } from './ThemeContext'
 import { SyncProvider } from './SyncContext'
@@ -25,6 +26,7 @@ const Benutzerverwaltung = lazy(() => import('./Benutzerverwaltung'))
 const Historie = lazy(() => import('./Historie'))
 const Fehlerberichte = lazy(() => import('./Fehlerberichte'))
 const Ladezeiten = lazy(() => import('./pages/Ladezeiten'))
+const System = lazy(() => import('./pages/System'))
 const Scan = lazy(() => import('./Scan'))
 const AuftragAnlegen = lazy(() => import('./AuftragAnlegen'))
 const Auftragsdetail = lazy(() => import('./Auftragsdetail'))
@@ -42,6 +44,10 @@ const PageFallback = () => (
 )
 
 const App = () => {
+  useEffect(() => {
+    prefetchAllChunks()
+  }, [])
+
   return (
     <div className="min-h-screen bg-[#5b7895] dark:bg-slate-900 transition-colors">
     <ToastProvider>
@@ -70,9 +76,15 @@ const App = () => {
                 <Route path="info" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="info"><ProtectedRoute><Info /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="einstellungen" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="einstellungen"><ProtectedRoute><Einstellungen /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="benutzerverwaltung" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="benutzerverwaltung"><ProtectedRoute><Benutzerverwaltung /></ProtectedRoute></ComponentGuard></Suspense>} />
-                <Route path="historie" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><Historie /></ProtectedRoute></Suspense>} />
-                <Route path="fehlerberichte" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><Fehlerberichte /></ProtectedRoute></Suspense>} />
-                <Route path="ladezeiten" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><Ladezeiten /></ProtectedRoute></Suspense>} />
+                <Route path="system" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><System /></ProtectedRoute></Suspense>}>
+                  <Route index element={<Navigate to="historie" replace />} />
+                  <Route path="historie" element={<Suspense fallback={<PageFallback />}><Historie /></Suspense>} />
+                  <Route path="fehlerberichte" element={<Suspense fallback={<PageFallback />}><Fehlerberichte /></Suspense>} />
+                  <Route path="ladezeiten" element={<Suspense fallback={<PageFallback />}><Ladezeiten /></Suspense>} />
+                </Route>
+                <Route path="historie" element={<Navigate to="/system/historie" replace />} />
+                <Route path="fehlerberichte" element={<Navigate to="/system/fehlerberichte" replace />} />
+                <Route path="ladezeiten" element={<Navigate to="/system/ladezeiten" replace />} />
                 <Route path="scan" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="scan"><ProtectedRoute><Scan /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="auftrag" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="auftrag"><ProtectedRoute><AuftragAnlegen /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="auftrag/:orderId" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="auftrag"><ProtectedRoute><Auftragsdetail /></ProtectedRoute></ComponentGuard></Suspense>} />

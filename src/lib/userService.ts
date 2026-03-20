@@ -9,7 +9,7 @@ import {
 export type { ProfileRole }
 export { parseRole, getProfileDisplayName }
 
-const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
+import { isOnline } from '../../shared/networkUtils'
 
 export type Profile = {
   id: string
@@ -26,6 +26,8 @@ export type Profile = {
   team_name?: string | null
   gps_consent_at?: string | null
   gps_consent_revoked_at?: string | null
+  standortabfrage_consent_at?: string | null
+  standortabfrage_consent_revoked_at?: string | null
 }
 
 export type Team = {
@@ -41,7 +43,7 @@ export const fetchMyProfile = async (userId: string): Promise<Profile | null> =>
   }
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, vacation_days_per_year, team_id, gps_consent_at, gps_consent_revoked_at')
+    .select('id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, vacation_days_per_year, team_id, gps_consent_at, gps_consent_revoked_at, standortabfrage_consent_at, standortabfrage_consent_revoked_at')
     .eq('id', userId)
     .single()
   if (error || !data) return null
@@ -248,6 +250,56 @@ export const revokeGpsConsent = async (profileId: string): Promise<{ error: { me
   if (!error) {
     const cached = getCachedProfiles() as Profile[]
     const updated = cached.map((p) => (p.id === profileId ? { ...p, gps_consent_revoked_at: now } : p))
+    setCachedProfiles(updated)
+  }
+  return { error: error ? { message: error.message } : null }
+}
+
+export const setStandortabfrageConsent = async (profileId: string): Promise<{ error: { message: string } | null }> => {
+  const now = new Date().toISOString()
+  if (!isOnline()) {
+    addToOutbox({
+      table: 'profiles',
+      action: 'update',
+      payload: { id: profileId, standortabfrage_consent_at: now, standortabfrage_consent_revoked_at: null, updated_at: now },
+    })
+    const cached = getCachedProfiles() as Profile[]
+    const updated = cached.map((p) => (p.id === profileId ? { ...p, standortabfrage_consent_at: now, standortabfrage_consent_revoked_at: null } : p))
+    setCachedProfiles(updated)
+    return { error: null }
+  }
+  const { error } = await supabase
+    .from('profiles')
+    .update({ standortabfrage_consent_at: now, standortabfrage_consent_revoked_at: null, updated_at: now })
+    .eq('id', profileId)
+  if (!error) {
+    const cached = getCachedProfiles() as Profile[]
+    const updated = cached.map((p) => (p.id === profileId ? { ...p, standortabfrage_consent_at: now, standortabfrage_consent_revoked_at: null } : p))
+    setCachedProfiles(updated)
+  }
+  return { error: error ? { message: error.message } : null }
+}
+
+export const revokeStandortabfrageConsent = async (profileId: string): Promise<{ error: { message: string } | null }> => {
+  const now = new Date().toISOString()
+  if (!isOnline()) {
+    addToOutbox({
+      table: 'profiles',
+      action: 'update',
+      payload: { id: profileId, standortabfrage_consent_revoked_at: now, updated_at: now },
+    })
+    const cached = getCachedProfiles() as Profile[]
+    const updated = cached.map((p) => (p.id === profileId ? { ...p, standortabfrage_consent_revoked_at: now } : p))
+    setCachedProfiles(updated)
+    return { error: null }
+  }
+  const { error } = await supabase
+    .from('profiles')
+    .update({ standortabfrage_consent_revoked_at: now, updated_at: now })
+    .eq('id', profileId)
+  if (!error) {
+    const cached = getCachedProfiles() as Profile[]
+    const updated = cached.map((p) => (p.id === profileId ? { ...p, standortabfrage_consent_revoked_at: now } : p))
     setCachedProfiles(updated)
   }
   return { error: error ? { message: error.message } : null }

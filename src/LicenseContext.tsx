@@ -89,9 +89,9 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
             setDesign({ ...DEFAULT_DESIGN, ...cached.design })
             fetchUsageCounts().then((counts) => {
               setLicense((prev) => (prev ? { ...prev, ...counts } : null))
-            }).catch(() => {})
+            }).catch((err) => console.warn('LicenseContext: fetchUsageCounts', err))
             if (base.max_storage_mb != null) {
-              fetchStorageUsageMb().then(setStorageUsageMb).catch(() => {})
+              fetchStorageUsageMb().then(setStorageUsageMb).catch((err) => console.warn('LicenseContext: fetchStorageUsageMb', err))
             } else {
               setStorageUsageMb(0)
             }
@@ -128,7 +128,7 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
             setLicense((prev) => (prev ? { ...prev, ...counts } : null))
           }).catch(() => {})
           if (base.max_storage_mb != null) {
-            fetchStorageUsageMb().then(setStorageUsageMb).catch(() => {})
+            fetchStorageUsageMb().then(setStorageUsageMb).catch((err) => console.warn('LicenseContext: fetchStorageUsageMb', err))
           } else {
             setStorageUsageMb(0)
           }
@@ -145,9 +145,9 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
               ]).then(([counts, usageMb]) => {
                 setLicense((prev) => (prev ? { ...base, ...counts } : null))
                 setStorageUsageMb(usageMb)
-              }).catch(() => {})
+              }).catch((err) => console.warn('LicenseContext: fetchUsageCounts/fetchStorageUsageMb', err))
             }
-          }).catch(() => {})
+          }).catch((err) => console.warn('LicenseContext: fetchLicenseFromApi (background)', err))
           return
         }
 
@@ -171,7 +171,7 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
         setLicense(status)
         setDesign(null)
         if (status.max_storage_mb != null) {
-          fetchStorageUsageMb().then(setStorageUsageMb).catch(() => {})
+          fetchStorageUsageMb().then(setStorageUsageMb).catch((err) => console.warn('LicenseContext: fetchStorageUsageMb', err))
         } else {
           setStorageUsageMb(0)
         }

@@ -59,7 +59,7 @@ const ConfirmDialog = ({
       aria-describedby="confirm-dialog-desc"
     >
       <div
-        className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full p-6"
+        className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-sm w-full min-w-0 p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id="confirm-dialog-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">

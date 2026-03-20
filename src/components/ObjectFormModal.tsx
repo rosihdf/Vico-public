@@ -313,7 +313,8 @@ const ObjectFormModal = ({
   return (
     <>
       <div
-        className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
+        style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
         onClick={onClose}
         role="button"
         tabIndex={0}
@@ -321,7 +322,7 @@ const ObjectFormModal = ({
         aria-label="Modal schließen"
       >
         <div
-          className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+          className="bg-white rounded-xl shadow-xl max-w-2xl w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto"
           role="dialog"
           aria-modal
           onClick={(e) => e.stopPropagation()}
@@ -337,7 +338,7 @@ const ObjectFormModal = ({
               </p>
             )}
           </div>
-          <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
             {isEdit && effectiveCustomerId != null && customerBvs !== undefined && (
               <div>
                 <label htmlFor="obj-assignment" className="block text-sm font-medium text-slate-700 mb-1">
@@ -377,8 +378,8 @@ const ObjectFormModal = ({
                 aria-label="Objektname"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Tür Position</label>
                 <input
                   type="text"
@@ -388,8 +389,8 @@ const ObjectFormModal = ({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Interne Türnr.</label>
                 <input
                   type="text"
@@ -398,7 +399,7 @@ const ObjectFormModal = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Etage</label>
                 <input
                   type="text"
@@ -407,7 +408,7 @@ const ObjectFormModal = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Raum</label>
                 <input
                   type="text"
@@ -432,8 +433,8 @@ const ObjectFormModal = ({
                 className="mt-2 w-full px-3 py-2 border border-slate-300 rounded-lg"
               />
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Flügelanzahl</label>
                 <input
                   type="number"
@@ -443,7 +444,7 @@ const ObjectFormModal = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Hersteller</label>
                 <input
                   type="text"
@@ -452,7 +453,7 @@ const ObjectFormModal = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Baujahr</label>
                 <input
                   type="text"
@@ -462,8 +463,8 @@ const ObjectFormModal = ({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Schließmittel Hersteller</label>
                 <input
                   type="text"
@@ -472,7 +473,7 @@ const ObjectFormModal = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Schließmittel Typ</label>
                 <input
                   type="text"
@@ -485,11 +486,11 @@ const ObjectFormModal = ({
             <div>
               <label className="flex items-center gap-2"><input type="checkbox" checked={formData.has_hold_open} onChange={(e) => handleFormChange('has_hold_open', e.target.checked)} /> Feststellanlage vorhanden</label>
               {formData.has_hold_open && (
-                <div className="mt-2 grid grid-cols-2 gap-4">
-                  <input type="text" placeholder="Hersteller" value={formData.hold_open_manufacturer} onChange={(e) => handleFormChange('hold_open_manufacturer', e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg" />
-                  <input type="text" placeholder="Typ" value={formData.hold_open_type} onChange={(e) => handleFormChange('hold_open_type', e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg" />
-                  <input type="text" placeholder="Zulassungsnr." value={formData.hold_open_approval_no} onChange={(e) => handleFormChange('hold_open_approval_no', e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg" />
-                  <input type="text" placeholder="Abnahme am" value={formData.hold_open_approval_date} onChange={(e) => handleFormChange('hold_open_approval_date', e.target.value)} className="px-3 py-2 border border-slate-300 rounded-lg" />
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <input type="text" placeholder="Hersteller" value={formData.hold_open_manufacturer} onChange={(e) => handleFormChange('hold_open_manufacturer', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg" />
+                  <input type="text" placeholder="Typ" value={formData.hold_open_type} onChange={(e) => handleFormChange('hold_open_type', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg" />
+                  <input type="text" placeholder="Zulassungsnr." value={formData.hold_open_approval_no} onChange={(e) => handleFormChange('hold_open_approval_no', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg" />
+                  <input type="text" placeholder="Abnahme am" value={formData.hold_open_approval_date} onChange={(e) => handleFormChange('hold_open_approval_date', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg" />
                 </div>
               )}
             </div>
@@ -534,8 +535,8 @@ const ObjectFormModal = ({
                 <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={formData.hold_open_maintenance} onChange={(e) => handleFormChange('hold_open_maintenance', e.target.checked)} /> Feststellanlage Wartung nach Herstellerangaben</label>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Vorhandene Mängel</label>
                 <textarea
                   value={formData.defects}
@@ -544,7 +545,7 @@ const ObjectFormModal = ({
                   rows={2}
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Bemerkungen</label>
                 <textarea
                   value={formData.remarks}
@@ -553,7 +554,7 @@ const ObjectFormModal = ({
                   rows={2}
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 mb-1">Wartungsintervall (Monate)</label>
                 <input
                   type="number"

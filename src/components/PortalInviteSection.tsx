@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { fetchPortalUsers, invitePortalUser, deletePortalUser } from '../lib/dataService'
 import type { PortalUser } from '../lib/dataService'
 import { useToast } from '../ToastContext'
+import { useSync } from '../SyncContext'
 import ConfirmDialog from './ConfirmDialog'
 
 type PortalInviteSectionProps = {
@@ -11,6 +12,7 @@ type PortalInviteSectionProps = {
 
 const PortalInviteSection = ({ customerId, customerName }: PortalInviteSectionProps) => {
   const { showError } = useToast()
+  const { isOffline } = useSync()
   const [portalUsers, setPortalUsers] = useState<PortalUser[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [email, setEmail] = useState('')
@@ -97,19 +99,24 @@ const PortalInviteSection = ({ customerId, customerName }: PortalInviteSectionPr
 
       {isOpen && (
         <div className="mt-2 space-y-2">
+          {isOffline && (
+            <p className="text-xs text-slate-500">Offline – Portal-Einladungen erst bei Verbindung möglich.</p>
+          )}
           <form onSubmit={handleInvite} className="flex gap-2">
             <input
               type="email"
               placeholder="E-Mail-Adresse einladen…"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+              disabled={isOffline}
+              className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary disabled:opacity-60 disabled:bg-slate-50"
               aria-label="E-Mail für Portal-Einladung"
               required
             />
             <button
               type="submit"
-              disabled={isSending || !email.trim()}
+              disabled={isSending || !email.trim() || isOffline}
+              title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
               className="px-3 py-1.5 text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover disabled:opacity-50 font-medium border border-slate-300"
             >
               {isSending ? 'Sende…' : 'Einladen'}
@@ -137,6 +144,7 @@ const PortalInviteSection = ({ customerId, customerName }: PortalInviteSectionPr
                   <button
                     type="button"
                     onClick={() =>
+                      !isOffline &&
                       setConfirmDialog({
                         open: true,
                         title: 'Portal-Zugang entfernen',
@@ -147,7 +155,9 @@ const PortalInviteSection = ({ customerId, customerName }: PortalInviteSectionPr
                         },
                       })
                     }
-                    className="shrink-0 px-2 py-1 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50"
+                    disabled={isOffline}
+                    title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
+                    className="shrink-0 px-2 py-1 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     aria-label={`${pu.email} entfernen`}
                   >
                     Entfernen

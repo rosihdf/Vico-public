@@ -29,10 +29,14 @@ import {
   type LeaveType,
 } from './lib/leaveService'
 import { getCurrentPosition } from './lib/geolocation'
+import { getMyPendingLocationRequest } from './lib/locationService'
+import { useSync } from './SyncContext'
+import CurrentLocationModal from './components/CurrentLocationModal'
 import type { Profile } from './lib/userService'
 import { useToast } from './ToastContext'
 import { reportError } from './lib/errorReportService'
 import { formatTime, formatMinutes, toDateStr } from '../shared/format'
+import { BetaBadge } from '../shared/BetaBadge'
 import type { TimeEntry, TimeBreak } from './types'
 
 const ELEVEN_HOURS_MS = 11 * 60 * 60 * 1000
@@ -60,13 +64,18 @@ const Arbeitszeit = () => {
   const [leavePanelOpen, setLeavePanelOpen] = useState(false)
   const [gpsConsentChecked, setGpsConsentChecked] = useState(false)
   const [gpsConsentSaving, setGpsConsentSaving] = useState(false)
+  const [showLocationModal, setShowLocationModal] = useState(false)
+  const [locationModalIsRequested, setLocationModalIsRequested] = useState(false)
   const [, setTick] = useState(0)
 
+  const { isOffline } = useSync()
   const userId = user?.id ?? ''
   const canUse = license && hasFeature(license, 'arbeitszeiterfassung')
   const hasGpsConsent =
     myProfile?.gps_consent_at != null && myProfile?.gps_consent_revoked_at == null
   const showGpsConsentBlock = canUse && userId && (!myProfile?.gps_consent_at || myProfile?.gps_consent_revoked_at != null)
+  const hasStandortabfrageConsent =
+    myProfile?.standortabfrage_consent_at != null && myProfile?.standortabfrage_consent_revoked_at == null
 
   const { from: monthFrom, to: monthTo } = getMonthBounds(selectedDate)
 
@@ -96,6 +105,16 @@ const Arbeitszeit = () => {
   useEffect(() => {
     refreshProfile()
   }, [refreshProfile])
+
+  useEffect(() => {
+    if (!canUse || !userId || !hasStandortabfrageConsent) return
+    getMyPendingLocationRequest().then((requestId) => {
+      if (requestId) {
+        setLocationModalIsRequested(true)
+        setShowLocationModal(true)
+      }
+    })
+  }, [canUse, userId, hasStandortabfrageConsent])
 
   const [year, month] = useMemo(() => {
     const [y, m] = selectedDate.split('-').map(Number)
@@ -355,7 +374,7 @@ const Arbeitszeit = () => {
 
   if (!canUse) {
     return (
-      <div className="p-4 max-w-xl">
+      <div className="p-4 max-w-xl min-w-0">
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">
           Arbeitszeiterfassung
         </h2>
@@ -367,7 +386,7 @@ const Arbeitszeit = () => {
   }
 
   return (
-    <div className="p-4 max-w-xl">
+    <div className="p-4 max-w-xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">
         Arbeitszeiterfassung
       </h2>
@@ -392,14 +411,23 @@ const Arbeitszeit = () => {
           className="mb-4 p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50"
           aria-labelledby="gps-consent-heading"
         >
-          <h3 id="gps-consent-heading" className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
-            Optionale Standorterfassung
+          <h3
+            id="gps-consent-heading"
+            className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2 flex flex-wrap items-center gap-2"
+          >
+            <span>Optionale Standorterfassung</span>
+            <BetaBadge aria-hidden="true" />
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-300 mb-2">
             Sie können optional Ihren Standort bei Arbeitsbeginn und -ende erfassen lassen. Die Erfassung erfolgt nur zu
             diesen Zeitpunkten, nicht dauerhaft. Rechtsgrundlage ist Ihre Einwilligung (§ 26 Abs. 2 BDSG, Art. 6 Abs. 1
             lit. a DSGVO). Die Angabe ist freiwillig; Sie können die Zeiterfassung auch ohne Ortung nutzen. Sie können
             die Einwilligung jederzeit widerrufen (z. B. in den Einstellungen).
+          </p>
+          <p className="text-xs text-amber-900/90 dark:text-amber-200/90 mb-2 rounded-md border border-amber-200/80 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 px-2 py-1.5">
+            <strong className="font-semibold">Hinweis:</strong> Speicherung und Anzeige der Stempel-Standorte sind{' '}
+            <strong>Beta</strong>. Nach dem Live-Betrieb prüfen wir das Verhalten erneut; in der lokalen Entwicklung
+            können Browser, HTTPS oder Netzwerk abweichen.
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <input
@@ -428,12 +456,63 @@ const Arbeitszeit = () => {
       )}
 
       {hasGpsConsent && (
-        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-          Standorterfassung aktiv. Einwilligung widerrufen:{' '}
+        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <BetaBadge aria-hidden="true" />
+            <span>Standorterfassung bei Stempeln aktiv.</span>
+          </span>
+          <span>
+          Einwilligung widerrufen:{' '}
           <Link to="/einstellungen" className="text-vico-primary hover:underline">
             Einstellungen
           </Link>
+          {' · '}
+          {isOffline ? (
+            <span className="text-slate-400 cursor-not-allowed" title="Offline – Standort erst bei Verbindung sendbar">
+              Standort abfragen (Offline)
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setLocationModalIsRequested(false); setShowLocationModal(true) }}
+              className="text-vico-primary hover:underline"
+            >
+              Standort abfragen
+            </button>
+          )}
+          </span>
         </p>
+      )}
+
+      {canUse && !hasGpsConsent && (
+        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+          {isOffline ? (
+            <span className="text-slate-400 cursor-not-allowed" title="Offline – Standort erst bei Verbindung sendbar">
+              Standort abfragen (Offline)
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setLocationModalIsRequested(false); setShowLocationModal(true) }}
+              className="text-vico-primary hover:underline"
+            >
+              Standort abfragen
+            </button>
+          )}
+          {' '}(zum Testen)
+        </p>
+      )}
+
+      {showLocationModal && (
+        <CurrentLocationModal
+          onClose={() => {
+            setShowLocationModal(false)
+            setLocationModalIsRequested(false)
+          }}
+          standortabfrageEnabled={!!(license && hasFeature(license, 'standortabfrage'))}
+          hasStandortabfrageConsent={hasStandortabfrageConsent}
+          isRequestedByAdmin={locationModalIsRequested}
+        />
       )}
 
       <div className="mb-4">

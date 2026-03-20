@@ -9,6 +9,7 @@ import MeineDaten from './pages/MeineDaten'
 import Datenschutz from './pages/Datenschutz'
 import Impressum from './pages/Impressum'
 import Layout from './components/Layout'
+import UpdateBanner from '../../shared/UpdateBanner'
 
 const AUTH_TIMEOUT_MS = 30_000
 
@@ -91,6 +92,7 @@ const App = () => {
 
   return (
     <BrowserRouter>
+      <UpdateBanner />
       <Routes>
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/datenschutz" element={<Datenschutz />} />

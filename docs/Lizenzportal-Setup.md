@@ -149,3 +149,19 @@ In der Haupt-App: `VITE_LICENSE_API_URL=https://lizenz.amrtech.de/api` (oder die
 | **„Passwort muss mindestens 6 Zeichen haben“** | Mindestens 6 Zeichen eingeben |
 | **Keine Fehlermeldung, aber nichts passiert** | Browser-Konsole öffnen (F12) → Fehler prüfen. Prüfen: Verbindet die Admin-App das **Lizenzportal-Supabase**? (`.env` mit `VITE_SUPABASE_URL` des Lizenzportal-Projekts) |
 | **„Zugriff verweigert“ nach Login** | Trigger `handle_new_user` prüfen: Wurde `supabase-license-portal.sql` vollständig ausgeführt? Profil mit `role=admin` muss existieren. |
+
+---
+
+## Fehlerbehebung: „column tenants.arbeitszeitenportal_domain does not exist“
+
+| Ursache | Lösung |
+|---------|--------|
+| **Schema veraltet** | Die Tabelle `tenants` wurde vor der Spalte `arbeitszeitenportal_domain` angelegt. Migration ausführen: |
+
+**Migration im Supabase SQL Editor (Lizenzportal-Projekt) ausführen:**
+
+```sql
+alter table public.tenants add column if not exists arbeitszeitenportal_domain text;
+```
+
+Oder die Datei `supabase-license-portal-migrations/add-arbeitszeitenportal-domain.sql` im SQL Editor einfügen und ausführen.

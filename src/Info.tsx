@@ -6,7 +6,10 @@ import {
   isLicenseApiConfigured,
   getStoredLicenseNumber,
   setStoredLicenseNumber,
+  formatLicenseNumberInput,
+  normalizeLicenseNumber,
 } from './lib/licensePortalApi'
+import { setLicenseNumberInDb } from './lib/licenseService'
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.1'
 
@@ -41,15 +44,17 @@ const Info = () => {
   }
 
   const handleSaveLicenseNumber = async () => {
-    const trimmed = licenseNumberInput.trim()
-    if (!trimmed) {
-      setLicenseNumberMessage({ type: 'error', text: 'Bitte Lizenznummer eingeben.' })
+    const normalized = normalizeLicenseNumber(licenseNumberInput)
+    if (normalized.length < 11) {
+      setLicenseNumberMessage({ type: 'error', text: 'Bitte vollständige Lizenznummer eingeben (Format: VIC-XXXX-XXXX).' })
       return
     }
+    const formatted = formatLicenseNumberInput(licenseNumberInput)
     setIsSavingLicense(true)
     setLicenseNumberMessage(null)
     try {
-      setStoredLicenseNumber(trimmed)
+      setStoredLicenseNumber(formatted)
+      await setLicenseNumberInDb(formatted)
       await refreshLicense({ force: true })
       setLicenseNumberMessage({ type: 'success', text: 'Lizenznummer gespeichert. Lizenz neu geladen.' })
     } catch {
@@ -71,7 +76,7 @@ const Info = () => {
             : 'Mitarbeiter'
 
   return (
-    <div className="p-4 max-w-xl">
+    <div className="p-4 max-w-xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">Info</h2>
 
       {/* App-Version & Update */}
@@ -165,17 +170,17 @@ const Info = () => {
             <label htmlFor="info-license-number" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
               Lizenznummer
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2 min-w-0">
               <input
                 id="info-license-number"
                 type="text"
                 value={licenseNumberInput}
                 onChange={(e) => {
-                  setLicenseNumberInput(e.target.value)
+                  setLicenseNumberInput(formatLicenseNumberInput(e.target.value))
                   setLicenseNumberMessage(null)
                 }}
-                placeholder="VIC-XXXX-XXXX"
-                className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 font-mono text-sm focus:ring-2 focus:ring-vico-primary focus:border-vico-primary"
+                placeholder="z.B. VICABCD1234"
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 font-mono text-sm focus:ring-2 focus:ring-vico-primary focus:border-vico-primary"
                 aria-label="Lizenznummer"
               />
               <button
@@ -209,7 +214,7 @@ const Info = () => {
                   </p>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div className="text-slate-500 dark:text-slate-400">Tier</div>
                 <div className="text-slate-800 dark:text-slate-100 font-medium flex items-center gap-2">
                   <span className="capitalize">{license.tier}</span>

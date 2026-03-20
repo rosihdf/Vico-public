@@ -10,6 +10,7 @@ const FEATURE_LABELS: Record<string, string> = {
   kundenportal: 'Kundenportal',
   historie: 'Historie',
   arbeitszeiterfassung: 'Arbeitszeiterfassung',
+  standortabfrage: 'Standortabfrage',
 }
 
 const checkIntervalLabel = (v: string) =>

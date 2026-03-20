@@ -5,9 +5,7 @@ import { LEAVE_TYPE_LABELS } from './leaveService'
 import { jsPDF } from 'jspdf'
 import type { TimeEntry, TimeBreak } from '../types/time'
 import { calcWorkMinutes } from '../../../shared/timeUtils'
-
-const formatTimeDe = (iso: string): string =>
-  new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })
+import { formatDateTimeShort } from '../../../shared/format'
 
 /** CSV für Zoll-/Mindestlohnprüfung (MiLoG § 17): Beginn, Ende, Dauer, Pausen */
 export const exportZollCsv = (
@@ -25,8 +23,8 @@ export const exportZollCsv = (
       return s + Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000)
     }, 0)
     const workMin = calcWorkMinutes(e, breaks)
-    const startStr = e.start ? formatTimeDe(e.start) : ''
-    const endStr = e.end ? formatTimeDe(e.end) : ''
+    const startStr = e.start ? formatDateTimeShort(e.start) : ''
+    const endStr = e.end ? formatDateTimeShort(e.end) : ''
     return [e.date, startStr, endStr, breakMin, workMin, employeeName.replace(/;/g, ',')].join(';')
   })
   const csv = [header, ...rows].join('\n')
@@ -75,8 +73,8 @@ export const exportZollPdf = (
       return s + Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60000)
     }, 0)
     const workMin = calcWorkMinutes(e, breaks)
-    const startStr = e.start ? formatTimeDe(e.start) : ''
-    const endStr = e.end ? formatTimeDe(e.end) : ''
+    const startStr = e.start ? formatDateTimeShort(e.start) : ''
+    const endStr = e.end ? formatDateTimeShort(e.end) : ''
     const row = [e.date, startStr, endStr, String(breakMin), String(workMin), employeeName]
     row.forEach((cell, i) => {
       doc.text(String(cell).slice(0, 25), 14 + colWidths.slice(0, i).reduce((a, b) => a + b, 0), y)

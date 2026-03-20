@@ -87,6 +87,18 @@ export const getStoredLicenseNumber = (): string | null => {
   return localStorage.getItem(STORAGE_KEY)
 }
 
+/** Formatiert Lizenznummer-Eingabe mit automatischen Trennern (VIC-XXXX-XXXX). */
+export const formatLicenseNumberInput = (raw: string): string => {
+  const cleaned = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 11)
+  if (cleaned.length <= 3) return cleaned
+  if (cleaned.length <= 7) return `${cleaned.slice(0, 3)}-${cleaned.slice(3)}`
+  return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 7)}-${cleaned.slice(7, 11)}`
+}
+
+/** Normalisiert Lizenznummer für API/DB (ohne Formatierung). */
+export const normalizeLicenseNumber = (input: string): string =>
+  input.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 11)
+
 export const setStoredLicenseNumber = (licenseNumber: string): void => {
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, licenseNumber.trim())

@@ -5,6 +5,7 @@ import { subscribeToDataChange } from './lib/dataService'
 
 type SyncContextType = {
   syncStatus: SyncStatus
+  isOffline: boolean
   setSyncStatus: (status: SyncStatus) => void
   syncNow: () => Promise<void>
   pendingCount: number
@@ -83,6 +84,7 @@ export const SyncProvider = ({ children }: { children: React.ReactNode }) => {
     <SyncContext.Provider
       value={{
         syncStatus,
+        isOffline: syncStatus === 'offline',
         setSyncStatus,
         syncNow,
         pendingCount,

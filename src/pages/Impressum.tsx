@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 /** Stammdaten – bei Mandantenfähigkeit aus Lizenz-API */
 const Impressum = () => (
   <div className="min-h-screen bg-[#5b7895] dark:bg-slate-900 px-4 py-10">
-    <article className="w-full max-w-2xl mx-auto bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-600 p-6 sm:p-10">
+    <article className="w-full max-w-2xl min-w-0 mx-auto bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-600 p-6 sm:p-10">
       <Link
         to="/aktivierung"
         className="inline-flex items-center gap-1 text-sm text-vico-primary hover:underline mb-6"

@@ -26,6 +26,6 @@ for (const [srcName, destName] of files) {
     copyFileSync(src, dest)
     console.log(`${srcName} nach admin/public/ kopiert`)
   } else {
-    console.warn(`Hinweis: ${srcName} nicht gefunden in public/ – ggf. zuerst "npm run generate-vico-pdf" und "npm run build" ausführen`)
+    console.warn(`Hinweis: ${srcName} nicht gefunden in public/ – ggf. zuerst "npm run generate-vico-pdf", "npm run generate-komponenten-pdf" und "npm run build" ausführen`)
   }
 }

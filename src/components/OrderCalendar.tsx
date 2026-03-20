@@ -156,7 +156,8 @@ export const OrderCalendar = ({
             →
           </button>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-sm">
+        <div className="overflow-x-auto min-w-0">
+          <div className="grid grid-cols-7 gap-1 text-center text-sm min-w-[240px]">
           {WEEKDAYS.map((wd) => (
             <div key={wd} className="font-medium text-slate-500 py-1">
               {wd}
@@ -201,6 +202,7 @@ export const OrderCalendar = ({
               </button>
             )
           })}
+          </div>
         </div>
       </div>
       {selectedDate && (

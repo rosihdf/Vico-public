@@ -1,6 +1,6 @@
 /**
  * Etikettendrucker – Schnittstelle für QR-Etikettendruck aus der App.
- * Entscheidung: Capacitor-Wrapper (Option A, siehe docs/Entscheidungen-Offene-Punkte.md §9).
+ * Entscheidung: Capacitor-Wrapper (Option A, siehe Vico.md §11.1 Punkt 9 / §11.4).
  *
  * In der nativen Capacitor-App wird ein Plugin (z. B. EtikettendruckerPlugin) diese API
  * implementieren und an das Bluetooth-SDK des Druckers anbinden.

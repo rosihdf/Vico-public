@@ -166,7 +166,7 @@ const Scan = () => {
   }, [])
 
   return (
-    <div className="p-4">
+    <div className="p-4 min-w-0">
       <h2 className="text-xl font-bold text-slate-800">QR-Scan</h2>
       <p className="mt-1 text-sm text-slate-600">
         Scanne einen Objekt-QR-Code, um direkt zum Objekt zu gelangen.

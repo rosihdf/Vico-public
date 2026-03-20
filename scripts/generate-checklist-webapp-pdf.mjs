@@ -6,7 +6,7 @@ import { jsPDF } from 'jspdf'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
-const dataPath = join(root, 'src', 'lib', 'checklistDataWebApp.json')
+const dataPath = join(root, 'shared', 'checklistDataWebApp.json')
 const outDir = join(root, 'public')
 const outPath = join(outDir, 'AMRtech-WebApp-Test-Checkliste.pdf')
 

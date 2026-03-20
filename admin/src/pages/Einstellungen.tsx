@@ -1,4 +1,5 @@
 import { downloadWebAppChecklist } from '../lib/downloadChecklist'
+import { downloadKomponentenPdf } from '../lib/downloadKomponentenPdf'
 
 const Einstellungen = () => {
   return (
@@ -34,15 +35,28 @@ const Einstellungen = () => {
         <p className="text-sm text-slate-600 mb-3">
           Projekt-Dokumentation mit Architektur, Features, Roadmap und technischen Details.
         </p>
-        <a
-          href="/Vico-Dokumentation.pdf"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
-          aria-label="Vico-Dokumentation als PDF öffnen"
-        >
-          Vico-Dokumentation (PDF)
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href="/Vico-Dokumentation.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+            aria-label="Vico-Dokumentation als PDF öffnen"
+          >
+            Vico-Dokumentation (PDF)
+          </a>
+          <button
+            type="button"
+            onClick={downloadKomponentenPdf}
+            className="inline-flex px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
+            aria-label="Komponenten und Funktionen als PDF herunterladen"
+          >
+            Komponenten &amp; Funktionen (PDF)
+          </button>
+        </div>
+        <p className="text-xs text-slate-500 mt-2">
+          „Komponenten &amp; Funktionen“ wird beim Klick als PDF erzeugt und heruntergeladen.
+        </p>
       </section>
 
       {/* Checklisten */}

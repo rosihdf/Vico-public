@@ -1,7 +1,7 @@
 import { supabase } from '../supabase'
 import { getCachedComponentSettings, setCachedComponentSettings, addToOutbox } from './offlineStorage'
 
-const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
+import { isOnline } from '../../shared/networkUtils'
 
 export type ComponentSetting = {
   id: string
