@@ -1,0 +1,42 @@
+# Startet alle übrigen Workflows manuell (ein Klick statt fünf).
+# Sinnvoll nach größeren Änderungen oder um Secrets/Runner zu prüfen.
+#
+# Auslösen: Actions → „Dispatch: alle Workflows“ → Run workflow
+#
+# Hinweis: „DB Backup“ braucht Secret SUPABASE_DB_URL – sonst schlägt dieser Teil fehl.
+# Keep-Alive / Cleanup brauchen die jeweiligen Supabase-Secrets (siehe Kommentare in den YAMLs).
+
+name: Dispatch alle Workflows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const workflows = [
+              'ci.yml',
+              'db-backup.yml',
+              'supabase-keepalive.yml',
+              'cleanup-demo-data.yml',
+              'supabase-license-portal-keepalive.yml',
+            ];
+            const ref = context.ref.replace('refs/heads/', '');
+            for (const workflow_id of workflows) {
+              console.log(`Dispatch ${workflow_id} @ ${ref}`);
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id,
+                ref,
+              });
+            }
+            console.log('Alle Dispatch-Anfragen gesendet (Runs erscheinen in der Actions-Liste).');
