@@ -1,5 +1,7 @@
 # App-Updates & Versionierung (Planung ab Live-Betrieb)
 
+**Betriebs-Anleitung (Schritt-für-Schritt):** **`docs/Anleitung-App-Updates-fuer-Betrieb.md`**
+
 **Ziel:** Nach dem Go-Live sollen **alle** fachlichen Änderungen, **neuen Module** (soweit in der gleichen Codebasis) und **Verbesserungen** als **nachvollziehbare Update-Versionen** ausgeliefert werden – für Betrieb, Support und Nutzerhinweise.
 
 ---
@@ -316,4 +318,4 @@ Für **Haupt-App**, **`portal/`**, **`arbeitszeit-portal/`**, **`admin/`**:
 
 **Stand:** März 2026 – inkl. getrennte Updates pro App-Teil (§9–12), Tiefeneinsteig & Playbook **§9.5–9.6**, Rückfragen §10, Vorschlag §11.
 
-**Geplant (verständliche Anleitung):** Aufgabe in **`docs/Noch-zu-erledigen.md` §11** – z. B. `docs/Anleitung-App-Updates-fuer-Betrieb.md` mit Schritt-für-Schritt-Beispielen.
+**Anleitung für Betrieb:** **`docs/Anleitung-App-Updates-fuer-Betrieb.md`** (siehe auch `Noch-zu-erledigen.md` §11).

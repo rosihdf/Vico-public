@@ -935,6 +935,8 @@ Die folgenden Punkte sind als Konzept für die Hauptapp vorgesehen. **Fachliche 
 | Updates & Versionierung | `docs/App-Updates-und-Versionierung.md` | SemVer, `version.json`, Release Notes, Multi-App, DB/Capacitor |
 | Roadmap-Reihenfolge | `docs/Roadmap-Abarbeitung-Vorschlag.md` | Vorschlag Phasen 0–7 aus Noch-zu-erledigen + Vico §7 |
 | DB-Backup (Live) | `docs/Supabase-Datenbank-Backup.md` | GitHub Action, pg_dump lokal, Dashboard – nicht in Git |
+| App-Updates (Betrieb) | `docs/Anleitung-App-Updates-fuer-Betrieb.md` | Schritt-für-Schritt Releases je App |
+| Grenzüberschreitungen (Checkliste) | `docs/Verifikation-Grenzueberschreitungen-Checkliste.md` | Live-Verifikation Lizenzkette |
 
 ### 10.12 Umsetzungsfragen & Vorschläge
 
@@ -1329,6 +1331,8 @@ Details zu J1–J10 u. a.: **Vico.md §7** (Roadmap) und `docs/Noch-zu-erledig
 - **Vertiefung Arbeitszeit:** `Arbeitszeit-Feature-Liste.md`, `Arbeitszeit-Soll-Urlaub-Planung.md`, `Arbeitszeit-Rechtliche-Compliance.md`
 - **Aufgabenliste:** `Noch-zu-erledigen.md`
 - **Roadmap-Reihenfolge (Vorschlag):** `Roadmap-Abarbeitung-Vorschlag.md`
+- **App-Updates (Betrieb):** `Anleitung-App-Updates-fuer-Betrieb.md`
+- **Grenzüberschreitungen (Checkliste):** `Verifikation-Grenzueberschreitungen-Checkliste.md`
 
 ---
 

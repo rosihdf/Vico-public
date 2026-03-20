@@ -268,8 +268,8 @@ Aus **Vico.md** §7.1 – Punkte **ohne** ✅ (bereits erledigt):
 
 **Referenz:** `src/Arbeitszeit.tsx`, `arbeitszeit-portal/src/lib/userService.ts`, `src/lib/userService.ts`, `src/lib/licensePortalApi.ts`.
 
-**Später prüfen:**
-- [ ] **Grenzüberschreitungen im Lizenzportal** – Prüfen, ob Meldungen ankommen: Edge Function `limit-exceeded` deployed? `VITE_LICENSE_API_URL` in Haupt-App gesetzt? Lizenz in `licenses` vorhanden? Siehe `docs/Lizenzportal-Setup.md` § Fehlerbehebung Grenzüberschreitungen.
+**Live-Verifikation (einmal durchgehen):**
+- [ ] **`docs/Verifikation-Grenzueberschreitungen-Checkliste.md`** abarbeiten (Phase 0.2). Zusätzlich: `docs/Lizenzportal-Setup.md` § Fehlerbehebung Grenzüberschreitungen.
 
 ---
 
@@ -292,15 +292,14 @@ Aus **Vico.md** §7.1 – Punkte **ohne** ✅ (bereits erledigt):
 
 ---
 
-## 11. Dokumentation – noch zu schreiben
+## 11. Dokumentation – Phase 0 ✅
 
-| Thema | Ziel | Basis (bereits vorhanden) |
-|-------|------|---------------------------|
-| **Anleitung: App-Updates & getrennte Releases** | **Schritt-für-Schritt** für dich (und spätere Übergabe): wann `package.json`-Version und welches `release-notes.json`; **nur eine** Teil-App deployen; wann trotzdem **Supabase/Migration** dazu gehört; kurzes **Beispiel** (z. B. „nur Portal geändert“). Ziel: besseres Verständnis neben der technischen Doku. | **`docs/App-Updates-und-Versionierung.md`**, **`docs/Release-Checkliste.md`**, Code: `scripts/vite-plugin-version.mjs`, `shared/UpdateBanner.tsx` |
+| Thema | Status | Ort |
+|-------|--------|-----|
+| **Anleitung: App-Updates & getrennte Releases** | ✅ | **`docs/Anleitung-App-Updates-fuer-Betrieb.md`** (Betrieb); Technik: **`docs/App-Updates-und-Versionierung.md`** |
+| **Verifikation Grenzüberschreitungen** | Checkliste vor Ort | **`docs/Verifikation-Grenzueberschreitungen-Checkliste.md`** (Live-Test; nicht automatisierbar ohne Produktionszugriff) |
 
-**Vorschlag Datei:** `docs/Anleitung-App-Updates-fuer-Betrieb.md` (oder Abschnitt in eurer internen Wiki/Benutzerdoku).
-
-- [ ] Anleitung **App-Updates & Versionierung** ausarbeiten (siehe Tabelle oben).
+- [x] Anleitung **App-Updates** ausgearbeitet (März 2026).
 
 ---
 
@@ -317,4 +316,4 @@ Aus **Vico.md** §7.1 – Punkte **ohne** ✅ (bereits erledigt):
 7. **Auftragszuordnung** entscheiden (§2): einblenden oder aus Haupt-App/Portal-Code entfernen.
 8. **Optional:** Haupt-App Aufräumen (§5), dann ggf. Teamleiter-Rolle und Soll Woche/Tag (§2).
 9. **Roadmap J** und IONOS/Performance (§6, §7) nach Priorität.
-10. **Anleitung App-Updates** (§11): verständliche Schritt-für-Schritt-Anleitung ergänzen, wenn du die nächsten Releases planst.
+10. ~~**Anleitung App-Updates**~~ ✅ erledigt – siehe §11 und `docs/Anleitung-App-Updates-fuer-Betrieb.md`.

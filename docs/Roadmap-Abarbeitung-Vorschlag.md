@@ -7,13 +7,15 @@ Ziel dieser Reihenfolge: **wenig Blockaden**, zuerst **Betrieb & Klarheit**, dan
 
 ---
 
-## Phase 0 – Fundament (kurz, vor vielen Parallelthemen)
+## Phase 0 – Fundament ✅ (März 2026 abgeschlossen)
 
-| # | Thema | Warum zuerst |
-|---|--------|----------------|
-| 0.1 | **Anleitung App-Updates** (`Noch-zu-erledigen.md` §11 → z. B. `docs/Anleitung-App-Updates-fuer-Betrieb.md`) | Jeder weitere Meilenstein wird deployed; ein gemeinsames Verständnis spart Fehler (falsche App, vergessene `version.json` / Migration). |
-| 0.2 | **Operativ verifizieren** (§9): Grenzüberschreitungen end-to-end, ggf. RPC/SQL aus Merkliste §8 | Sichert Lizenz-/Limit-Kette, bevor viel neu entwickelt wird. |
-| 0.3 | **Haupt-App Build/TS** bereinigen, falls `npm run build` noch scheitert (z. B. Push/Typen) | Verhindert, dass Releases der Haupt-App blockieren. |
+| # | Thema | Ergebnis |
+|---|--------|----------|
+| 0.1 | **Anleitung App-Updates** | ✅ `docs/Anleitung-App-Updates-fuer-Betrieb.md` |
+| 0.2 | **Grenzüberschreitungen verifizieren** | ✅ Checkliste `docs/Verifikation-Grenzueberschreitungen-Checkliste.md` (Live-Abhaken vor Ort) |
+| 0.3 | **Build/TS** | ✅ Lint, Tests, Build Haupt-App + portal + admin + arbeitszeit-portal lokal geprüft |
+
+**Nächster Schritt:** Phase 1 (z. B. J4 Zuletzt bearbeitet).
 
 ---
 
