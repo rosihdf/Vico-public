@@ -19,6 +19,8 @@ Im Repo liegt **`.github/workflows/db-backup.yml`** („DB Backup“).
 3. **„Run workflow“** → Branch **main** → ausführen
 4. Nach Lauf: **Artifacts** des Runs öffnen → **`.sql`-Dump** herunterladen
 
+**Alle Workflows auf einmal:** **`.github/workflows/dispatch-all-workflows.yml`** („Dispatch alle Workflows“) startet nacheinander per API u. a. **CI**, **DB Backup**, **Keep-Alive** (Haupt-App + Lizenzportal) und **Cleanup Demo Data** – ein Klick unter **Run workflow**.
+
 **Voraussetzung:** Secret **`SUPABASE_DB_URL`** ist gesetzt (PostgreSQL-URL, idealerweise **Pooler / Session mode**, siehe Kommentar in der YAML).
 
 Ohne dieses Secret schlägt der Workflow mit einer klaren Fehlermeldung fehl – dann Option B oder C nutzen.
