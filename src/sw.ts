@@ -38,11 +38,15 @@ clientsClaim()
 // Web Push: Standortanfrage-Benachrichtigung
 self.addEventListener('push', (event: PushEvent) => {
   if (!event.data) return
-  let data: { title?: string; body?: string } = {}
+  const payload = event.data
+  let data: { title?: string; body?: string }
   try {
-    data = event.data.json()
+    data = payload.json() as { title?: string; body?: string }
   } catch {
-    data = { title: 'Standortanfrage', body: event.data.text() || 'Ihr Standort wurde angefordert.' }
+    data = {
+      title: 'Standortanfrage',
+      body: payload.text() || 'Ihr Standort wurde angefordert.',
+    }
   }
   const title = data.title ?? 'Standortanfrage'
   const body = data.body ?? 'Admin/Teamleiter hat Ihren aktuellen Standort angefordert. Öffnen Sie die App, um zu antworten.'

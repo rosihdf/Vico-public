@@ -34,9 +34,13 @@ export const subscribeToPush = async (): Promise<{ error: string | null }> => {
   let sub = await reg.pushManager.getSubscription()
   if (!sub) {
     try {
+      const keyBytes = urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      // Eigenes ArrayBuffer (kein ArrayBufferLike-Generics-Konflikt mit PushManager-Typen)
+      const applicationServerKey = new Uint8Array(keyBytes.length)
+      applicationServerKey.set(keyBytes)
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        applicationServerKey,
       })
     } catch (err) {
       return { error: err instanceof Error ? err.message : 'Subscription fehlgeschlagen.' }

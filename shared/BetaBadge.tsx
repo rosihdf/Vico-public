@@ -1,7 +1,7 @@
 import type { HTMLAttributes } from 'react'
 
 /**
- * Kennzeichnet Funktionen in Erprobung (z. B. GPS/Ortung bei Zeiterfassung).
+ * Kennzeichnet Funktionen in Erprobung (z. B. GPS/Ortung bei Zeiterfassung).
  */
 export const BetaBadge = ({
   className = '',

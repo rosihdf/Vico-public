@@ -934,6 +934,7 @@ Die folgenden Punkte sind als Konzept für die Hauptapp vorgesehen. **Fachliche 
 | Release | `docs/Release-Checkliste.md` | Checkliste vor Release |
 | Updates & Versionierung | `docs/App-Updates-und-Versionierung.md` | SemVer, `version.json`, Release Notes, Multi-App, DB/Capacitor |
 | Roadmap-Reihenfolge | `docs/Roadmap-Abarbeitung-Vorschlag.md` | Vorschlag Phasen 0–7 aus Noch-zu-erledigen + Vico §7 |
+| DB-Backup (Live) | `docs/Supabase-Datenbank-Backup.md` | GitHub Action, pg_dump lokal, Dashboard – nicht in Git |
 
 ### 10.12 Umsetzungsfragen & Vorschläge
 
@@ -1322,7 +1323,7 @@ Details zu J1–J10 u. a.: **Vico.md §7** (Roadmap) und `docs/Noch-zu-erledig
 
 ### 11.12 Dokumentation, die bewusst in `docs/` bleibt
 
-- **Setup & Betrieb:** `Lizenzportal-Setup.md`, `Demokunde-Setup.md`, `Release-Checkliste.md`, `App-Updates-und-Versionierung.md`
+- **Setup & Betrieb:** `Lizenzportal-Setup.md`, `Demokunde-Setup.md`, `Release-Checkliste.md`, `App-Updates-und-Versionierung.md`, `Supabase-Datenbank-Backup.md`
 - **Technik/Performance:** `Optimierungsplan.md`
 - **Migrationen / SQL-Hinweise:** wie in Repo dokumentiert (`supabase-*.sql`)
 - **Vertiefung Arbeitszeit:** `Arbeitszeit-Feature-Liste.md`, `Arbeitszeit-Soll-Urlaub-Planung.md`, `Arbeitszeit-Rechtliche-Compliance.md`

@@ -281,8 +281,10 @@ const Kunden = () => {
   }, [showForm, showBvForm])
 
   const searchLower = searchQuery.trim().toLowerCase()
-  const matchStr = (v: string | null | undefined) =>
-    (v ?? '').toLowerCase().includes(searchLower)
+  const matchStr = useCallback(
+    (v: string | null | undefined) => (v ?? '').toLowerCase().includes(searchLower),
+    [searchLower]
+  )
   const filteredCustomers = useMemo(() => {
     let list = customers
     if (searchLower) {
@@ -324,6 +326,7 @@ const Kunden = () => {
     filterBvMax,
     customerWartungsstatus,
     bvCountByCustomerId,
+    matchStr,
   ])
 
   const filteredBvs = searchLower && expandedBvs.length > 0

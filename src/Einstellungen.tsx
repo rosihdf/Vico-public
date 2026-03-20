@@ -18,7 +18,6 @@ import {
 } from './lib/locationService'
 import {
   isPushSupported,
-  hasPushSubscription,
   subscribeToPush,
   unsubscribeFromPush,
 } from './lib/pushService'
