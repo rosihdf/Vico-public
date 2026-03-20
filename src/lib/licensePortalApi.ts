@@ -3,9 +3,9 @@
  * Ruft Lizenz + Design-Config vom Lizenzportal ab.
  *
  * Env:
- *   VITE_LICENSE_API_URL – Basis-URL der Lizenz-API
- *     - Supabase Edge Function: https://ojryoosqwfbzlmdeywzs.supabase.co/functions/v1
- *     - Netlify (Fallback): https://lizenz.amrtech.de/api
+ *   VITE_LICENSE_API_URL – Basis-URL der Lizenz-API (ohne trailing slash)
+ *     - Supabase Edge: …/functions/v1 → Aufrufe z. B. …/functions/v1/limit-exceeded
+ *     - Netlify Admin: https://<lizenz-domain>/api → …/api/limit-exceeded (Redirect zu Netlify Function)
  *   VITE_LICENSE_API_KEY – Optional, für Supabase Edge Function (anon key) wenn verify_jwt=true
  * Wenn nicht gesetzt: Legacy-Modus (Lizenz aus Mandanten-Supabase via get_license_status).
  */

@@ -6,12 +6,28 @@
 
 ---
 
+## Wohin muss `VITE_LICENSE_API_URL` zeigen? (aus dem Code)
+
+Die Haupt-App hängt **`/limit-exceeded`** an die Basis-URL an (`src/lib/licensePortalApi.ts` → `reportLimitExceeded`).
+
+| Variante | Typischer `VITE_LICENSE_API_URL` (ohne Slash am Ende) | Vollständige POST-URL für Grenzüberschreitung |
+|----------|------------------------------------------------------|-----------------------------------------------|
+| **A – Netlify (Admin/Lizenz-Site)** | `https://<deine-lizenz-domain>/api` | `https://<deine-lizenz-domain>/api/limit-exceeded` → Redirect zu **`/.netlify/functions/limit-exceeded`** (`admin/netlify.toml`) |
+| **B – Supabase Edge (Lizenzportal)** | `https://<projekt-ref>.supabase.co/functions/v1` | `https://<projekt-ref>.supabase.co/functions/v1/limit-exceeded` → **`supabase-license-portal/supabase/functions/limit-exceeded/`** |
+
+**Beides ist im Repo vorgesehen** – welches bei euch aktiv ist, steht nur in der **Build-Env** (Netlify/Vercel `.env` der Haupt-App), nicht in Git. In `.env.example` stehen beide Beispiele.
+
+Zusätzlich versucht die App immer, **`report_limit_exceeded`** per RPC in der **Mandanten-Haupt-Supabase** aufzurufen; die **Lizenzportal-Log-Tabelle** füllt primär der Aufruf über **`VITE_LICENSE_API_URL`**.
+
+---
+
 ## Voraussetzungen (abhacken)
 
-- [ ] **Haupt-App** (Produktion): `VITE_LICENSE_API_URL` zeigt auf die **Netlify-/Function-URL**, die **`limit-exceeded`** ausliefert (nicht direkt auf Supabase, wenn die Function der Einstieg ist).  
-- [ ] **Netlify** (oder gleichwertig): Site mit **`limit-exceeded`** deployt; Redirects in `netlify.toml` wie im Repo.  
-- [ ] **Lizenzportal-Supabase:** Tabelle **`limit_exceeded_log`** existiert; Edge Function **`limit-exceeded`** **oder** die Netlify-Route schreibt in dieses Projekt (je nach eurer Architektur – mit Entwicklung abgleichen).  
-- [ ] **Lizenz** für den Testmandanten in `licenses` mit passender **`license_number`** / Zuordnung, damit Meldungen einem Mandanten zugeordnet werden können.
+- [ ] **`VITE_LICENSE_API_URL`** in der **Produktions-Build-Config der Haupt-App** notiert (Variante A oder B oben) – Wert mit Hosting-Panel abgleichen.  
+- [ ] **Bei Variante A:** Admin-Site auf Netlify mit `admin/netlify.toml` deployt (Redirects `/api/limit-exceeded`).  
+- [ ] **Bei Variante B:** Edge Function **`limit-exceeded`** im Lizenzportal-Supabase deployt.  
+- [ ] **Lizenzportal-Supabase:** Tabelle **`limit_exceeded_log`** vorhanden.  
+- [ ] **Lizenz** für den Testmandanten in `licenses` mit passender **`license_number`**, damit Meldungen zuordenbar sind.
 
 ---
 
