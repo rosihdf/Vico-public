@@ -65,11 +65,18 @@ Dann wird nach Signup direkt eine Session erstellt, kein E-Mail-Link nötig.
 
 ---
 
-## 7. Lizenz-API (für Mandanten-App)
+## 7. Lizenz-API (für Mandanten-App & Portale)
 
-Damit die Haupt-App (5173) Lizenzen vom Lizenzportal nutzen kann, wird eine **Supabase Edge Function** verwendet (Option D – kein Service-Role-Key in Netlify nötig).
+Die Haupt-App und die **Portale** rufen die Lizenz per HTTP ab (`GET …/license?licenseNumber=…`). Es gibt zwei übliche Varianten – **wähle eine** und halte `VITE_LICENSE_API_URL` konsistent:
 
-### Edge Functions deployen
+| Variante | `VITE_LICENSE_API_URL` (Beispiel) | Server-Geheimnis |
+|----------|-----------------------------------|------------------|
+| **A) Netlify Functions** (Admin-Site) | `https://<admin-site>/api` | `SUPABASE_LICENSE_PORTAL_*` nur in **Netlify Env der Admin-Site** (Service Role) |
+| **B) Supabase Edge Functions** | `https://<ref>.supabase.co/functions/v1` | Von Supabase für die Functions gesetzt |
+
+**Empfehlung im Repo:** Variante **A** – siehe `admin/netlify.toml` (Redirects `/api/license` → Function) und **`docs/Netlify-Vier-Apps.md`** (§9, §11).
+
+### Edge Functions deployen (Variante B)
 
 **Wichtig:** Alle drei Functions müssen deployed sein (Lizenz-Check, Grenzüberschreitungen, Impressum):
 
@@ -85,13 +92,19 @@ Oder alle auf einmal: `supabase functions deploy`
 
 Die Functions nutzen automatisch `SUPABASE_URL` und `SUPABASE_SERVICE_ROLE_KEY` des Lizenzportal-Projekts (von Supabase bereitgestellt).
 
-### Haupt-App konfigurieren
+### Haupt-App / Portale konfigurieren
 
-In der Haupt-App `.env`:
+**Haupt-App** (`.env` lokal bzw. Netlify Env):
 
+```env
+# Variante B (Edge):
+# VITE_LICENSE_API_URL=https://ojryoosqwfbzlmdeywzs.supabase.co/functions/v1
+
+# Variante A (Netlify Admin, ohne Slash am Ende):
+# VITE_LICENSE_API_URL=https://<admin-site>/api
 ```
-VITE_LICENSE_API_URL=https://ojryoosqwfbzlmdeywzs.supabase.co/functions/v1
-```
+
+**Kundenportal & Arbeitszeitenportal:** zusätzlich **`VITE_LICENSE_NUMBER`** (exakt wie `licenses.license_number`) – siehe **`docs/Netlify-Vier-Apps.md`** §3–4.
 
 ### Mandanten-Branding (App-Name & Logo)
 
@@ -125,16 +138,18 @@ Free-Tier-Projekte pausieren nach 7 Tagen Inaktivität. GitHub Action hält das 
 
 Workflow: `.github/workflows/supabase-license-portal-keepalive.yml` (Mo + Do 9:00 UTC)
 
-### Fallback: Netlify Functions (optional)
+### Variante A: Netlify Functions (Admin-Site)
 
-Falls die Edge Functions nicht genutzt werden, deployet die Admin-App auf Netlify mit den Netlify-Functions (`license`, `limit-exceeded`, `update-impressum`). In Netlify die Env-Vars setzen:
+Die Admin-App bringt Netlify-Functions mit (`license`, `limit-exceeded`, `update-impressum`). **Pflicht** für die Functions (nur Server, nie im Browser):
 
-| Variable | Wert |
+| Variable (Netlify → Site der **Admin**-App) | Wert |
 |----------|------|
 | `SUPABASE_LICENSE_PORTAL_URL` | `https://<projekt-ref>.supabase.co` |
-| `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` | Service-Role-Key aus Supabase |
+| `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` | Service-Role-Key aus dem Lizenzportal-Supabase |
 
-In der Haupt-App: `VITE_LICENSE_API_URL=https://lizenz.amrtech.de/api` (oder die Admin-URL + `/api`)
+In **Haupt-App** und **Portalen**: `VITE_LICENSE_API_URL=https://<admin-site>/api` (ohne abschließenden Slash).
+
+Ohne die beiden `SUPABASE_LICENSE_PORTAL_*` liefert die Function u. a. **`License portal not configured`** (HTTP 500).
 
 ---
 
@@ -144,9 +159,10 @@ In der Haupt-App: `VITE_LICENSE_API_URL=https://lizenz.amrtech.de/api` (oder die
 |---------|--------|
 | **limit-exceeded nicht deployed** | `supabase functions deploy limit-exceeded` ausführen (Supabase Edge Functions) |
 | **Netlify: Env-Vars fehlen** | `SUPABASE_LICENSE_PORTAL_URL` und `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` in Netlify setzen |
-| **VITE_LICENSE_API_URL nicht gesetzt** | In der Haupt-App `.env`: `VITE_LICENSE_API_URL` = Supabase Edge Functions URL oder Netlify + `/api` |
-| **Lizenz nicht gefunden (404)** | `license_number` muss in der Lizenzportal-Tabelle `licenses` existieren; Lizenz aktivieren |
-| **CORS** | Supabase Edge Functions erlauben CORS; Netlify: `Access-Control-Allow-Origin: *` in der Function |
+| **VITE_LICENSE_API_URL nicht gesetzt** | Haupt-App / Portale: in Netlify Env setzen; nach Änderung **neu bauen**. Kundenportal/Arbeitszeit: auch **`VITE_LICENSE_NUMBER`**. |
+| **Lizenz nicht gefunden (404)** | `license_number` muss in `licenses` existieren und mit Eingabe/Env übereinstimmen |
+| **CORS / Haupt-App „kaputt“, direkter API-Test ok** | Browser sendet `Origin`; Netlify-Function `license` setzt CORS (siehe Repo). **`allowed_domains`** im Mandanten um den Host der App ergänzen (§11 in `Netlify-Vier-Apps.md`). |
+| **Edge vs. Netlify gemischt** | `VITE_LICENSE_API_URL` und Deployments nicht zwischen Edge-URL und `/api` ohne Absprache mischen |
 
 ---
 

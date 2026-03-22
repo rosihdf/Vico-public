@@ -164,7 +164,7 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 
 **Lizenz-Admin** (`admin/`): Separates Netlify-Site, Root: `admin/`, Subdomain z.B. `admin.vico-tueren.de`.
 
-**Alle vier Apps (Haupt-App, Admin, Kundenportal, Arbeitszeitenportal):** Schrittfolge und Env-Variablen: **`docs/Netlify-Vier-Apps.md`**. **Lizenz-API:** Empfohlen **`VITE_LICENSE_API_URL = https://<Admin-Subdomain>/api`** (Netlify Functions der Admin-Site); Details in **`docs/Netlify-Vier-Apps.md`**.
+**Alle vier Apps (Haupt-App, Admin, Kundenportal, Arbeitszeitenportal):** Schrittfolge und Env-Variablen: **`docs/Netlify-Vier-Apps.md`** (inkl. **§11 Fehlerbehebung**, **§12 TS-Build Monorepo**). **Lizenz-API:** Empfohlen **`VITE_LICENSE_API_URL = https://<Admin-Subdomain>/api`** (Netlify Functions der Admin-Site). Portale zusätzlich **`VITE_LICENSE_NUMBER`**. Setup/Fehler: **`docs/Lizenzportal-Setup.md`**.
 
 ### Supabase Keep-Alive (Free-Tier)
 

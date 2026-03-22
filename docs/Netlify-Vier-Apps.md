@@ -106,9 +106,11 @@ Damit kann die Haupt-App die Lizenz-API z. B. unter `https://<admin-site>/api/
 |----------|--------------|
 | `VITE_SUPABASE_URL` | Supabase des **Kunden** (Mandanten-Projekt) |
 | `VITE_SUPABASE_ANON_KEY` | Anon Key |
-| `VITE_LICENSE_API_URL` | Wie Haupt-App |
-| `VITE_LICENSE_NUMBER` | Lizenznummer dieses Deployments (pro Site/Mandant) |
-| `VITE_LICENSE_API_KEY` | Optional, wie oben |
+| `VITE_LICENSE_API_URL` | Wie Haupt-App, z. B. `https://<admin-site>/api` (**ohne** Slash am Ende) |
+| `VITE_LICENSE_NUMBER` | **Pflicht für Branding + echte Lizenz-Features:** exakt wie `licenses.license_number` im Lizenzportal – **eine Nummer pro Netlify-Site** (Mandant/Kunde). Ohne beide Werte (`URL` + `Nummer`) nutzt das Portal Fallback-Design/Default-Features. |
+| `VITE_LICENSE_API_KEY` | Optional, wie oben (bei Netlify `/api` meist nicht nötig) |
+
+**Hinweis:** `VITE_LICENSE_NUMBER` ersetzt keine Nutzereingabe – sie wird **beim Build** eingebettet (wie `VITE_*` üblich).
 
 ---
 
@@ -120,7 +122,9 @@ Damit kann die Haupt-App die Lizenz-API z. B. unter `https://<admin-site>/api/
 - **Build command:** `npm run build`
 - **Publish directory:** `arbeitszeit-portal/dist`
 
-**Umgebungsvariablen:** analog Kundenportal (`VITE_LICENSE_*`, Supabase des Mandanten).
+**Umgebungsvariablen:** analog **Kundenportal** – dieselbe Tabelle wie in §3 (`VITE_SUPABASE_*`, `VITE_LICENSE_API_URL`, `VITE_LICENSE_NUMBER`, optional Key). **Rollen:** nur **Admin** und **Teamleiter** (siehe App-Logik).
+
+**Ohne Lizenz-Env:** Fallback mit u. a. `TIER_DEFAULT_FEATURES.professional` im `DesignContext` – für Produktion **URL + Lizenznummer** setzen.
 
 ---
 
@@ -128,7 +132,8 @@ Damit kann die Haupt-App die Lizenz-API z. B. unter `https://<admin-site>/api/
 
 - Jede der vier Apps = **eigene Netlify-Site** (oder Monorepo mit unterschiedlichem Base directory).
 - **Custom Domain:** Netlify → Domain settings → Add domain; beim Hoster **CNAME** oder A-Records auf Netlify setzen (Anleitung in Netlify).
-- **Lizenz-API CORS:** Lizenz-Edge Function erlaubt `*`; für Produktion ggf. `allowed_domains` in `tenants` im Lizenzportal pflegen.
+- **Lizenz-API CORS (Cross-Origin):** Wenn **Haupt-App** oder **Portal** die Lizenz unter einer **anderen Origin** als die Admin-Site abrufen (`fetch` zu `https://<admin>/api/license`), muss die Antwort **CORS-Header** senden. Die Netlify-Function `admin/netlify/functions/license.ts` setzt dafür u. a. `Access-Control-Allow-Origin: *` und antwortet auf **OPTIONS** (Preflight). **Supabase Edge Functions** liefern CORS je nach Deployment ebenfalls – nicht mischen ohne Absprache.
+- **`allowed_domains`** (JSON in `tenants`): Enthält die Liste der **Hosts**, von denen die Lizenz-API Anfragen **mit `Origin`-Header** akzeptiert (Browser). Trage dort u. a. die Hosts der **Haupt-App** und der **Portale** ein (z. B. `app-xyz.netlify.app`, `portal-kunde.de`) – sonst **403** trotz gültiger Lizenz. Ein Aufruf der API **direkt in der Adresszeile** (gleiche Origin wie Admin) umgeht diese Prüfung teils – daher wirkt die Haupt-App „kaputt“, die Admin-URL „funktioniert“.
 
 ---
 
@@ -204,3 +209,30 @@ Wenn **kein** Request auf die Lizenz-API: Variable fehlt, falscher Build, oder A
 - [ ] Mandanten-Felder `app_domain` / `portal_domain` / `arbeitszeitenportal_domain` passen zu den echten IONOS/Netlify-Hostnamen
 
 Bei Fragen zu **einer** konkreten Domain oder API-URL: Werte mit interner Doku / Mandanten-Stammdaten abgleichen.
+
+---
+
+## 11. Fehlerbehebung: Lizenz-API & Mandanten-Apps
+
+| Symptom | Typische Ursache | Lösung |
+|--------|-------------------|--------|
+| **`License portal not configured`** (JSON/500) | Admin-Netlify: `SUPABASE_LICENSE_PORTAL_URL` oder `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` fehlt | Beide in der **Admin-Site** setzen (Service **Role**, nicht Anon). Neu deployen. |
+| **Lizenz-API nicht konfiguriert** (Haupt-App UI) | `VITE_LICENSE_API_URL` fehlt oder leerer Build | In **Netlify der Haupt-App** setzen, z. B. `https://<admin-site>/api`. **Clear cache and deploy**. |
+| **Lizenz nicht gefunden oder Verbindungsfehler** (Aktivierung), API im Browser am Admin-URL ok | **CORS** oder **403** `allowed_domains` oder alter Build ohne `VITE_*` | CORS: Admin-Function `license` mit Headern (siehe §5). `allowed_domains`: Host der Haupt-App eintragen. Env: neu bauen. |
+| **403** `Domain nicht für diese Lizenz freigegeben` | `Origin` der anfragenden App steht nicht in `allowed_domains` | Mandant im Lizenzportal: `allowed_domains` um den **Host** der App ergänzen (ohne `https://`). |
+| **Kundenportal / Arbeitszeitenportal: Design/Lizenz lädt nicht** | `VITE_LICENSE_NUMBER` oder `VITE_LICENSE_API_URL` fehlt | Beide Variablen in **Netlify der jeweiligen Portal-Site** setzen; Nummer = Zeile `licenses.license_number`. |
+
+**Schnelltest Lizenz-API (Netlify-Variante):**  
+`GET https://<admin-site>/api/license?licenseNumber=VIC-…` → **200** + JSON mit `license` und `design`.
+
+---
+
+## 12. Anhang: TypeScript-Build (Monorepo, `portal` / `admin` / `arbeitszeit-portal`)
+
+Netlify baut mit **Base directory** nur den jeweiligen Ordner; `node_modules` liegt dort. **`../shared`** wird importiert, aber liegt **außerhalb** des Base-Verzeichnisses – damit `tsc -b` nicht den gesamten Ordner `shared/` als zweites Projekt-Root einbindet (sonst fehlen dort `react`-Typen auf dem CI):
+
+- **`tsconfig.json`:** `"include": ["src"]` (nicht `"../shared"` als Ganzes).
+- **`compilerOptions.paths`:** Auflösung von `react` / `react/jsx-runtime` / `react-dom` über `./node_modules/@types/...` und `@supabase/supabase-js` über `./node_modules/@supabase/supabase-js` (analog zu den jeweiligen Apps im Repo).
+- **`vite.config.ts`:** `resolve.alias` für `react`, `react-dom`, `@supabase/supabase-js` (und ggf. `jspdf` im Arbeitszeitenportal) auf `./node_modules/...`, damit **Rollup** Imports aus `../shared` auflöst.
+
+Die **Haupt-App** (Repo-Root) ist davon unabhängig. Bei neuen **shared**-Modulen: ggf. `paths` / `alias` ergänzen.
