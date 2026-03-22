@@ -33,6 +33,18 @@ export default defineConfig(({ mode }) => {
     strictPort: false,
   },
   plugins: [react(), vicoVersionPlugin(__dirname)],
+  resolve: {
+    alias: {
+      // Imports aus ../shared: Node-Resolution startet bei shared/; ohne Alias findet Rollup
+      // admin/node_modules nicht (Netlify-Build base = admin).
+      react: path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+      '@supabase/supabase-js': path.resolve(
+        __dirname,
+        'node_modules/@supabase/supabase-js'
+      ),
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __APP_RELEASE_LABEL__: JSON.stringify(appReleaseLabel),

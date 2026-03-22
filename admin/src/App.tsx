@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase, warmUpConnection } from './lib/supabase'
 import { withTimeoutReject, checkRole as checkRoleUtil } from '../../shared/authUtils'
-import type { User } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 import Layout from './components/Layout'
 import Mandanten from './pages/Mandanten'
 import UpdateBanner from '../../shared/UpdateBanner'
@@ -51,8 +51,8 @@ const App = () => {
     let isRetrying = false
     if (!isRetry) setLoadingHint(null)
     try {
-      const { data: { session } } = await withTimeout(supabase.auth.getSession())
-      const u = session?.user ?? null
+      const sessionRes = await withTimeout(supabase.auth.getSession())
+      const u = sessionRes.data.session?.user ?? null
       setUser(u)
       if (!u) {
         setIsAdmin(false)
@@ -126,7 +126,7 @@ const App = () => {
     initAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      (event: AuthChangeEvent, session: Session | null) => {
         if (event === 'SIGNED_OUT') {
           setUser(null)
           setIsAdmin(false)
