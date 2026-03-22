@@ -1,9 +1,10 @@
+import type { ErrorInfo, ReactNode } from 'react'
 import ErrorBoundaryBase from '../../shared/ErrorBoundary'
 import { reportError } from './lib/errorReportService'
 
-const ErrorBoundary = ({ children }: { children: React.ReactNode }) => (
+const ErrorBoundary = ({ children }: { children: ReactNode }) => (
   <ErrorBoundaryBase
-    onError={(error, errorInfo) => {
+    onError={(error: Error, errorInfo: ErrorInfo) => {
       const path =
         typeof window !== 'undefined'
           ? window.location.pathname + window.location.search

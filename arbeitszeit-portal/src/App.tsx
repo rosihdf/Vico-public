@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase, warmUpConnection } from './lib/supabase'
 import { withTimeoutReject, checkRole } from '../../shared/authUtils'
-import type { User } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import { useDesign } from './DesignContext'
@@ -140,7 +140,7 @@ const App = () => {
     initAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      (event: AuthChangeEvent, session: Session | null) => {
         if (event === 'SIGNED_OUT') {
           setUser(null)
           setCanAccess(false)

@@ -36,14 +36,15 @@ const Login = ({ onSuccess, onError }: LoginProps) => {
     setIsSubmitting(true)
     onError('')
     try {
-      const { data, error } = await withTimeoutReject(
+      type SignInResult = Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>
+      const { data, error } = (await withTimeoutReject(
         supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
         }),
         LOGIN_TIMEOUT_MS,
         'Verbindung zu langsam. Supabase-Projekt könnte pausiert sein. Bitte erneut versuchen.'
-      )
+      )) as SignInResult
       if (error) {
         onError(getSupabaseErrorMessage(error))
         return

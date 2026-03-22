@@ -19,6 +19,7 @@ import {
 import { exportUrlaubsbescheinigungPdf } from '../lib/exportCompliance'
 import { fetchProfiles, getProfileDisplayName, getMyRole, type Profile } from '../lib/userService'
 import { supabase } from '../lib/supabase'
+import type { User } from '@supabase/supabase-js'
 
 const YEAR_OPTIONS = (): number[] => {
   const y = new Date().getFullYear()
@@ -95,7 +96,9 @@ const Urlaub = () => {
   }, [teamBalanceRows, nameQueryNorm])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setCurrentUserId(user?.id ?? ''))
+    supabase.auth
+      .getUser()
+      .then(({ data }: { data: { user: User | null } }) => setCurrentUserId(data.user?.id ?? ''))
   }, [])
 
   const load = useCallback(async () => {
