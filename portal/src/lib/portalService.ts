@@ -65,12 +65,14 @@ export const fetchPortalUserData = async (userId: string): Promise<PortalUserDat
     .select('customer_id, customers(name)')
     .eq('user_id', userId)
 
-  const customerNames = (portalEntries ?? []).flatMap((e) => {
-    const c = e.customers as { name: string } | { name: string }[] | null
-    if (!c) return []
-    const names = Array.isArray(c) ? c : [c]
-    return names.map((n) => n?.name).filter((n): n is string => Boolean(n))
-  })
+  const customerNames: string[] = (portalEntries ?? []).flatMap(
+    (e: { customers?: unknown }): string[] => {
+      const c = e.customers as { name: string } | { name: string }[] | null
+      if (!c) return []
+      const names = Array.isArray(c) ? c : [c]
+      return names.map((n) => n?.name).filter((n): n is string => Boolean(n))
+    }
+  )
 
   if (!profile) return null
   return {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase, warmUpConnection } from './lib/supabase'
-import type { User } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 import Login from './pages/Login'
 import Layout from './components/Layout'
 import KundenportalLicenseBlocked from './pages/KundenportalLicenseBlocked'
@@ -61,7 +61,7 @@ const AppShell = () => {
     initAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      (event: AuthChangeEvent, session: Session | null) => {
         if (event === 'SIGNED_OUT') {
           setUser(null)
           setIsLoading(false)

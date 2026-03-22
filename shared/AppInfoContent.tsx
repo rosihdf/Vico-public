@@ -138,7 +138,7 @@ const AppInfoContent = ({ appLabel, licenseAppInfo }: AppInfoContentProps) => {
             </p>
             {updateInfo?.releaseNotes && updateInfo.releaseNotes.length > 0 && (
               <ul className="text-sm text-amber-800 dark:text-amber-300 list-disc list-inside space-y-1 mb-3">
-                {updateInfo.releaseNotes.map((note, i) => (
+                {updateInfo.releaseNotes.map((note: string, i: number) => (
                   <li key={i}>{note}</li>
                 ))}
               </ul>
@@ -159,7 +159,7 @@ const AppInfoContent = ({ appLabel, licenseAppInfo }: AppInfoContentProps) => {
             </p>
             {updateInfo.releaseNotes.length > 0 ? (
               <ul className="text-sm text-slate-600 dark:text-slate-300 list-disc list-inside space-y-1">
-                {updateInfo.releaseNotes.map((note, i) => (
+                {updateInfo.releaseNotes.map((note: string, i: number) => (
                   <li key={i}>{note}</li>
                 ))}
               </ul>

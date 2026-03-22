@@ -32,11 +32,24 @@ export default defineConfig(({ mode }) => {
     strictPort: false,
   },
   plugins: [react(), vicoVersionPlugin(__dirname)],
+  resolve: {
+    alias: {
+      react: path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+      '@supabase/supabase-js': path.resolve(
+        __dirname,
+        'node_modules/@supabase/supabase-js'
+      ),
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
     __APP_RELEASE_LABEL__: JSON.stringify(appReleaseLabel),
     'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),
     'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY ?? ''),
+    'import.meta.env.VITE_LICENSE_API_URL': JSON.stringify(env.VITE_LICENSE_API_URL ?? ''),
+    'import.meta.env.VITE_LICENSE_NUMBER': JSON.stringify(env.VITE_LICENSE_NUMBER ?? ''),
+    'import.meta.env.VITE_LICENSE_API_KEY': JSON.stringify(env.VITE_LICENSE_API_KEY ?? ''),
   },
   build: {
     rollupOptions: {

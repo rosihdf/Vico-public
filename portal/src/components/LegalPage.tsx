@@ -4,6 +4,7 @@ import type { Theme } from '../ThemeContext'
 import { useDesign } from '../DesignContext'
 import { saveProfileThemePreference } from '../../../shared/themePreferenceDb'
 import { supabase } from '../lib/supabase'
+import type { Session } from '@supabase/supabase-js'
 
 const THEME_ORDER: Theme[] = ['light', 'dark', 'system']
 const getNextTheme = (current: Theme): Theme =>
@@ -23,7 +24,8 @@ const LegalPage = ({ title, children, backTo = '/', backLabel = 'Zurück' }: Leg
   const handleCycleTheme = () => {
     const next = getNextTheme(theme)
     setTheme(next)
-    void supabase.auth.getSession().then(({ data: { session } }) => {
+    void supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
+      const { session } = data
       if (session?.user?.id) {
         void saveProfileThemePreference(supabase, session.user.id, next)
       }
