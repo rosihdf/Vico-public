@@ -114,7 +114,7 @@ Damit kann die Haupt-App die Lizenz-API z. B. unter `https://<admin-site>/api/
 
 **Hinweis:** `VITE_LICENSE_NUMBER` ersetzt keine Nutzereingabe – sie wird **beim Build** eingebettet (wie `VITE_*` üblich).
 
-**Alternativen** (API nach Host, RPC nach Login, `portal-config.json`, Query-Parameter): siehe **`docs/Netlify-README.md`** – der **Code der Portale** nutzt derzeit nur diese Env-Variable; andere Wege wären Erweiterungen.
+**Alternativen** (API nach Host, RPC nach Login, `portal-config.json`, Query-Parameter): siehe **`docs/Netlify-README.md`** – dort auch **Entwurf API-Signatur & Edge Cases** („nach Host“). Der **Code der Portale** nutzt derzeit nur `VITE_LICENSE_NUMBER`; andere Wege wären Erweiterungen.
 
 ---
 

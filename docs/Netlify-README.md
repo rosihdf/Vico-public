@@ -49,6 +49,29 @@ Vorteil: **Branding** (Name, Farben, Logo) und **Features** sind **vor dem Login
 
 **Haupt-App:** Nutzt **Aktivierung** / **Info** und Speicherung in DB (`set_license_number` / `get_license_number`) – anderes Konzept als die Portale.
 
+### Entwurf: API „nach Host“ (nicht implementiert – Spezifikation für später)
+
+**Ziel:** Portale liefern weiter `VITE_LICENSE_API_URL` (ohne `VITE_LICENSE_NUMBER`); die **Lizenz-API** ermittelt die passende Lizenz anhand des **aufrufenden Hosts** (Browser sendet `Origin` / die Function liest `Host` / `X-Forwarded-Host`).
+
+**Mögliche Signatur (Variante A – kompatibel zum Heute-Zustand):**
+
+| Aufruf | Verhalten |
+|--------|-----------|
+| `GET …/api/license?licenseNumber=VIC-…` | Wie heute: direkter Lookup (Migration, Support, Haupt-App). |
+| `GET …/api/license` **ohne** `licenseNumber` | **Neu:** Lookup: Mandant/Lizenz, bei dem `portal_domain` **oder** `arbeitszeitenportal_domain` (je nach App-Kontext) zum Request-Host passt; dann gleiche JSON-Antwort wie bisher. |
+| Optional **Hybrid:** `?licenseNumber=` gesetzt | **Vorrang** vor Host-Lookup (Override für Tests). |
+
+**Edge Cases & Regeln (kurz):**
+
+1. **Netlify Deploy Previews** (`--<hash>--<name>.netlify.app`): Entweder **kein** Host-Lookup (nur `licenseNumber`) oder Mandanten-Eintrag mit genau diesem Preview-Host – sonst **404**. Typisch: Previews nur mit Query-Parameter oder separates Staging.
+2. **`www` vs. Apex:** `kunde.de` und `www.kunde.de` sind unterschiedliche Hosts – beide in `portal_domain`/`allowed_domains` eintragen oder im Backend normalisieren (einheitliche Regel dokumentieren).
+3. **Lokal (`localhost`, LAN-IP):** Passt zu keinem Produktions-Mandanten → Host-Lookup schlägt fehl; **Dev:** weiter `.env` mit `VITE_LICENSE_NUMBER` oder Query `?licenseNumber=`.
+4. **Mehrere Lizenzen / Mandanten mit gleicher Domain:** Datenmodell sollte **pro Host höchstens eine** aktive Zuordnung erzwingen; sonst **409** oder definierte Priorität (z. B. neueste Lizenz).
+5. **Kohärenz mit `allowed_domains`:** Die **Portal-Origin** muss weiterhin in `allowed_domains` stehen, sonst **403** – Host-Lookup ersetzt diese Sicherheitsprüfung nicht.
+6. **Caching:** Öffentliche CDNs dürfen die Lizenz-JSON **nicht** domain-neutral cachen; Server-Response ggf. `Cache-Control: private, no-store` oder `Vary: Origin` je nach Setup.
+
+**Bewertung:** Technisch **sauber**, wenn Lookup und Freigaben **eine** klare Policy haben; Aufwand liegt in **Function + DB-Abfrage + Tests** für die Hosts oben.
+
 ---
 
 ## Schnellcheck nach Deploy
