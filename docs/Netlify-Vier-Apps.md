@@ -49,7 +49,7 @@ Die Mandanten-Tabelle enthält (u. a.) **`app_domain`**, **`portal_domain`**, 
 - **Base directory:** leer (Repository-Root)
 - **Build command:** `npm run build`
 - **Publish directory:** `dist`
-- **Node:** 20.x (siehe `netlify.toml` → `NODE_VERSION = 20`)
+- **Node:** 20.x – im Repo bereits gesetzt: **`[build.environment]` → `NODE_VERSION = "20"`** in der jeweiligen `netlify.toml` (Root, `admin/`, `portal/`, `arbeitszeit-portal/`). **Du musst dafür nichts in der Netlify-Oberfläche eintragen**, solange die Site aus dem Repo baut und die `netlify.toml` aus dem richtigen Ordner gilt (bei Base directory `admin` → `admin/netlify.toml`).
 
 **Umgebungsvariablen (Beispiele – Namen aus `import.meta.env` / Code prüfen):**
 
