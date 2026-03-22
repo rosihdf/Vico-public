@@ -1,11 +1,25 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  type MouseEvent,
+  type KeyboardEvent,
+} from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
 import { useComponentSettings } from './ComponentSettingsContext'
 import { hasFeature } from './lib/licenseService'
 import { fetchMyProfile, getProfileDisplayName, type Profile } from './lib/userService'
-import { fetchOrdersAssignedTo, fetchCustomers, fetchAllBvs, fetchMaintenanceReminders } from './lib/dataService'
+import {
+  fetchOrdersAssignedTo,
+  fetchCustomers,
+  fetchAllBvs,
+  fetchMaintenanceReminders,
+  fetchRecentEditsForDashboard,
+  type DashboardRecentEdit,
+} from './lib/dataService'
 import { getObjectDisplayName } from './lib/objectUtils'
 import {
   fetchTimeEntriesForUser,
@@ -23,7 +37,19 @@ import { LoadingSpinner } from './components/LoadingSpinner'
 import { subscribeToOrderChanges } from './lib/orderRealtime'
 import { recordStartseiteMetrics } from './lib/performanceMetricsService'
 import { useToast } from './ToastContext'
-import { formatTime, formatMinutes } from '../shared/format'
+import { useDashboardLayout } from './hooks/useDashboardLayout'
+import {
+  getResolvedWidgetOrder,
+  isDashboardWidgetVisible,
+} from './lib/dashboardLayoutPreferences'
+import { isOnline } from '../shared/networkUtils'
+import { formatTime, formatMinutes, formatDateTimeShort } from '../shared/format'
+import {
+  type MaintenanceReminderDashboardFilter,
+  MAINTENANCE_REMINDER_FILTER_LABELS,
+  filterMaintenanceRemindersForDashboard,
+  countMaintenanceRemindersByFilter,
+} from './lib/maintenanceReminderUtils'
 import type { Order, Customer, BV, OrderType, OrderStatus, MaintenanceReminder } from './types'
 import type { TimeEntry, TimeBreak } from './types'
 
@@ -92,6 +118,8 @@ const getWeekDates = () => {
 
 const toDateStr = (d: Date): string => d.toISOString().slice(0, 10)
 
+const REMINDER_FILTER_STORAGE_KEY = 'vico_maintenance_reminder_filter_v1'
+
 const Startseite = () => {
   const { user, userRole } = useAuth()
   const { license } = useLicense()
@@ -106,6 +134,14 @@ const Startseite = () => {
   const [todayEntries, setTodayEntries] = useState<TimeEntry[]>([])
   const [breaksMap, setBreaksMap] = useState<Record<string, TimeBreak[]>>({})
   const [timeActionLoading, setTimeActionLoading] = useState(false)
+  const [recentEdits, setRecentEdits] = useState<DashboardRecentEdit[]>([])
+  const [reminderFilter, setReminderFilter] = useState<MaintenanceReminderDashboardFilter>('all')
+
+  const serverDashboardLayoutProp =
+    !user ? undefined : isLoading ? undefined : (profile?.dashboard_layout ?? null)
+
+  const { layout: dashboardLayout, updateRecentEditsOpen, dismissRecentEdit, resetDismissedRecentEdits } =
+    useDashboardLayout(user?.id ?? null, serverDashboardLayoutProp)
 
   const canUseZeiterfassung =
     license &&
@@ -233,28 +269,38 @@ const Startseite = () => {
       setProfile(null)
       setAssignedOrders([])
       setReminders([])
+      setRecentEdits([])
       setIsLoading(false)
       return
     }
     setIsLoading(true)
     const loadStart = performance.now()
-    const [profileData, assignedData, customerData, bvData, reminderData] = await Promise.all([
+    const includeMaster = isEnabled('kunden')
+    const includeOrders = isEnabled('auftrag')
+    const recentPromise =
+      includeMaster || includeOrders
+        ? fetchRecentEditsForDashboard({ includeMaster, includeOrders })
+        : Promise.resolve([])
+
+    const [profileData, assignedData, customerData, bvData, reminderData, recentList] = await Promise.all([
       fetchMyProfile(user.id),
       fetchOrdersAssignedTo(user.id),
       fetchCustomers(),
       fetchAllBvs(),
       fetchMaintenanceReminders(),
+      recentPromise,
     ])
     setProfile(profileData ?? null)
     setAssignedOrders(assignedData ?? [])
     setCustomers(customerData ?? [])
     setAllBvs(bvData ?? [])
     setReminders(reminderData ?? [])
+    setRecentEdits(recentList)
     setIsLoading(false)
     const loadDataMs = Math.round(performance.now() - loadStart)
     console.info(`[Startseite] loadData: ${loadDataMs}ms`)
     recordStartseiteMetrics(loadDataMs)
-  }, [user?.id])
+  }, [user?.id, isEnabled])
 
   useEffect(() => {
     loadData()
@@ -264,6 +310,41 @@ const Startseite = () => {
     const unsub = subscribeToOrderChanges(loadData)
     return unsub
   }, [loadData])
+
+  useEffect(() => {
+    if (!user?.id || typeof localStorage === 'undefined') return
+    try {
+      const raw = localStorage.getItem(`${REMINDER_FILTER_STORAGE_KEY}_${user.id}`)
+      if (raw === 'all' || raw === 'overdue' || raw === 'due7' || raw === 'due30') {
+        setReminderFilter(raw)
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [user?.id])
+
+  const handleReminderFilterChange = useCallback(
+    (next: MaintenanceReminderDashboardFilter) => {
+      setReminderFilter(next)
+      if (user?.id && typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(`${REMINDER_FILTER_STORAGE_KEY}_${user.id}`, next)
+        } catch {
+          /* ignore */
+        }
+      }
+    },
+    [user?.id]
+  )
+
+  const handleReminderFilterKeyDown = useCallback(
+    (e: KeyboardEvent, next: MaintenanceReminderDashboardFilter) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      e.preventDefault()
+      handleReminderFilterChange(next)
+    },
+    [handleReminderFilterChange]
+  )
 
   const getCustomerName = useCallback(
     (id: string) => customers.find((c) => c.id === id)?.name ?? '-',
@@ -278,12 +359,49 @@ const Startseite = () => {
     () => assignedOrders.filter((o) => o.status !== 'erledigt' && o.status !== 'storniert'),
     [assignedOrders]
   )
+  const filteredMaintenanceReminders = useMemo(
+    () => filterMaintenanceRemindersForDashboard(reminders, reminderFilter),
+    [reminders, reminderFilter]
+  )
   const weekDates = getWeekDates()
   const ordersByWeekDay: Record<string, Order[]> = {}
   weekDates.forEach((d) => {
     ordersByWeekDay[d] = assignedOrders.filter((o) => o.order_date === d && o.status !== 'erledigt' && o.status !== 'storniert')
   })
   const dayNames = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+
+  const includeRecentMaster = isEnabled('kunden')
+  const includeRecentOrders = isEnabled('auftrag')
+  const dismissedRecentKeys = useMemo(
+    () => new Set(dashboardLayout.dismissedRecentEditKeys ?? []),
+    [dashboardLayout.dismissedRecentEditKeys]
+  )
+  const visibleRecentEdits = useMemo(
+    () => recentEdits.filter((item) => !dismissedRecentKeys.has(item.key)),
+    [recentEdits, dismissedRecentKeys]
+  )
+  const showRecentEditsWidget =
+    !!user &&
+    !isLoading &&
+    (includeRecentMaster || includeRecentOrders) &&
+    isDashboardWidgetVisible(dashboardLayout, 'recentEdits') &&
+    (recentEdits.length > 0 || (dashboardLayout.dismissedRecentEditKeys?.length ?? 0) > 0)
+
+  const handleRecentDetailsToggle = useCallback(
+    (open: boolean) => {
+      updateRecentEditsOpen(open)
+    },
+    [updateRecentEditsOpen]
+  )
+
+  const handleDismissRecentClick = useCallback(
+    (e: MouseEvent, key: string) => {
+      e.preventDefault()
+      e.stopPropagation()
+      dismissRecentEdit(key)
+    },
+    [dismissRecentEdit]
+  )
 
   return (
     <div className="p-4 min-w-0">
@@ -294,8 +412,13 @@ const Startseite = () => {
           : 'Willkommen bei AMRtech Türen & Tore.'}
       </p>
 
-      {user && canUseZeiterfassung && (
-        <section className="mt-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600" aria-labelledby="zeiterfassung-heading">
+      {getResolvedWidgetOrder(dashboardLayout).map((wid) => {
+        if (!isDashboardWidgetVisible(dashboardLayout, wid)) return null
+        switch (wid) {
+          case 'zeiterfassung': {
+            if (!user || !canUseZeiterfassung) return null
+            return (
+        <section key={wid} className="mt-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600" aria-labelledby="zeiterfassung-heading">
           <h3 id="zeiterfassung-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
             Arbeitszeit
           </h3>
@@ -357,11 +480,13 @@ const Startseite = () => {
             Zeiterfassung →
           </Link>
         </section>
-      )}
-
-      {user && !isLoading && (
-        <section className="mt-6" aria-labelledby="kalender-woche-heading">
-          <h3 id="kalender-woche-heading" className="text-lg font-semibold text-slate-800 mb-3">
+            )
+          }
+          case 'weekOrders': {
+            if (!user || isLoading) return null
+            return (
+        <section key={wid} className="mt-6" aria-labelledby="kalender-woche-heading">
+          <h3 id="kalender-woche-heading" className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">
             Aufträge diese Woche
           </h3>
           <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -403,58 +528,135 @@ const Startseite = () => {
             Kalender & Aufträge →
           </Link>
         </section>
-      )}
-
-      {user && reminders.length > 0 && (
-        <section className="mt-6" aria-labelledby="wartung-faellig-heading">
-          <h3 id="wartung-faellig-heading" className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">
-            Wartung fällig / Erinnerungen
-          </h3>
-          <ul className="space-y-2" aria-label="Wartungserinnerungen">
-            {reminders.map((r) => {
-              const objName = getObjectDisplayName({
-                name: r.object_name,
-                internal_id: r.internal_id,
-                room: r.object_room,
-                floor: r.object_floor,
-                manufacturer: r.object_manufacturer,
-              })
-              return (
-              <li key={r.object_id}>
+            )
+          }
+          case 'maintenanceReminders': {
+            if (!user || reminders.length === 0) return null
+            return (
+        <section key={wid} className="mt-6" aria-labelledby="wartung-faellig-heading">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-3">
+            <h3 id="wartung-faellig-heading" className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+              Wartung fällig / Erinnerungen
+            </h3>
+            <div className="text-xs text-slate-500 dark:text-slate-400 sm:max-w-xs sm:text-right">
+              <p>Filter nach Dringlichkeit. Überfällig = Termin verpasst; Tage = Rest bis zur nächsten Wartung.</p>
+              {isEnabled('kunden') && (
                 <Link
-                  to={`/kunden?customerId=${r.customer_id}&bvId=${r.bv_id}&objectId=${r.object_id}`}
-                  className="block bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                  to="/wartungsstatistik"
+                  className="inline-block mt-2 text-sm font-medium text-vico-primary hover:underline focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 rounded dark:focus:ring-offset-slate-900"
                 >
-                  <p className="font-medium text-slate-800 dark:text-slate-100">
-                    {r.customer_name} → {r.bv_name}
-                    {objName !== '–' && (
-                      <span className="text-slate-600 dark:text-slate-400 font-normal"> · {objName}</span>
-                    )}
-                  </p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    {r.status === 'overdue' ? (
-                      <span className="text-red-600 font-medium">
-                        Überfällig
-                        {r.last_maintenance_date
-                          ? ` (letzte: ${r.last_maintenance_date})`
-                          : ' (noch nie gewartet)'}
-                      </span>
-                    ) : (
-                      <span className="text-amber-600">
-                        Fällig bis {r.next_maintenance_date}
-                        {r.days_until_due != null && ` (${r.days_until_due} Tage)`}
-                      </span>
-                    )}
-                  </p>
+                  Wartungsstatistik →
                 </Link>
-              </li>
-            )})}
-          </ul>
+              )}
+            </div>
+          </div>
+          <div
+            className="flex flex-wrap gap-2 mb-4"
+            role="group"
+            aria-label="Filter Wartungserinnerungen"
+          >
+            {(['all', 'overdue', 'due7', 'due30'] as const).map((key) => {
+              const count = countMaintenanceRemindersByFilter(reminders, key)
+              const isActive = reminderFilter === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleReminderFilterChange(key)}
+                  onKeyDown={(e) => handleReminderFilterKeyDown(e, key)}
+                  aria-pressed={isActive}
+                  aria-label={`${MAINTENANCE_REMINDER_FILTER_LABELS[key]}, ${count} Einträge`}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium border transition-colors focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900 ${
+                    isActive
+                      ? 'bg-vico-primary text-white border-vico-primary'
+                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {MAINTENANCE_REMINDER_FILTER_LABELS[key]}
+                  <span
+                    className={`tabular-nums rounded-full px-1.5 py-0.5 text-xs ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}
+                    aria-hidden
+                  >
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {filteredMaintenanceReminders.length === 0 ? (
+            <p className="text-sm text-slate-600 dark:text-slate-400 py-4 px-4 rounded-lg border border-dashed border-slate-200 dark:border-slate-600 bg-white/50 dark:bg-slate-800/50">
+              Keine Einträge für diesen Filter. Andere Filter wählen oder alle anzeigen.
+            </p>
+          ) : (
+            <ul className="space-y-2" aria-label="Gefilterte Wartungserinnerungen">
+              {filteredMaintenanceReminders.map((r) => {
+                const objName = getObjectDisplayName({
+                  name: r.object_name,
+                  internal_id: r.internal_id,
+                  room: r.object_room,
+                  floor: r.object_floor,
+                  manufacturer: r.object_manufacturer,
+                })
+                const urgencyBar =
+                  r.status === 'overdue'
+                    ? 'border-l-4 border-l-red-600'
+                    : r.status === 'due_soon'
+                      ? 'border-l-4 border-l-amber-500'
+                      : 'border-l-4 border-l-slate-300 dark:border-l-slate-600'
+                return (
+                  <li key={r.object_id}>
+                    <Link
+                      to={`/kunden?customerId=${r.customer_id}&bvId=${r.bv_id}&objectId=${r.object_id}`}
+                      className={`block bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 pl-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900 ${urgencyBar}`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-slate-800 dark:text-slate-100 flex-1 min-w-0">
+                          {r.customer_name} → {r.bv_name}
+                          {objName !== '–' && (
+                            <span className="text-slate-600 dark:text-slate-400 font-normal"> · {objName}</span>
+                          )}
+                        </p>
+                        {r.status === 'overdue' && (
+                          <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-white bg-red-600 px-2 py-0.5 rounded">
+                            Überfällig
+                          </span>
+                        )}
+                        {r.status === 'due_soon' && (
+                          <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-amber-950 bg-amber-400 px-2 py-0.5 rounded dark:text-amber-950">
+                            Bald fällig
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                        {r.status === 'overdue' ? (
+                          <span className="text-red-700 dark:text-red-300 font-medium">
+                            Handlungsbedarf
+                            {r.last_maintenance_date
+                              ? ` · letzte Wartung: ${r.last_maintenance_date}`
+                              : ' · noch keine Wartung erfasst'}
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 dark:text-amber-200">
+                            Fällig bis {r.next_maintenance_date ?? '—'}
+                            {r.days_until_due != null && ` · noch ${r.days_until_due} Tag${r.days_until_due === 1 ? '' : 'e'}`}
+                          </span>
+                        )}
+                      </p>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </section>
-      )}
-
-      {user && (
-        <section className="mt-6" aria-labelledby="meine-auftraege-heading">
+            )
+          }
+          case 'assignedOrders': {
+            if (!user) return null
+            return (
+        <section key={wid} className="mt-6" aria-labelledby="meine-auftraege-heading">
           <h3 id="meine-auftraege-heading" className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">
             Meine zugewiesenen Aufträge
           </h3>
@@ -506,7 +708,93 @@ const Startseite = () => {
             </Link>
           )}
         </section>
-      )}
+            )
+          }
+          case 'recentEdits': {
+            if (!showRecentEditsWidget) return null
+            return (
+        <section key={wid} className="mt-6" aria-label="Zuletzt bearbeitet">
+          <details
+            className="group rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40"
+            open={dashboardLayout.recentEditsOpen ?? false}
+            onToggle={(e) => {
+              const el = e.currentTarget
+              handleRecentDetailsToggle(el.open)
+            }}
+          >
+            <summary className="cursor-pointer list-none flex flex-wrap items-center justify-between gap-2 px-4 py-3 font-semibold text-slate-800 dark:text-slate-100 select-none [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2">
+                <span aria-hidden="true" className="text-slate-500 group-open:rotate-90 transition-transform inline-block">
+                  ▸
+                </span>
+                Zuletzt bearbeitet
+                <span className="text-sm font-normal text-slate-500 dark:text-slate-400">
+                  ({visibleRecentEdits.length}
+                  {recentEdits.length !== visibleRecentEdits.length ? ` / ${recentEdits.length}` : ''})
+                </span>
+              </span>
+              {!isOnline() && (
+                <span className="text-xs font-normal text-amber-700 dark:text-amber-300">Offline · Cache</span>
+              )}
+            </summary>
+            <div className="px-4 pb-4 pt-0 border-t border-slate-200/80 dark:border-slate-600/80">
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-3 mb-3">
+                Sortiert nach letzter Änderung (Kunden, Objekt/BV, Tür/Tor, Auftrag). „Ausblenden“ blendet nur hier ab –
+                keine Daten werden gelöscht.
+              </p>
+              {(dashboardLayout.dismissedRecentEditKeys?.length ?? 0) > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={resetDismissedRecentEdits}
+                    className="text-sm font-medium text-vico-primary hover:underline focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 rounded px-1 dark:focus:ring-offset-slate-900"
+                    aria-label="Alle ausgeblendeten Zuletzt-bearbeitet-Einträge wieder anzeigen"
+                  >
+                    Ausgeblendete zurücksetzen
+                  </button>
+                </div>
+              )}
+              {visibleRecentEdits.length === 0 ? (
+                <p className="text-sm text-slate-600 dark:text-slate-400 py-2">
+                  Alle Einträge sind ausgeblendet oder es gibt keine passenden Daten.
+                </p>
+              ) : (
+                <ul className="space-y-2" aria-label="Zuletzt bearbeitete Einträge">
+                  {visibleRecentEdits.map((item) => (
+                    <li key={item.key}>
+                      <div className="flex gap-2 items-stretch">
+                        <Link
+                          to={item.to}
+                          className="flex-1 min-w-0 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                        >
+                          <p className="font-medium text-slate-800 dark:text-slate-100">{item.title}</p>
+                          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Geändert {formatDateTimeShort(item.updatedAt)}
+                            {item.subtitle ? ` · ${item.subtitle}` : ''}
+                          </p>
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDismissRecentClick(e, item.key)}
+                          className="shrink-0 self-center px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-500 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                          aria-label={`Eintrag ausblenden: ${item.title}`}
+                        >
+                          Ausblenden
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </details>
+        </section>
+            )
+          }
+          default:
+            return null
+        }
+      })}
     </div>
   )
 }

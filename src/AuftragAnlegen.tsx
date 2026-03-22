@@ -57,6 +57,8 @@ const AuftragAnlegen = () => {
   const { showError } = useToast()
   const canAssign = userRole === 'admin'
   const canEdit = userRole === 'admin' || userRole === 'mitarbeiter'
+  const canBuchhaltungExport =
+    userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'teamleiter'
   const [orders, setOrders] = useState<Order[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -282,36 +284,62 @@ const AuftragAnlegen = () => {
   return (
     <div className="p-4 min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-        <h2 className="text-xl font-bold text-slate-800">Aufträge</h2>
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Aufträge</h2>
+          {canBuchhaltungExport && (
+            <Link
+              to="/buchhaltung-export"
+              className="mt-1 inline-block text-sm font-medium text-vico-primary hover:underline focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 rounded dark:focus:ring-offset-slate-900"
+            >
+              Buchhaltungs-Export (CSV) →
+            </Link>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
-          <div className="flex rounded-lg border border-slate-300 overflow-hidden">
+          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden">
             <button
               type="button"
               onClick={() => setArchiveMode('active')}
-              className={`px-3 py-2 text-sm font-medium ${archiveMode === 'active' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              className={`px-3 py-2 text-sm font-medium ${
+                archiveMode === 'active'
+                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
             >
               Aktive
             </button>
             <button
               type="button"
               onClick={() => setArchiveMode('archive')}
-              className={`px-3 py-2 text-sm font-medium ${archiveMode === 'archive' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              className={`px-3 py-2 text-sm font-medium ${
+                archiveMode === 'archive'
+                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
             >
               Archiv
             </button>
           </div>
-          <div className="flex rounded-lg border border-slate-300 overflow-hidden">
+          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden">
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`px-3 py-2 text-sm font-medium ${viewMode === 'list' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              className={`px-3 py-2 text-sm font-medium ${
+                viewMode === 'list'
+                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
             >
               Liste
             </button>
             <button
               type="button"
               onClick={() => setViewMode('calendar')}
-              className={`px-3 py-2 text-sm font-medium ${viewMode === 'calendar' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+              className={`px-3 py-2 text-sm font-medium ${
+                viewMode === 'calendar'
+                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
             >
               Kalender
             </button>
@@ -320,7 +348,7 @@ const AuftragAnlegen = () => {
             <button
               type="button"
               onClick={handleOpenCreate}
-              className="px-4 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+              className="px-4 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
             >
               + Auftrag anlegen
             </button>
@@ -357,25 +385,25 @@ const AuftragAnlegen = () => {
               key={o.id}
               className={`rounded-lg border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
                 !o.assigned_to
-                  ? 'bg-amber-50/70 border-amber-300 border-l-4 border-l-amber-500'
-                  : 'bg-white border-slate-200'
+                  ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 border-l-4 border-l-amber-500'
+                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600'
               }`}
             >
               <div>
-                <p className="font-medium text-slate-800">
+                <p className="font-medium text-slate-800 dark:text-slate-100">
                   {o.customerName} → {o.bvName}
                   {!o.assigned_to && (
-                    <span className="ml-2 text-sm font-normal text-amber-700">(nicht zugewiesen)</span>
+                    <span className="ml-2 text-sm font-normal text-amber-700 dark:text-amber-300">(nicht zugewiesen)</span>
                   )}
                 </p>
-                <p className="text-sm text-slate-600">
+                <p className="text-sm text-slate-600 dark:text-slate-300">
                   {o.order_date}{o.order_time ? ` ${o.order_time.slice(0, 5)}` : ''} · {ORDER_TYPE_LABELS[o.order_type]} · {ORDER_STATUS_LABELS[o.status]}
                   {o.assigned_to && (
-                    <span className="ml-2 text-slate-500">→ {getProfileLabel(o.assigned_to)}</span>
+                    <span className="ml-2 text-slate-500 dark:text-slate-400">→ {getProfileLabel(o.assigned_to)}</span>
                   )}
                 </p>
                 {o.description && (
-                  <p className="text-sm text-slate-500 mt-1 truncate max-w-md">{o.description}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 truncate max-w-md">{o.description}</p>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
@@ -383,7 +411,7 @@ const AuftragAnlegen = () => {
                   <select
                     value={profilesAssignable.some((p) => p.id === o.assigned_to) ? o.assigned_to ?? '' : ''}
                     onChange={(e) => handleAssignmentChange(o, e.target.value)}
-                    className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg min-w-[140px]"
+                    className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg min-w-[140px] bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                     title="Nutzer zuweisen"
                     aria-label="Nutzer zuweisen"
                   >
@@ -402,14 +430,14 @@ const AuftragAnlegen = () => {
                       type="date"
                       value={o.order_date}
                       onChange={(e) => handleDateChange(o, e.target.value)}
-                      className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg max-w-[140px]"
+                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg max-w-[140px] bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                       title="Termin ändern"
                       aria-label="Termin ändern"
                     />
                     <select
                       value={o.status}
                       onChange={(e) => handleStatusChange(o, e.target.value as OrderStatus)}
-                      className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg"
+                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                     >
                       {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
                         <option key={s} value={s}>
@@ -433,20 +461,20 @@ const AuftragAnlegen = () => {
                           },
                         })
                       }
-                      className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                      className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40"
                     >
                       Löschen
                     </button>
                 )}
                 <Link
                   to={`/auftrag/${o.id}`}
-                  className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50"
+                  className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
                   Abarbeiten
                 </Link>
                 <Link
                   to={o.object_id ? `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}&objectId=${o.object_id}` : `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}`}
-                  className="px-3 py-1.5 text-sm border border-slate-300 rounded-lg hover:bg-slate-50"
+                  className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
                   Objekte
                 </Link>
@@ -477,22 +505,22 @@ const AuftragAnlegen = () => {
           aria-labelledby="auftrag-form-title"
         >
         <div
-          className="bg-white rounded-xl shadow-xl max-w-md w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto p-6"
+          className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto p-6 border border-slate-200 dark:border-slate-600"
           onClick={(e) => e.stopPropagation()}
         >
-            <h3 id="auftrag-form-title" className="text-lg font-bold text-slate-800 mb-4">
+            <h3 id="auftrag-form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">
               Neuer Auftrag
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label htmlFor="order-customer" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="order-customer" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                   Kunde *
                 </label>
                 <select
                   id="order-customer"
                   value={formData.customer_id}
                   onChange={(e) => handleFormChange('customer_id', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                   required
                 >
                   <option value="">— Auswählen —</option>
@@ -506,20 +534,23 @@ const AuftragAnlegen = () => {
               {formData.customer_id && (
                 <>
                   {bvs.length === 0 && (
-                    <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" role="status">
+                    <p
+                      className="text-sm text-amber-800 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2"
+                      role="status"
+                    >
                       Kein Objekt/BV vorhanden. Bitte zuerst unter Kunden anlegen.
                     </p>
                   )}
                   {showBvSelect && (
                     <div>
-                      <label htmlFor="order-bv" className="block text-sm font-medium text-slate-700 mb-1">
+                      <label htmlFor="order-bv" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                         Objekt/BV *
                       </label>
                       <select
                         id="order-bv"
                         value={formData.bv_id}
                         onChange={(e) => handleFormChange('bv_id', e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                         required
                         aria-label="Objekt/BV auswählen"
                       >
@@ -533,21 +564,21 @@ const AuftragAnlegen = () => {
                     </div>
                   )}
                   {singleBv && (
-                    <p className="text-sm text-slate-600">
+                    <p className="text-sm text-slate-600 dark:text-slate-300">
                       <span className="font-medium">Objekt/BV:</span> {singleBv.name}
                     </p>
                   )}
                 </>
               )}
               <div>
-                <label htmlFor="order-object" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="order-object" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                   Tür/Tor (optional)
                 </label>
                 <select
                   id="order-object"
                   value={formData.object_id}
                   onChange={(e) => handleFormChange('object_id', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                   disabled={!formData.bv_id}
                 >
                   <option value="">— Keins —</option>
@@ -560,14 +591,14 @@ const AuftragAnlegen = () => {
               </div>
               {canAssign && (
                 <div>
-                  <label htmlFor="order-assign" className="block text-sm font-medium text-slate-700 mb-1">
+                  <label htmlFor="order-assign" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                     Zugewiesen an
                   </label>
                   <select
                     id="order-assign"
                     value={formData.assigned_to}
                     onChange={(e) => handleFormChange('assigned_to', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                     aria-label="Nutzer zuweisen"
                   >
                     <option value="">— Keine Zuweisung —</option>
@@ -581,7 +612,7 @@ const AuftragAnlegen = () => {
                 </div>
               )}
               <div>
-                <label htmlFor="order-date" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="order-date" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                   Datum *
                 </label>
                 <input
@@ -589,12 +620,12 @@ const AuftragAnlegen = () => {
                   type="date"
                   value={formData.order_date}
                   onChange={(e) => handleFormChange('order_date', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                   required
                 />
               </div>
               <div>
-                <label htmlFor="order-time" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="order-time" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                   Uhrzeit (optional)
                 </label>
                 <input
@@ -602,19 +633,19 @@ const AuftragAnlegen = () => {
                   type="time"
                   value={formData.order_time}
                   onChange={(e) => handleFormChange('order_time', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                   aria-label="Uhrzeit optional"
                 />
               </div>
               <div>
-                <label htmlFor="order-type" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="order-type" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                   Art
                 </label>
                 <select
                   id="order-type"
                   value={formData.order_type}
                   onChange={(e) => handleFormChange('order_type', e.target.value as OrderType)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                 >
                   {(Object.keys(ORDER_TYPE_LABELS) as OrderType[]).map((t) => (
                     <option key={t} value={t}>
@@ -624,7 +655,7 @@ const AuftragAnlegen = () => {
                 </select>
               </div>
               <div>
-                <label htmlFor="order-desc" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="order-desc" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                   Beschreibung
                 </label>
                 <textarea
@@ -632,12 +663,12 @@ const AuftragAnlegen = () => {
                   value={formData.description}
                   onChange={(e) => handleFormChange('description', e.target.value)}
                   rows={3}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                   placeholder="Auftragsdetails…"
                 />
               </div>
               {formError && (
-                <p className="text-sm text-red-600" role="alert">
+                <p className="text-sm text-red-600 dark:text-red-400" role="alert">
                   {formError}
                 </p>
               )}
@@ -645,14 +676,14 @@ const AuftragAnlegen = () => {
                 <button
                   type="submit"
                   disabled={!canSubmitOrder || isSaving}
-                  className="flex-1 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover disabled:opacity-50 font-medium border border-slate-300"
+                  className="flex-1 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 disabled:opacity-50 font-medium border border-slate-300 dark:border-slate-600"
                 >
                   {isSaving ? 'Wird gespeichert…' : 'Anlegen'}
                 </button>
                 <button
                   type="button"
                   onClick={handleCloseForm}
-                  className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
                   Abbrechen
                 </button>

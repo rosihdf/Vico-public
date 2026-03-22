@@ -1,12 +1,18 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { fetchLicenseFull, getDefaultAppName } from '../../shared/fetchDesignFromLicense'
+import { applyVicoPrimaryCssVars, clearVicoPrimaryCssVars } from '../../shared/vicoCssPrimary'
+import { TIER_DEFAULT_FEATURES } from '../../shared/licenseFeatures'
+import type { AppVersionEntry } from '../../shared/appVersions'
 
 type DesignContextType = {
   appName: string
+  logoUrl: string | null
+  /** Optional: Version/Release Notes aus Lizenz-API (`appVersions.arbeitszeit_portal`). */
+  appVersionInfo: AppVersionEntry | null
   isLoading: boolean
-  refresh: () => Promise<void>
-  /** Lizenz-Features (standortabfrage, kundenportal, etc.) */
+  /** Lizenz-Features (effektiv inkl. Tier-Defaults) */
   features: Record<string, boolean>
+  refresh: () => Promise<void>
 }
 
 const DesignContext = createContext<DesignContextType | null>(null)
@@ -16,9 +22,11 @@ export const useDesign = (): DesignContextType => {
   if (!ctx) {
     return {
       appName: getDefaultAppName(),
+      logoUrl: null,
+      appVersionInfo: null,
       isLoading: false,
-      refresh: async () => {},
       features: {},
+      refresh: async () => {},
     }
   }
   return ctx
@@ -26,7 +34,9 @@ export const useDesign = (): DesignContextType => {
 
 export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
   const [appName, setAppName] = useState(getDefaultAppName())
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [features, setFeatures] = useState<Record<string, boolean>>({})
+  const [appVersionInfo, setAppVersionInfo] = useState<AppVersionEntry | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -34,12 +44,10 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
     const licenseNumber = (import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()
     if (!apiUrl || !licenseNumber) {
       setAppName(getDefaultAppName())
-      setFeatures({
-        standortabfrage: true,
-        arbeitszeiterfassung: true,
-        kundenportal: false,
-        historie: false,
-      })
+      setLogoUrl(null)
+      setAppVersionInfo(null)
+      setFeatures(TIER_DEFAULT_FEATURES.professional)
+      applyVicoPrimaryCssVars('#5b7895')
       setIsLoading(false)
       return
     }
@@ -47,27 +55,38 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
     const full = await fetchLicenseFull(apiUrl, licenseNumber, {
       apiKey: apiKey || undefined,
     })
-    if (full?.design?.app_name) {
-      setAppName(full.design.app_name)
-    }
-    if (full?.license?.features) {
-      setFeatures(full.license.features)
-    } else {
+    if (!full?.design) {
+      setAppName(getDefaultAppName())
+      setLogoUrl(null)
+      setAppVersionInfo(null)
       setFeatures({})
+      applyVicoPrimaryCssVars('#5b7895')
+    } else {
+      setAppVersionInfo(full.appVersions?.arbeitszeit_portal ?? null)
+      if (full.design.app_name) setAppName(full.design.app_name)
+      setLogoUrl(full.design.logo_url?.trim() ? full.design.logo_url.trim() : null)
+      applyVicoPrimaryCssVars(full.design.primary_color)
+      setFeatures(full.license.features ?? {})
     }
     setIsLoading(false)
   }, [])
 
   useEffect(() => {
-    load()
+    void load()
   }, [load])
 
   useEffect(() => {
     document.title = `${appName} Arbeitszeitenportal`
   }, [appName])
 
+  useEffect(() => {
+    return () => {
+      clearVicoPrimaryCssVars()
+    }
+  }, [])
+
   return (
-    <DesignContext.Provider value={{ appName, isLoading, refresh: load, features }}>
+    <DesignContext.Provider value={{ appName, logoUrl, appVersionInfo, isLoading, features, refresh: load }}>
       {children}
     </DesignContext.Provider>
   )

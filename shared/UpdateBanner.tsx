@@ -36,7 +36,7 @@ const UpdateBanner = () => {
 
   return (
     <div
-      className="bg-amber-500 text-amber-950 px-4 py-2 flex items-center justify-between gap-4 text-sm"
+      className="bg-amber-500 dark:bg-amber-600 text-amber-950 dark:text-amber-50 px-4 py-2 flex items-center justify-between gap-4 text-sm"
       role="banner"
       aria-live="polite"
     >
@@ -55,7 +55,7 @@ const UpdateBanner = () => {
         <button
           type="button"
           onClick={() => setDismissed(true)}
-          className="px-2 py-1 rounded hover:bg-amber-400/50"
+          className="px-2 py-1 rounded hover:bg-amber-400/50 dark:hover:bg-amber-500/40"
           aria-label="Schließen"
         >
           ✕

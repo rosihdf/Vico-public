@@ -6,6 +6,8 @@
 2. Projekt erstellen (Region, Passwort notieren)
 3. **SQL Editor** → `supabase-license-portal.sql` einfügen und ausführen
 
+**Modul-Keys & Kontingente:** siehe **`docs/Lizenz-Features.md`**.
+
 ## 2. Ersten Admin-Benutzer anlegen
 
 ### Variante A: Über Supabase Dashboard (empfohlen)
@@ -90,6 +92,15 @@ In der Haupt-App `.env`:
 ```
 VITE_LICENSE_API_URL=https://ojryoosqwfbzlmdeywzs.supabase.co/functions/v1
 ```
+
+### Mandanten-Branding (App-Name & Logo)
+
+Im **Lizenz-Admin** unter **Mandant bearbeiten** (neben App-Name und Primärfarbe):
+
+- **Logo-URL:** öffentlich erreichbare Bild-URL (HTTPS empfohlen, z. B. Datei im **Supabase Storage** des Mandanten mit öffentlichem Bucket oder CDN). Wird in der **Lizenz-API** als `design.logo_url` ausgeliefert und von **Haupt-App** (`Logo.tsx`), **Kundenportal**, **Arbeitszeitenportal** und (Druck) **QR-Modal** genutzt.  
+- Ohne Logo: Standard `public/logo_vico.png` bzw. bisheriges Platzhalter-Icon im Kundenportal.
+
+**CORS:** Wird das Logo von einer anderen Domain geladen als die App, muss der Server ggf. `Access-Control-Allow-Origin` setzen (bei reinem `<img src="…">` meist unkritisch; bei Canvas/Export beachten).
 
 ### Hinweise vor Release
 

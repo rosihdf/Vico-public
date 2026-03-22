@@ -14,8 +14,9 @@ export default {
           'primary-light': '#d1fae5',
           dark: '#0f766e',
           background: '#5b7895',
-          button: '#ffffff',
-          'button-hover': '#f1f5f9',
+          /* Wie in index.css --vico-button / --vico-button-hover (Dark Mode per .dark auf html) */
+          button: 'var(--vico-button)',
+          'button-hover': 'var(--vico-button-hover)',
         },
       },
     },

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import SyncStatusIndicator from './SyncStatus'
 import Logo from './Logo'
@@ -8,12 +8,19 @@ import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
 import { useComponentSettings } from './ComponentSettingsContext'
 import { hasFeature } from './lib/licenseService'
+import { fetchMaintenanceReminders, subscribeToDataChange } from './lib/dataService'
+import { countMaintenanceRemindersNeedingAttention } from './lib/maintenanceReminderUtils'
 
 const Layout = () => {
   const { syncStatus, pendingCount } = useSync()
   const { isAuthenticated, logout, userRole } = useAuth()
   const { license, storageUsageMb } = useLicense()
   const { isEnabled } = useComponentSettings()
+  const showBuchhaltungExport =
+    isEnabled('auftrag') &&
+    license &&
+    hasFeature(license, 'buchhaltung_export') &&
+    (userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'teamleiter')
   const showArbeitszeit =
     license &&
     hasFeature(license, 'arbeitszeiterfassung') &&
@@ -22,7 +29,31 @@ const Layout = () => {
     userRole !== 'kunde'
   const navigate = useNavigate()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [maintenanceAttentionCount, setMaintenanceAttentionCount] = useState(0)
+  const [maintenanceHasOverdue, setMaintenanceHasOverdue] = useState(false)
   const location = useLocation()
+
+  const refreshMaintenanceAttentionBadge = useCallback(async () => {
+    if (!isAuthenticated || !isEnabled('dashboard')) {
+      setMaintenanceAttentionCount(0)
+      setMaintenanceHasOverdue(false)
+      return
+    }
+    const list = await fetchMaintenanceReminders()
+    const withinDays = 7
+    setMaintenanceAttentionCount(countMaintenanceRemindersNeedingAttention(list, withinDays))
+    setMaintenanceHasOverdue(list.some((r) => r.status === 'overdue'))
+  }, [isAuthenticated, isEnabled])
+
+  useEffect(() => {
+    void refreshMaintenanceAttentionBadge()
+  }, [refreshMaintenanceAttentionBadge, location.pathname])
+
+  useEffect(() => {
+    return subscribeToDataChange(() => {
+      void refreshMaintenanceAttentionBadge()
+    })
+  }, [refreshMaintenanceAttentionBadge])
 
   const handleLogout = async () => {
     handleMenuClose()
@@ -48,11 +79,20 @@ const Layout = () => {
     }
   }
 
+  const showWartungsstatistik =
+    Boolean(license && hasFeature(license, 'wartungsprotokolle'))
+
   const menuLinks = [
     ...(isEnabled('dashboard') ? [{ to: '/', label: 'Dashboard' }] : []),
-    ...(isEnabled('kunden') ? [{ to: '/kunden', label: 'Kunden' }] : []),
+    ...(isEnabled('kunden')
+      ? [
+          { to: '/kunden', label: 'Kunden' },
+          ...(showWartungsstatistik ? [{ to: '/wartungsstatistik', label: 'Wartungsstatistik' }] : []),
+        ]
+      : []),
     ...(isEnabled('suche') ? [{ to: '/suche', label: 'Suche' }] : []),
     ...(isEnabled('auftrag') ? [{ to: '/auftrag', label: 'Auftrag' }] : []),
+    ...(showBuchhaltungExport ? [{ to: '/buchhaltung-export', label: 'Buchhaltungs-Export' }] : []),
     ...(userRole === 'admin' && isEnabled('benutzerverwaltung') ? [{ to: '/benutzerverwaltung', label: 'Benutzerverwaltung' }] : []),
     ...(userRole === 'admin' ? [{ to: '/system', label: 'System', matchPrefix: true }] : []),
     ...(showArbeitszeit ? [{ to: '/arbeitszeit', label: 'Arbeitszeit' }] : []),
@@ -136,13 +176,13 @@ const Layout = () => {
           Offline – Änderungen werden lokal gespeichert und beim nächsten Sync hochgeladen.
         </div>
       )}
-      <header className="relative bg-vico-background shadow-md sticky top-0 z-30 flex items-center justify-between gap-2 px-4 h-14 overflow-visible">
+      <header className="relative bg-vico-background shadow-md sticky top-0 z-50 flex items-center justify-between gap-2 px-4 min-h-[calc(3.5rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] overflow-visible">
         <button
           type="button"
           onClick={handleMenuToggle}
           onKeyDown={handleKeyDown}
           className="flex-shrink-0 p-2 -ml-2 rounded-lg hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/50"
-          aria-label="Menü öffnen"
+          aria-label={isMenuOpen ? 'Menü schließen' : 'Menü öffnen'}
           aria-expanded={isMenuOpen}
         >
           <svg
@@ -169,7 +209,7 @@ const Layout = () => {
         </div>
       </header>
 
-      {/* Hamburger Overlay */}
+      {/* Hamburger Overlay (unter Kopfzeile, damit Hamburger immer bedienbar bleibt) */}
       {isMenuOpen && (
         <div
           className="fixed inset-0 bg-black/30 z-40"
@@ -181,15 +221,15 @@ const Layout = () => {
         />
       )}
 
-      {/* Hamburger Menu Drawer */}
+      {/* Hamburger Menu Drawer (z-45: unter Kopfzeile z-50, Inhalt mit Abstand unter der Bar) */}
       <aside
-        className={`fixed top-0 left-0 h-full w-64 bg-white dark:bg-slate-800 shadow-xl z-50 transform transition-transform duration-200 ease-out ${
+        className={`fixed top-0 left-0 h-full w-64 bg-white dark:bg-slate-800 shadow-xl z-[45] transform transition-transform duration-200 ease-out ${
           isMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         aria-hidden={!isMenuOpen}
         aria-label="Seitenmenü"
       >
-        <div className="flex flex-col pt-16 px-2">
+        <div className="flex h-full min-h-0 flex-col overflow-y-auto px-2 pt-[calc(3.5rem+env(safe-area-inset-top,0px))] pb-4">
           {menuLinks.map((item) => {
             const { to, label, external, matchPrefix } = item as { to: string; label: string; external?: boolean; matchPrefix?: boolean }
             const isActive = matchPrefix ? location.pathname.startsWith(to) : location.pathname === to
@@ -213,8 +253,23 @@ const Layout = () => {
               )
             }
             return (
-              <Link key={to} to={to} onClick={handleMenuClose} className={className}>
-                {label}
+              <Link
+                key={to}
+                to={to}
+                onClick={handleMenuClose}
+                className={`${className} flex flex-row items-center justify-between gap-2`}
+              >
+                <span>{label}</span>
+                {to === '/' && maintenanceAttentionCount > 0 && (
+                  <span
+                    className={`shrink-0 min-w-[1.35rem] h-6 px-1.5 rounded-full text-xs font-bold text-white flex items-center justify-center ${
+                      maintenanceHasOverdue ? 'bg-red-600' : 'bg-amber-500'
+                    }`}
+                    aria-label={`${maintenanceAttentionCount} Wartungserinnerungen (überfällig oder innerhalb von 7 Tagen fällig)`}
+                  >
+                    {maintenanceAttentionCount > 99 ? '99+' : maintenanceAttentionCount}
+                  </span>
+                )}
               </Link>
             )
           })}
@@ -247,13 +302,27 @@ const Layout = () => {
             <Link
               key={to}
               to={to}
-              className={`flex flex-col items-center justify-center flex-1 py-2 transition-colors min-w-0 min-h-[44px] ${
+              className={`relative flex flex-col items-center justify-center flex-1 py-2 transition-colors min-w-0 min-h-[44px] ${
                 isActive ? 'text-vico-primary' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
               aria-current={isActive ? 'page' : undefined}
+              aria-label={
+                to === '/' && maintenanceAttentionCount > 0
+                  ? `${label}, ${maintenanceAttentionCount} Wartungserinnerungen aktiv`
+                  : undefined
+              }
             >
-              <span className="text-xl shrink-0" aria-hidden>
+              <span className="text-xl shrink-0 relative inline-flex" aria-hidden>
                 {icon}
+                {to === '/' && maintenanceAttentionCount > 0 && (
+                  <span
+                    className={`absolute -top-1 left-1/2 ml-2 min-w-[1.1rem] h-[1.1rem] px-0.5 rounded-full text-[0.65rem] font-bold leading-none text-white flex items-center justify-center ${
+                      maintenanceHasOverdue ? 'bg-red-600' : 'bg-amber-500'
+                    }`}
+                  >
+                    {maintenanceAttentionCount > 9 ? '9+' : maintenanceAttentionCount}
+                  </span>
+                )}
               </span>
               <span className="text-xs font-medium truncate w-full text-center px-0.5">{label}</span>
             </Link>

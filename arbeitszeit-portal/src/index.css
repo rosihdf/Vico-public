@@ -1,6 +1,13 @@
+@import '../../shared/portalResponsive.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Abgestimmt auf Haupt-App (ThemeContext: html.light / html.dark) */
+:root {
+  --vico-background: #5b7895;
+}
 
 * {
   box-sizing: border-box;
@@ -13,6 +20,33 @@ html, body, #root {
 
 body {
   -webkit-font-smoothing: antialiased;
-  background-color: #f8fafc;
   font-family: system-ui, -apple-system, sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a; /* slate-900 – Standard-Lesetext Hellmodus */
+}
+
+.dark body {
+  /* wie Kundenportal (portal/src/index.css) */
+  background-color: #0f172a;
+  color: #f1f5f9; /* slate-100 – vermeidet dunkle Browser-Standardfarbe auf dunklem Hintergrund */
+}
+
+/* Lesbarkeit: Formularfelder Hell/Dunkel + Fokus (Primary-Ring) */
+@layer base {
+  .dark input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  .dark select,
+  .dark textarea {
+    color: rgb(241 245 249);
+  }
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: rgb(100 116 139);
+  }
+  .dark input:focus,
+  .dark select:focus,
+  .dark textarea:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--vico-primary, #5b7895) 55%, transparent);
+    border-color: var(--vico-primary, #5b7895);
+  }
 }

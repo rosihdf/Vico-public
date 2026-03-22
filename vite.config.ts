@@ -5,10 +5,11 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 import { VitePWA } from 'vite-plugin-pwa'
-import { vicoVersionPlugin, getAppVersion } from './scripts/vite-plugin-version.mjs'
+import { vicoVersionPlugin, getAppVersion, getAppReleaseLabel } from './scripts/vite-plugin-version.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const appVersion = getAppVersion(__dirname)
+const appReleaseLabel = getAppReleaseLabel(__dirname)
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '')
@@ -54,6 +55,7 @@ export default defineConfig(({ mode }) => {
     ],
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
+      __APP_RELEASE_LABEL__: JSON.stringify(appReleaseLabel),
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY ?? ''),
       'import.meta.env.VITE_VAPID_PUBLIC_KEY': JSON.stringify(env.VITE_VAPID_PUBLIC_KEY ?? ''),
@@ -71,6 +73,8 @@ export default defineConfig(({ mode }) => {
     test: {
       globals: true,
       environment: 'node',
+      /** Eigene vite.config + Vitest in admin/ und arbeitszeit-portal/ */
+      exclude: ['**/node_modules/**', '**/dist/**', 'admin/**', 'arbeitszeit-portal/**'],
     },
   }
 })

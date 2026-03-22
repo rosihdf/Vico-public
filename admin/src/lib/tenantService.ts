@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import type { AppVersionsMap } from '../../../shared/appVersions'
 
 export type Tenant = {
   id: string
@@ -23,11 +24,14 @@ export type Tenant = {
   supabase_project_ref: string | null
   supabase_url: string | null
   allowed_domains: string[] | null
+  /** Optional: Version/Release Notes je App (Lizenz-API-Feld `appVersions`). */
+  app_versions?: AppVersionsMap | null
   created_at: string
   updated_at: string
 }
 
-export type TenantInsert = Omit<Tenant, 'id' | 'created_at' | 'updated_at'> & Partial<Pick<Tenant, 'id'>>
+export type TenantInsert = Omit<Tenant, 'id' | 'created_at' | 'updated_at' | 'app_versions'> &
+  Partial<Pick<Tenant, 'id' | 'app_versions'>>
 export type TenantUpdate = Partial<Omit<Tenant, 'id' | 'created_at'>>
 
 export const fetchTenants = async (signal?: AbortSignal): Promise<Tenant[]> => {
@@ -76,6 +80,7 @@ export const createTenant = async (payload: Partial<Tenant>): Promise<{ id: stri
       supabase_project_ref: payload.supabase_project_ref ?? null,
       supabase_url: payload.supabase_url ?? null,
       allowed_domains: Array.isArray(payload.allowed_domains) ? payload.allowed_domains : [],
+      app_versions: payload.app_versions ?? {},
     })
     .select('id')
     .single()

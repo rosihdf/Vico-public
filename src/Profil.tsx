@@ -5,7 +5,7 @@ import { useTheme } from './ThemeContext'
 import type { Theme } from './ThemeContext'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import MfaSettings from './components/MfaSettings'
-import { fetchMyProfile, updateProfileName, getProfileDisplayName } from './lib/userService'
+import { fetchMyProfile, updateProfileName, getProfileDisplayName, updateThemePreference } from './lib/userService'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import type { Profile } from './lib/userService'
 
@@ -115,7 +115,7 @@ const Profil = () => {
   }
 
   return (
-    <div className="p-4">
+    <div className="p-4 min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Mein Profil</h2>
 
       {isLoading ? (
@@ -167,7 +167,12 @@ const Profil = () => {
                 <button
                   key={t}
                   type="button"
-                  onClick={() => setTheme(t)}
+                  onClick={() => {
+                    setTheme(t)
+                    if (user?.id) {
+                      void updateThemePreference(user.id, t)
+                    }
+                  }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     theme === t
                       ? 'bg-vico-primary text-white'

@@ -15,7 +15,7 @@ const ErrorBoundary = ({ children }: { children: React.ReactNode }) => (
         source: 'arbeitszeit_portal',
       })
     }}
-    buttonClassName="px-4 py-2 bg-vico-primary text-slate-800 rounded-lg hover:opacity-90 border border-slate-300"
+    buttonClassName="px-4 py-2 bg-vico-primary text-white rounded-lg hover:opacity-90 border border-transparent"
   >
     {children}
   </ErrorBoundaryBase>

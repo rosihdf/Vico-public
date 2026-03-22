@@ -32,7 +32,8 @@ export type TimeEntryEditLogEntry = {
   edited_at: string
   reason: string
   reason_code: string | null
-  old_start: string
+  /** null bei manuellem Neuanlage-Eintrag (Arbeitszeit-Portal) */
+  old_start: string | null
   old_end: string | null
   new_start: string
   new_end: string | null

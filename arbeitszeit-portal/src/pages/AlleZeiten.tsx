@@ -6,6 +6,7 @@ import {
   getMonthBounds,
   calcWorkMinutes,
   updateTimeEntryAsAdmin,
+  insertTimeEntryAsAdmin,
   approveTimeEntry,
   type TimeEntryEditReasonCode,
 } from '../lib/timeService'
@@ -14,6 +15,7 @@ import type { TimeEntry, TimeBreak } from '../types/time'
 import { formatTime, formatMinutes } from '../../../shared/format'
 import LocationMapModal from '../components/LocationMapModal'
 import { exportZollCsv, exportZollPdf } from '../lib/exportCompliance'
+import { supabase } from '../lib/supabase'
 
 const EDIT_REASON_OPTIONS: { value: TimeEntryEditReasonCode; label: string }[] = [
   { value: 'korrektur', label: 'Korrektur (falsche Zeit)' },
@@ -67,6 +69,15 @@ const AlleZeiten = () => {
   const [editError, setEditError] = useState<string | null>(null)
   const [locationModal, setLocationModal] = useState<{ lat: number; lon: number; label: string } | null>(null)
   const [approvingId, setApprovingId] = useState<string | null>(null)
+
+  const [manualOpen, setManualOpen] = useState(false)
+  const [manualWorkDate, setManualWorkDate] = useState('')
+  const [manualStart, setManualStart] = useState('')
+  const [manualEnd, setManualEnd] = useState('')
+  const [manualReasonCode, setManualReasonCode] = useState<TimeEntryEditReasonCode>('nachreichung')
+  const [manualReasonText, setManualReasonText] = useState('')
+  const [manualSaving, setManualSaving] = useState(false)
+  const [manualError, setManualError] = useState<string | null>(null)
 
   const userId = selectedUserId || (profiles[0]?.id ?? '')
   const { from: weekFrom, to: weekTo } = getWeekBounds(selectedDate)
@@ -133,6 +144,59 @@ const AlleZeiten = () => {
 
   const handleCloseEdit = () => {
     setEditEntry(null)
+  }
+
+  const handleOpenManual = () => {
+    setManualError(null)
+    setManualWorkDate(selectedDate)
+    setManualStart(`${selectedDate}T08:00`)
+    setManualEnd(`${selectedDate}T16:00`)
+    setManualReasonCode('nachreichung')
+    setManualReasonText('')
+    setManualOpen(true)
+  }
+
+  const handleCloseManual = () => {
+    setManualOpen(false)
+  }
+
+  const handleSaveManual = async () => {
+    if (!userId || !manualWorkDate.trim() || !manualStart.trim()) {
+      setManualError('Arbeitstag, Start und Mitarbeiter sind erforderlich.')
+      return
+    }
+    const startIso = fromDatetimeLocal(manualStart.trim())
+    const endIso = manualEnd.trim() ? fromDatetimeLocal(manualEnd.trim()) : null
+    if (!startIso) {
+      setManualError('Startzeit ungültig.')
+      return
+    }
+    if (endIso && new Date(endIso).getTime() <= new Date(startIso).getTime()) {
+      setManualError('Ende muss nach Start liegen (oder Ende leer lassen).')
+      return
+    }
+    const reason =
+      manualReasonText.trim() ||
+      EDIT_REASON_OPTIONS.find((o) => o.value === manualReasonCode)?.label ||
+      manualReasonCode
+    setManualSaving(true)
+    setManualError(null)
+    const { error } = await insertTimeEntryAsAdmin(
+      userId,
+      manualWorkDate.trim(),
+      startIso,
+      endIso,
+      reason,
+      manualReasonCode,
+      null
+    )
+    setManualSaving(false)
+    if (error) {
+      setManualError(error.message)
+      return
+    }
+    handleCloseManual()
+    load()
   }
 
   const handleApprove = async (entry: TimeEntry, status: 'approved' | 'rejected') => {
@@ -203,7 +267,7 @@ const AlleZeiten = () => {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-slate-800">Alle Zeiten</h2>
+      <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Alle Zeiten</h2>
       <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 dark:bg-amber-950/30 dark:text-amber-100 dark:border-amber-800">
         <strong className="font-semibold">Stempel-Standorte (GPS):</strong> Beta – Kartenlinks nur, wenn Koordinaten
         gespeichert sind. Nach Live-Betrieb erneut prüfen; in der Entwicklung kann die Anzeige abweichen.
@@ -211,14 +275,14 @@ const AlleZeiten = () => {
 
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <label htmlFor="az-user" className="block text-sm font-medium text-slate-700 mb-1">
+          <label htmlFor="az-user" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
             Benutzer
           </label>
           <select
             id="az-user"
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 min-w-[12rem]"
+            className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-w-[12rem]"
             aria-label="Benutzer auswählen"
           >
             {profilesWithZeiterfassung.map((p) => (
@@ -235,7 +299,7 @@ const AlleZeiten = () => {
               type="button"
               onClick={() => setViewMode(mode)}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                viewMode === mode ? 'bg-vico-primary text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                viewMode === mode ? 'bg-vico-primary text-white' : 'bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-500'
               }`}
               aria-pressed={viewMode === mode}
             >
@@ -244,7 +308,7 @@ const AlleZeiten = () => {
           ))}
         </div>
         <div>
-          <label htmlFor="az-date" className="block text-sm font-medium text-slate-700 mb-1">
+          <label htmlFor="az-date" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
             {viewMode === 'month' ? 'Monat' : 'Datum'}
           </label>
           <input
@@ -252,15 +316,25 @@ const AlleZeiten = () => {
             type={viewMode === 'month' ? 'month' : 'date'}
             value={viewMode === 'month' ? selectedDate.slice(0, 7) : selectedDate}
             onChange={(e) => setSelectedDate(viewMode === 'month' ? e.target.value + '-01' : e.target.value)}
-            className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-800"
+            className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
             aria-label={viewMode === 'month' ? 'Monat' : 'Datum'}
           />
         </div>
         <button
           type="button"
+          onClick={handleOpenManual}
+          disabled={!userId}
+          className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+          aria-label="Zeit nachtragen (manueller Eintrag)"
+          title="Wenn der Mitarbeiter vergessen hat zu stempeln"
+        >
+          Zeit nachtragen
+        </button>
+        <button
+          type="button"
           onClick={handleExportCsv}
           disabled={entries.length === 0}
-          className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+          className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
           aria-label="Als CSV exportieren"
         >
           Export CSV
@@ -272,7 +346,7 @@ const AlleZeiten = () => {
             exportZollCsv(entries, breaksMap, name, rangeFrom, rangeTo)
           }}
           disabled={entries.length === 0}
-          className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+          className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
           aria-label="Export für Zollprüfung (CSV)"
           title="MiLoG § 17 – Format für Zoll-/Mindestlohnprüfung"
         >
@@ -281,11 +355,15 @@ const AlleZeiten = () => {
         <button
           type="button"
           onClick={() => {
-            const name = getProfileDisplayName(profiles.find((p) => p.id === userId) ?? { email: null, first_name: null, last_name: null })
-            exportZollPdf(entries, breaksMap, name, rangeFrom, rangeTo)
+            void (async () => {
+              const name = getProfileDisplayName(
+                profiles.find((p) => p.id === userId) ?? { email: null, first_name: null, last_name: null }
+              )
+              await exportZollPdf(entries, breaksMap, name, rangeFrom, rangeTo, supabase)
+            })()
           }}
           disabled={entries.length === 0}
-          className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+          className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
           aria-label="Export für Zollprüfung (PDF)"
           title="MiLoG § 17 – PDF für Zoll-/Mindestlohnprüfung"
         >
@@ -294,27 +372,27 @@ const AlleZeiten = () => {
       </div>
 
       {viewMode === 'day' && (
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
           Summe Tag: <strong>{formatMinutes(daySum)}</strong> · Summe Woche: {formatMinutes(weekSum)}
         </p>
       )}
       {viewMode === 'week' && (
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
           Summe Woche: <strong>{formatMinutes(weekSum)}</strong>
         </p>
       )}
       {viewMode === 'month' && (
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
           Summe Monat: <strong>{formatMinutes(monthSum)}</strong>
         </p>
       )}
 
       {loading ? (
-        <p className="text-slate-500">Lade…</p>
+        <p className="text-slate-500 dark:text-slate-400">Lade…</p>
       ) : viewMode === 'day' ? (
         <ul className="space-y-2">
           {dayEntries.length === 0 ? (
-            <li className="text-slate-500">Keine Einträge für diesen Tag.</li>
+            <li className="text-slate-500 dark:text-slate-400">Keine Einträge für diesen Tag.</li>
           ) : (
             dayEntries.map((e) => {
               const breaks = breaksMap[e.id] ?? []
@@ -322,19 +400,25 @@ const AlleZeiten = () => {
               return (
                 <li
                   key={e.id}
-                  className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-slate-200 bg-white"
+                  className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800"
                 >
                   <div className="min-w-0 flex-1">
                     <div>
-                      <span className="font-medium">{formatTime(e.start)}</span>
-                      <span className="text-slate-500 mx-1">–</span>
-                      <span className={e.end ? 'font-medium' : 'text-green-600'}>
+                      <span className="font-medium text-slate-800 dark:text-slate-100">{formatTime(e.start)}</span>
+                      <span className="text-slate-500 dark:text-slate-400 mx-1">–</span>
+                      <span
+                        className={
+                          e.end
+                            ? 'font-medium text-slate-800 dark:text-slate-100'
+                            : 'text-green-600 dark:text-green-400 font-medium'
+                        }
+                      >
                         {e.end ? formatTime(e.end) : 'läuft'}
                       </span>
-                      <span className="ml-2 text-sm text-slate-600">{formatMinutes(min)}</span>
+                      <span className="ml-2 text-sm text-slate-600 dark:text-slate-300">{formatMinutes(min)}</span>
                     </div>
                     {(hasLocationStart(e) || hasLocationEnd(e)) && (
-                      <div className="mt-1.5 flex flex-wrap gap-2 text-xs text-slate-500">
+                      <div className="mt-1.5 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                         {hasLocationStart(e) && (
                           <button
                             type="button"
@@ -394,15 +478,19 @@ const AlleZeiten = () => {
                       </>
                     )}
                     {(e.approval_status === 'approved' || !e.approval_status) && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800">Freigegeben</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-200">
+                        Freigegeben
+                      </span>
                     )}
                     {e.approval_status === 'rejected' && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-800">Abgelehnt</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-200">
+                        Abgelehnt
+                      </span>
                     )}
                     <button
                       type="button"
                       onClick={() => handleOpenEdit(e)}
-                      className="text-sm px-2 py-1 rounded bg-slate-200 text-slate-700 hover:bg-slate-300"
+                      className="text-sm px-2 py-1 rounded bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-100 hover:bg-slate-300 dark:hover:bg-slate-500"
                       aria-label="Eintrag bearbeiten"
                     >
                       Bearbeiten
@@ -424,12 +512,12 @@ const AlleZeiten = () => {
             return (
               <div
                 key={dateStr}
-                className={`p-3 rounded-lg border ${isSelected ? 'border-vico-primary bg-vico-primary/10' : 'border-slate-200 bg-white'}`}
+                className={`p-3 rounded-lg border ${isSelected ? 'border-vico-primary bg-vico-primary/10' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800'}`}
               >
-                <div className="text-sm font-medium text-slate-800 mb-1">
+                <div className="text-sm font-medium text-slate-800 dark:text-slate-100 mb-1">
                   {dayName} {d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
                 </div>
-                <div className="text-xs text-slate-600 mb-2">{formatMinutes(sum)}</div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 mb-2">{formatMinutes(sum)}</div>
                 <ul className="space-y-1">
                   {dayEntriesForDate.map((e) => {
                     const breaks = breaksMap[e.id] ?? []
@@ -439,10 +527,14 @@ const AlleZeiten = () => {
                         <span>
                           {formatTime(e.start)}–{e.end ? formatTime(e.end) : '…'}
                           {e.approval_status === 'submitted' && (
-                            <span className="ml-1 text-amber-600" title="Eingereicht">●</span>
+                            <span className="ml-1 text-amber-600 dark:text-amber-400" title="Eingereicht">
+                              ●
+                            </span>
                           )}
                           {e.approval_status === 'rejected' && (
-                            <span className="ml-1 text-red-600" title="Abgelehnt">●</span>
+                            <span className="ml-1 text-red-600 dark:text-red-400" title="Abgelehnt">
+                              ●
+                            </span>
                           )}
                         </span>
                         <span className="flex items-center gap-1">
@@ -453,7 +545,7 @@ const AlleZeiten = () => {
                                 type="button"
                                 onClick={() => handleApprove(e, 'approved')}
                                 disabled={approvingId === e.id}
-                                className="text-green-600 hover:underline"
+                                className="text-green-600 dark:text-green-400 hover:underline"
                                 aria-label="Freigeben"
                               >
                                 ✓
@@ -462,7 +554,7 @@ const AlleZeiten = () => {
                                 type="button"
                                 onClick={() => handleApprove(e, 'rejected')}
                                 disabled={approvingId === e.id}
-                                className="text-red-600 hover:underline"
+                                className="text-red-600 dark:text-red-400 hover:underline"
                                 aria-label="Ablehnen"
                               >
                                 ✗
@@ -472,7 +564,7 @@ const AlleZeiten = () => {
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(e)}
-                            className="text-slate-500 hover:text-slate-700 underline"
+                            className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300 underline"
                             aria-label="Bearbeiten"
                           >
                             Bearb.
@@ -489,7 +581,7 @@ const AlleZeiten = () => {
       ) : (
         <div className="grid grid-cols-7 gap-1 text-sm">
           {WEEKDAY_LABELS.map((l) => (
-            <div key={l} className="font-medium text-slate-600 p-1 text-center">
+            <div key={l} className="font-medium text-slate-600 dark:text-slate-300 p-1 text-center">
               {l}
             </div>
           ))}
@@ -509,11 +601,11 @@ const AlleZeiten = () => {
               cells.push(
                 <div
                   key={dateStr}
-                  className="p-1 min-h-[3rem] border border-slate-100 rounded bg-white text-center"
+                  className="p-1 min-h-[3rem] border border-slate-100 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-center"
                   title={dateStr}
                 >
-                  <span className="text-slate-600">{day}</span>
-                  {sum > 0 && <div className="text-xs text-slate-500">{formatMinutes(sum)}</div>}
+                  <span className="text-slate-600 dark:text-slate-300">{day}</span>
+                  {sum > 0 && <div className="text-xs text-slate-500 dark:text-slate-400">{formatMinutes(sum)}</div>}
                 </div>
               )
             }
@@ -522,57 +614,92 @@ const AlleZeiten = () => {
         </div>
       )}
 
-      {editEntry && (
+      {manualOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="edit-entry-title"
+          aria-labelledby="manual-entry-title"
         >
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-4 max-h-[90vh] overflow-y-auto">
-            <h3 id="edit-entry-title" className="text-lg font-bold text-slate-800 mb-4">
-              Zeiteintrag bearbeiten
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-4 max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-600">
+            <h3 id="manual-entry-title" className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-2">
+              Zeit nachtragen
             </h3>
-            {editError && (
-              <p className="mb-3 text-sm text-red-600" role="alert">
-                {editError}
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+              Neuer Eintrag für{' '}
+              <strong>
+                {(() => {
+                  const p = profilesWithZeiterfassung.find((x) => x.id === userId)
+                  return p ? getProfileDisplayName(p) : 'Mitarbeiter'
+                })()}
+              </strong>
+              , wenn die Zeiterfassung nicht gestartet wurde.
+            </p>
+            {manualError && (
+              <p className="mb-3 text-sm text-red-600 dark:text-red-400" role="alert">
+                {manualError}
               </p>
             )}
             <div className="space-y-3 mb-4">
               <div>
-                <label htmlFor="edit-start" className="block text-sm font-medium text-slate-700 mb-1">
-                  Start
+                <label htmlFor="manual-work-date" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Arbeitstag
                 </label>
                 <input
-                  id="edit-start"
-                  type="datetime-local"
-                  value={editStart}
-                  onChange={(e) => setEditStart(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                  id="manual-work-date"
+                  type="date"
+                  value={manualWorkDate}
+                  onChange={(e) => setManualWorkDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                   aria-required
                 />
               </div>
               <div>
-                <label htmlFor="edit-end" className="block text-sm font-medium text-slate-700 mb-1">
-                  Ende (leer = läuft)
+                <label htmlFor="manual-start" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Start
                 </label>
                 <input
-                  id="edit-end"
+                  id="manual-start"
                   type="datetime-local"
-                  value={editEnd}
-                  onChange={(e) => setEditEnd(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                  value={manualStart}
+                  onChange={(e) => setManualStart(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                  aria-required
                 />
               </div>
               <div>
-                <label htmlFor="edit-reason-code" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="manual-end" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Ende (optional)
+                </label>
+                <input
+                  id="manual-end"
+                  type="datetime-local"
+                  value={manualEnd}
+                  onChange={(e) => setManualEnd(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                  aria-describedby={!manualEnd.trim() ? 'manual-end-hint' : undefined}
+                />
+                {!manualEnd.trim() && (
+                  <p
+                    id="manual-end-hint"
+                    role="status"
+                    className="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 dark:bg-amber-950/35 dark:text-amber-100 dark:border-amber-800"
+                  >
+                    <strong className="font-semibold">Hinweis:</strong> Ohne Ende wird ein <strong>offener</strong> Eintrag
+                    angelegt (wie „läuft“ in der App). Für eine abgeschlossene Schicht bitte immer <strong>Ende</strong>{' '}
+                    eintragen – leer lassen nur, wenn das bewusst gewünscht ist.
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="manual-reason-code" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Grund (Pflicht)
                 </label>
                 <select
-                  id="edit-reason-code"
-                  value={editReasonCode}
-                  onChange={(e) => setEditReasonCode(e.target.value as TimeEntryEditReasonCode)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                  id="manual-reason-code"
+                  value={manualReasonCode}
+                  onChange={(e) => setManualReasonCode(e.target.value as TimeEntryEditReasonCode)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                   aria-required
                 >
                   {EDIT_REASON_OPTIONS.map((o) => (
@@ -583,7 +710,102 @@ const AlleZeiten = () => {
                 </select>
               </div>
               <div>
-                <label htmlFor="edit-reason-text" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="manual-reason-text" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Zusatz / Freitext (optional)
+                </label>
+                <input
+                  id="manual-reason-text"
+                  type="text"
+                  value={manualReasonText}
+                  onChange={(e) => setManualReasonText(e.target.value)}
+                  placeholder="z. B. vergessen zu stempeln"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={handleCloseManual}
+                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveManual()}
+                disabled={manualSaving || !manualStart.trim() || !manualWorkDate.trim()}
+                className="px-4 py-2 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover disabled:opacity-50"
+              >
+                {manualSaving ? 'Speichern…' : 'Eintragen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editEntry && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-entry-title"
+        >
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-4 max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-600">
+            <h3 id="edit-entry-title" className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">
+              Zeiteintrag bearbeiten
+            </h3>
+            {editError && (
+              <p className="mb-3 text-sm text-red-600 dark:text-red-400" role="alert">
+                {editError}
+              </p>
+            )}
+            <div className="space-y-3 mb-4">
+              <div>
+                <label htmlFor="edit-start" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Start
+                </label>
+                <input
+                  id="edit-start"
+                  type="datetime-local"
+                  value={editStart}
+                  onChange={(e) => setEditStart(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                  aria-required
+                />
+              </div>
+              <div>
+                <label htmlFor="edit-end" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Ende (leer = läuft)
+                </label>
+                <input
+                  id="edit-end"
+                  type="datetime-local"
+                  value={editEnd}
+                  onChange={(e) => setEditEnd(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                />
+              </div>
+              <div>
+                <label htmlFor="edit-reason-code" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Grund (Pflicht)
+                </label>
+                <select
+                  id="edit-reason-code"
+                  value={editReasonCode}
+                  onChange={(e) => setEditReasonCode(e.target.value as TimeEntryEditReasonCode)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                  aria-required
+                >
+                  {EDIT_REASON_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="edit-reason-text" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Zusatz / Freitext (optional)
                 </label>
                 <input
@@ -592,7 +814,7 @@ const AlleZeiten = () => {
                   value={editReasonText}
                   onChange={(e) => setEditReasonText(e.target.value)}
                   placeholder="z.B. Details zur Korrektur"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                 />
               </div>
             </div>
@@ -600,7 +822,7 @@ const AlleZeiten = () => {
               <button
                 type="button"
                 onClick={handleCloseEdit}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100"
+                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 Abbrechen
               </button>

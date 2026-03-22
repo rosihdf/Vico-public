@@ -204,7 +204,7 @@ const Import = () => {
           type="file"
           accept=".csv,.txt"
           onChange={handleFileChange}
-          className="w-full text-sm text-slate-600 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-vico-button file:text-slate-800 hover:file:bg-vico-button-hover"
+          className="w-full text-sm text-slate-600 dark:text-slate-400 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-vico-button file:dark:bg-slate-700 file:text-slate-800 file:dark:text-slate-100 hover:file:bg-vico-button-hover hover:file:dark:bg-slate-600 file:border file:border-slate-300 file:dark:border-slate-600"
           aria-label="CSV-Datei auswählen"
         />
       </div>
@@ -262,7 +262,7 @@ const Import = () => {
               type="button"
               onClick={handleStartImport}
               disabled={isProcessing || rows.length === 0}
-              className="px-4 py-2.5 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300 disabled:opacity-50"
+              className="px-4 py-2.5 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600 disabled:opacity-50"
             >
               {isProcessing ? 'Import läuft…' : `Import starten (${rows.length} Zeilen)`}
             </button>

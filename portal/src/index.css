@@ -1,3 +1,5 @@
+@import '../../shared/portalResponsive.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -24,4 +26,32 @@ body {
 html.dark body,
 html[data-theme="dark"] body {
   background-color: #0f172a;
+}
+
+/* Lesbarkeit: Eingaben im Dunkelmodus + Fokus */
+@layer base {
+  html.dark input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  html.dark select,
+  html.dark textarea,
+  html[data-theme='dark'] input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  html[data-theme='dark'] select,
+  html[data-theme='dark'] textarea {
+    color: rgb(241 245 249);
+  }
+  html.dark input::placeholder,
+  html.dark textarea::placeholder,
+  html[data-theme='dark'] input::placeholder,
+  html[data-theme='dark'] textarea::placeholder {
+    color: rgb(100 116 139);
+  }
+  html.dark input:focus,
+  html.dark select:focus,
+  html.dark textarea:focus,
+  html[data-theme='dark'] input:focus,
+  html[data-theme='dark'] select:focus,
+  html[data-theme='dark'] textarea:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--vico-primary, #5b7895) 55%, transparent);
+    border-color: var(--vico-primary, #5b7895);
+  }
 }

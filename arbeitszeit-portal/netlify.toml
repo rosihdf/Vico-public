@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA: React Router – alle Routen auf index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -159,7 +159,12 @@ export const pullFromServer = async (): Promise<PullMetrics> => {
   // Zweite Runde parallel (reduziert Ladezeit gegenüber sequentiellen Requests)
   const [compSettingsRes, profilesRes, licenseStatus, auditRes, remindersRes] = await Promise.all([
     supabase.from('component_settings').select('component_key, enabled').order('sort_order', { ascending: true }),
-    supabase.from('profiles').select('id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week').order('email', { nullsFirst: false }),
+    supabase
+      .from('profiles')
+      .select(
+        'id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, dashboard_layout'
+      )
+      .order('email', { nullsFirst: false }),
     fetchLicenseStatus().catch(() => null),
     supabase.rpc('get_audit_log', { limit_rows: 200 }),
     supabase.rpc('get_maintenance_reminders'),
@@ -565,13 +570,11 @@ export const mergeCacheWithOutbox = () => {
   }
   if (Object.keys(componentSettings).length > 0) setCachedComponentSettings(componentSettings)
 
-  let profiles = getCachedProfiles() as { id: string; first_name?: string | null; last_name?: string | null }[]
+  let profiles = getCachedProfiles() as Record<string, unknown>[]
   for (const item of box) {
     if (item.table !== 'profiles' || item.action !== 'update') continue
-    const row = item.payload as { id: string; first_name?: string | null; last_name?: string | null }
-    profiles = profiles.map((p) =>
-      p.id === row.id ? { ...p, first_name: row.first_name, last_name: row.last_name } : p
-    )
+    const row = item.payload as { id: string } & Record<string, unknown>
+    profiles = profiles.map((p) => (p.id === row.id ? { ...p, ...row } : p))
   }
   if (profiles.length > 0) setCachedProfiles(profiles)
 }

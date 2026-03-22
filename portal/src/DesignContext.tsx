@@ -1,9 +1,21 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { fetchDesignFromLicense, getDefaultAppName } from '../../shared/fetchDesignFromLicense'
+import { fetchLicenseFull, getDefaultAppName } from '../../shared/fetchDesignFromLicense'
+import { applyVicoPrimaryCssVars, clearVicoPrimaryCssVars } from '../../shared/vicoCssPrimary'
+import type { AppVersionEntry } from '../../shared/appVersions'
 
 type DesignContextType = {
   appName: string
+  /** Mandanten-Logo aus Lizenz-API (design.logo_url) */
+  logoUrl: string | null
+  /** Optional: Version/Release Notes für dieses Portal aus Lizenz-API (`appVersions.kundenportal`). */
+  appVersionInfo: AppVersionEntry | null
   isLoading: boolean
+  /** Lizenz-Features (nur explizit in Lizenz/Lizenzmodell gesetzt) */
+  features: Record<string, boolean>
+  /** false, wenn Lizenz-API konfiguriert ist und Modul „Kundenportal“ nicht gebucht ist */
+  kundenportalAllowed: boolean
+  /** Lizenz-API war konfiguriert, Antwort aber fehlgeschlagen (Netzwerk o. Ä.) */
+  licenseLoadError: string | null
   refresh: () => Promise<void>
 }
 
@@ -14,7 +26,12 @@ export const useDesign = (): DesignContextType => {
   if (!ctx) {
     return {
       appName: getDefaultAppName(),
+      logoUrl: null,
+      appVersionInfo: null,
       isLoading: false,
+      features: {},
+      kundenportalAllowed: true,
+      licenseLoadError: null,
       refresh: async () => {},
     }
   }
@@ -23,6 +40,11 @@ export const useDesign = (): DesignContextType => {
 
 export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
   const [appName, setAppName] = useState(getDefaultAppName())
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [features, setFeatures] = useState<Record<string, boolean>>({})
+  const [kundenportalAllowed, setKundenportalAllowed] = useState(true)
+  const [licenseLoadError, setLicenseLoadError] = useState<string | null>(null)
+  const [appVersionInfo, setAppVersionInfo] = useState<AppVersionEntry | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -30,29 +52,69 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
     const licenseNumber = (import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()
     if (!apiUrl || !licenseNumber) {
       setAppName(getDefaultAppName())
+      setLogoUrl(null)
+      setFeatures({})
+      setKundenportalAllowed(true)
+      setLicenseLoadError(null)
+      setAppVersionInfo(null)
+      applyVicoPrimaryCssVars('#5b7895')
       setIsLoading(false)
       return
     }
+    setLicenseLoadError(null)
     const apiKey = (import.meta.env.VITE_LICENSE_API_KEY ?? '').trim()
-    const design = await fetchDesignFromLicense(apiUrl, licenseNumber, {
+    const full = await fetchLicenseFull(apiUrl, licenseNumber, {
       apiKey: apiKey || undefined,
     })
-    if (design?.app_name) {
-      setAppName(design.app_name)
+    if (!full?.design) {
+      setAppName(getDefaultAppName())
+      setLogoUrl(null)
+      setFeatures({})
+      setKundenportalAllowed(false)
+      setLicenseLoadError('Lizenz konnte nicht geladen werden. Bitte Konfiguration prüfen.')
+      setAppVersionInfo(null)
+      applyVicoPrimaryCssVars('#5b7895')
+      setIsLoading(false)
+      return
     }
+    setAppVersionInfo(full.appVersions?.kundenportal ?? null)
+    if (full.design.app_name) setAppName(full.design.app_name)
+    setLogoUrl(full.design.logo_url?.trim() ? full.design.logo_url.trim() : null)
+    applyVicoPrimaryCssVars(full.design.primary_color)
+    const raw = full.license.features ?? {}
+    setFeatures(raw)
+    setKundenportalAllowed(raw.kundenportal === true)
+    setLicenseLoadError(null)
     setIsLoading(false)
   }, [])
 
   useEffect(() => {
-    load()
+    void load()
   }, [load])
 
   useEffect(() => {
     document.title = `${appName} Kundenportal`
   }, [appName])
 
+  useEffect(() => {
+    return () => {
+      clearVicoPrimaryCssVars()
+    }
+  }, [])
+
   return (
-    <DesignContext.Provider value={{ appName, isLoading, refresh: load }}>
+    <DesignContext.Provider
+      value={{
+        appName,
+        logoUrl,
+        appVersionInfo,
+        isLoading,
+        features,
+        kundenportalAllowed,
+        licenseLoadError,
+        refresh: load,
+      }}
+    >
       {children}
     </DesignContext.Provider>
   )

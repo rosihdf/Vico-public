@@ -25,7 +25,8 @@
 | Baustein | Ort / Verhalten |
 |----------|------------------|
 | **Versionsquelle** | `package.json` → Feld `version` |
-| **Build-Zeit** | Gemeinsames Script `scripts/vite-plugin-version.mjs` (`vicoVersionPlugin`): schreibt **`version.json`** ins Build-Root (`version`, `buildTime`, `releaseNotes`) |
+| **Beta-Kennzeichnung (optional)** | `package.json` → `vico.releaseLabel` (z. B. `"Beta"`) – erscheint in **`version.json`** als `releaseLabel` und in der **Info-UI** neben der Versionsnummer; bei `Beta` zusätzlich Hinweisbox. |
+| **Build-Zeit** | Gemeinsames Script `scripts/vite-plugin-version.mjs` (`vicoVersionPlugin`): schreibt **`version.json`** ins Build-Root (`version`, `buildTime`, `releaseNotes`, optional `releaseLabel`) |
 | **Client** | `__APP_VERSION__` (gleicher Wert wie `package.json`) |
 | **Update-Hinweis** | `shared/UpdateBanner.tsx`: lädt `version.json` (no-cache), vergleicht mit `isNewerVersion` → Banner „Neu laden“ |
 | **Release Notes im Build** | **Haupt-App:** `release-notes.json` im Repo-Root. **Portal / Arbeitszeit-Portal / Admin:** je `release-notes.json` im jeweiligen App-Ordner – Einträge für **genau die gebaute** Version werden ins `version.json` übernommen |
@@ -69,9 +70,11 @@
 
 ---
 
-## 6. Mobile (Capacitor)
+## 6. Mobile (PWA / PWABuilder / optional Capacitor)
 
-- **Web-Teil** der App: wie PWA – Updates über Deploy + Reload im WebView nach Prompt oder App-Neustart (je nach Implementierung).
+- **Geplanter Store-Weg:** **PWABuilder** aus der live deployten **PWA** der Haupt-App (HTTPS) – Pakete für **Android** und **iOS**; Details: **`docs/Netlify-Deployment-Updates-und-Mobile-Apps.md` Teil E**.
+- **Web-Teil** in der installierten App: lädt dieselbe URL wie die PWA – Updates über **Netlify-Deploy** + ggf. Reload; bei reinen Web-Änderungen oft **kein** neues Store-Bundle nötig (siehe Teil E dort).
+- **Capacitor** im Repo **optional**, falls später **native Plugins** nötig sind (`Vico.md` § Mobile-Build).
 - **Store-Builds (Play/App Store):** eigene **Store-Versionsnummern** / Build-Nummern – in Release-Doku **Mapping** festhalten: „Store Build 47 = App SemVer 1.4.2“.
 
 ---
@@ -275,7 +278,7 @@ Für **Haupt-App**, **`portal/`**, **`arbeitszeit-portal/`**, **`admin/`**:
 
 ### 11.2 Deployment: eine Site pro App
 
-- **Netlify:** Pro Ordner **Base directory** + **Build command** + **Publish directory** eigene Site.
+- **Netlify:** Pro Ordner **Base directory** + **Build command** + **Publish directory** eigene Site – **konkrete Werte für dieses Repo:** `docs/Netlify-Vier-Apps.md`.
 - **GitHub Actions:** Jobs `deploy-main-app`, `deploy-portal`, … mit `paths:`-Filter:
 
   ```yaml

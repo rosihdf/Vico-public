@@ -57,11 +57,11 @@ const Log = () => {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-slate-800">Bearbeitungslog</h2>
+      <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Bearbeitungslog</h2>
 
-      <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50">
+      <div className="flex flex-wrap items-end gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800">
         <div>
-          <label htmlFor="log-date-from" className="block text-xs font-medium text-slate-600 mb-1">
+          <label htmlFor="log-date-from" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
             Von (Eintrag-Datum)
           </label>
           <input
@@ -72,12 +72,12 @@ const Log = () => {
               setDateFrom(e.target.value)
               setPage(0)
             }}
-            className="px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-800 text-sm"
+            className="px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm"
             aria-label="Filter von Datum"
           />
         </div>
         <div>
-          <label htmlFor="log-date-to" className="block text-xs font-medium text-slate-600 mb-1">
+          <label htmlFor="log-date-to" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
             Bis (Eintrag-Datum)
           </label>
           <input
@@ -88,12 +88,12 @@ const Log = () => {
               setDateTo(e.target.value)
               setPage(0)
             }}
-            className="px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-800 text-sm"
+            className="px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm"
             aria-label="Filter bis Datum"
           />
         </div>
         <div>
-          <label htmlFor="log-user" className="block text-xs font-medium text-slate-600 mb-1">
+          <label htmlFor="log-user" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
             Benutzer
           </label>
           <select
@@ -103,7 +103,7 @@ const Log = () => {
               setFilterUserId(e.target.value)
               setPage(0)
             }}
-            className="px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-800 text-sm min-w-[10rem]"
+            className="px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm min-w-[10rem]"
             aria-label="Filter nach Benutzer"
           >
             <option value="">Alle</option>
@@ -115,7 +115,7 @@ const Log = () => {
           </select>
         </div>
         <div>
-          <label htmlFor="log-page-size" className="block text-xs font-medium text-slate-600 mb-1">
+          <label htmlFor="log-page-size" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
             Einträge pro Seite
           </label>
           <select
@@ -125,7 +125,7 @@ const Log = () => {
               setPageSize(Number(e.target.value))
               setPage(0)
             }}
-            className="px-2 py-1.5 rounded border border-slate-300 bg-white text-slate-800 text-sm"
+            className="px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm"
             aria-label="Einträge pro Seite"
           >
             {PAGE_SIZE_OPTIONS.map((n) => (
@@ -139,7 +139,7 @@ const Log = () => {
           <button
             type="button"
             onClick={handleResetFilters}
-            className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-200 text-sm"
+            className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-sm"
             aria-label="Filter zurücksetzen"
           >
             Filter zurücksetzen
@@ -148,57 +148,63 @@ const Log = () => {
       </div>
 
       {loading ? (
-        <p className="text-slate-500">Lade…</p>
+        <p className="text-slate-500 dark:text-slate-400">Lade…</p>
       ) : logEntries.length === 0 ? (
-        <p className="text-slate-500">Keine Bearbeitungen in diesem Filter / dieser Seite.</p>
+        <p className="text-slate-500 dark:text-slate-400">Keine Bearbeitungen in diesem Filter / dieser Seite.</p>
       ) : (
         <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left py-2 px-2 font-medium text-slate-700">Bearbeitet am</th>
-                  <th className="text-left py-2 px-2 font-medium text-slate-700">Eintrag (Datum / Benutzer)</th>
-                  <th className="text-left py-2 px-2 font-medium text-slate-700">Vorher</th>
-                  <th className="text-left py-2 px-2 font-medium text-slate-700">Nachher</th>
-                  <th className="text-left py-2 px-2 font-medium text-slate-700">Grund</th>
-                  <th className="text-left py-2 px-2 font-medium text-slate-700">Bearbeitet von</th>
+                <tr className="border-b border-slate-200 dark:border-slate-600">
+                  <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Bearbeitet am</th>
+                  <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Eintrag (Datum / Benutzer)</th>
+                  <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Vorher</th>
+                  <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Nachher</th>
+                  <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Grund</th>
+                  <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Bearbeitet von</th>
                 </tr>
               </thead>
               <tbody>
                 {logEntries.map((row) => (
-                  <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="py-2 px-2 text-slate-600 whitespace-nowrap">
+                  <tr key={row.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                    <td className="py-2 px-2 text-slate-600 dark:text-slate-300 whitespace-nowrap">
                       {formatDateTimeShort(row.edited_at)}
                     </td>
                     <td className="py-2 px-2">
                       {formatDateShort(row.entry_date)}
                       <br />
-                      <span className="text-slate-500 text-xs">{getEntryUserDisplayName(row.entry_user_id)}</span>
+                      <span className="text-slate-500 dark:text-slate-400 text-xs">{getEntryUserDisplayName(row.entry_user_id)}</span>
                     </td>
-                    <td className="py-2 px-2 text-slate-600">
-                      {formatTime(row.old_start)}
-                      {row.old_end != null ? ` – ${formatTime(row.old_end)}` : ' – …'}
+                    <td className="py-2 px-2 text-slate-600 dark:text-slate-300">
+                      {row.old_start != null ? (
+                        <>
+                          {formatTime(row.old_start)}
+                          {row.old_end != null ? ` – ${formatTime(row.old_end)}` : ' – …'}
+                        </>
+                      ) : (
+                        <span className="text-slate-400 dark:text-slate-500">— (Neuanlage)</span>
+                      )}
                     </td>
-                    <td className="py-2 px-2 text-slate-700">
+                    <td className="py-2 px-2 text-slate-700 dark:text-slate-300">
                       {formatTime(row.new_start)}
                       {row.new_end != null ? ` – ${formatTime(row.new_end)}` : ' – …'}
                     </td>
-                    <td className="py-2 px-2 text-slate-600 max-w-[12rem]">{row.reason}</td>
-                    <td className="py-2 px-2 text-slate-500">{row.editor_display_name ?? '(Unbekannt)'}</td>
+                    <td className="py-2 px-2 text-slate-600 dark:text-slate-300 max-w-[12rem]">{row.reason}</td>
+                    <td className="py-2 px-2 text-slate-500 dark:text-slate-400">{row.editor_display_name ?? '(Unbekannt)'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <div className="flex items-center justify-between gap-4 pt-2">
-            <span className="text-sm text-slate-600">Seite {page + 1}</span>
+            <span className="text-sm text-slate-600 dark:text-slate-300">Seite {page + 1}</span>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={!hasPrevPage}
-                className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 aria-label="Vorherige Seite"
               >
                 Vorherige
@@ -207,7 +213,7 @@ const Log = () => {
                 type="button"
                 onClick={() => setPage((p) => p + 1)}
                 disabled={!hasNextPage}
-                className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 aria-label="Nächste Seite"
               >
                 Nächste

@@ -346,6 +346,244 @@ export const fetchAuditLogDetail = async (id: string): Promise<AuditLogDetailEnt
   }
 }
 
+/** Eintrag für „Zuletzt bearbeitet“ auf der Startseite (nach DB-Spalte updated_at). */
+export type DashboardRecentEdit = {
+  key: string
+  to: string
+  title: string
+  subtitle: string
+  updatedAt: string
+}
+
+const ORDER_TYPE_LABELS_SHORT: Record<string, string> = {
+  wartung: 'Wartung',
+  reparatur: 'Reparatur',
+  montage: 'Montage',
+  sonstiges: 'Sonstiges',
+}
+
+const sortByUpdatedAtDesc = <T extends { updated_at: string }>(rows: T[]): T[] =>
+  [...rows].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+
+/**
+ * Baut „Zuletzt bearbeitet“ aus lokalem Cache (Offline, gleiche Sichtbarkeit wie zuletzt synchronisiert).
+ */
+export const buildRecentEditsFromCache = (options: {
+  includeMaster: boolean
+  includeOrders: boolean
+}): DashboardRecentEdit[] => {
+  const perTable = 10
+  const maxTotal = 10
+  const raw: DashboardRecentEdit[] = []
+
+  if (options.includeMaster) {
+    const customers = sortByUpdatedAtDesc(getCachedCustomers() as Customer[]).slice(0, perTable)
+    for (const c of customers) {
+      raw.push({
+        key: `customer-${c.id}`,
+        to: `/kunden?customerId=${c.id}`,
+        title: `Kunde: ${c.name?.trim() || 'Ohne Namen'}`,
+        subtitle: '',
+        updatedAt: c.updated_at,
+      })
+    }
+    const bvs = sortByUpdatedAtDesc(getCachedBvs() as BV[]).slice(0, perTable)
+    for (const b of bvs) {
+      raw.push({
+        key: `bv-${b.id}`,
+        to: `/kunden?customerId=${b.customer_id}&bvId=${b.id}`,
+        title: `Objekt/BV: ${b.name?.trim() || 'Ohne Namen'}`,
+        subtitle: '',
+        updatedAt: b.updated_at,
+      })
+    }
+    const objs = sortByUpdatedAtDesc(getCachedObjects() as Obj[]).slice(0, perTable)
+    for (const o of objs) {
+      const cid = o.customer_id
+      if (!cid) continue
+      const params = new URLSearchParams()
+      params.set('customerId', cid)
+      if (o.bv_id) params.set('bvId', o.bv_id)
+      params.set('objectId', o.id)
+      raw.push({
+        key: `object-${o.id}`,
+        to: `/kunden?${params.toString()}`,
+        title: `Tür/Tor: ${o.name?.trim() || o.internal_id?.trim() || 'Ohne Namen'}`,
+        subtitle: '',
+        updatedAt: o.updated_at,
+      })
+    }
+  }
+
+  if (options.includeOrders) {
+    const orders = sortByUpdatedAtDesc(getCachedOrders() as Order[]).slice(0, perTable)
+    for (const o of orders) {
+      const typeLabel = ORDER_TYPE_LABELS_SHORT[o.order_type] ?? o.order_type
+      raw.push({
+        key: `order-${o.id}`,
+        to: `/auftrag/${o.id}`,
+        title: `Auftrag: ${typeLabel} · ${o.order_date}`,
+        subtitle: o.status ? `Status: ${o.status}` : '',
+        updatedAt: o.updated_at,
+      })
+    }
+  }
+
+  raw.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  return raw.slice(0, maxTotal)
+}
+
+/**
+ * Liefert die zuletzt geänderten Stammdaten/Aufträge, die der Nutzer per RLS sehen darf.
+ * @param options.includeMaster – Kunden, BVs, Objekte (Menü „Kunden“)
+ * @param options.includeOrders – Aufträge (Menü „Auftrag“)
+ */
+export const fetchRecentEditsForDashboard = async (options: {
+  includeMaster: boolean
+  includeOrders: boolean
+}): Promise<DashboardRecentEdit[]> => {
+  if (!isOnline()) return buildRecentEditsFromCache(options)
+  const perTable = 10
+  const maxTotal = 10
+  /** Supabase-Query-Builder sind thenable, aber kein `Promise` im TS-Sinne. */
+  const promises: PromiseLike<unknown>[] = []
+  let fetchCustomers = false
+  let fetchBvs = false
+  let fetchObjects = false
+  let fetchOrders = false
+
+  if (options.includeMaster) {
+    fetchCustomers = true
+    fetchBvs = true
+    fetchObjects = true
+    promises.push(
+      supabase.from('customers').select('id,name,updated_at').order('updated_at', { ascending: false }).limit(perTable)
+    )
+    promises.push(
+      supabase.from('bvs').select('id,name,customer_id,updated_at').order('updated_at', { ascending: false }).limit(perTable)
+    )
+    promises.push(
+      supabase
+        .from('objects')
+        .select('id,name,internal_id,room,floor,manufacturer,bv_id,customer_id,updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(perTable)
+    )
+  }
+  if (options.includeOrders) {
+    fetchOrders = true
+    promises.push(
+      supabase
+        .from('orders')
+        .select('id,customer_id,bv_id,order_date,order_type,status,updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(perTable)
+    )
+  }
+  if (promises.length === 0) return []
+
+  const results = await Promise.all(promises)
+  const raw: DashboardRecentEdit[] = []
+  let idx = 0
+
+  if (fetchCustomers) {
+    const { data, error } = results[idx++] as {
+      data: { id: string; name: string; updated_at: string }[] | null
+      error: { message: string } | null
+    }
+    if (!error && data) {
+      for (const c of data) {
+        raw.push({
+          key: `customer-${c.id}`,
+          to: `/kunden?customerId=${c.id}`,
+          title: `Kunde: ${c.name?.trim() || 'Ohne Namen'}`,
+          subtitle: '',
+          updatedAt: c.updated_at,
+        })
+      }
+    }
+  }
+  if (fetchBvs) {
+    const { data, error } = results[idx++] as {
+      data: { id: string; name: string; customer_id: string; updated_at: string }[] | null
+      error: { message: string } | null
+    }
+    if (!error && data) {
+      for (const b of data) {
+        raw.push({
+          key: `bv-${b.id}`,
+          to: `/kunden?customerId=${b.customer_id}&bvId=${b.id}`,
+          title: `Objekt/BV: ${b.name?.trim() || 'Ohne Namen'}`,
+          subtitle: '',
+          updatedAt: b.updated_at,
+        })
+      }
+    }
+  }
+  if (fetchObjects) {
+    const { data, error } = results[idx++] as {
+      data: {
+        id: string
+        name: string | null
+        internal_id: string | null
+        room: string | null
+        floor: string | null
+        manufacturer: string | null
+        bv_id: string | null
+        customer_id: string | null
+        updated_at: string
+      }[] | null
+      error: { message: string } | null
+    }
+    if (!error && data) {
+      for (const o of data) {
+        const cid = o.customer_id
+        if (!cid) continue
+        const params = new URLSearchParams()
+        params.set('customerId', cid)
+        if (o.bv_id) params.set('bvId', o.bv_id)
+        params.set('objectId', o.id)
+        raw.push({
+          key: `object-${o.id}`,
+          to: `/kunden?${params.toString()}`,
+          title: `Tür/Tor: ${o.name?.trim() || o.internal_id?.trim() || 'Ohne Namen'}`,
+          subtitle: '',
+          updatedAt: o.updated_at,
+        })
+      }
+    }
+  }
+  if (fetchOrders) {
+    const { data, error } = results[idx] as {
+      data: {
+        id: string
+        customer_id: string
+        bv_id: string
+        order_date: string
+        order_type: string
+        status: string
+        updated_at: string
+      }[] | null
+      error: { message: string } | null
+    }
+    if (!error && data) {
+      for (const o of data) {
+        const typeLabel = ORDER_TYPE_LABELS_SHORT[o.order_type] ?? o.order_type
+        raw.push({
+          key: `order-${o.id}`,
+          to: `/auftrag/${o.id}`,
+          title: `Auftrag: ${typeLabel} · ${o.order_date}`,
+          subtitle: o.status ? `Status: ${o.status}` : '',
+          updatedAt: o.updated_at,
+        })
+      }
+    }
+  }
+
+  raw.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  return raw.slice(0, maxTotal)
+}
+
 type CustomerPayload = Omit<Customer, 'id' | 'created_at' | 'updated_at'> & {
   updated_at?: string
 }
@@ -1332,6 +1570,14 @@ export const fetchCompletionByOrderId = async (orderId: string): Promise<OrderCo
     .maybeSingle()
   if (error) return null
   return data as unknown as OrderCompletion | null
+}
+
+/** Alle Monteursberichte (nur online; für Buchhaltungs-Export / Auswertungen). */
+export const fetchAllOrderCompletions = async (): Promise<OrderCompletion[]> => {
+  if (!isOnline()) return []
+  const { data, error } = await supabase.from('order_completions').select(ORDER_COMPLETION_COLUMNS)
+  if (error || !Array.isArray(data)) return []
+  return data as unknown as OrderCompletion[]
 }
 
 export const createOrderCompletion = async (

@@ -15,10 +15,17 @@ import {
   type LicenseModel,
   type LicenseWithModel,
 } from '../lib/licensePortalService'
+import { LICENSE_FEATURE_KEYS, LICENSE_FEATURE_LABELS, emptyLicenseFeatures } from '../../../shared/licenseFeatures'
+import AppVersionRowsEditor from '../components/AppVersionRowsEditor'
+import {
+  appVersionRowsFromJson,
+  appVersionRowsToPayload,
+  initialAppVersionRows,
+  type AppVersionRowsState,
+} from '../lib/appVersionFormUtils'
 
 const TIER_OPTIONS = ['free', 'professional', 'enterprise'] as const
 const CHECK_INTERVAL_OPTIONS = ['on_start', 'daily', 'weekly'] as const
-const FEATURE_KEYS = ['kundenportal', 'historie', 'arbeitszeiterfassung', 'standortabfrage'] as const
 
 const DEFAULT_CREATE_FORM: {
   license_number: string
@@ -43,7 +50,7 @@ const DEFAULT_CREATE_FORM: {
   max_customers: null,
   max_storage_mb: null,
   check_interval: 'daily',
-  features: { kundenportal: false, historie: false, arbeitszeiterfassung: false, standortabfrage: false },
+  features: emptyLicenseFeatures(),
 }
 
 type LocationState = { editLicenseId?: string; openCreateLicense?: boolean } | null
@@ -74,6 +81,8 @@ const MandantForm = () => {
     arbeitszeitenportal_domain: '',
     primary_color: '#5b7895',
     app_name: 'AMRtech',
+    /** Öffentliche Logo-URL (HTTPS), z. B. CDN oder Storage – wie in der Lizenz-API unter design.logo_url */
+    logo_url: '',
     impressum_company_name: '',
     impressum_address: '',
     impressum_contact: '',
@@ -81,6 +90,8 @@ const MandantForm = () => {
     datenschutz_contact_email: '',
     allowed_domains: '',
   })
+
+  const [appVersionRows, setAppVersionRows] = useState<AppVersionRowsState>(initialAppVersionRows)
 
   const loadLicenses = useCallback(async (tenantId: string) => {
     try {
@@ -126,6 +137,7 @@ const MandantForm = () => {
             arbeitszeitenportal_domain: t.arbeitszeitenportal_domain ?? '',
             primary_color: t.primary_color ?? '#5b7895',
             app_name: t.app_name ?? 'AMRtech',
+            logo_url: t.logo_url ?? '',
             impressum_company_name: t.impressum_company_name ?? '',
             impressum_address: t.impressum_address ?? '',
             impressum_contact: t.impressum_contact ?? '',
@@ -135,6 +147,8 @@ const MandantForm = () => {
               ? t.allowed_domains.join('\n')
               : (t.allowed_domains ? String(t.allowed_domains) : ''),
           })
+          const av = t.app_versions as Record<string, unknown> | null | undefined
+          setAppVersionRows(appVersionRowsFromJson(av))
         }
         setTenantLicenses(licensesData)
         setLicenseModels(modelsData ?? [])
@@ -195,11 +209,13 @@ const MandantForm = () => {
             : [],
           primary_color: form.primary_color,
           app_name: form.app_name,
+          logo_url: form.logo_url.trim() || null,
           impressum_company_name: form.impressum_company_name || null,
           impressum_address: form.impressum_address || null,
           impressum_contact: form.impressum_contact || null,
           datenschutz_responsible: form.datenschutz_responsible || null,
           datenschutz_contact_email: form.datenschutz_contact_email || null,
+          app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
         })
         if ('id' in result) {
           navigate('/mandanten')
@@ -220,11 +236,13 @@ const MandantForm = () => {
             : [],
           primary_color: form.primary_color,
           app_name: form.app_name,
+          logo_url: form.logo_url.trim() || null,
           impressum_company_name: form.impressum_company_name || null,
           impressum_address: form.impressum_address || null,
           impressum_contact: form.impressum_contact || null,
           datenschutz_responsible: form.datenschutz_responsible || null,
           datenschutz_contact_email: form.datenschutz_contact_email || null,
+          app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
         })
         if (result.ok) {
           navigate('/mandanten')
@@ -294,7 +312,7 @@ const MandantForm = () => {
     const trialEnd = new Date()
     trialEnd.setDate(trialEnd.getDate() + 14)
     const validUntil = trialEnd.toISOString().slice(0, 10)
-    const allFeatures = FEATURE_KEYS.reduce((acc, k) => ({ ...acc, [k]: true }), {} as Record<string, boolean>)
+    const allFeatures = LICENSE_FEATURE_KEYS.reduce((acc, k) => ({ ...acc, [k]: true }), {} as Record<string, boolean>)
     setError(null)
     const result = await createLicense({
       tenant_id: id,
@@ -599,7 +617,7 @@ const MandantForm = () => {
                 <div>
                   <span className="block text-sm font-medium text-slate-700 mb-2">Features</span>
                   <div className="flex flex-wrap gap-4">
-                    {FEATURE_KEYS.map((key) => (
+                    {LICENSE_FEATURE_KEYS.map((key) => (
                       <label key={key} className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
@@ -607,7 +625,7 @@ const MandantForm = () => {
                           onChange={(e) => setCreateForm((f) => ({ ...f, features: { ...f.features, [key]: e.target.checked } }))}
                           className="w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
                         />
-                        <span className="text-sm text-slate-700 capitalize">{key}</span>
+                        <span className="text-sm text-slate-700">{LICENSE_FEATURE_LABELS[key] ?? key}</span>
                       </label>
                     ))}
                   </div>
@@ -733,7 +751,7 @@ const MandantForm = () => {
                         <div>
                           <span className="block text-sm font-medium text-slate-700 mb-2">Features</span>
                           <div className="flex flex-wrap gap-4">
-                            {FEATURE_KEYS.map((key) => (
+                            {LICENSE_FEATURE_KEYS.map((key) => (
                               <label key={key} className="flex items-center gap-2 cursor-pointer">
                                 <input
                                   type="checkbox"
@@ -741,7 +759,7 @@ const MandantForm = () => {
                                   onChange={(e) => setEditForm((f) => ({ ...f, features: { ...(f.features ?? {}), [key]: e.target.checked } }))}
                                   className="w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
                                 />
-                                <span className="text-sm text-slate-700 capitalize">{key}</span>
+                                <span className="text-sm text-slate-700">{LICENSE_FEATURE_LABELS[key] ?? key}</span>
                               </label>
                             ))}
                           </div>
@@ -808,7 +826,9 @@ const MandantForm = () => {
                           <div>
                             <span className="text-slate-500">Features</span>
                             <p className="font-medium text-slate-800">
-                              {activeFeatures.length > 0 ? activeFeatures.join(', ') : '–'}
+                              {activeFeatures.length > 0
+                                ? activeFeatures.map((k) => LICENSE_FEATURE_LABELS[k] ?? k).join(', ')
+                                : '–'}
                             </p>
                           </div>
                         </div>
@@ -920,6 +940,45 @@ const MandantForm = () => {
             onChange={(e) => setForm((f) => ({ ...f, app_name: e.target.value }))}
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
           />
+        </div>
+        <div>
+          <label htmlFor="logo_url" className="block text-sm font-medium text-slate-700 mb-1">
+            Logo-URL (öffentlich erreichbar)
+          </label>
+          <input
+            id="logo_url"
+            type="url"
+            inputMode="url"
+            placeholder="https://…/logo.png"
+            value={form.logo_url}
+            onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Wird wie der App-Name über die Lizenz-API an Haupt-App, Kundenportal und Arbeitszeitenportal ausgeliefert (PNG/SVG, idealerweise HTTPS, CORS für fremde Domains beachten).
+          </p>
+          {form.logo_url.trim() ? (
+            <div className="mt-2 flex items-center gap-3">
+              <span className="text-xs text-slate-500">Vorschau:</span>
+              <img
+                src={form.logo_url.trim()}
+                alt=""
+                className="h-10 max-w-[200px] object-contain border border-slate-200 rounded bg-white p-1"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
+        <div className="pt-4 border-t border-slate-200">
+          <h3 className="text-sm font-semibold text-slate-700 mb-2">App-Versionen (optional, Mandant)</h3>
+          <p className="text-xs text-slate-500 mb-4">
+            Überschreibt die <strong>globalen Standardwerte</strong> unter Einstellungen pro App. Leere Felder
+            übernehmen weiterhin die globalen Vorgaben (Lizenz-API merged automatisch). Wird als{' '}
+            <code className="bg-slate-100 px-1 rounded">appVersions</code> ausgeliefert.
+          </p>
+          <AppVersionRowsEditor rows={appVersionRows} setRows={setAppVersionRows} idPrefix="mandant" />
         </div>
         <div className="pt-4 border-t border-slate-200">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Impressum</h3>

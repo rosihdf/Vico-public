@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react'
 import type { SyncStatus } from './types'
 import { getPendingCount, runSync } from './lib/syncService'
 import { subscribeToDataChange } from './lib/dataService'
@@ -80,18 +80,18 @@ export const SyncProvider = ({ children }: { children: React.ReactNode }) => {
     setSyncStatusState(status)
   }, [])
 
+  const value = useMemo<SyncContextType>(() => ({
+    syncStatus,
+    isOffline: syncStatus === 'offline',
+    setSyncStatus,
+    syncNow,
+    pendingCount,
+    lastSyncError,
+    clearSyncError,
+  }), [syncStatus, setSyncStatus, syncNow, pendingCount, lastSyncError, clearSyncError])
+
   return (
-    <SyncContext.Provider
-      value={{
-        syncStatus,
-        isOffline: syncStatus === 'offline',
-        setSyncStatus,
-        syncNow,
-        pendingCount,
-        lastSyncError,
-        clearSyncError,
-      }}
-    >
+    <SyncContext.Provider value={value}>
       {children}
     </SyncContext.Provider>
   )

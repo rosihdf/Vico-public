@@ -19,6 +19,7 @@ import {
   setCachedLicenseResponse,
 } from './lib/licensePortalApi'
 import DesignApplier from './components/DesignApplier'
+import type { AppVersionsMap } from '../shared/appVersions'
 
 export type DesignConfig = {
   app_name: string
@@ -31,6 +32,8 @@ export type DesignConfig = {
 type LicenseContextType = {
   license: LicenseStatus | null
   design: DesignConfig | null
+  /** Optional: mandantenweise gepflegte Versionen je App (Lizenz-API). */
+  appVersions: AppVersionsMap | null
   isLoading: boolean
   /** true wenn Lizenz abgelaufen, aber innerhalb Schonfrist (Nur-Lesen). */
   readOnly: boolean
@@ -56,6 +59,7 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
   const { isAuthenticated, userRole } = useAuth()
   const [license, setLicense] = useState<LicenseStatus | null>(null)
   const [design, setDesign] = useState<DesignConfig | null>(null)
+  const [appVersions, setAppVersions] = useState<AppVersionsMap | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [storageUsageMb, setStorageUsageMb] = useState(0)
 
@@ -67,6 +71,7 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
         if (!licenseNumber) {
           setLicense(null)
           setDesign(null)
+          setAppVersions(null)
           setStorageUsageMb(0)
           return
         }
@@ -87,6 +92,7 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
             const base = mapApiToLicenseStatus(cached)
             setLicense({ ...base, current_customers: 0, current_users: 0 })
             setDesign({ ...DEFAULT_DESIGN, ...cached.design })
+            setAppVersions(cached.appVersions ?? null)
             fetchUsageCounts().then((counts) => {
               setLicense((prev) => (prev ? { ...prev, ...counts } : null))
             }).catch((err) => console.warn('LicenseContext: fetchUsageCounts', err))
@@ -108,12 +114,14 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
             setLicense({ ...base, ...counts })
             setStorageUsageMb(usageMb)
             setDesign({ ...DEFAULT_DESIGN, ...api.design })
+            setAppVersions(api.appVersions ?? null)
             setLastLicenseCheck(now, licenseNumber)
             setStoredCheckInterval(api.license.check_interval ?? 'daily', licenseNumber)
             setCachedLicenseResponse(api, licenseNumber)
           } else {
             setLicense(null)
             setDesign(null)
+            setAppVersions(null)
             setStorageUsageMb(0)
           }
           return
@@ -124,6 +132,7 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
           const base = mapApiToLicenseStatus(cached)
           setLicense({ ...base, current_customers: 0, current_users: 0 })
           setDesign({ ...DEFAULT_DESIGN, ...cached.design })
+          setAppVersions(cached.appVersions ?? null)
           fetchUsageCounts().then((counts) => {
             setLicense((prev) => (prev ? { ...prev, ...counts } : null))
           }).catch(() => {})
@@ -139,6 +148,7 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
               setStoredCheckInterval(api.license.check_interval ?? 'daily', licenseNumber)
               setCachedLicenseResponse(api, licenseNumber)
               setDesign({ ...DEFAULT_DESIGN, ...api.design })
+              setAppVersions(api.appVersions ?? null)
               Promise.all([
                 fetchUsageCounts(),
                 base.max_storage_mb != null ? fetchStorageUsageMb() : Promise.resolve(0),
@@ -158,18 +168,21 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
           const counts = await fetchUsageCounts()
           setLicense({ ...base, ...counts })
           setDesign({ ...DEFAULT_DESIGN, ...api.design })
+          setAppVersions(api.appVersions ?? null)
           setLastLicenseCheck(now, licenseNumber)
           setStoredCheckInterval(api.license.check_interval ?? 'daily', licenseNumber)
           setCachedLicenseResponse(api, licenseNumber)
         } else {
           setLicense(null)
           setDesign(null)
+          setAppVersions(null)
         }
       } else {
         setIsLoading(true)
         const status = await fetchLicenseStatus()
         setLicense(status)
         setDesign(null)
+        setAppVersions(null)
         if (status.max_storage_mb != null) {
           fetchStorageUsageMb().then(setStorageUsageMb).catch((err) => console.warn('LicenseContext: fetchStorageUsageMb', err))
         } else {
@@ -179,6 +192,7 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
     } catch {
       setLicense(null)
       setDesign(null)
+      setAppVersions(null)
       setStorageUsageMb(0)
     } finally {
       setIsLoading(false)
@@ -212,7 +226,7 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
   const readOnly = license?.read_only === true
 
   return (
-    <LicenseContext.Provider value={{ license, design, isLoading, readOnly, storageUsageMb, refresh }}>
+    <LicenseContext.Provider value={{ license, design, appVersions, isLoading, readOnly, storageUsageMb, refresh }}>
       <DesignApplier />
       {children}
     </LicenseContext.Provider>

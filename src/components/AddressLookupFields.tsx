@@ -30,7 +30,7 @@ const useDebounce = <T,>(value: T, delay: number): T => {
 }
 
 const inputClass =
-  'w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary'
+  'w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary'
 
 export const AddressLookupFields = ({
   street,
@@ -113,7 +113,7 @@ export const AddressLookupFields = ({
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="min-w-0">
-          <label htmlFor={postalCodeId} className="block text-sm font-medium text-slate-700 mb-1">
+          <label htmlFor={postalCodeId} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
             {postalCodeLabel}
           </label>
           <input
@@ -129,11 +129,11 @@ export const AddressLookupFields = ({
             aria-label={postalCodeLabel}
           />
           {isPlzLoading && (
-            <p className="mt-1 text-xs text-slate-500">Ort wird ermittelt…</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Ort wird ermittelt…</p>
           )}
         </div>
         <div className="min-w-0">
-          <label htmlFor={cityId} className="block text-sm font-medium text-slate-700 mb-1">
+          <label htmlFor={cityId} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
             {cityLabel}
           </label>
           <input
@@ -149,7 +149,7 @@ export const AddressLookupFields = ({
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="relative min-w-0">
-          <label htmlFor={streetId} className="block text-sm font-medium text-slate-700 mb-1">
+          <label htmlFor={streetId} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
             {streetLabel}
           </label>
           <input
@@ -174,7 +174,7 @@ export const AddressLookupFields = ({
           {showStreetSuggestions && streetSuggestions.length > 0 && (
             <ul
               id="street-suggestions"
-              className="absolute z-[100] mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+              className="absolute z-[100] mt-1 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto"
               role="listbox"
             >
               {streetSuggestions.map((s) => (
@@ -182,7 +182,7 @@ export const AddressLookupFields = ({
                   key={s}
                   role="option"
                   tabIndex={0}
-                  className="px-3 py-2 text-sm cursor-pointer hover:bg-slate-100 first:rounded-t-lg last:rounded-b-lg"
+                  className="px-3 py-2 text-sm text-slate-800 dark:text-slate-100 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 first:rounded-t-lg last:rounded-b-lg"
                   onMouseDown={(e) => {
                     e.preventDefault()
                     handleStreetSelect(s)
@@ -204,7 +204,7 @@ export const AddressLookupFields = ({
           )}
         </div>
         <div className="min-w-0">
-          <label htmlFor={houseNumberId} className="block text-sm font-medium text-slate-700 mb-1">
+          <label htmlFor={houseNumberId} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
             {houseNumberLabel}
           </label>
           <input

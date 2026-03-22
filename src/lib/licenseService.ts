@@ -1,6 +1,7 @@
 import { supabase } from '../supabase'
 import { getCachedLicense, setCachedLicense } from './offlineStorage'
 import { isOnline } from '../../shared/networkUtils'
+import { getCachedLicenseResponse, getStoredLicenseNumber, isLicenseApiConfigured } from './licensePortalApi'
 
 export type LicenseStatus = {
   tier: string
@@ -63,16 +64,32 @@ const EMPTY_LICENSE: LicenseStatus = {
   read_only: false,
 }
 
+/**
+ * Übernimmt `max_storage_mb` aus dem letzten Lizenz-API-Cache (localStorage), falls gesetzt.
+ * So bleibt das Speicher-Kontingent offline nutzbar, wenn die Mandanten-RPC nur eingeschränkt liefert.
+ */
+export const mergeLicenseApiCacheIntoStatus = (status: LicenseStatus | null): LicenseStatus | null => {
+  if (!status) return null
+  if (!isLicenseApiConfigured()) return status
+  const num = getStoredLicenseNumber()
+  if (!num) return status
+  const api = getCachedLicenseResponse(num)
+  if (!api?.license) return status
+  const mb = api.license.max_storage_mb
+  if (mb == null || !Number.isFinite(Number(mb))) return status
+  return { ...status, max_storage_mb: Math.round(Number(mb)) }
+}
+
 export const fetchLicenseStatus = async (): Promise<LicenseStatus> => {
   if (!isOnline()) {
     const cached = getCachedLicense() as LicenseStatus | null
-    return cached ?? EMPTY_LICENSE
+    return mergeLicenseApiCacheIntoStatus(cached) ?? EMPTY_LICENSE
   }
   const { data, error } = await supabase.rpc('get_license_status')
   if (error || !data) return EMPTY_LICENSE
   const status = data as LicenseStatus
   setCachedLicense(status)
-  return status
+  return mergeLicenseApiCacheIntoStatus(status) ?? status
 }
 
 export const checkCanCreateCustomer = async (): Promise<boolean> => {
@@ -137,6 +154,7 @@ export const fetchUsageCounts = async (): Promise<{
   }
 }
 
+/** Nur explizit in `license.features` gesetzte Module (kein Tier-Auto-Merge). */
 export const hasFeature = (license: LicenseStatus, feature: string): boolean => {
   return license.features?.[feature] === true
 }

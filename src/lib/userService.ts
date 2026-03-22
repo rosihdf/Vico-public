@@ -10,6 +10,10 @@ export type { ProfileRole }
 export { parseRole, getProfileDisplayName }
 
 import { isOnline } from '../../shared/networkUtils'
+import type { Theme } from '../../shared/ThemeContext'
+import { saveProfileThemePreference } from '../../shared/themePreferenceDb'
+import type { DashboardLayoutStored } from './dashboardLayoutPreferences'
+import { parseDashboardLayoutFromUnknown } from './dashboardLayoutPreferences'
 
 export type Profile = {
   id: string
@@ -28,6 +32,10 @@ export type Profile = {
   gps_consent_revoked_at?: string | null
   standortabfrage_consent_at?: string | null
   standortabfrage_consent_revoked_at?: string | null
+  /** Startseiten-Widgets / Zuletzt bearbeitet (JSON in DB) */
+  dashboard_layout?: DashboardLayoutStored | null
+  /** Hell / Dunkel / System – Sync mit Portalen */
+  theme_preference?: string | null
 }
 
 export type Team = {
@@ -39,19 +47,44 @@ export const fetchMyProfile = async (userId: string): Promise<Profile | null> =>
   if (!isOnline()) {
     const cached = getCachedProfiles() as Profile[]
     const found = cached.find((p) => p.id === userId)
-    return found ?? null
+    if (!found) return null
+    const row = found as Record<string, unknown>
+    const parsedLayout = parseDashboardLayoutFromUnknown(row.dashboard_layout)
+    return { ...(found as object), dashboard_layout: parsedLayout } as Profile
   }
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, vacation_days_per_year, team_id, gps_consent_at, gps_consent_revoked_at, standortabfrage_consent_at, standortabfrage_consent_revoked_at')
+    .select(
+      'id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, vacation_days_per_year, team_id, gps_consent_at, gps_consent_revoked_at, standortabfrage_consent_at, standortabfrage_consent_revoked_at, dashboard_layout, theme_preference'
+    )
     .eq('id', userId)
     .single()
   if (error || !data) return null
-  const profile = data as Profile
+  const row = data as Record<string, unknown>
+  const parsedLayout = parseDashboardLayoutFromUnknown(row.dashboard_layout)
+  const profile = { ...(data as object), dashboard_layout: parsedLayout } as Profile
   const all = getCachedProfiles() as Profile[]
   const others = all.filter((p) => p.id !== userId)
   setCachedProfiles([...others, profile])
   return profile
+}
+
+export const updateThemePreference = async (
+  userId: string,
+  theme: Theme
+): Promise<{ error: string | null }> => {
+  if (!isOnline()) {
+    return { error: null }
+  }
+  const { error } = await saveProfileThemePreference(supabase, userId, theme)
+  if (!error) {
+    const cached = getCachedProfiles() as Profile[]
+    const updated = cached.map((p) =>
+      p.id === userId ? { ...p, theme_preference: theme } : p
+    )
+    setCachedProfiles(updated)
+  }
+  return { error }
 }
 
 export const fetchProfileByEmail = async (email: string): Promise<Profile | null> => {
@@ -305,29 +338,30 @@ export const revokeStandortabfrageConsent = async (profileId: string): Promise<{
   return { error: error ? { message: error.message } : null }
 }
 
-export const updateProfileSollMinutes = async (
+export const updateProfileDashboardLayout = async (
   profileId: string,
-  sollMinutesPerMonth: number | null
+  layout: DashboardLayoutStored
 ): Promise<{ error: { message: string } | null }> => {
-  const val = sollMinutesPerMonth != null && sollMinutesPerMonth >= 0 ? Math.round(sollMinutesPerMonth) : null
+  const updatedAt = new Date().toISOString()
+  const payload = { id: profileId, dashboard_layout: layout, updated_at: updatedAt }
   if (!isOnline()) {
-    addToOutbox({
-      table: 'profiles',
-      action: 'update',
-      payload: { id: profileId, soll_minutes_per_month: val, updated_at: new Date().toISOString() },
-    })
+    addToOutbox({ table: 'profiles', action: 'update', payload })
     const cached = getCachedProfiles() as Profile[]
-    const updated = cached.map((p) => (p.id === profileId ? { ...p, soll_minutes_per_month: val } : p))
+    const updated = cached.map((p) =>
+      p.id === profileId ? { ...p, dashboard_layout: layout, updated_at: updatedAt } : p
+    )
     setCachedProfiles(updated)
     return { error: null }
   }
   const { error } = await supabase
     .from('profiles')
-    .update({ soll_minutes_per_month: val, updated_at: new Date().toISOString() })
+    .update({ dashboard_layout: layout, updated_at: updatedAt })
     .eq('id', profileId)
   if (!error) {
     const cached = getCachedProfiles() as Profile[]
-    const updated = cached.map((p) => (p.id === profileId ? { ...p, soll_minutes_per_month: val } : p))
+    const updated = cached.map((p) =>
+      p.id === profileId ? { ...p, dashboard_layout: layout, updated_at: updatedAt } : p
+    )
     setCachedProfiles(updated)
   }
   return { error: error ? { message: error.message } : null }

@@ -134,23 +134,23 @@ export const OrderCalendar = ({
 
   return (
     <div className="flex flex-col lg:flex-row gap-4">
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex-1">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 p-4 flex-1">
         <div className="flex items-center justify-between mb-4">
           <button
             type="button"
             onClick={prevMonth}
-            className="p-2 rounded-lg hover:bg-slate-100"
+            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100"
             aria-label="Vorheriger Monat"
           >
             ←
           </button>
-          <h3 className="text-lg font-semibold text-slate-800">
+          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
             {MONTHS[month]} {year}
           </h3>
           <button
             type="button"
             onClick={nextMonth}
-            className="p-2 rounded-lg hover:bg-slate-100"
+            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100"
             aria-label="Nächster Monat"
           >
             →
@@ -159,7 +159,7 @@ export const OrderCalendar = ({
         <div className="overflow-x-auto min-w-0">
           <div className="grid grid-cols-7 gap-1 text-center text-sm min-w-[240px]">
           {WEEKDAYS.map((wd) => (
-            <div key={wd} className="font-medium text-slate-500 py-1">
+            <div key={wd} className="font-medium text-slate-500 dark:text-slate-400 py-1">
               {wd}
             </div>
           ))}
@@ -176,10 +176,10 @@ export const OrderCalendar = ({
                 onClick={() => onSelectDate(isSelected ? null : dateStr)}
                 className={`aspect-square rounded-lg flex flex-col items-center justify-center text-sm transition-colors ${
                   isSelected
-                    ? 'bg-vico-primary text-white ring-2 ring-vico-primary ring-offset-2'
+                    ? 'bg-vico-primary text-white ring-2 ring-vico-primary ring-offset-2 dark:ring-offset-slate-800'
                     : isToday
-                      ? 'bg-amber-100 text-slate-800 hover:bg-amber-200'
-                      : 'hover:bg-slate-100 text-slate-800'
+                      ? 'bg-amber-100 dark:bg-amber-900/50 text-slate-800 dark:text-slate-100 hover:bg-amber-200 dark:hover:bg-amber-800/50'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100'
                 }`}
               >
                 <span>{d}</span>
@@ -206,15 +206,15 @@ export const OrderCalendar = ({
         </div>
       </div>
       {selectedDate && (
-        <div className="bg-white rounded-xl border border-slate-200 p-4 w-full lg:w-80">
-          <h4 className="font-semibold text-slate-800 mb-2">
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 p-4 w-full lg:w-80">
+          <h4 className="font-semibold text-slate-800 dark:text-slate-100 mb-2">
             Aufträge am {selectedDate}
           </h4>
           {selectedOrders.length === 0 ? (
-            <p className="text-slate-500 text-sm">Keine Aufträge an diesem Tag.</p>
+            <p className="text-slate-500 dark:text-slate-400 text-sm">Keine Aufträge an diesem Tag.</p>
           ) : (
             <>
-              <p className="text-sm text-slate-600 mb-3">
+              <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
                 {formatStatusSummary(selectedOrders)}
               </p>
               <ul className="space-y-2">
@@ -233,17 +233,19 @@ export const OrderCalendar = ({
                         {filtered.map((o) => (
                           <div
                             key={o.id}
-                            className={`text-sm border-b border-slate-100 pb-2 mb-2 last:border-0 last:mb-0 ${
-                              !o.assigned_to ? 'pl-2 -ml-2 border-l-4 border-l-amber-400 bg-amber-50/50' : ''
+                            className={`text-sm border-b border-slate-100 dark:border-slate-600 pb-2 mb-2 last:border-0 last:mb-0 ${
+                              !o.assigned_to
+                                ? 'pl-2 -ml-2 border-l-4 border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/30'
+                                : ''
                             }`}
                           >
-                            <p className="font-medium text-slate-800">
+                            <p className="font-medium text-slate-800 dark:text-slate-100">
                               {getCustomerName(o.customer_id)} → {getBvName(o.bv_id)}
                               {!o.assigned_to && (
-                                <span className="ml-2 text-xs font-normal text-amber-700">(nicht zugewiesen)</span>
+                                <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-300">(nicht zugewiesen)</span>
                               )}
                             </p>
-                            <p className="text-slate-600 text-xs">{o.order_type}</p>
+                            <p className="text-slate-600 dark:text-slate-400 text-xs">{o.order_type}</p>
                           </div>
                         ))}
                       </li>

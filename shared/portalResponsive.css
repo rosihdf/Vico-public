@@ -1,0 +1,31 @@
+/**
+ * Bildschirmanpassung – gemeinsam für Haupt-App, Admin, Kundenportal, Arbeitszeit-Portal.
+ * Verhindert horizontales Scrollen, nutzt dynamische Viewport-Höhe und unterstützt Safe Areas.
+ */
+
+html {
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  overflow-x: clip;
+}
+
+/* Dynamische Viewport-Höhe (Mobile: Adresszeile ein/aus) */
+@supports (min-height: 100dvh) {
+  html,
+  body,
+  #root {
+    min-height: 100dvh;
+  }
+}
+
+/* Safe Area: seitliche Einrückung nur, oben/unten übernehmen Layout-Komponenten */
+@supports (padding: max(0px)) {
+  #root {
+    padding-left: max(0px, env(safe-area-inset-left, 0px));
+    padding-right: max(0px, env(safe-area-inset-right, 0px));
+  }
+}

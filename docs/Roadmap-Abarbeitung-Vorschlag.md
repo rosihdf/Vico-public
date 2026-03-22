@@ -15,39 +15,45 @@ Ziel dieser Reihenfolge: **wenig Blockaden**, zuerst **Betrieb & Klarheit**, dan
 | 0.2 | **Grenzüberschreitungen verifizieren** | ✅ Checkliste `docs/Verifikation-Grenzueberschreitungen-Checkliste.md` (Live-Abhaken vor Ort) |
 | 0.3 | **Build/TS** | ✅ Lint, Tests, Build Haupt-App + portal + admin + arbeitszeit-portal lokal geprüft |
 
-**Nächster Schritt:** Phase 1 (z. B. J4 Zuletzt bearbeitet).
+**Nächster Schritt:** **Phase 1 (J1–J4)** MVP im Kern erledigt; **Phase 3 (Urlaub)** MVP umgesetzt. **Weiter:** **J7** (Mängel-Follow-up → Bulk → Portal-Push) **oder** optionale Nachzieher (J1 E-Mail, J4-B, SevDesk, J2-Charts).
 
 ---
 
-## Phase 1 – Schnelle Gewinne Haupt-App (Roadmap J, klein bis mittel)
+## Phase 1 – Schnelle Gewinne Haupt-App (Roadmap J, klein bis mittel) ✅ Kern erledigt (März 2026)
 
-| # | Thema | Aufwand (ca.) | Hinweis |
-|---|--------|---------------|---------|
-| 1.1 | **J4 – Zuletzt bearbeitet** auf der Startseite | 1–2 T | Hoher UX-Nutzen, wenig Abhängigkeiten. |
-| 1.2 | **J1 – Wartungserinnerungen** ausbauen (In-App zuerst; **E-Mail** bewusst als zweiter Schritt laut Entscheidung) | 3–5 T (+ E-Mail später) | Schließt an bestehende Erinnerungslogik an. |
-| 1.3 | **J2 – Wartungsstatistik / Auswertung** | 3–4 T | Nutzt vorhandene Wartungsdaten. |
-| 1.4 | **J3 – Export Buchhaltung** | 2–3 T | Entscheidung „SevDesk später“ beachten: erst einfachen CSV/Excel-Export, Schnittstellen später. |
+| # | Thema | Status | Realisiert / offen |
+|---|--------|--------|-------------------|
+| 1.1 | **J4 – Zuletzt bearbeitet** | ✅ **MVP** | `Startseite.tsx`, `fetchRecentEditsForDashboard`, Widget + **Layout-Sync** `profiles.dashboard_layout` (`useDashboardLayout`). |
+| 1.1b | J4 **B** Favoriten / „nur meine“ | ⏳ **bewusst später** | Laut `Noch-zu-erledigen.md` nicht in MVP. |
+| 1.2 | **J1 – Wartungserinnerungen** (In-App) | ✅ **MVP** | Dashboard: Filter **Alle / Überfällig / ≤7 / ≤30**, Karten mit Status-Badge; **Nav-Badge** Dashboard: rot bei Überfällig, sonst Bernstein, Zähler ≤7 inkl. Überfällig (`Layout.tsx`, `maintenanceReminderUtils.ts`, `Startseite.tsx`). |
+| 1.2b | J1 **E-Mail**-Versand | ⏳ **offen** | Bewusst zweiter Schritt (Provider/DSGVO). |
+| 1.3 | **J2 – Wartungsstatistik** | ✅ **MVP** | `/wartungsstatistik`, KPIs, Tabellen, CSV – siehe `Noch-zu-erledigen.md`. Optional später: Charts-Lib, Auslastung aus Reports. |
+| 1.4 | **J3 – Export Buchhaltung** | ✅ **MVP** | `/buchhaltung-export`, CSV Semikolon; `accountingExportService.ts`. **SevDesk/API** ⏳ später. |
 
-**Parallel möglich:** **Bug-Erfassungsmodul** (`Vico.md` §11.3, ~1–2 T) – verbessert Stabilität während J1–J3.
+**Parallel – Bug-Erfassungsmodul** (`Vico.md` §11.3): ✅ **MVP vorhanden** – `shared/errorReportService`, `reportError` in `main.tsx` / `ErrorBoundary` / u. a. `Arbeitszeit.tsx`, Admin-Übersicht **`Fehlerberichte`** (`app_errors`). Feinschliff (Filter, Workflow, weitere Quellen) optional.
+
+**Fazit Phase 1:** Alle vier Hauptpunkte **in der geplanten MVP-Form umgesetzt**; offen sind nur **bewusst zurückgestellte** Themen (J4-B, J1-E-Mail, J3-Schnittstellen) und **optionale** Ausbauten (J2-Charts, Bug-Modul).
 
 ---
 
-## Phase 2 – Einheitliche PDFs / Briefbogen (querschnittlich)
+## Phase 2 – Einheitliche PDFs / Briefbogen (querschnittlich) ✅
 
 | # | Thema | Warum hier |
 |---|--------|------------|
-| 2.1 | **J10 – PDF mit Mandanten-Briefbogen** (Wartungsprotokolle, Zoll-Export o. Ä.) | 1–2 T geschätzt; baut auf §11.2 / Entscheidung „einheitliche Briefbogen-Logik“ auf. |
-| 2.2 | **PDF-Briefbogen** schrittweise auf Portal / Arbeitszeit-Portal angleichen (laut Entscheidungstabelle) | Nach J10 oder in kleinen Inkrementen, damit nicht drei getrennte PDF-Stile wachsen. |
+| 2.1 | **J10 – PDF mit Mandanten-Briefbogen** (Wartungsprotokolle, Zoll-Export o. Ä.) | ✅ **Umgesetzt:** `shared/pdfLetterhead.ts`, `shared/briefbogenClient.ts`; Haupt-App Wartungsprotokoll; Arbeitszeit-Portal **Zoll-PDF** + **Urlaubsbescheinigung** mit gleichem Briefbogen; Upload weiter in **Einstellungen** (Haupt-App). |
+| 2.2 | **PDF-Briefbogen** Portal / Arbeitszeit-Portal | ✅ Arbeitszeit-Portal nutzt dieselbe Briefbogen-Logik. **Kundenportal:** lädt nur gespeicherte PDFs (Briefbogen bereits in der Datei aus der Haupt-App). |
+
+**Technische Referenz:** Bucket `briefbogen`, `admin_config.briefbogen_storage_path`, Signed URLs für Bild + PDF-Hintergrund.
 
 ---
 
-## Phase 3 – Arbeitszeit: Urlaub VJ, Zusatzurlaub, Pending (großer Block)
+## Phase 3 – Arbeitszeit: Urlaub VJ, Zusatzurlaub, Pending (großer Block) ✅ MVP (März 2026)
 
 | # | Thema | Hinweis |
 |---|--------|---------|
-| 3.1 | **Schema & Migrationen:** Mandantenfrist VJ, optional Profil-Override, Zusatzurlaubs-Posten, ggf. Acknowledgement-Tabelle | Expand-only bevorzugen (`App-Updates-und-Versionierung.md`). |
-| 3.2 | **Logik:** Automatik 01.01. `days_carried_over`, Pending zieht Tage, Ablehnung/Teilablehnung, Verbrauchsreihenfolge | Entscheidungen in `Noch-zu-erledigen.md` (Urlaub). |
-| 3.3 | **UI Arbeitszeit-Portal** (`Urlaub.tsx` u. a.): getrennte Anzeige VJ / Jahr / Zusatz, Hinweis „verstanden“ | Texte extern rechtlich prüfen. |
+| 3.1 | **Schema & Migrationen:** Mandantenfrist VJ, optional Profil-Override, Zusatzurlaubs-Posten, Acknowledgement | ✅ `supabase-complete.sql`: `leave_extra_entitlements`, `leave_vj_acknowledgments`, `approve_leave_request(…, date, date)`, Balance-RPC u. a. |
+| 3.2 | **Logik:** Pending in Saldo, Teilgenehmigung, Snapshot inkl. VJ/Zusatz | ✅ `get_leave_balance_snapshot`; **kein** automatisches FIFO-Verbrauchen der Zusatzposten in der DB (Anzeige + Admin-Pflege; Hinweistext Verbrauchsreihenfolge). |
+| 3.3 | **UI Arbeitszeit-Portal** | ✅ `Urlaub.tsx` (Saldo, VJ-Hinweis + Bestätigen, Teilgenehmigung, Zusatz-Admin); `Stammdaten.tsx` (Mandanten-Frist, Profil-Override Admin). **Haupt-App:** `leaveService` mit `approved_*`-Feldern. Texte extern rechtlich prüfen. |
 
 **Begründung Reihenfolge:** Nach Phase 1–2 ist der **Kern-Wartungs-Alltag** verbessert; Urlaub ist **fachlich dicht** und lohnt sich als **fokussierter** Block ohne gleichzeitig J6.
 

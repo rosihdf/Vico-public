@@ -322,18 +322,18 @@ const ObjectFormModal = ({
         aria-label="Modal schließen"
       >
         <div
-          className="bg-white rounded-xl shadow-xl max-w-2xl w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto"
+          className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-2xl w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto text-slate-900 dark:text-slate-100"
           role="dialog"
           aria-modal
           onClick={(e) => e.stopPropagation()}
           aria-labelledby="object-form-title"
         >
-          <div className="p-4 sticky top-0 bg-white border-b border-slate-200">
-            <h3 id="object-form-title" className="text-lg font-bold text-slate-800">
+          <div className="p-4 sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-600">
+            <h3 id="object-form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
               {isEdit ? 'Tür/Tor bearbeiten' : 'Tür/Tor anlegen'}
             </h3>
             {formData.internal_id && (
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                 Interne ID: <span className="font-mono">{formData.internal_id}</span>
               </p>
             )}
@@ -341,14 +341,14 @@ const ObjectFormModal = ({
           <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
             {isEdit && effectiveCustomerId != null && customerBvs !== undefined && (
               <div>
-                <label htmlFor="obj-assignment" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="obj-assignment" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Zuordnung
                 </label>
                 <select
                   id="obj-assignment"
                   value={assignmentBvId ?? ''}
                   onChange={(e) => setAssignmentBvId(e.target.value || null)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                   aria-label="Tür/Tor zuordnen zu Objekt/BV oder direkt unter Kunde"
                   disabled={!canEdit}
                 >
@@ -359,7 +359,7 @@ const ObjectFormModal = ({
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                   {customerHasBvs
                     ? 'Wenn Objekte/BV vorhanden sind, muss jede Tür einem Objekt/BV zugeordnet sein.'
                     : 'Protokolle, Fotos und Dokumente bleiben der Tür zugeordnet.'}
@@ -367,60 +367,60 @@ const ObjectFormModal = ({
               </div>
             )}
             <div>
-              <label htmlFor="obj-name" className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+              <label htmlFor="obj-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
               <input
                 id="obj-name"
                 type="text"
                 value={formData.name}
                 onChange={(e) => handleFormChange('name', e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 placeholder="z. B. Haupteingang, Kellerzugang"
                 aria-label="Objektname"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Tür Position</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tür Position</label>
                 <input
                   type="text"
                   value={formData.door_position}
                   onChange={(e) => handleFormChange('door_position', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 />
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Interne Türnr.</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Interne Türnr.</label>
                 <input
                   type="text"
                   value={formData.internal_door_number}
                   onChange={(e) => handleFormChange('internal_door_number', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 />
               </div>
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Etage</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Etage</label>
                 <input
                   type="text"
                   value={formData.floor}
                   onChange={(e) => handleFormChange('floor', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 />
               </div>
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Raum</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Raum</label>
                 <input
                   type="text"
                   value={formData.room}
                   onChange={(e) => handleFormChange('room', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Art</label>
-              <div className="flex flex-wrap gap-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Art</label>
+              <div className="flex flex-wrap gap-4 text-slate-800 dark:text-slate-200">
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formData.type_tuer} onChange={(e) => handleFormChange('type_tuer', e.target.checked)} /> Tür</label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formData.type_sektionaltor} onChange={(e) => handleFormChange('type_sektionaltor', e.target.checked)} /> Sektionaltor</label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={formData.type_schiebetor} onChange={(e) => handleFormChange('type_schiebetor', e.target.checked)} /> Schiebetor</label>
@@ -430,78 +430,78 @@ const ObjectFormModal = ({
                 placeholder="Freitext"
                 value={formData.type_freitext}
                 onChange={(e) => handleFormChange('type_freitext', e.target.value)}
-                className="mt-2 w-full px-3 py-2 border border-slate-300 rounded-lg"
+                className="mt-2 w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Flügelanzahl</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Flügelanzahl</label>
                 <input
                   type="number"
                   min={0}
                   value={formData.wing_count}
                   onChange={(e) => handleFormChange('wing_count', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 />
               </div>
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Hersteller</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Hersteller</label>
                 <input
                   type="text"
                   value={formData.manufacturer}
                   onChange={(e) => handleFormChange('manufacturer', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 />
               </div>
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Baujahr</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Baujahr</label>
                 <input
                   type="text"
                   value={formData.build_year}
                   onChange={(e) => handleFormChange('build_year', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 />
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Schließmittel Hersteller</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Schließmittel Hersteller</label>
                 <input
                   type="text"
                   value={formData.lock_manufacturer}
                   onChange={(e) => handleFormChange('lock_manufacturer', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 />
               </div>
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Schließmittel Typ</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Schließmittel Typ</label>
                 <input
                   type="text"
                   value={formData.lock_type}
                   onChange={(e) => handleFormChange('lock_type', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 />
               </div>
             </div>
             <div>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={formData.has_hold_open} onChange={(e) => handleFormChange('has_hold_open', e.target.checked)} /> Feststellanlage vorhanden</label>
+              <label className="flex items-center gap-2 text-slate-800 dark:text-slate-200"><input type="checkbox" checked={formData.has_hold_open} onChange={(e) => handleFormChange('has_hold_open', e.target.checked)} /> Feststellanlage vorhanden</label>
               {formData.has_hold_open && (
                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <input type="text" placeholder="Hersteller" value={formData.hold_open_manufacturer} onChange={(e) => handleFormChange('hold_open_manufacturer', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg" />
-                  <input type="text" placeholder="Typ" value={formData.hold_open_type} onChange={(e) => handleFormChange('hold_open_type', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg" />
-                  <input type="text" placeholder="Zulassungsnr." value={formData.hold_open_approval_no} onChange={(e) => handleFormChange('hold_open_approval_no', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg" />
-                  <input type="text" placeholder="Abnahme am" value={formData.hold_open_approval_date} onChange={(e) => handleFormChange('hold_open_approval_date', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg" />
+                  <input type="text" placeholder="Hersteller" value={formData.hold_open_manufacturer} onChange={(e) => handleFormChange('hold_open_manufacturer', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
+                  <input type="text" placeholder="Typ" value={formData.hold_open_type} onChange={(e) => handleFormChange('hold_open_type', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
+                  <input type="text" placeholder="Zulassungsnr." value={formData.hold_open_approval_no} onChange={(e) => handleFormChange('hold_open_approval_no', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
+                  <input type="text" placeholder="Abnahme am" value={formData.hold_open_approval_date} onChange={(e) => handleFormChange('hold_open_approval_date', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
                 </div>
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Rauchmelder Anzahl</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Rauchmelder Anzahl</label>
               <input
                 type="number"
                 min={0}
                 value={formData.smoke_detector_count}
                 onChange={(e) => handleFormChange('smoke_detector_count', e.target.value)}
-                className="w-24 px-3 py-2 border border-slate-300 rounded-lg"
+                className="w-24 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 aria-label="Rauchmelder Anzahl"
               />
               {(() => {
@@ -510,12 +510,12 @@ const ObjectFormModal = ({
                   <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {Array.from({ length: count }, (_, i) => (
                       <div key={i}>
-                        <label htmlFor={`smoke-year-${i}`} className="block text-sm font-medium text-slate-700 mb-1">RM{i + 1} Baujahr</label>
+                        <label htmlFor={`smoke-year-${i}`} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">RM{i + 1} Baujahr</label>
                         <select
                           id={`smoke-year-${i}`}
                           value={formData.smoke_detector_build_years[i] ?? ''}
                           onChange={(e) => handleSmokeDetectorBuildYearChange(i, e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                           aria-label={`Rauchmelder ${i + 1} Baujahr`}
                         >
                           <option value="">–</option>
@@ -537,25 +537,25 @@ const ObjectFormModal = ({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Vorhandene Mängel</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Vorhandene Mängel</label>
                 <textarea
                   value={formData.defects}
                   onChange={(e) => handleFormChange('defects', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                   rows={2}
                 />
               </div>
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Bemerkungen</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bemerkungen</label>
                 <textarea
                   value={formData.remarks}
                   onChange={(e) => handleFormChange('remarks', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                   rows={2}
                 />
               </div>
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Wartungsintervall (Monate)</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Wartungsintervall (Monate)</label>
                 <input
                   type="number"
                   min={1}
@@ -563,32 +563,32 @@ const ObjectFormModal = ({
                   value={formData.maintenance_interval_months}
                   onChange={(e) => handleFormChange('maintenance_interval_months', e.target.value)}
                   placeholder="z. B. 12 für jährlich"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                   aria-label="Wartungsintervall in Monaten"
                 />
-                <p className="mt-1 text-xs text-slate-500">Leer = keine Erinnerung. Beispiel: 12 = jährliche Wartung.</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leer = keine Erinnerung. Beispiel: 12 = jährliche Wartung.</p>
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Panikfunktion / Zubehör</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Panikfunktion / Zubehör</label>
               <input
                 type="text"
                 value={formData.panic_function}
                 onChange={(e) => handleFormChange('panic_function', e.target.value)}
                 placeholder="Panikfunktion"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg mb-2"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg mb-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
               />
               <input
                 type="text"
                 value={formData.accessories}
                 onChange={(e) => handleFormChange('accessories', e.target.value)}
                 placeholder="Weiteres Zubehör"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
               />
             </div>
             {editingId && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Fotos</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Fotos</label>
                 {canEdit && (
                   <input
                     type="file"
@@ -596,7 +596,7 @@ const ObjectFormModal = ({
                     multiple
                     onChange={handlePhotoUpload}
                     disabled={isUploadingPhoto}
-                    className="w-full text-sm text-slate-600 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 disabled:opacity-50 mb-2"
+                    className="w-full text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50 mb-2"
                     aria-label="Objekt-Fotos hochladen"
                   />
                 )}
@@ -608,7 +608,7 @@ const ObjectFormModal = ({
                         <button
                           type="button"
                           onClick={() => setExpandedPhoto(p)}
-                          className="block w-20 h-20 rounded-lg border border-slate-200 overflow-hidden focus:outline-none focus:ring-2 focus:ring-vico-primary cursor-zoom-in"
+                          className="block w-20 h-20 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden focus:outline-none focus:ring-2 focus:ring-vico-primary cursor-zoom-in"
                           aria-label="Foto vergrößern"
                         >
                           <img
@@ -634,19 +634,21 @@ const ObjectFormModal = ({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-400">Keine Fotos vorhanden.</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Keine Fotos vorhanden.</p>
                 )}
               </div>
             )}
             {editingId && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Dokumente (Zeichnungen, Zertifikate)</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">
+                  Dokumente (Zeichnungen, Zertifikate)
+                </label>
                 {canEdit && (
                   <div className="flex flex-wrap gap-2 mb-2">
                     <select
                       value={documentUploadType}
                       onChange={(e) => setDocumentUploadType(e.target.value as ObjectDocumentType)}
-                      className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                       aria-label="Dokumenttyp"
                     >
                       <option value="zeichnung">Zeichnung</option>
@@ -658,7 +660,7 @@ const ObjectFormModal = ({
                       value={documentUploadTitle}
                       onChange={(e) => setDocumentUploadTitle(e.target.value)}
                       placeholder="Titel (optional)"
-                      className="flex-1 min-w-[120px] px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      className="flex-1 min-w-[120px] px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400"
                       aria-label="Dokumenttitel"
                     />
                     <input
@@ -667,7 +669,7 @@ const ObjectFormModal = ({
                       multiple
                       onChange={handleDocumentUpload}
                       disabled={isUploadingDocument}
-                      className="text-sm text-slate-600 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 disabled:opacity-50"
+                      className="text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50"
                       aria-label="Dokument hochladen"
                     />
                   </div>
@@ -678,16 +680,16 @@ const ObjectFormModal = ({
                     {objectDocuments.map((doc) => (
                       <li
                         key={doc.id}
-                        className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 bg-slate-50 dark:bg-slate-800/50 dark:border-slate-700"
+                        className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-800"
                       >
-                        <span className="text-xs font-medium text-slate-500 w-20 shrink-0">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 w-20 shrink-0">
                           {DOCUMENT_TYPE_LABELS[doc.document_type]}
                         </span>
                         <a
                           href={getDocumentDisplayUrl(doc)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-1 text-sm text-vico-primary hover:underline truncate"
+                          className="flex-1 text-sm font-medium text-vico-primary dark:text-sky-300 hover:underline truncate"
                           aria-label={`${doc.title || doc.file_name || 'Dokument'} öffnen`}
                         >
                           {doc.title || doc.file_name || 'Dokument'}
@@ -696,7 +698,7 @@ const ObjectFormModal = ({
                           <button
                             type="button"
                             onClick={() => setConfirmDocumentDialog({ open: true, document: doc })}
-                            className="shrink-0 w-8 h-8 flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg"
+                            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/70 focus:outline-none focus:ring-2 focus:ring-red-400/60"
                             aria-label="Dokument löschen"
                           >
                             ×
@@ -706,23 +708,23 @@ const ObjectFormModal = ({
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-xs text-slate-400">Keine Dokumente vorhanden.</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Keine Dokumente vorhanden.</p>
                 )}
               </div>
             )}
             {formError && (
-              <div className="text-sm text-red-600">
+              <div className="text-sm text-red-600 dark:text-red-400">
                 <p>{formError}</p>
                 {formError.startsWith('RLS-Fehler') && (
-                  <Link to="/einstellungen" className="mt-2 inline-block px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 text-xs font-medium">→ Zu Einstellungen (RLS-Fix)</Link>
+                  <Link to="/einstellungen" className="mt-2 inline-block px-3 py-1.5 bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900 text-xs font-medium">→ Zu Einstellungen (RLS-Fix)</Link>
                 )}
               </div>
             )}
             <div className="flex gap-2 pt-2">
-              <button type="submit" disabled={isSaving} className="flex-1 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover disabled:opacity-50 border border-slate-300">
+              <button type="submit" disabled={isSaving} className="flex-1 py-2 bg-vico-button dark:bg-vico-primary text-slate-800 dark:text-white rounded-lg hover:bg-vico-button-hover dark:hover:opacity-90 disabled:opacity-50 border border-slate-300 dark:border-slate-600">
                 {isSaving ? 'Speichern...' : 'Speichern'}
               </button>
-              <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50">
+              <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800">
                 Abbrechen
               </button>
             </div>

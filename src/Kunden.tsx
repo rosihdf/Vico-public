@@ -23,7 +23,12 @@ import {
 } from './lib/dataService'
 import { useComponentSettings } from './ComponentSettingsContext'
 import { useLicense } from './LicenseContext'
-import { checkCanCreateCustomer, getUsageLevel, getUsageMessage } from './lib/licenseService'
+import { checkCanCreateCustomer, getUsageLevel, getUsageMessage, hasFeature } from './lib/licenseService'
+import {
+  generateQrBatchA4Pdf,
+  type QrBatchPdfItem,
+  type QrBatchPreset,
+} from './lib/generateQrBatchA4Pdf'
 import { getStoredLicenseNumber, reportLimitExceeded, isLicenseApiConfigured } from './lib/licensePortalApi'
 import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
 import { AddressLookupFields } from './components/AddressLookupFields'
@@ -38,6 +43,9 @@ import type { MaintenanceReminder, MaintenanceContract } from './types'
 
 const ObjectQRCodeModal = lazy(() => import('./ObjectQRCodeModal'))
 import type { Object as Obj } from './types'
+
+const makeQrBatchKey = (customerId: string, bvId: string | null, objectId: string) =>
+  `${customerId}|${bvId ?? ''}|${objectId}`
 
 const INITIAL_CUSTOMER_FORM: CustomerFormData = {
   name: '',
@@ -75,10 +83,18 @@ const Kunden = () => {
   const { userRole } = useAuth()
   const { showError } = useToast()
   const { isEnabled } = useComponentSettings()
-  const { license } = useLicense()
+  const { license, design } = useLicense()
   const canEdit = userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'demo'
   const canDelete = userRole === 'admin' || userRole === 'demo'
   const canCreateBv = userRole === 'admin' || userRole === 'demo'
+  const canUseQrBatch =
+    !!license &&
+    hasFeature(license, 'qr_batch_a4') &&
+    (userRole === 'admin' ||
+      userRole === 'teamleiter' ||
+      userRole === 'mitarbeiter' ||
+      userRole === 'operator' ||
+      userRole === 'demo')
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [allBvs, setAllBvs] = useState<BV[]>([])
@@ -114,6 +130,9 @@ const Kunden = () => {
   const [directObjectsUnderCustomer, setDirectObjectsUnderCustomer] = useState<Obj[]>([])
   const [isDirectObjectsLoading, setIsDirectObjectsLoading] = useState(false)
   const [qrObject, setQrObject] = useState<{ obj: Obj; customerId: string; bvId: string | null; customerName: string; bvName: string } | null>(null)
+  const [qrBatchSelection, setQrBatchSelection] = useState<Map<string, QrBatchPdfItem>>(() => new Map())
+  const [qrBatchPreset, setQrBatchPreset] = useState<QrBatchPreset>('mid')
+  const [qrBatchPdfLoading, setQrBatchPdfLoading] = useState(false)
   const [showNeuDropdown, setShowNeuDropdown] = useState(false)
   const [maintenanceReminders, setMaintenanceReminders] = useState<MaintenanceReminder[]>([])
   const [maintenanceContractsCustomer, setMaintenanceContractsCustomer] = useState<MaintenanceContract[]>([])
@@ -695,10 +714,42 @@ const Kunden = () => {
     setExpandedObjects(data ?? [])
   }
 
+  const toggleQrBatchItem = useCallback((item: QrBatchPdfItem) => {
+    const key = makeQrBatchKey(item.customerId, item.bvId, item.objectId)
+    setQrBatchSelection((prev) => {
+      const next = new Map(prev)
+      if (next.has(key)) next.delete(key)
+      else next.set(key, item)
+      return next
+    })
+  }, [])
+
+  const handleDownloadQrBatchPdf = useCallback(async () => {
+    if (qrBatchSelection.size === 0) return
+    setQrBatchPdfLoading(true)
+    try {
+      const blob = await generateQrBatchA4Pdf({
+        items: Array.from(qrBatchSelection.values()),
+        preset: qrBatchPreset,
+        brandLine: design?.app_name ?? undefined,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `QR-Etiketten-${new Date().toISOString().slice(0, 10)}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'PDF konnte nicht erzeugt werden.')
+    } finally {
+      setQrBatchPdfLoading(false)
+    }
+  }, [qrBatchSelection, qrBatchPreset, design?.app_name, showError])
+
   const customerCountForLicense = customers.filter((c) => !c.demo_user_id).length
 
   return (
-    <div className="p-4">
+    <div className="p-4 min-w-0">
       {license?.max_customers != null && (() => {
         const msg = getUsageMessage(customerCountForLicense, license.max_customers, 'Kunden')
         const level = getUsageLevel(customerCountForLicense, license.max_customers)
@@ -720,14 +771,21 @@ const Kunden = () => {
       })()}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-        <h2 className="text-xl font-bold text-slate-800">Kunden</h2>
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Kunden</h2>
+          {canUseQrBatch && (
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl">
+              A4-PDF: Türen/Tore ankreuzen, Etikettgröße wählen und PDF herunterladen (Lizenz „A4-QR-Etiketten“).
+            </p>
+          )}
+        </div>
         <div className="flex gap-2 flex-wrap">
           <input
             type="search"
             placeholder="Name, Ort, Adresse, Kontakt…"
             value={searchQuery}
             onChange={handleSearchChange}
-            className="flex-1 sm:w-48 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary"
+            className="flex-1 sm:w-48 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
             aria-label="Kunden suchen"
           />
           {canEdit && (
@@ -735,7 +793,7 @@ const Kunden = () => {
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setShowNeuDropdown((v) => !v) }}
-                className="px-4 py-2.5 min-h-[40px] bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300 flex items-center gap-1"
+                className="px-4 py-2.5 min-h-[40px] bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600 flex items-center gap-1"
                 aria-expanded={showNeuDropdown}
                 aria-haspopup="true"
                 aria-label="Neu anlegen"
@@ -747,13 +805,13 @@ const Kunden = () => {
               </button>
               {showNeuDropdown && (
                 <div
-                  className="absolute right-0 mt-1 w-48 bg-white rounded-lg border border-slate-200 shadow-lg py-1 z-40"
+                  className="absolute right-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 shadow-lg py-1 z-40"
                   role="menu"
                 >
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setShowNeuDropdown(false); handleOpenCreate() }}
-                    className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                    className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50"
                     role="menuitem"
                   >
                     Neuer Kunde
@@ -767,7 +825,7 @@ const Kunden = () => {
                         if (expandedCustomerId) handleOpenBvCreate()
                       }}
                       disabled={!expandedCustomerId}
-                      className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                       role="menuitem"
                       title={!expandedCustomerId ? 'Kunde zuerst ausklappen' : undefined}
                     >
@@ -790,7 +848,7 @@ const Kunden = () => {
                       }
                     }}
                     disabled={!expandedCustomerId || ((expandedBvs?.length ?? 0) > 0 && !expandedBvId)}
-                    className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                     role="menuitem"
                     title={
                       !expandedCustomerId
@@ -811,8 +869,8 @@ const Kunden = () => {
             onClick={() => setShowFilters((v) => !v)}
             className={`px-3 py-2 rounded-lg border text-sm font-medium flex items-center gap-1.5 ${
               hasActiveFilters
-                ? 'bg-vico-primary/20 border-vico-primary text-slate-800'
-                : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
+                ? 'bg-vico-primary/20 border-vico-primary text-slate-800 dark:text-slate-100'
+                : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200'
             }`}
             aria-expanded={showFilters}
             aria-label="Filter anzeigen"
@@ -829,25 +887,25 @@ const Kunden = () => {
       </div>
 
       {showFilters && (
-        <div className="mb-4 p-4 rounded-xl border border-slate-200 bg-slate-50/50">
+        <div className="mb-4 p-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-800/50">
           <div className="flex flex-wrap gap-4 items-end">
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700">PLZ</span>
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">PLZ</span>
               <input
                 type="text"
                 placeholder="z.B. 10115"
                 value={filterPlz}
                 onChange={(e) => setFilterPlz(e.target.value)}
-                className="w-28 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                className="w-28 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                 aria-label="PLZ filtern"
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700">Wartungsstatus</span>
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Wartungsstatus</span>
               <select
                 value={filterWartungsstatus}
                 onChange={(e) => setFilterWartungsstatus(e.target.value as typeof filterWartungsstatus)}
-                className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary bg-white min-w-[140px]"
+                className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-w-[140px]"
                 aria-label="Wartungsstatus filtern"
               >
                 <option value="all">Alle</option>
@@ -858,7 +916,7 @@ const Kunden = () => {
               </select>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700">BV-Anzahl</span>
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">BV-Anzahl</span>
               <div className="flex gap-2 items-center">
                 <input
                   type="number"
@@ -866,7 +924,7 @@ const Kunden = () => {
                   placeholder="Min"
                   value={filterBvMin}
                   onChange={(e) => setFilterBvMin(e.target.value)}
-                  className="w-20 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="w-20 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   aria-label="Mindestanzahl BVs"
                 />
                 <span className="text-slate-500">–</span>
@@ -876,7 +934,7 @@ const Kunden = () => {
                   placeholder="Max"
                   value={filterBvMax}
                   onChange={(e) => setFilterBvMax(e.target.value)}
-                  className="w-20 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="w-20 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   aria-label="Maximalanzahl BVs"
                 />
               </div>
@@ -885,7 +943,7 @@ const Kunden = () => {
               <button
                 type="button"
                 onClick={handleResetFilters}
-                className="px-3 py-2 text-sm text-slate-600 hover:text-slate-800 underline"
+                className="px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 underline"
                 aria-label="Filter zurücksetzen"
               >
                 Filter zurücksetzen
@@ -922,12 +980,12 @@ const Kunden = () => {
             return (
               <li
                 key={customer.id}
-                className="bg-white rounded-lg border border-slate-200 overflow-hidden"
+                className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden"
               >
                 <button
                   type="button"
                   onClick={() => handleToggleBvs(customer.id)}
-                  className="w-full p-4 flex items-center justify-between gap-2 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                  className="w-full p-4 flex items-center justify-between gap-2 text-left text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
                   aria-expanded={isExpanded}
                   aria-label={`Objekt/BV für ${customer.name} ${isExpanded ? 'einklappen' : 'ausklappen'}`}
                 >
@@ -941,14 +999,14 @@ const Kunden = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                     <div className="min-w-0">
-                      <p className="font-medium text-slate-800">
+                      <p className="font-medium text-slate-800 dark:text-slate-100">
                         {customer.name}
-                        <span className="ml-2 text-slate-400 font-normal text-sm">
+                        <span className="ml-2 text-slate-400 dark:text-slate-500 font-normal text-sm">
                           ({bvCountByCustomerId.get(customer.id) ?? 0} BV{bvCountByCustomerId.get(customer.id) !== 1 ? 's' : ''})
                         </span>
                       </p>
                       {(customer.street || customer.house_number || customer.postal_code || customer.city) && (
-                        <p className="text-sm text-slate-500">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
                           {[
                             [customer.street, customer.house_number].filter(Boolean).join(' '),
                             [customer.postal_code, customer.city].filter(Boolean).join(' '),
@@ -966,7 +1024,7 @@ const Kunden = () => {
                           tabIndex={0}
                           onClick={(e) => { e.stopPropagation(); handleOpenEdit(customer) }}
                           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); handleOpenEdit(customer) } }}
-                          className="px-3 py-2 text-sm min-h-[36px] inline-flex items-center border border-slate-300 rounded-lg hover:bg-slate-100"
+                          className="px-3 py-2 text-sm min-h-[36px] inline-flex items-center text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/40"
                           aria-label={`${customer.name} bearbeiten`}
                         >
                           Bearbeiten
@@ -1003,7 +1061,7 @@ const Kunden = () => {
                               })
                             }
                           }}
-                          className="px-3 py-2 text-sm min-h-[36px] inline-flex items-center text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                          className="px-3 py-2 text-sm min-h-[36px] inline-flex items-center text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
                           aria-label={`${customer.name} löschen`}
                         >
                           Löschen
@@ -1013,7 +1071,7 @@ const Kunden = () => {
                 </button>
 
                 {isExpanded && (
-                  <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 px-4 py-3">
                     {isBvsLoading ? (
                       <LoadingSpinner message="Lade BVs…" size="sm" className="py-2" />
                     ) : filteredBvs.length === 0 ? (
@@ -1027,14 +1085,14 @@ const Kunden = () => {
                             <button
                               type="button"
                               onClick={handleOpenBvCreate}
-                              className="px-3 py-2 text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                              className="px-3 py-2 text-sm bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
                             >
                               + Objekt/BV anlegen
                             </button>
                           )}
                         </div>
                         <div>
-                          <h4 className="text-sm font-semibold text-slate-700 mb-2">Türen/Tore direkt unter Kunde</h4>
+                          <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Türen/Tore direkt unter Kunde</h4>
                           {isDirectObjectsLoading ? (
                             <LoadingSpinner message="Lade Türen/Tore…" size="sm" className="py-2" />
                           ) : directObjectsUnderCustomer.length === 0 ? (
@@ -1044,9 +1102,29 @@ const Kunden = () => {
                               {directObjectsUnderCustomer.map((obj) => (
                                 <li
                                   key={obj.id}
-                                  className="bg-white rounded border border-slate-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                  className="bg-white dark:bg-slate-900/80 rounded border border-slate-200 dark:border-slate-600 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
                                 >
                                   <div className="min-w-0 flex items-center gap-2">
+                                    {canUseQrBatch && (
+                                      <label className="shrink-0 flex items-center cursor-pointer" title="Für A4-Sammel-PDF auswählen">
+                                        <input
+                                          type="checkbox"
+                                          checked={qrBatchSelection.has(makeQrBatchKey(customer.id, null, obj.id))}
+                                          onChange={() =>
+                                            toggleQrBatchItem({
+                                              customerId: customer.id,
+                                              bvId: null,
+                                              objectId: obj.id,
+                                              objectName: getObjectDisplayName(obj),
+                                              customerName: customer.name,
+                                              bvName: '',
+                                            })
+                                          }
+                                          className="rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
+                                          aria-label={`${getObjectDisplayName(obj)} für A4-PDF auswählen`}
+                                        />
+                                      </label>
+                                    )}
                                     {(() => {
                                       const reminder = remindersByObjectId.get(obj.id)
                                       const status = reminder?.status
@@ -1063,8 +1141,8 @@ const Kunden = () => {
                                       )
                                     })()}
                                     <div>
-                                      <p className="font-medium text-slate-600 text-xs">{getObjectDisplayName(obj)}</p>
-                                      <p className="text-[11px] text-slate-500">{formatObjectRoomFloor(obj)}</p>
+                                      <p className="font-medium text-slate-600 dark:text-slate-300 text-xs">{getObjectDisplayName(obj)}</p>
+                                      <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatObjectRoomFloor(obj)}</p>
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap gap-1">
@@ -1072,7 +1150,7 @@ const Kunden = () => {
                                       <button
                                         type="button"
                                         onClick={() => { setEditingObject(obj); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
-                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                         aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
                                       >
                                         Bearbeiten
@@ -1081,7 +1159,7 @@ const Kunden = () => {
                                     {isEnabled('wartungsprotokolle') && (
                                       <Link
                                         to={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
-                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                       >
                                         Wartung
                                       </Link>
@@ -1089,7 +1167,7 @@ const Kunden = () => {
                                     <button
                                       type="button"
                                       onClick={() => setQrObject({ obj, customerId: customer.id, bvId: null, customerName: customer.name, bvName: '' })}
-                                      className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                      className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                       aria-label="QR-Code anzeigen"
                                     >
                                       QR-Code
@@ -1103,14 +1181,14 @@ const Kunden = () => {
                             <button
                               type="button"
                               onClick={() => { setEditingObject(null); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
-                              className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                              className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
                             >
                               + Tür/Tor anlegen
                             </button>
                           )}
                         </div>
                         <div>
-                          <h4 className="text-sm font-semibold text-slate-700 mb-2">Wartungsverträge</h4>
+                          <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Wartungsverträge</h4>
                           {isContractsCustomerLoading ? (
                             <LoadingSpinner message="Lade Verträge…" size="sm" className="py-2" />
                           ) : maintenanceContractsCustomer.length === 0 ? (
@@ -1120,11 +1198,11 @@ const Kunden = () => {
                               {maintenanceContractsCustomer.map((c) => (
                                 <li
                                   key={c.id}
-                                  className="bg-white rounded border border-slate-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                  className="bg-white dark:bg-slate-900/80 rounded border border-slate-200 dark:border-slate-600 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
                                 >
                                   <div>
-                                    <p className="font-medium text-slate-600 text-xs">{c.contract_number}</p>
-                                    <p className="text-[11px] text-slate-500">
+                                    <p className="font-medium text-slate-600 dark:text-slate-300 text-xs">{c.contract_number}</p>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                       {c.start_date}{c.end_date ? ` – ${c.end_date}` : ''}
                                     </p>
                                   </div>
@@ -1133,7 +1211,7 @@ const Kunden = () => {
                                       <button
                                         type="button"
                                         onClick={() => setContractModal({ open: true, customerId: customer.id, bvId: null, contract: c })}
-                                        className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                        className="px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                         aria-label="Vertrag bearbeiten"
                                       >
                                         Bearbeiten
@@ -1155,7 +1233,7 @@ const Kunden = () => {
                                             },
                                           })
                                         }
-                                        className="px-2.5 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                                        className="px-2.5 py-1.5 text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
                                         aria-label="Vertrag löschen"
                                       >
                                         Löschen
@@ -1170,7 +1248,7 @@ const Kunden = () => {
                             <button
                               type="button"
                               onClick={() => setContractModal({ open: true, customerId: customer.id, bvId: null, contract: null })}
-                              className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                              className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
                             >
                               + Wartungsvertrag anlegen
                             </button>
@@ -1180,11 +1258,11 @@ const Kunden = () => {
                     ) : (
                       <>
                         {directObjectsUnderCustomer.length > 0 && (
-                          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                            <h4 className="text-sm font-semibold text-amber-800 mb-2">
+                          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                            <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-2">
                               Türen/Tore direkt unter Kunde (noch keinem Objekt/BV zugeordnet)
                             </h4>
-                            <p className="text-xs text-amber-700 mb-2">
+                            <p className="text-xs text-amber-700 dark:text-amber-300/90 mb-2">
                               Diese Türen einem Objekt/BV zuordnen: Bearbeiten → Zuordnung auswählen → Speichern.
                             </p>
                             {isDirectObjectsLoading ? (
@@ -1194,9 +1272,29 @@ const Kunden = () => {
                                 {directObjectsUnderCustomer.map((obj) => (
                                   <li
                                     key={obj.id}
-                                    className="bg-white rounded border border-amber-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                    className="bg-white dark:bg-slate-900/80 rounded border border-amber-200 dark:border-amber-800 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
                                   >
                                     <div className="min-w-0 flex items-center gap-2">
+                                      {canUseQrBatch && (
+                                        <label className="shrink-0 flex items-center cursor-pointer" title="Für A4-Sammel-PDF auswählen">
+                                          <input
+                                            type="checkbox"
+                                            checked={qrBatchSelection.has(makeQrBatchKey(customer.id, null, obj.id))}
+                                            onChange={() =>
+                                              toggleQrBatchItem({
+                                                customerId: customer.id,
+                                                bvId: null,
+                                                objectId: obj.id,
+                                                objectName: getObjectDisplayName(obj),
+                                                customerName: customer.name,
+                                                bvName: '',
+                                              })
+                                            }
+                                            className="rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
+                                            aria-label={`${getObjectDisplayName(obj)} für A4-PDF auswählen`}
+                                          />
+                                        </label>
+                                      )}
                                       {(() => {
                                         const reminder = remindersByObjectId.get(obj.id)
                                         const status = reminder?.status
@@ -1213,8 +1311,8 @@ const Kunden = () => {
                                         )
                                       })()}
                                       <div>
-                                        <p className="font-medium text-slate-600 text-xs">{getObjectDisplayName(obj)}</p>
-                                        <p className="text-[11px] text-slate-500">{formatObjectRoomFloor(obj)}</p>
+                                        <p className="font-medium text-slate-600 dark:text-slate-300 text-xs">{getObjectDisplayName(obj)}</p>
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatObjectRoomFloor(obj)}</p>
                                       </div>
                                     </div>
                                     <div className="flex flex-wrap gap-1">
@@ -1222,7 +1320,7 @@ const Kunden = () => {
                                         <button
                                           type="button"
                                           onClick={() => { setEditingObject(obj); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
-                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                           aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
                                         >
                                           Bearbeiten (Objekt/BV zuordnen)
@@ -1231,7 +1329,7 @@ const Kunden = () => {
                                       {isEnabled('wartungsprotokolle') && (
                                         <Link
                                           to={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
-                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                         >
                                           Wartung
                                         </Link>
@@ -1239,7 +1337,7 @@ const Kunden = () => {
                                       <button
                                         type="button"
                                         onClick={() => setQrObject({ obj, customerId: customer.id, bvId: null, customerName: customer.name, bvName: '' })}
-                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                         aria-label="QR-Code anzeigen"
                                       >
                                         QR-Code
@@ -1257,12 +1355,12 @@ const Kunden = () => {
                             return (
                               <li
                                 key={bv.id}
-                                className="bg-white rounded-lg border border-slate-200 overflow-hidden"
+                                className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden"
                               >
                                 <button
                                   type="button"
                                   onClick={() => handleToggleObjects(bv.id)}
-                                  className="w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-slate-50 transition-colors cursor-pointer"
+                                  className="w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
                                   aria-expanded={isBvExpanded}
                                   aria-label={`Türen/Tore für ${bv.name} ${isBvExpanded ? 'einklappen' : 'ausklappen'}`}
                                 >
@@ -1276,7 +1374,7 @@ const Kunden = () => {
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                     </svg>
                                     <div className="min-w-0">
-                                      <p className="font-medium text-slate-700 text-sm">{bv.name}</p>
+                                      <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{bv.name}</p>
                                       {(bv.street || bv.house_number || bv.postal_code || bv.city) && (
                                         <p className="text-xs text-slate-500">
                                           {[
@@ -1296,7 +1394,7 @@ const Kunden = () => {
                                           tabIndex={0}
                                           onClick={(e) => { e.stopPropagation(); handleOpenBvEdit(bv) }}
                                           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); handleOpenBvEdit(bv) } }}
-                                          className="px-3 py-1.5 text-sm min-h-[32px] inline-flex items-center border border-slate-300 rounded-lg hover:bg-slate-100"
+                                          className="px-3 py-1.5 text-sm min-h-[32px] inline-flex items-center text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/40"
                                           aria-label={`${bv.name} bearbeiten`}
                                         >
                                           Bearbeiten
@@ -1333,7 +1431,7 @@ const Kunden = () => {
                                               })
                                             }
                                           }}
-                                          className="px-3 py-1.5 text-sm min-h-[32px] inline-flex items-center text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                                          className="px-3 py-1.5 text-sm min-h-[32px] inline-flex items-center text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
                                           aria-label={`${bv.name} löschen`}
                                         >
                                           Löschen
@@ -1343,7 +1441,7 @@ const Kunden = () => {
                                 </button>
 
                                 {isBvExpanded && (
-                                  <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
+                                  <div className="border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 px-3 py-2">
                                     {isObjectsLoading ? (
                                       <LoadingSpinner message="Lade Objekte…" size="sm" className="py-2" />
                                     ) : filteredObjects.length === 0 ? (
@@ -1356,7 +1454,7 @@ const Kunden = () => {
                                           <button
                                             type="button"
                                             onClick={() => { setEditingObject(null); setEditingObjectBvId(bv.id) }}
-                                            className="px-4 py-2.5 min-h-[40px] inline-flex items-center text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                                            className="px-4 py-2.5 min-h-[40px] inline-flex items-center text-sm bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
                                           >
                                             + Tür/Tor anlegen
                                           </button>
@@ -1368,9 +1466,29 @@ const Kunden = () => {
                                           {filteredObjects.map((obj) => (
                                             <li
                                               key={obj.id}
-                                              className="bg-white rounded border border-slate-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                              className="bg-white dark:bg-slate-900/80 rounded border border-slate-200 dark:border-slate-600 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
                                             >
                                               <div className="min-w-0 flex items-center gap-2">
+                                                {canUseQrBatch && (
+                                                  <label className="shrink-0 flex items-center cursor-pointer" title="Für A4-Sammel-PDF auswählen">
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={qrBatchSelection.has(makeQrBatchKey(customer.id, bv.id, obj.id))}
+                                                      onChange={() =>
+                                                        toggleQrBatchItem({
+                                                          customerId: customer.id,
+                                                          bvId: bv.id,
+                                                          objectId: obj.id,
+                                                          objectName: getObjectDisplayName(obj),
+                                                          customerName: customer.name,
+                                                          bvName: bv.name,
+                                                        })
+                                                      }
+                                                      className="rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
+                                                      aria-label={`${getObjectDisplayName(obj)} für A4-PDF auswählen`}
+                                                    />
+                                                  </label>
+                                                )}
                                                 {(() => {
                                                   const reminder = remindersByObjectId.get(obj.id)
                                                   const status = reminder?.status
@@ -1397,8 +1515,8 @@ const Kunden = () => {
                                                   )
                                                 })()}
                                                 <div>
-                                                  <p className="font-medium text-slate-600 text-xs">{getObjectDisplayName(obj)}</p>
-                                                  <p className="text-[11px] text-slate-500">
+                                                  <p className="font-medium text-slate-600 dark:text-slate-300 text-xs">{getObjectDisplayName(obj)}</p>
+                                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                                     {formatObjectRoomFloor(obj)}
                                                   </p>
                                                 </div>
@@ -1413,7 +1531,7 @@ const Kunden = () => {
                                                       setEditingObjectBvId(bv.id)
                                                       setEditingObjectCustomerId(customer.id)
                                                     }}
-                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                                     aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
                                                   >
                                                     Bearbeiten
@@ -1422,7 +1540,7 @@ const Kunden = () => {
                                                 {isEnabled('wartungsprotokolle') && (
                                                   <Link
                                                     to={`/kunden/${customer.id}/bvs/${bv.id}/objekte/${obj.id}/wartung`}
-                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                                   >
                                                     Wartung
                                                   </Link>
@@ -1433,7 +1551,7 @@ const Kunden = () => {
                                                     e.stopPropagation()
                                                     setQrObject({ obj, customerId: customer.id, bvId: bv.id, customerName: customer.name, bvName: bv.name })
                                                   }}
-                                                  className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                                  className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                                   aria-label="QR-Code anzeigen"
                                                 >
                                                   QR-Code
@@ -1450,15 +1568,15 @@ const Kunden = () => {
                                               setEditingObjectBvId(bv.id)
                                               setEditingObjectCustomerId(customer.id)
                                             }}
-                                            className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                                            className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
                                           >
                                             + Tür/Tor anlegen
                                           </button>
                                         )}
                                       </>
                                     )}
-                                    <div className="mt-3 pt-3 border-t border-slate-200">
-                                      <h4 className="text-sm font-semibold text-slate-700 mb-2">Wartungsverträge</h4>
+                                    <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-600">
+                                      <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Wartungsverträge</h4>
                                       {isContractsBvLoading ? (
                                         <LoadingSpinner message="Lade Verträge…" size="sm" className="py-2" />
                                       ) : maintenanceContractsBv.length === 0 ? (
@@ -1468,11 +1586,11 @@ const Kunden = () => {
                                           {maintenanceContractsBv.map((c) => (
                                             <li
                                               key={c.id}
-                                              className="bg-white rounded border border-slate-200 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
+                                              className="bg-white dark:bg-slate-900/80 rounded border border-slate-200 dark:border-slate-600 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
                                             >
                                               <div>
-                                                <p className="font-medium text-slate-600 text-xs">{c.contract_number}</p>
-                                                <p className="text-[11px] text-slate-500">
+                                                <p className="font-medium text-slate-600 dark:text-slate-300 text-xs">{c.contract_number}</p>
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                                   {c.start_date}{c.end_date ? ` – ${c.end_date}` : ''}
                                                 </p>
                                               </div>
@@ -1481,7 +1599,7 @@ const Kunden = () => {
                                                   <button
                                                     type="button"
                                                     onClick={(e) => { e.stopPropagation(); setContractModal({ open: true, customerId: null, bvId: bv.id, contract: c }) }}
-                                                    className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg hover:bg-slate-50"
+                                                    className="px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                                     aria-label="Vertrag bearbeiten"
                                                   >
                                                     Bearbeiten
@@ -1504,7 +1622,7 @@ const Kunden = () => {
                                                         },
                                                       })
                                                     }}
-                                                    className="px-2.5 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                                                    className="px-2.5 py-1.5 text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
                                                     aria-label="Vertrag löschen"
                                                   >
                                                     Löschen
@@ -1519,7 +1637,7 @@ const Kunden = () => {
                                         <button
                                           type="button"
                                           onClick={(e) => { e.stopPropagation(); setContractModal({ open: true, customerId: null, bvId: bv.id, contract: null }) }}
-                                          className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                                          className="mt-2 inline-flex items-center px-4 py-2.5 min-h-[40px] text-sm bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
                                         >
                                           + Wartungsvertrag anlegen
                                         </button>
@@ -1535,7 +1653,7 @@ const Kunden = () => {
                           <button
                             type="button"
                             onClick={handleOpenBvCreate}
-                            className="mt-2 px-3 py-2 text-sm bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+                            className="mt-2 px-3 py-2 text-sm bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
                           >
                             + Objekt/BV anlegen
                           </button>
@@ -1623,20 +1741,20 @@ const Kunden = () => {
           onClick={handleCloseForm}
         >
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-lg min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col"
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col border border-slate-200 dark:border-slate-600"
             role="dialog"
             aria-modal
             onClick={(e) => e.stopPropagation()}
             aria-labelledby="form-title"
           >
-            <div className="p-4 sticky top-0 bg-white border-b border-slate-200">
-              <h3 id="form-title" className="text-lg font-bold text-slate-800">
+            <div className="p-4 sticky top-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
+              <h3 id="form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
                 {editingId ? 'Kunde bearbeiten' : 'Kunde anlegen'}
               </h3>
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
               <div className="min-w-0">
-                <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Name *
                 </label>
                 <input
@@ -1644,7 +1762,7 @@ const Kunden = () => {
                   type="text"
                   value={formData.name}
                   onChange={(e) => handleFormChange('name', e.target.value)}
-                  className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   required
                 />
               </div>
@@ -1664,7 +1782,7 @@ const Kunden = () => {
               />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="min-w-0">
-                  <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
+                  <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     E-Mail
                   </label>
                   <input
@@ -1672,11 +1790,11 @@ const Kunden = () => {
                     type="email"
                     value={formData.email}
                     onChange={(e) => handleFormChange('email', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 </div>
                 <div className="min-w-0">
-                  <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">
+                  <label htmlFor="phone" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Telefon
                   </label>
                   <input
@@ -1684,19 +1802,19 @@ const Kunden = () => {
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => handleFormChange('phone', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 </div>
               </div>
-              <div className="border-t border-slate-200 pt-4">
-                <p className="text-sm font-medium text-slate-700 mb-2">Ansprechpartner</p>
+              <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Ansprechpartner</p>
                 <div className="space-y-2">
                   <input
                     type="text"
                     placeholder="Name"
                     value={formData.contact_name}
                     onChange={(e) => handleFormChange('contact_name', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
@@ -1704,27 +1822,27 @@ const Kunden = () => {
                       placeholder="E-Mail"
                       value={formData.contact_email}
                       onChange={(e) => handleFormChange('contact_email', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     />
                     <input
                       type="tel"
                       placeholder="Telefon"
                       value={formData.contact_phone}
                       onChange={(e) => handleFormChange('contact_phone', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     />
                   </div>
                 </div>
               </div>
-              <div className="border-t border-slate-200 pt-4 space-y-2">
+              <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={formData.maintenance_report_email}
                     onChange={(e) => handleFormChange('maintenance_report_email', e.target.checked)}
-                    className="rounded border-slate-300"
+                    className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800"
                   />
-                  <span className="text-sm font-medium text-slate-700">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
                     Wartungsbericht per E-Mail
                   </span>
                 </label>
@@ -1734,17 +1852,17 @@ const Kunden = () => {
                     placeholder="Wartungsbericht E-Mail-Adresse"
                     value={formData.maintenance_report_email_address}
                     onChange={(e) => handleFormChange('maintenance_report_email_address', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 )}
               </div>
               {formError && (
-                <div className="text-sm text-red-600" role="alert">
+                <div className="text-sm text-red-600 dark:text-red-400" role="alert">
                   <p>{formError}</p>
                   {formError.startsWith('RLS-Fehler') && (
                     <Link
                       to="/einstellungen"
-                      className="mt-2 inline-block px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 text-xs font-medium"
+                      className="mt-2 inline-block px-3 py-1.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/60 text-xs font-medium"
                     >
                       → Zu Einstellungen (RLS-Fix)
                     </Link>
@@ -1755,14 +1873,14 @@ const Kunden = () => {
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="flex-1 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover disabled:opacity-50 border border-slate-300"
+                  className="flex-1 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 disabled:opacity-50 border border-slate-300 dark:border-slate-600"
                 >
                   {isSaving ? 'Speichern...' : 'Speichern'}
                 </button>
                 <button
                   type="button"
                   onClick={handleCloseForm}
-                  className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
+                  className="px-4 py-2 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                 >
                   Abbrechen
                 </button>
@@ -1780,14 +1898,14 @@ const Kunden = () => {
           onClick={handleCloseBvForm}
         >
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-lg min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col"
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col border border-slate-200 dark:border-slate-600"
             role="dialog"
             aria-modal
             onClick={(e) => e.stopPropagation()}
             aria-labelledby="bv-form-title"
           >
-            <div className="p-4 sticky top-0 bg-white border-b border-slate-200">
-              <h3 id="bv-form-title" className="text-lg font-bold text-slate-800">
+            <div className="p-4 sticky top-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
+              <h3 id="bv-form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
                 {bvEditingId ? 'Objekt/BV bearbeiten' : 'Objekt/BV anlegen'}
               </h3>
             </div>
@@ -1801,15 +1919,15 @@ const Kunden = () => {
                       handleBvFormChange('copy_from_customer', e.target.checked)
                       if (e.target.checked) handleCopyFromCustomer()
                     }}
-                    className="rounded border-slate-300"
+                    className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800"
                   />
-                  <span className="text-sm font-medium text-slate-700">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
                     Daten aus Kundenverwaltung übernehmen
                   </span>
                 </label>
               )}
               <div className="min-w-0">
-                <label htmlFor="bv-name" className="block text-sm font-medium text-slate-700 mb-1">
+                <label htmlFor="bv-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Name *
                 </label>
                 <input
@@ -1817,7 +1935,7 @@ const Kunden = () => {
                   type="text"
                   value={bvFormData.name}
                   onChange={(e) => handleBvFormChange('name', e.target.value)}
-                  className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   required
                 />
               </div>
@@ -1837,7 +1955,7 @@ const Kunden = () => {
               />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="min-w-0">
-                  <label htmlFor="bv-email" className="block text-sm font-medium text-slate-700 mb-1">
+                  <label htmlFor="bv-email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     E-Mail
                   </label>
                   <input
@@ -1845,11 +1963,11 @@ const Kunden = () => {
                     type="email"
                     value={bvFormData.email}
                     onChange={(e) => handleBvFormChange('email', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 </div>
                 <div className="min-w-0">
-                  <label htmlFor="bv-phone" className="block text-sm font-medium text-slate-700 mb-1">
+                  <label htmlFor="bv-phone" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Telefon
                   </label>
                   <input
@@ -1857,19 +1975,19 @@ const Kunden = () => {
                     type="tel"
                     value={bvFormData.phone}
                     onChange={(e) => handleBvFormChange('phone', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 </div>
               </div>
-              <div className="border-t border-slate-200 pt-4">
-                <p className="text-sm font-medium text-slate-700 mb-2">Ansprechpartner</p>
+              <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Ansprechpartner</p>
                 <div className="space-y-2">
                   <input
                     type="text"
                     placeholder="Name"
                     value={bvFormData.contact_name}
                     onChange={(e) => handleBvFormChange('contact_name', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <input
@@ -1877,27 +1995,27 @@ const Kunden = () => {
                       placeholder="E-Mail"
                       value={bvFormData.contact_email}
                       onChange={(e) => handleBvFormChange('contact_email', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     />
                     <input
                       type="tel"
                       placeholder="Telefon"
                       value={bvFormData.contact_phone}
                       onChange={(e) => handleBvFormChange('contact_phone', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     />
                   </div>
                 </div>
               </div>
-              <div className="border-t border-slate-200 pt-4 space-y-2">
+              <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={bvFormData.maintenance_report_email}
                     onChange={(e) => handleBvFormChange('maintenance_report_email', e.target.checked)}
-                    className="rounded border-slate-300"
+                    className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800"
                   />
-                  <span className="text-sm font-medium text-slate-700">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
                     Wartungsbericht per E-Mail
                   </span>
                 </label>
@@ -1907,17 +2025,17 @@ const Kunden = () => {
                     placeholder="Wartungsbericht E-Mail-Adresse"
                     value={bvFormData.maintenance_report_email_address}
                     onChange={(e) => handleBvFormChange('maintenance_report_email_address', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   />
                 )}
               </div>
               {bvFormError && (
-                <div className="text-sm text-red-600" role="alert">
+                <div className="text-sm text-red-600 dark:text-red-400" role="alert">
                   <p>{bvFormError}</p>
                   {bvFormError.startsWith('RLS-Fehler') && (
                     <Link
                       to="/einstellungen"
-                      className="mt-2 inline-block px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 text-xs font-medium"
+                      className="mt-2 inline-block px-3 py-1.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/60 text-xs font-medium"
                     >
                       → Zu Einstellungen (RLS-Fix)
                     </Link>
@@ -1928,19 +2046,64 @@ const Kunden = () => {
                 <button
                   type="submit"
                   disabled={isBvSaving}
-                  className="flex-1 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover disabled:opacity-50 border border-slate-300"
+                  className="flex-1 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 disabled:opacity-50 border border-slate-300 dark:border-slate-600"
                 >
                   {isBvSaving ? 'Speichern...' : 'Speichern'}
                 </button>
                 <button
                   type="button"
                   onClick={handleCloseBvForm}
-                  className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
+                  className="px-4 py-2 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                 >
                   Abbrechen
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {canUseQrBatch && qrBatchSelection.size > 0 && (
+        <div
+          className="fixed bottom-0 left-0 right-0 z-40 p-3 sm:p-4 border-t border-slate-200 dark:border-slate-600 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+          role="region"
+          aria-label="A4 QR-Sammel-PDF"
+        >
+          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+            <p className="text-sm text-slate-700 dark:text-slate-200">
+              <strong>{qrBatchSelection.size}</strong> Objekt(e) für PDF ausgewählt
+            </p>
+            <div className="flex flex-wrap gap-2 items-center">
+              <label className="text-sm text-slate-600 dark:text-slate-300 flex items-center gap-2">
+                <span className="whitespace-nowrap">Etikettgröße</span>
+                <select
+                  value={qrBatchPreset}
+                  onChange={(e) => setQrBatchPreset(e.target.value as QrBatchPreset)}
+                  className="px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm min-h-[40px]"
+                  aria-label="Etikettgröße für A4"
+                >
+                  <option value="mini">Mini (ca. HERMA 48×25 mm)</option>
+                  <option value="mid">Mittel (ca. HERMA 52×30 mm)</option>
+                  <option value="max">Groß (ca. 63×38 mm)</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => setQrBatchSelection(new Map())}
+                className="px-3 py-2 min-h-[40px] text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-transparent"
+                disabled={qrBatchPdfLoading}
+              >
+                Auswahl leeren
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDownloadQrBatchPdf()}
+                disabled={qrBatchPdfLoading}
+                className="px-4 py-2 min-h-[40px] rounded-lg bg-vico-primary text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+              >
+                {qrBatchPdfLoading ? 'PDF wird erzeugt…' : 'PDF herunterladen'}
+              </button>
+            </div>
           </div>
         </div>
       )}

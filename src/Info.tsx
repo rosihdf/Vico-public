@@ -1,7 +1,10 @@
 import { useState } from 'react'
+import { isNewerVersion } from '../shared/versionUtils'
+import { SemVerPortalBuildHint } from '../shared/SemVerPortalBuildHint'
 import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
 import { formatLicenseDate, isLimitReached } from './lib/licenseService'
+import { LICENSE_FEATURE_KEYS, LICENSE_FEATURE_LABELS, normalizeLicenseFeatures } from '../shared/licenseFeatures'
 import {
   isLicenseApiConfigured,
   getStoredLicenseNumber,
@@ -10,12 +13,15 @@ import {
   normalizeLicenseNumber,
 } from './lib/licensePortalApi'
 import { setLicenseNumberInDb } from './lib/licenseService'
+import { hasAppVersionEntryContent } from '../shared/appVersions'
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.1'
+const RELEASE_LABEL = typeof __APP_RELEASE_LABEL__ !== 'undefined' ? __APP_RELEASE_LABEL__ : ''
 
 const Info = () => {
   const { userRole, refreshUserRole } = useAuth()
-  const { license, storageUsageMb, refresh: refreshLicense } = useLicense()
+  const { license, appVersions, storageUsageMb, refresh: refreshLicense } = useLicense()
+  const licenseMainInfo = appVersions?.main ?? null
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'current'>('idle')
   const [updateInfo, setUpdateInfo] = useState<{ version: string; releaseNotes: string[] } | null>(null)
   const [licenseNumberInput, setLicenseNumberInput] = useState(getStoredLicenseNumber() ?? '')
@@ -36,8 +42,16 @@ const Info = () => {
       const latest = data.version ?? ''
       const notes = Array.isArray(data.releaseNotes) ? data.releaseNotes : []
       setUpdateInfo({ version: latest, releaseNotes: notes })
-      setUpdateStatus(latest && latest !== APP_VERSION ? 'available' : 'current')
-      if (latest === APP_VERSION) setTimeout(() => setUpdateStatus('idle'), 3000)
+      if (!latest) {
+        setUpdateStatus('idle')
+        return
+      }
+      if (isNewerVersion(APP_VERSION, latest)) {
+        setUpdateStatus('available')
+      } else {
+        setUpdateStatus('current')
+        if (latest === APP_VERSION) setTimeout(() => setUpdateStatus('idle'), 3000)
+      }
     } catch {
       setUpdateStatus('idle')
     }
@@ -87,8 +101,51 @@ const Info = () => {
         <h3 id="app-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
           App
         </h3>
+        {RELEASE_LABEL === 'Beta' && (
+          <div
+            className="mb-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/40 dark:border-amber-700 dark:text-amber-100"
+            role="status"
+          >
+            <strong className="font-semibold">Beta-Testversion:</strong> Vom produktiven Einsatz wird abgeraten. Nur zur
+            Erprobung geeignet.
+          </div>
+        )}
+        {hasAppVersionEntryContent(licenseMainInfo) && (
+          <div
+            className="mb-4 p-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-700/40"
+            role="region"
+            aria-label="Angaben aus Lizenzportal"
+          >
+            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Lizenzportal (Anzeige)</p>
+            {licenseMainInfo?.version ? (
+              <p className="text-sm text-slate-800 dark:text-slate-100">
+                Version {licenseMainInfo.version}
+                {licenseMainInfo.releaseLabel ? (
+                  <span className="ml-1 font-medium"> {licenseMainInfo.releaseLabel}</span>
+                ) : null}
+              </p>
+            ) : null}
+            {licenseMainInfo?.releaseNotes && licenseMainInfo.releaseNotes.length > 0 ? (
+              <ul className="mt-2 text-sm text-slate-600 dark:text-slate-300 list-disc list-inside space-y-1">
+                {licenseMainInfo.releaseNotes.map((note, i) => (
+                  <li key={i}>{note}</li>
+                ))}
+              </ul>
+            ) : null}
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Hinweis: Build-Version unten; optional im Mandanten gepflegt. Automatischer Abgleich mit dem Build nur bei
+              SemVer (x.y.z).
+            </p>
+          </div>
+        )}
+        <SemVerPortalBuildHint buildVersion={APP_VERSION} portalDisplayVersion={licenseMainInfo?.version} />
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-slate-600 dark:text-slate-400">Version {APP_VERSION}</span>
+          <span className="text-slate-600 dark:text-slate-400">
+            Version {APP_VERSION}
+            {RELEASE_LABEL ? (
+              <span className="ml-1 font-medium text-slate-700 dark:text-slate-200"> {RELEASE_LABEL}</span>
+            ) : null}
+          </span>
           <span className="text-slate-600 dark:text-slate-400">
             Rolle: <strong>{roleLabel}</strong>
           </span>
@@ -242,18 +299,20 @@ const Info = () => {
                     </div>
                   </>
                 )}
-                <div className="text-slate-500 dark:text-slate-400">Kundenportal</div>
-                <div className="text-slate-800 dark:text-slate-100 font-medium">
-                  {license.features?.kundenportal ? '✓ Aktiv' : '✗ Nicht enthalten'}
+                <div className="text-slate-500 dark:text-slate-400 sm:col-span-2 font-medium pt-2 border-t border-slate-200 dark:border-slate-600">
+                  Module (effektiv inkl. Tier-Defaults)
                 </div>
-                <div className="text-slate-500 dark:text-slate-400">Historie</div>
-                <div className="text-slate-800 dark:text-slate-100 font-medium">
-                  {license.features?.historie ? '✓ Aktiv' : '✗ Nicht enthalten'}
-                </div>
-                <div className="text-slate-500 dark:text-slate-400">Arbeitszeiterfassung</div>
-                <div className="text-slate-800 dark:text-slate-100 font-medium">
-                  {license.features?.arbeitszeiterfassung ? '✓ Aktiv' : '✗ Nicht enthalten'}
-                </div>
+                {LICENSE_FEATURE_KEYS.map((key) => {
+                  const active = normalizeLicenseFeatures(license.features)[key] === true
+                  return (
+                    <div key={key} className="contents">
+                      <div className="text-slate-500 dark:text-slate-400">{LICENSE_FEATURE_LABELS[key] ?? key}</div>
+                      <div className="text-slate-800 dark:text-slate-100 font-medium">
+                        {active ? '✓ Aktiv' : '✗ Nicht enthalten'}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
               <button
                 type="button"

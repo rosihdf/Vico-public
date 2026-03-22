@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 declare const __APP_VERSION__: string
+/** Optional: z. B. „Beta“ aus package.json → vico.releaseLabel */
+declare const __APP_RELEASE_LABEL__: string
 
 declare module '@point-of-sale/webbluetooth-receipt-printer' {
   export default class WebBluetoothReceiptPrinter {

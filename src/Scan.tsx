@@ -176,7 +176,7 @@ const Scan = () => {
         <button
           type="button"
           onClick={handleStartScan}
-          className="mt-4 px-6 py-3 bg-vico-button text-slate-800 rounded-lg font-medium hover:bg-vico-button-hover border border-slate-300"
+          className="mt-4 px-6 py-3 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg font-medium hover:bg-vico-button-hover dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600"
           aria-label="Kamera starten"
         >
           Kamera starten

@@ -3,6 +3,9 @@
  * Für Portal und Arbeitszeitenportal – nutzt VITE_LICENSE_API_URL und VITE_LICENSE_NUMBER.
  */
 
+import type { AppVersionsMap } from './appVersions'
+import { parseAppVersionsFromDb } from './appVersions'
+
 export type DesignFromLicense = {
   app_name: string
   logo_url: string | null
@@ -53,11 +56,27 @@ export const fetchDesignFromLicense = async (
 
 export const getDefaultAppName = (): string => DEFAULT_APP_NAME
 
-/** Holt die vollständige Lizenz-Response (license + design) von der API. */
-export type LicenseFullResponse = {
-  license: { features: Record<string, boolean> }
+/** Antwort der Lizenz-API (GET …/license) – für Kundenportal / Arbeitszeit-Portal. */
+export type LicenseApiPayload = {
+  license: {
+    tier?: string
+    valid_until?: string | null
+    max_users?: number | null
+    max_customers?: number | null
+    max_storage_mb?: number | null
+    features: Record<string, boolean>
+    valid?: boolean
+    expired?: boolean
+    read_only?: boolean
+    is_trial?: boolean
+  }
   design: DesignFromLicense
+  /** Optional: mandantenweise gepflegte Versionen/Release Notes pro App (Lizenzportal). */
+  appVersions?: AppVersionsMap
 }
+
+/** Holt die vollständige Lizenz-Response (license + design) von der API. */
+export type LicenseFullResponse = LicenseApiPayload
 
 export const fetchLicenseFull = async (
   apiUrl: string,
@@ -83,10 +102,24 @@ export const fetchLicenseFull = async (
     })
     clearTimeout(timeoutId)
     if (!res.ok) return null
-    const data = (await res.json()) as { license?: { features?: Record<string, boolean> }; design?: Partial<DesignFromLicense> }
+    const data = (await res.json()) as Partial<LicenseApiPayload> & { appVersions?: unknown }
     if (!data?.license?.features || !data?.design?.app_name) return null
+    const appVersions =
+      parseAppVersionsFromDb(data.appVersions) ??
+      parseAppVersionsFromDb((data as { app_versions?: unknown }).app_versions)
     return {
-      license: { features: data.license.features ?? {} },
+      license: {
+        tier: data.license.tier,
+        valid_until: data.license.valid_until ?? null,
+        max_users: data.license.max_users ?? null,
+        max_customers: data.license.max_customers ?? null,
+        max_storage_mb: data.license.max_storage_mb ?? null,
+        features: data.license.features ?? {},
+        valid: data.license.valid,
+        expired: data.license.expired,
+        read_only: data.license.read_only,
+        is_trial: data.license.is_trial,
+      },
       design: {
         app_name: data.design.app_name,
         logo_url: data.design.logo_url ?? null,
@@ -94,6 +127,7 @@ export const fetchLicenseFull = async (
         secondary_color: data.design.secondary_color ?? null,
         favicon_url: data.design.favicon_url ?? null,
       },
+      ...(appVersions ? { appVersions } : {}),
     }
   } catch {
     return null

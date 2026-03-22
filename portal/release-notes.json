@@ -1,4 +1,8 @@
 {
+  "1.0.1": [
+    "Beta-Testversion: Vom produktiven Einsatz wird abgeraten.",
+    "Diese Ausgabe dient der Erprobung; kein Ersatz für einen produktiven Rollout ohne Freigabe."
+  ],
   "1.0.0": [
     "Kundenportal: Wartungsberichte und Stammdaten",
     "Eigenes version.json und Update-Hinweis pro Release"

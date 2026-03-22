@@ -14,18 +14,6 @@ export const formatMinutes = (min: number): string => {
   return `${h}:${m.toString().padStart(2, '0')} h`
 }
 
-export const formatDate = (iso: string, options?: { dateStyle?: 'short' | 'medium' | 'long'; timeStyle?: 'short' }): string => {
-  const d = new Date(iso)
-  return d.toLocaleString('de-DE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: options?.timeStyle ? '2-digit' : undefined,
-    minute: options?.timeStyle ? '2-digit' : undefined,
-    ...options,
-  })
-}
-
 export const formatDateShort = (dateStr: string): string => {
   try {
     const d = new Date(dateStr + 'T12:00:00')

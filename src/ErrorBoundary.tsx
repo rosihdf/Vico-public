@@ -20,7 +20,7 @@ const ErrorBoundary = ({ children }: { children: React.ReactNode }) => (
         source: getSourceFromPath(path),
       })
     }}
-    buttonClassName="px-4 py-2 bg-vico-button text-slate-800 dark:text-slate-200 rounded-lg hover:bg-vico-button-hover border border-slate-300 dark:border-slate-600"
+    buttonClassName="px-4 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600"
   >
     {children}
   </ErrorBoundaryBase>

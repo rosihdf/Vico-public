@@ -1,6 +1,71 @@
 import type { Handler, HandlerEvent } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 
+const APP_VERSION_KEYS = ['main', 'kundenportal', 'arbeitszeit_portal', 'admin'] as const
+
+type AppVersionEntry = {
+  version?: string
+  releaseNotes?: string[]
+  releaseLabel?: string
+}
+
+const normalizeEntry = (raw: unknown): AppVersionEntry | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const o = raw as Record<string, unknown>
+  const version = typeof o.version === 'string' && o.version.trim() ? o.version.trim() : undefined
+  const rl =
+    typeof o.releaseLabel === 'string'
+      ? o.releaseLabel.trim()
+      : typeof o.release_label === 'string'
+        ? o.release_label.trim()
+        : ''
+  const releaseLabel = rl || undefined
+  const n1 = Array.isArray(o.releaseNotes) ? o.releaseNotes.filter((x) => typeof x === 'string') : []
+  const n2 = Array.isArray(o.release_notes) ? o.release_notes.filter((x) => typeof x === 'string') : []
+  const releaseNotes = n1.length > 0 ? n1 : n2.length > 0 ? n2 : undefined
+  if (!version && !releaseLabel && (!releaseNotes || releaseNotes.length === 0)) return undefined
+  return { version, releaseNotes, releaseLabel }
+}
+
+const parseAppVersionsForResponse = (raw: unknown): Record<string, AppVersionEntry> | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined
+  const src = raw as Record<string, unknown>
+  const out: Record<string, AppVersionEntry> = {}
+  for (const k of APP_VERSION_KEYS) {
+    const e = normalizeEntry(src[k])
+    if (e) out[k] = e
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+const notesFromObj = (o: Record<string, unknown>): string[] | undefined => {
+  const n1 = Array.isArray(o.releaseNotes) ? o.releaseNotes.filter((x) => typeof x === 'string') : []
+  const n2 = Array.isArray(o.release_notes) ? o.release_notes.filter((x) => typeof x === 'string') : []
+  const n = n1.length > 0 ? n1 : n2.length > 0 ? n2 : undefined
+  return n && n.length > 0 ? n : undefined
+}
+
+const mergeGlobalAndTenantAppVersions = (globalJson: unknown, tenantJson: unknown): Record<string, unknown> => {
+  const g = globalJson && typeof globalJson === 'object' ? (globalJson as Record<string, unknown>) : {}
+  const t = tenantJson && typeof tenantJson === 'object' ? (tenantJson as Record<string, unknown>) : {}
+  const out: Record<string, unknown> = {}
+  for (const k of APP_VERSION_KEYS) {
+    const gv = g[k]
+    const tv = t[k]
+    if (gv === undefined && tv === undefined) continue
+    const go = gv && typeof gv === 'object' ? { ...(gv as Record<string, unknown>) } : {}
+    const to = tv && typeof tv === 'object' ? (tv as Record<string, unknown>) : {}
+    const merged: Record<string, unknown> = { ...go, ...to }
+    const tNotes = notesFromObj(to)
+    const gNotes = notesFromObj(go)
+    if (tNotes && tNotes.length > 0) merged.releaseNotes = tNotes
+    else if (gNotes && gNotes.length > 0) merged.releaseNotes = gNotes
+    delete merged.release_notes
+    out[k] = merged
+  }
+  return out
+}
+
 type LicenseResponse = {
   license: {
     tier: string
@@ -25,6 +90,7 @@ type LicenseResponse = {
   }
   impressum?: Record<string, string | null>
   datenschutz?: Record<string, string | null>
+  appVersions?: Record<string, AppVersionEntry>
 }
 
 const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: number; body: string }> => {
@@ -45,9 +111,10 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
 
   const supabase = createClient(url, key)
 
-  const { data: licenseRow, error: licenseError } = await supabase
-    .from('licenses')
-    .select(`
+  const [{ data: licenseRow, error: licenseError }, { data: globalAppCfg }] = await Promise.all([
+    supabase
+      .from('licenses')
+      .select(`
       id,
       tenant_id,
       tier,
@@ -75,11 +142,14 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
         impressum_vat_id,
         datenschutz_responsible,
         datenschutz_contact_email,
-        datenschutz_dsb_email
+        datenschutz_dsb_email,
+        app_versions
       )
     `)
-    .eq('license_number', licenseNumber)
-    .maybeSingle()
+      .eq('license_number', licenseNumber)
+      .maybeSingle(),
+    supabase.from('platform_config').select('value').eq('key', 'default_app_versions').maybeSingle(),
+  ])
 
   if (licenseError || !licenseRow) {
     return { statusCode: 404, body: JSON.stringify({ error: 'License not found' }) }
@@ -160,6 +230,13 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
           dsb_email: tenant.datenschutz_dsb_email as string | null,
         }
       : undefined,
+  }
+
+  const globalRaw = globalAppCfg?.value ?? {}
+  const mergedRaw = mergeGlobalAndTenantAppVersions(globalRaw, tenant?.app_versions)
+  const appVersions = parseAppVersionsForResponse(mergedRaw)
+  if (appVersions) {
+    response.appVersions = appVersions
   }
 
   return {

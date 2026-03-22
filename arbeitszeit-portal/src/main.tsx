@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import ErrorBoundary from './ErrorBoundary'
 import { DesignProvider } from './DesignContext'
+import { ThemeProvider } from '../../shared/ThemeContext'
 import { reportError } from './lib/errorReportService'
 import './index.css'
 
@@ -25,9 +26,11 @@ if (typeof window !== 'undefined') {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <DesignProvider>
-        <App />
-      </DesignProvider>
+      <ThemeProvider>
+        <DesignProvider>
+          <App />
+        </DesignProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>
 )

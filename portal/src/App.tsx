@@ -1,19 +1,25 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase, warmUpConnection } from './lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import Login from './pages/Login'
-import AuthCallback from './pages/AuthCallback'
-import Berichte from './pages/Berichte'
-import MeineDaten from './pages/MeineDaten'
-import Datenschutz from './pages/Datenschutz'
-import Impressum from './pages/Impressum'
 import Layout from './components/Layout'
+import KundenportalLicenseBlocked from './pages/KundenportalLicenseBlocked'
+import LicenseLoadError from './pages/LicenseLoadError'
 import UpdateBanner from '../../shared/UpdateBanner'
+import { useDesign } from './DesignContext'
+import ThemePreferenceSync from './components/ThemePreferenceSync'
+
+const AuthCallback = lazy(() => import('./pages/AuthCallback'))
+const Berichte = lazy(() => import('./pages/Berichte'))
+const MeineDaten = lazy(() => import('./pages/MeineDaten'))
+const Datenschutz = lazy(() => import('./pages/Datenschutz'))
+const Impressum = lazy(() => import('./pages/Impressum'))
+const AppInfo = lazy(() => import('./pages/AppInfo'))
 
 const AUTH_TIMEOUT_MS = 30_000
 
-const App = () => {
+const AppShell = () => {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadingHint, setLoadingHint] = useState(false)
@@ -74,6 +80,9 @@ const App = () => {
     setUser(null)
   }, [])
 
+  const { isLoading: licenseDesignLoading, kundenportalAllowed, licenseLoadError, refresh: refreshLicenseDesign } =
+    useDesign()
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
@@ -90,27 +99,58 @@ const App = () => {
     )
   }
 
+  if (user && licenseDesignLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-vico-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-sm text-slate-500 dark:text-slate-400">Lade Lizenz…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (user && licenseLoadError) {
+    return <LicenseLoadError message={licenseLoadError} onRetry={() => void refreshLicenseDesign()} />
+  }
+
+  if (user && !kundenportalAllowed) {
+    return <KundenportalLicenseBlocked />
+  }
+
+  const fallback = (
+    <div className="flex items-center justify-center p-8">
+      <div className="w-6 h-6 border-2 border-vico-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+
   return (
     <BrowserRouter>
+      <ThemePreferenceSync user={user} />
       <UpdateBanner />
-      <Routes>
-        <Route path="/auth/callback" element={<AuthCallback />} />
-        <Route path="/datenschutz" element={<Datenschutz />} />
-        <Route path="/impressum" element={<Impressum />} />
-        <Route path="/login" element={
-          user ? <Navigate to="/berichte" replace /> : <Login />
-        } />
-        <Route path="/" element={
-          user ? <Layout user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />
-        }>
-          <Route index element={<Navigate to="/berichte" replace />} />
-          <Route path="berichte" element={<Berichte user={user} />} />
-          <Route path="meine-daten" element={<MeineDaten user={user} />} />
-        </Route>
-        <Route path="*" element={<Navigate to={user ? '/berichte' : '/login'} replace />} />
-      </Routes>
+      <Suspense fallback={fallback}>
+        <Routes>
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/datenschutz" element={<Datenschutz />} />
+          <Route path="/impressum" element={<Impressum />} />
+          <Route path="/login" element={
+            user ? <Navigate to="/berichte" replace /> : <Login />
+          } />
+          <Route path="/" element={
+            user ? <Layout user={user} onLogout={handleLogout} /> : <Navigate to="/login" replace />
+          }>
+            <Route index element={<Navigate to="/berichte" replace />} />
+            <Route path="berichte" element={<Berichte user={user} />} />
+            <Route path="meine-daten" element={<MeineDaten user={user} />} />
+            <Route path="info" element={<AppInfo />} />
+          </Route>
+          <Route path="*" element={<Navigate to={user ? '/berichte' : '/login'} replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   )
 }
+
+const App = () => <AppShell />
 
 export default App

@@ -802,51 +802,63 @@ const Arbeitszeit = () => {
                 </span>
               )}
             </div>
-            <div>
-              <label htmlFor="leave-from" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Von</label>
-              <input
-                id="leave-from"
-                type="date"
-                value={leaveFormFrom}
-                onChange={(e) => setLeaveFormFrom(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm"
-                aria-label="Urlaub von Datum"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="min-w-0">
+                <label htmlFor="leave-from" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                  Von
+                </label>
+                <input
+                  id="leave-from"
+                  type="date"
+                  value={leaveFormFrom}
+                  onChange={(e) => setLeaveFormFrom(e.target.value)}
+                  className="w-full min-w-0 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm"
+                  aria-label="Urlaub von Datum"
+                />
+              </div>
+              <div className="min-w-0">
+                <label htmlFor="leave-to" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                  Bis
+                </label>
+                <input
+                  id="leave-to"
+                  type="date"
+                  value={leaveFormTo}
+                  onChange={(e) => setLeaveFormTo(e.target.value)}
+                  className="w-full min-w-0 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm"
+                  aria-label="Urlaub bis Datum"
+                />
+              </div>
             </div>
-            <div>
-              <label htmlFor="leave-to" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Bis</label>
-              <input
-                id="leave-to"
-                type="date"
-                value={leaveFormTo}
-                onChange={(e) => setLeaveFormTo(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm"
-                aria-label="Urlaub bis Datum"
-              />
-            </div>
-            <div>
-              <label htmlFor="leave-type" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Art</label>
+            <div className="max-w-full sm:max-w-md">
+              <label htmlFor="leave-type" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                Art
+              </label>
               <select
                 id="leave-type"
                 value={leaveFormType}
                 onChange={(e) => setLeaveFormType(e.target.value as LeaveType)}
-                className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm"
+                className="w-full min-w-0 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm"
                 aria-label="Art des Urlaubs"
               >
                 {(Object.keys(LEAVE_TYPE_LABELS) as LeaveType[]).map((t) => (
-                  <option key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</option>
+                  <option key={t} value={t}>
+                    {LEAVE_TYPE_LABELS[t]}
+                  </option>
                 ))}
               </select>
             </div>
             <div>
-              <label htmlFor="leave-notes" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Notiz (optional)</label>
+              <label htmlFor="leave-notes" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                Notiz (optional)
+              </label>
               <input
                 id="leave-notes"
                 type="text"
                 value={leaveFormNotes}
                 onChange={(e) => setLeaveFormNotes(e.target.value)}
                 placeholder="z.B. Vertretung"
-                className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm w-full"
+                className="w-full max-w-xl px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 text-sm"
                 aria-label="Notiz zum Urlaubsantrag"
               />
             </div>

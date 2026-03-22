@@ -1,4 +1,8 @@
 {
+  "1.0.1": [
+    "Beta-Testversion: Vom produktiven Einsatz wird abgeraten.",
+    "Diese Ausgabe dient der Erprobung; kein Ersatz für einen produktiven Rollout ohne Freigabe."
+  ],
   "1.0.0": [
     "Offline: Wartungsprotokolle (Cache + Outbox)",
     "Offline: Aufträge (Lesen + Bearbeiten)",

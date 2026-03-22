@@ -4,13 +4,14 @@ export default {
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
+    "../shared/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
       colors: {
         vico: {
-          primary: '#5b7895',
-          'primary-hover': '#4a6478',
+          primary: 'var(--vico-primary, #5b7895)',
+          'primary-hover': 'var(--vico-primary-hover, #4a6478)',
           'primary-light': '#e8eef3',
         },
       },

@@ -11,7 +11,18 @@ vi.mock('../supabase', () => ({
   },
 }))
 
+vi.mock('./licensePortalApi', () => ({
+  getCachedLicenseResponse: vi.fn(() => null),
+  getStoredLicenseNumber: vi.fn(() => null),
+  isLicenseApiConfigured: vi.fn(() => false),
+}))
+
 import { supabase } from '../supabase'
+import {
+  getCachedLicenseResponse,
+  getStoredLicenseNumber,
+  isLicenseApiConfigured,
+} from './licensePortalApi'
 import {
   fetchLicenseStatus,
   checkCanCreateCustomer,
@@ -19,11 +30,29 @@ import {
   hasFeature,
   isLimitReached,
   formatLicenseDate,
+  mergeLicenseApiCacheIntoStatus,
 } from './licenseService'
+
+const baseLicenseStatus = {
+  tier: 'professional',
+  valid_until: null,
+  max_customers: null,
+  max_users: null,
+  max_storage_mb: null as number | null,
+  current_customers: 0,
+  current_users: 0,
+  features: {} as Record<string, boolean>,
+  valid: true,
+  expired: false,
+  read_only: false,
+}
 
 describe('licenseService', () => {
   beforeEach(() => {
     vi.mocked(supabase.rpc).mockReset()
+    vi.mocked(getCachedLicenseResponse).mockReturnValue(null)
+    vi.mocked(getStoredLicenseNumber).mockReturnValue(null)
+    vi.mocked(isLicenseApiConfigured).mockReturnValue(false)
     Object.defineProperty(globalThis, 'navigator', {
       value: { ...(typeof navigator !== 'undefined' ? navigator : {}), onLine: true },
       writable: true,
@@ -100,6 +129,36 @@ describe('licenseService', () => {
       expect(hasFeature({ features: { kundenportal: false } } as never, 'kundenportal')).toBe(false)
       expect(hasFeature({ features: {} } as never, 'kundenportal')).toBe(false)
       expect(hasFeature({ features: null } as never, 'kundenportal')).toBe(false)
+    })
+  })
+
+  describe('mergeLicenseApiCacheIntoStatus', () => {
+    it('lässt Status unverändert wenn Lizenz-API nicht konfiguriert', () => {
+      vi.mocked(isLicenseApiConfigured).mockReturnValue(false)
+      const s = mergeLicenseApiCacheIntoStatus({ ...baseLicenseStatus })
+      expect(s?.max_storage_mb).toBeNull()
+    })
+
+    it('übernimmt max_storage_mb aus dem API-Cache (gleiche Lizenznummer)', () => {
+      vi.mocked(isLicenseApiConfigured).mockReturnValue(true)
+      vi.mocked(getStoredLicenseNumber).mockReturnValue('LIC-TEST')
+      vi.mocked(getCachedLicenseResponse).mockImplementation((num: string) =>
+        num === 'LIC-TEST'
+          ? ({ license: { max_storage_mb: 512 } } as never)
+          : null,
+      )
+      const s = mergeLicenseApiCacheIntoStatus({ ...baseLicenseStatus, max_storage_mb: null })
+      expect(s?.max_storage_mb).toBe(512)
+    })
+
+    it('rundet max_storage_mb aus dem Cache', () => {
+      vi.mocked(isLicenseApiConfigured).mockReturnValue(true)
+      vi.mocked(getStoredLicenseNumber).mockReturnValue('LIC-TEST')
+      vi.mocked(getCachedLicenseResponse).mockReturnValue({
+        license: { max_storage_mb: 100.6 },
+      } as never)
+      const s = mergeLicenseApiCacheIntoStatus({ ...baseLicenseStatus })
+      expect(s?.max_storage_mb).toBe(101)
     })
   })
 

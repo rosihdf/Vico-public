@@ -1,3 +1,5 @@
+@import '../shared/portalResponsive.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,12 +12,30 @@
   --vico-button-hover: #f1f5f9;
 }
 
+/* Sekundär-Buttons (bg-vico-button): im Dark Mode keine weiße Fläche */
+.dark {
+  --vico-button: #334155;
+  --vico-button-hover: #475569;
+}
+
 body {
   background-color: var(--vico-background);
 }
 
 .dark body {
   background-color: #1e293b;
+}
+
+/* iOS/Safari: Autofill sonst helle Fläche trotz dark:-Klassen */
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus,
+.dark textarea:-webkit-autofill,
+.dark select:-webkit-autofill {
+  -webkit-text-fill-color: #f1f5f9;
+  caret-color: #f1f5f9;
+  box-shadow: 0 0 0 1000px #0f172a inset;
+  transition: background-color 9999s ease-out;
 }
 
 * {

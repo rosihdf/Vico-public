@@ -101,6 +101,8 @@ create table if not exists public.tenants (
   supabase_url text,
   -- Domain-Bindung: Lizenz nur von diesen Domains nutzbar (leer = keine Prüfung)
   allowed_domains jsonb default '[]'::jsonb,
+  -- Optional: Version/Release Notes je App (main, kundenportal, arbeitszeit_portal, admin)
+  app_versions jsonb default '{}'::jsonb,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -124,6 +126,17 @@ begin
     where table_schema = 'public' and table_name = 'tenants' and column_name = 'arbeitszeitenportal_domain'
   ) then
     alter table public.tenants add column arbeitszeitenportal_domain text;
+  end if;
+end $$;
+
+-- app_versions: optional pro Mandant (Version/Release Notes je Frontend-App)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'app_versions'
+  ) then
+    alter table public.tenants add column app_versions jsonb default '{}'::jsonb;
   end if;
 end $$;
 
@@ -255,9 +268,9 @@ begin
   if not exists (select 1 from public.license_models limit 1) then
     insert into public.license_models (name, tier, max_users, max_customers, max_storage_mb, check_interval, features, sort_order)
     values
-      ('Free', 'free', 2, 5, 100, 'daily', '{"kundenportal": false, "historie": false, "arbeitszeiterfassung": false, "standortabfrage": false}'::jsonb, 1),
-      ('Professional', 'professional', 10, 50, 500, 'daily', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true, "standortabfrage": true}'::jsonb, 2),
-      ('Enterprise', 'enterprise', null, null, null, 'weekly', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true, "standortabfrage": true}'::jsonb, 3);
+      ('Free', 'free', 2, 5, 100, 'daily', '{"kundenportal": false, "historie": false, "arbeitszeiterfassung": false, "standortabfrage": false, "wartungsprotokolle": false, "buchhaltung_export": false, "urlaub": false, "fehlerberichte": false, "ladezeiten": false}'::jsonb, 1),
+      ('Professional', 'professional', 10, 50, 500, 'daily', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true, "standortabfrage": true, "wartungsprotokolle": true, "buchhaltung_export": true, "urlaub": true, "fehlerberichte": true, "ladezeiten": true}'::jsonb, 2),
+      ('Enterprise', 'enterprise', null, null, null, 'weekly', '{"kundenportal": true, "historie": true, "arbeitszeiterfassung": true, "standortabfrage": true, "wartungsprotokolle": true, "buchhaltung_export": true, "urlaub": true, "fehlerberichte": true, "ladezeiten": true}'::jsonb, 3);
   end if;
 end $$;
 
@@ -332,6 +345,17 @@ create policy "Admins can manage platform_config" on public.platform_config for 
 
 -- Standard: 10.000 MB (10 GB) Gesamtspeicher
 insert into public.platform_config (key, value) values ('total_storage_mb', '10000') on conflict (key) do nothing;
+
+-- Globale Standard-App-Versionen (Merge mit tenants.app_versions in der Lizenz-API)
+insert into public.platform_config (key, value) values ('default_app_versions', '{}'::jsonb) on conflict (key) do nothing;
+
+-- default_app_versions: nachträglich (bestehende Installationen)
+do $$
+begin
+  if not exists (select 1 from public.platform_config where key = 'default_app_versions') then
+    insert into public.platform_config (key, value) values ('default_app_versions', '{}'::jsonb);
+  end if;
+end $$;
 
 -- RPC: Speicher-Zusammenfassung (verfügbar, zugewiesen, frei)
 -- Zugewiesen = Summe aus licenses.max_storage_mb, Fallback auf license_models.max_storage_mb wenn Lizenz kein eigenes hat

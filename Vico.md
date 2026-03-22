@@ -164,6 +164,8 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 
 **Lizenz-Admin** (`admin/`): Separates Netlify-Site, Root: `admin/`, Subdomain z.B. `admin.vico-tueren.de`.
 
+**Alle vier Apps (Haupt-App, Admin, Kundenportal, Arbeitszeitenportal):** Schrittfolge und Env-Variablen: **`docs/NETLIFY-VIER-APPS.md`**. **Lizenz-API:** Empfohlen **`VITE_LICENSE_API_URL = https://<Admin-Subdomain>/api`** (Netlify Functions der Admin-Site); Details in **`docs/NETLIFY-VIER-APPS.md`**.
+
 ### Supabase Keep-Alive (Free-Tier)
 
 GitHub Actions `.github/workflows/supabase-keepalive.yml` – Mo + Do 9:00 UTC. Secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
@@ -208,9 +210,11 @@ So siehst du, ob der Flaschenhals beim ersten Datenblock (Stammdaten), beim zwei
 
 Das Lizenzportal-Supabase-Projekt (B3/L1) sollte ebenfalls in einer nahen Region liegen (siehe Checkliste oben).
 
-### Mobile-Build (Capacitor / Android & iOS)
+### Mobile-Build (Android & iOS)
 
-Die Web-App läuft in einer nativen Hülle (Capacitor). **Parallel zur PWA** – gleicher Code, Build für Android und iOS.
+**Geplanter Weg:** Store-Pakete mit **PWABuilder** aus der deployten PWA erzeugen – siehe **`docs/Netlify-Deployment-Updates-und-Mobile-Apps.md` (Teil E)**.
+
+**Optional im Repo:** Die Web-App kann auch in einer **Capacitor**-Hülle laufen – **Parallel zur PWA** – gleicher Web-Build (`dist`), native Projekte für Android/iOS.
 
 **Voraussetzung:** Node, npm, Android Studio (für APK/Emulator), ggf. Xcode (für iOS, nur macOS).
 
@@ -232,6 +236,8 @@ Die Web-App läuft in einer nativen Hülle (Capacitor). **Parallel zur PWA** –
 **Konfiguration:** `capacitor.config.ts` – `appId: 'de.vico.app'`, `appName: 'Vico'`, `webDir: 'dist'`. Optional: `server.url` für Live-Reload im Emulator (z. B. `http://192.168.x.x:5173`).
 
 **Hinweis:** Nach Änderungen an der Web-App immer `npm run build:mobile` (oder `npm run build` + `npm run cap:sync`) ausführen, bevor in Android Studio/Xcode gebaut wird.
+
+**Schritt-für-Schritt (Android & iOS, Stores):** **`docs/Capacitor-Schritt-fuer-Schritt.md`**
 
 **Ladezeiten-Dashboard (Roadmap J9) – ✅ umgesetzt**
 
@@ -825,6 +831,28 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 - Grenzwarnungen (80 %/90 %/100 %) in Benutzerverwaltung
 - **Verhalten bei abgelaufener Lizenz** definieren und ggf. umsetzen (Hinweis, Sperre, Frist)
 
+### 9.18 App-Versionen & Anzeige (Lizenzportal)
+
+**Globale Defaults:** Tabelle **`platform_config`**, Key **`default_app_versions`** (`jsonb`, Default `{}`). Gilt für alle Mandanten, sofern der Mandant keinen abweichenden Eintrag hat. **Pflege:** Admin-App → **Einstellungen** → Abschnitt **„Globale App-Versionen“**.
+
+**Mandant:** Tabelle `tenants`, Spalte **`app_versions`** (`jsonb`, Default `{}`). Pro Frontend-App optionale Keys: `main`, `kundenportal`, `arbeitszeit_portal`, `admin` – jeweils Objekt mit optional `version`, `releaseNotes` (String-Array), `releaseLabel`.
+
+**Merge:** Lizenz-API merged **global → Mandant** (Mandant überschreibt pro App/Feld; bei Release Notes gewinnt ein nicht-leeres Mandanten-Array, sonst global).
+
+**Pflege Mandant:** Admin-App → Mandant bearbeiten → **„App-Versionen (optional, Mandant)“**.
+
+**Lizenz-API:** GET `…/license?licenseNumber=…` liefert zusätzlich **`appVersions`** (camelCase, gleiche Keys). Implementierung: Supabase Edge Function `license` und parallel Netlify `admin/netlify/functions/license.ts`.
+
+**Clients:** Haupt-App (`LicenseContext` + `Info`), Kundenportal und Arbeitszeitenportal (`DesignContext` + `AppInfoContent`) zeigen die Angaben unter **„Lizenzportal (Anzeige)“**, sobald Inhalt gepflegt ist. Die **Build-Version** (`__APP_VERSION__` / `version.json`) bleibt die technische Referenz.
+
+**Update-Check („Auf Updates prüfen“):** Vergleicht **`version.json`** (Deployment) mit der **lokalen Build-Version** per **SemVer** (`Major.Minor.Patch` am Anfang der Zeichenkette), siehe `shared/versionUtils.ts` (`isNewerVersion`).
+
+**SemVer: Build vs. Lizenzportal-Anzeige:** Wenn sowohl Build als auch die im Portal gepflegte **Anzeigeversion** als SemVer lesbar sind (`x.y.z`), zeigt die UI optional einen Hinweis (`SemVerPortalBuildHint`):
+- **Portal vor Build:** dokumentierte Version im Portal ist höher als der aktuelle Client-Build → typisch vor Rollout oder wenn Mandant früher gepflegt hat.
+- **Build vor Portal:** Client ist neuer als die Portal-Anzeige → Mandantenpflege im Lizenzportal nachziehen.
+
+**Policy:** Kein automatischer Vergleich, sobald eine der Versionen **nicht** dem Muster `x.y.z` entspricht (z. B. reine Texte, „v1.2“ ohne Patch) – dann nur Anzeige der Texte, kein SemVer-Banner.
+
 ---
 
 ### 9.16 Implementierung: Backup & 2FA
@@ -1220,7 +1248,7 @@ Hier sind die wichtigsten **fachlichen Konzepte** gebündelt, die zuvor als einz
 
 **Code:** `src/lib/etikettendrucker.ts` – `isEtikettendruckerAvailable()`, `printLabel(qrPayload)`.
 
-**Etikettendesign (Planung, Detail in `docs/Noch-zu-erledigen.md`):** Ein **mandantenweites Layout** (wie Druckvorlagen), **Presets mini/mid/max** für Bixolon 2″ (ca. 50×25 / 50×30 / 58×40 mm; **Druckbreite ~48 mm** beachten), **separates Etiketten-Logo** neben dem allgemeinen Mandantenlogo, **Vorschau** vor Druck. **Render:** ein farbfähiges Layout; **Thermo** druckt **Graustufen**. **Später:** **A4-PDF** mit vielen QR (Objekt-Mehrfachauswahl in der Haupt-App); **Berechtigung:** Lizenz-Feature (z. B. `qr_batch_a4`) **plus** vom Admin definierte **erlaubte Rollen**; **kein** Etikettendruck im Kundenportal. **A4-Bogenmaße:** HERMA/Avery-Referenzartikel siehe `Noch-zu-erledigen.md` (A4-Referenzetiketten).
+**Etikettendesign (Planung, Detail in `docs/Noch-zu-erledigen.md`):** Ein **mandantenweites Layout** (wie Druckvorlagen), **Presets mini/mid/max** für Bixolon 2″ (ca. 50×25 / 50×30 / 58×40 mm; **Druckbreite ~48 mm** beachten), **separates Etiketten-Logo** neben dem allgemeinen Mandantenlogo, **Vorschau** vor Druck. **Render:** ein farbfähiges Layout; **Thermo** druckt **Graustufen**. **A4-Sammel-PDF (Haupt-App):** Umgesetzt – `src/lib/generateQrBatchA4Pdf.ts`, Kundenansicht **Mehrfachauswahl** (Checkboxen), Lizenz-Feature **`qr_batch_a4`**, Rollen **admin / teamleiter / mitarbeiter / operator / demo** (Leser ausgeschlossen); **kein** Kundenportal. **A4-Bogenmaße:** HERMA/Avery-Referenzartikel siehe `Noch-zu-erledigen.md` (A4-Referenzetiketten).
 
 ---
 

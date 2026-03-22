@@ -2,7 +2,13 @@
 
 **Strategie & SemVer-Prozess:** siehe **`docs/App-Updates-und-Versionierung.md`** (Version in `package.json`, `release-notes.json`, Auslieferung von `version.json`, Update-Banner).
 
+**Vor einem geschlossenen Betatest:** **`docs/Betatest-Vorbereitung.md`** (SQL, Env-Check `npm run check:beta-env`, manuelle Smoke-Tests, Text für Tester).
+
+**Automatisierte Tests:** Im Repo-Root `npm run test:all` (Haupt-App + Admin + Arbeitszeit-Portal). **Inkl. Kundenportal-Paket (`portal/`):** `npm run test:all:full`. Einzeln: `npm run test:run` in `portal/` o. ä.
+
 ## Vor dem Release auf Netlify
+
+**Vier Netlify-Sites (Haupt-App, Admin, Portal, Arbeitszeit-Portal).** Tabelle mit Base directory, Build, Publish, Env: **`docs/Netlify-Vier-Apps.md`**.
 
 ### Version & Release Notes (pro deployter App)
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
@@ -24,6 +25,19 @@ import {
 import type { SyncStatus } from './types'
 import type { Profile } from './lib/userService'
 import { BetaBadge } from '../shared/BetaBadge'
+import { useDashboardLayout } from './hooks/useDashboardLayout'
+import {
+  DASHBOARD_WIDGET_OPTIONS,
+  getResolvedWidgetOrder,
+  isDashboardWidgetVisible,
+} from './lib/dashboardLayoutPreferences'
+import {
+  createBriefbogenPreviewUrl,
+  fetchBriefbogenStoragePath,
+  uploadBriefbogenFile,
+  removeBriefbogen,
+} from './lib/briefbogenService'
+import { isOnline } from '../shared/networkUtils'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   offline: '🔴 Offline',
@@ -43,6 +57,7 @@ const Einstellungen = () => {
   const [componentError, setComponentError] = useState<string | null>(null)
   const [updatingKey, setUpdatingKey] = useState<string | null>(null)
   const [myProfile, setMyProfile] = useState<Profile | null>(null)
+  const [profileLoadDone, setProfileLoadDone] = useState(false)
   const [gpsRevoking, setGpsRevoking] = useState(false)
   const [showStammdatenEdit, setShowStammdatenEdit] = useState(false)
   const [stammdatenSaving, setStammdatenSaving] = useState(false)
@@ -53,6 +68,12 @@ const Einstellungen = () => {
   const [standortConsentSaving, setStandortConsentSaving] = useState(false)
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null)
   const [pushSaving, setPushSaving] = useState(false)
+  const [briefbogenPreviewUrl, setBriefbogenPreviewUrl] = useState<string | null>(null)
+  const [briefbogenConfigured, setBriefbogenConfigured] = useState(false)
+  const [briefbogenLoading, setBriefbogenLoading] = useState(false)
+  const [briefbogenUploading, setBriefbogenUploading] = useState(false)
+  const [briefbogenRemoving, setBriefbogenRemoving] = useState(false)
+  const [briefbogenError, setBriefbogenError] = useState<string | null>(null)
   const [stammdatenForm, setStammdatenForm] = useState({
     company_name: '',
     address: '',
@@ -65,6 +86,14 @@ const Einstellungen = () => {
     dsb_email: '',
   })
 
+  const settingsServerDashboard =
+    !user?.id ? undefined : !profileLoadDone ? undefined : (myProfile?.dashboard_layout ?? null)
+
+  const { layout: dashboardLayout, updateWidgetVisible, moveWidgetOrder } = useDashboardLayout(
+    user?.id ?? null,
+    settingsServerDashboard
+  )
+
   const loadProfile = useCallback(async () => {
     if (user?.id) {
       const p = await fetchMyProfile(user.id)
@@ -72,10 +101,12 @@ const Einstellungen = () => {
     } else {
       setMyProfile(null)
     }
+    setProfileLoadDone(true)
   }, [user?.id])
 
   useEffect(() => {
-    loadProfile()
+    setProfileLoadDone(false)
+    void loadProfile()
   }, [loadProfile])
 
   useEffect(() => {
@@ -99,6 +130,34 @@ const Einstellungen = () => {
     myProfile?.standortabfrage_consent_at != null && myProfile?.standortabfrage_consent_revoked_at == null
   const showStandortabfrageConsent =
     license && hasFeature(license, 'standortabfrage') && user?.id && userRole !== 'kunde'
+
+  const showBriefbogenSettings = userRole === 'admin' && isEnabled('wartungsprotokolle')
+
+  const refreshBriefbogenPreview = useCallback(async () => {
+    if (!showBriefbogenSettings) return
+    setBriefbogenLoading(true)
+    setBriefbogenError(null)
+    try {
+      const path = await fetchBriefbogenStoragePath()
+      setBriefbogenConfigured(Boolean(path))
+      if (path) {
+        const url = await createBriefbogenPreviewUrl()
+        setBriefbogenPreviewUrl(url)
+      } else {
+        setBriefbogenPreviewUrl(null)
+      }
+    } catch {
+      setBriefbogenError('Briefbogen-Status konnte nicht geladen werden.')
+      setBriefbogenPreviewUrl(null)
+      setBriefbogenConfigured(false)
+    } finally {
+      setBriefbogenLoading(false)
+    }
+  }, [showBriefbogenSettings])
+
+  useEffect(() => {
+    void refreshBriefbogenPreview()
+  }, [refreshBriefbogenPreview])
 
   useEffect(() => {
     if (!showStandortabfrageSettings) return
@@ -149,6 +208,42 @@ const Einstellungen = () => {
     setIsSyncing(true)
     await syncNow()
     setIsSyncing(false)
+  }
+
+  const handleBriefbogenFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || briefbogenUploading) return
+    if (!isOnline()) {
+      setBriefbogenError('Upload nur bei Internetverbindung möglich.')
+      return
+    }
+    setBriefbogenUploading(true)
+    setBriefbogenError(null)
+    const res = await uploadBriefbogenFile(file)
+    setBriefbogenUploading(false)
+    if (!res.ok) {
+      setBriefbogenError(res.error ?? 'Upload fehlgeschlagen')
+      return
+    }
+    await refreshBriefbogenPreview()
+  }
+
+  const handleBriefbogenRemove = async () => {
+    if (briefbogenRemoving || !briefbogenConfigured) return
+    if (!isOnline()) {
+      setBriefbogenError('Entfernen nur bei Internetverbindung möglich.')
+      return
+    }
+    setBriefbogenRemoving(true)
+    setBriefbogenError(null)
+    const res = await removeBriefbogen()
+    setBriefbogenRemoving(false)
+    if (!res.ok) {
+      setBriefbogenError(res.error ?? 'Entfernen fehlgeschlagen')
+      return
+    }
+    await refreshBriefbogenPreview()
   }
 
   const handleOpenStammdatenEdit = () => {
@@ -220,6 +315,93 @@ const Einstellungen = () => {
           >
             Import öffnen
           </Link>
+        </section>
+      )}
+
+      {/* Startseite / Dashboard-Widgets */}
+      {user?.id && (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+          aria-labelledby="dashboard-layout-heading"
+        >
+          <h3 id="dashboard-layout-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+            Startseite (Dashboard)
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            Legen Sie fest, welche Bereiche auf der Startseite angezeigt werden und in welcher Reihenfolge sie von oben
+            nach unten erscheinen (Pfeile). Die Auswahl wird mit Ihrem Konto synchronisiert (<strong>Multi-Gerät</strong>
+            ); offline wird ein lokaler Zwischenspeicher genutzt und beim nächsten Sync übertragen. Einzelne Kacheln
+            erscheinen nur, wenn Lizenz und Rolle das Modul erlauben (z. B. Arbeitszeit).
+          </p>
+          <ul className="space-y-3" role="list">
+            {getResolvedWidgetOrder(dashboardLayout).map((widgetId, index) => {
+              const opt = DASHBOARD_WIDGET_OPTIONS.find((o) => o.id === widgetId)
+              if (!opt) return null
+              const order = getResolvedWidgetOrder(dashboardLayout)
+              const atTop = index === 0
+              const atBottom = index === order.length - 1
+              const checked = isDashboardWidgetVisible(dashboardLayout, opt.id)
+              const handleMoveUp = () => {
+                moveWidgetOrder(opt.id, 'up')
+              }
+              const handleMoveDown = () => {
+                moveWidgetOrder(opt.id, 'down')
+              }
+              const handleMoveKeyDown = (e: ReactKeyboardEvent, direction: 'up' | 'down') => {
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                e.preventDefault()
+                if (direction === 'up' && !atTop) moveWidgetOrder(opt.id, 'up')
+                if (direction === 'down' && !atBottom) moveWidgetOrder(opt.id, 'down')
+              }
+              return (
+                <li key={opt.id} className="flex items-start gap-2">
+                  <div
+                    className="flex flex-col gap-0.5 shrink-0 pt-0.5"
+                    role="group"
+                    aria-label={`Reihenfolge: ${opt.label}`}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleMoveUp}
+                      onKeyDown={(e) => handleMoveKeyDown(e, 'up')}
+                      disabled={atTop}
+                      className="inline-flex items-center justify-center min-w-[2rem] min-h-[1.75rem] rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-100 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-800"
+                      aria-label={`${opt.label} nach oben verschieben`}
+                      title="Nach oben"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleMoveDown}
+                      onKeyDown={(e) => handleMoveKeyDown(e, 'down')}
+                      disabled={atBottom}
+                      className="inline-flex items-center justify-center min-w-[2rem] min-h-[1.75rem] rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-100 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-800"
+                      aria-label={`${opt.label} nach unten verschieben`}
+                      title="Nach unten"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                  <label className="flex items-start gap-3 cursor-pointer flex-1 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => updateWidgetVisible(opt.id, e.target.checked)}
+                      className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                      aria-describedby={`dashboard-widget-desc-${opt.id}`}
+                    />
+                    <span>
+                      <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{opt.label}</span>
+                      <span id={`dashboard-widget-desc-${opt.id}`} className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        {opt.description}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              )
+            })}
+          </ul>
         </section>
       )}
 
@@ -470,6 +652,19 @@ const Einstellungen = () => {
                 <dd className="text-slate-800 dark:text-slate-100 font-medium">{design.app_name}</dd>
               </>
             )}
+            {design?.logo_url ? (
+              <>
+                <dt className="text-slate-500 dark:text-slate-400 mt-2">Logo (Lizenz)</dt>
+                <dd className="mt-1">
+                  <img
+                    src={design.logo_url}
+                    alt=""
+                    className="h-12 max-w-[220px] object-contain border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-800 p-1"
+                  />
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 break-all">{design.logo_url}</p>
+                </dd>
+              </>
+            ) : null}
             {impressum?.company_name && (
               <>
                 <dt className="text-slate-500 dark:text-slate-400 mt-2">Firma</dt>
@@ -626,6 +821,75 @@ const Einstellungen = () => {
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* PDF-Briefbogen für Wartungsprotokolle (Admin) */}
+      {showBriefbogenSettings && (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+          aria-labelledby="briefbogen-heading"
+        >
+          <h3 id="briefbogen-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+            PDF-Briefbogen (Wartungsprotokoll)
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            PNG- oder JPEG-Vorlage im <strong className="text-slate-700 dark:text-slate-300">A4-Format</strong> – wird
+            beim PDF-Export und beim E-Mail-Versand des Wartungsprotokolls als Hintergrund jeder Seite eingefügt. Inhalt
+            des Protokolls wird darüber gezeichnet; freie Bereiche in der Vorlage sind sinnvoll zu planen.
+          </p>
+          {briefbogenError && (
+            <p className="mb-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg" role="alert">
+              {briefbogenError}
+            </p>
+          )}
+          {briefbogenLoading ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">Lade Status…</p>
+          ) : (
+            <div className="space-y-3">
+              {briefbogenPreviewUrl && briefbogenConfigured && (
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Vorschau (Ausschnitt)</p>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden bg-slate-100 dark:bg-slate-900 max-h-48">
+                    <img
+                      src={briefbogenPreviewUrl}
+                      alt="Aktueller PDF-Briefbogen"
+                      className="w-full h-auto object-top object-contain max-h-48"
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex">
+                  <span className="sr-only">Briefbogen-Datei auswählen</span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,.jpg,.jpeg,.png"
+                    onChange={(e) => void handleBriefbogenFileChange(e)}
+                    disabled={briefbogenUploading}
+                    className="block text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-vico-primary file:text-white hover:file:bg-vico-primary-hover disabled:opacity-50"
+                    aria-label="Briefbogen hochladen (PNG oder JPEG)"
+                  />
+                </label>
+                {briefbogenConfigured && (
+                  <button
+                    type="button"
+                    onClick={() => void handleBriefbogenRemove()}
+                    disabled={briefbogenRemoving || briefbogenUploading}
+                    className="px-3 py-2 rounded-lg text-sm font-medium border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                    aria-label="Briefbogen entfernen"
+                  >
+                    {briefbogenRemoving ? 'Entfernen…' : 'Briefbogen entfernen'}
+                  </button>
+                )}
+              </div>
+              {briefbogenUploading && (
+                <p className="text-sm text-slate-500 dark:text-slate-400" role="status">
+                  Wird hochgeladen…
+                </p>
+              )}
             </div>
           )}
         </section>

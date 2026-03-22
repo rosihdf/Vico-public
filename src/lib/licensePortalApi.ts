@@ -1,3 +1,6 @@
+import type { AppVersionsMap } from '../../shared/appVersions'
+import { parseAppVersionsFromDb } from '../../shared/appVersions'
+
 /**
  * Lizenz-API-Client für Mandantenfähigkeit.
  * Ruft Lizenz + Design-Config vom Lizenzportal ab.
@@ -146,6 +149,7 @@ export type LicenseApiResponse = {
     contact_email?: string
     dsb_email?: string
   }
+  appVersions?: AppVersionsMap
 }
 
 const DEFAULT_DESIGN: LicenseApiResponse['design'] = {
@@ -183,11 +187,14 @@ export const fetchLicenseFromApi = async (
     })
     clearTimeout(timeoutId)
     if (!res.ok) return null
-    const data = (await res.json()) as LicenseApiResponse
+    const data = (await res.json()) as LicenseApiResponse & { app_versions?: unknown }
     if (!data?.license) return null
+    const appVersions =
+      parseAppVersionsFromDb(data.appVersions) ?? parseAppVersionsFromDb(data.app_versions)
     return {
       ...data,
       design: { ...DEFAULT_DESIGN, ...data.design },
+      ...(appVersions ? { appVersions } : {}),
     }
   } catch {
     clearTimeout(timeoutId)

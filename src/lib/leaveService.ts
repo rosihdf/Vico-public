@@ -8,6 +8,9 @@ export type LeaveRequest = {
   user_id: string
   from_date: string
   to_date: string
+  /** Bei Teilgenehmigung: tatsächlich genehmigter Zeitraum; sonst null */
+  approved_from_date: string | null
+  approved_to_date: string | null
   leave_type: LeaveType
   status: LeaveStatus
   days_count: number | null
@@ -44,17 +47,33 @@ export const fetchMyLeaveRequests = async (
     p_status: status ?? null,
   })
   if (error) return []
-  return (data ?? []).map((r: { id: string; user_id: string; from_date: string; to_date: string; leave_type: string; status: string; days_count: number | null; notes: string | null; created_at: string }) => ({
-    id: r.id,
-    user_id: r.user_id,
-    from_date: r.from_date,
-    to_date: r.to_date,
-    leave_type: r.leave_type as LeaveType,
-    status: r.status as LeaveStatus,
-    days_count: r.days_count,
-    notes: r.notes,
-    created_at: r.created_at,
-  }))
+  return (data ?? []).map(
+    (r: {
+      id: string
+      user_id: string
+      from_date: string
+      to_date: string
+      approved_from_date?: string | null
+      approved_to_date?: string | null
+      leave_type: string
+      status: string
+      days_count: number | null
+      notes: string | null
+      created_at: string
+    }) => ({
+      id: r.id,
+      user_id: r.user_id,
+      from_date: r.from_date,
+      to_date: r.to_date,
+      approved_from_date: r.approved_from_date ?? null,
+      approved_to_date: r.approved_to_date ?? null,
+      leave_type: r.leave_type as LeaveType,
+      status: r.status as LeaveStatus,
+      days_count: r.days_count,
+      notes: r.notes,
+      created_at: r.created_at,
+    })
+  )
 }
 
 /** Urlaubsantrag stellen */

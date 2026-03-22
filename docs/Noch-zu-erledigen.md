@@ -7,16 +7,16 @@
 
 | Punkt | Entscheidung | Hinweis |
 |-------|----------------|---------|
-| **J1** Wartungserinnerungen | **A dann B:** zuerst In-App ausbauen (klarere Anzeige, Badge, Filter „fällig in X Tagen“), danach **E-Mail**-Versand. | Reihenfolge: schneller erster Meilenstein, E-Mail mit Provider/DSGVO. |
-| **J2** Wartungsstatistik | **B:** KPIs/Tabellen **+ Diagramme + CSV-Export**; Datenquelle für Tabelle und Export **gemeinsam**. | |
-| **J3** Export Buchhaltung | **C (später):** kein generischer Export; **kundenspezifisch** Schnittstelle (z. B. **SevDesk**-API serverseitig, Anforderungen mit Kunden klären). | Siehe Chat / SevDesk-API-Doku. |
-| **J4** Zuletzt bearbeitet | **A jetzt:** MVP „Zuletzt bearbeitet“ auf Startseite. **B (Favoriten / „nur meine“)** bewusst **später**. | |
+| **J1** Wartungserinnerungen | **A (teilweise März 2026):** Dashboard-Liste mit **Filtern** (Alle / Überfällig / ≤7 / ≤30 Tage), klarere Karten (**Badge**, Farbbleiste), **Nav-Badge** am Dashboard/Start (rot wenn überfällig, sonst bernstein, Zähler für ≤7 Tage inkl. Überfällig). **B:** **E-Mail**-Versand bewusst **später**. | E-Mail mit Provider/DSGVO. |
+| **J2** Wartungsstatistik | ✅ **MVP (März 2026):** Seite `/wartungsstatistik` (Modul **Kunden**): KPIs, Balken nach Status, Tabellen **Kunde** / **Objekt·BV**, **CSV** (Objekte, Kunden, BV) – gleiche Basis wie `get_maintenance_reminders`. Optional später: Charts-Lib, Auslastung aus `maintenance_reports`. | |
+| **J3** Export Buchhaltung | ✅ **MVP (März 2026):** Seite **`/buchhaltung-export`** (Modul **Auftrag**): CSV (Semikolon, Excel), Zeitraum, optional storniert; Spalten aus Auftrag + Monteursbericht wenn online. **Später:** kundenspezifische Schnittstelle (z. B. **SevDesk** serverseitig). | `accountingExportService.ts`, Menü nur Admin/Mitarbeiter/Teamleiter. |
+| **J4** Zuletzt bearbeitet | ✅ **MVP A erledigt** (März 2026): wie zuvor; **Layout-Sync** über `profiles.dashboard_layout` (Multi-Gerät) + lokal offline. **B (Favoriten / „nur meine“)** bewusst **später**. | Weitere Dashboard-Widgets: bewusst **Backlog** (später ausbauen). |
 | **J5** Kundenfilter | ✅ **Erledigt** (März 2026): PLZ, Wartungsstatus, BV-Anzahl Min/Max in `Kunden.tsx` (Filter-Panel). | |
 | **J6** Wartung MVP (Freigabe → Portal) | **Auf später / eigenes Thema:** Struktur und Ablauf (Freigabe-Workflow, Portal-Anbindung) **gesondert** planen, **wenn** die übrigen Roadmap-Punkte (J1–J2, J4, …) weitgehend fertig sind. Aktuell: Monteursbericht/Unterschriften vorhanden; Rest bewusst nicht priorisiert. | |
 | **J7** Sammelpaket | **B (priorisierte Reihenfolge), ohne Kalender-Sync (iCal).** Umsetzungsreihenfolge: **(1) Mängel-Follow-up** → **(2) Bulk-Operationen** → **(3) Push-Benachrichtigungen Kundenportal**. **iCal:** nicht geplant in dieser Runde (optional später eigenes Thema). | Reihenfolge bei Bedarf anpassen. |
 | **I2** Etikettendrucker | **B jetzt:** Abstraktion/Schnittstelle ausbauen, **ohne** fertigen Hardware-Druck. **Favorit:** **Bixolon** (Option z. B. „SPP-R200III / kompatible“). **Weitere Treiber:** bei Bedarf (Zebra/Brother …), Reihenfolge offen bis Kundenbedarf. **Einstellungen:** eigener Block **„Etikettendrucker“**; Auswahl **nur lokal pro Gerät** (z. B. Preferences); **PWA:** kein BT-Druck, nur Teilen o. Ä.; Druckerwahl nur sinnvoll wenn `isEtikettendruckerAvailable()`. **Pairing/MAC:** erst in Hardware-Phase (A), nicht in I2-B. | Hardware/Plugin folgt nach I2-Basis. |
 | **Etikettendesign / QR** | Wie Druckvorlagen: **mandantenweites Layout** (1 Layout), **SW-Thermo** zuerst; **Presets max/mid/mini** (Bixolon 2″, siehe unten); **separates Etiketten-Logo** (`label_logo_storage_path` o. ä.). **Feldinhalte:** Details später. **Vorschau:** ja. **Kundenportal:** kein Etikettendruck. **Render:** **ein** farbfähiges Layout (Logo/Farben); Thermodruck = **Graustufen** derselben Vorlage. **A4-Farbbatch (später):** **eine PDF** mit vielen QR; Objekt-**Mehrfachauswahl** nur **Haupt-App**. **Berechtigung (Entscheidung A):** eigenes **Lizenz-Feature** (Arbeitsname z. B. `qr_batch_a4`) **pro Mandant/Lizenz** im Lizenzportal; **zusätzlich** nur **Rollen**, die der **Admin** für dieses Modul freigibt (Konfiguration im Admin/Lizenz-UI – Detail bei Umsetzung). **A4-Bögen:** Referenz-Artikel siehe Tabelle unten. **Rollen (Mobil):** Thermodirekt **58 mm** usw. siehe unten. | **Vico.md §11.4**; siehe Abschnitt „A4-Referenzetiketten“. |
-| **PDF-Briefbogen** | **B:** Einheitliche Briefbogen-Logik auf **allen Ebenen** – **Haupt-App**, **Arbeitszeit-Portal-Exporte**, **Kundenportal** (`portal/`), ggf. weitere PDF-Generatoren; gemeinsame Hilfsfunktion + **ein** Speicherort pro Mandant (z. B. `briefbogen_storage_path` / Design-Config). **Upload (jetzt):** **A – eine Quelle** (Lizenzportal/Mandanten-Design **oder** Haupt-App Admin, nicht im Kundenportal); Portal nur Nutzung. **Später:** Verlagerung in **Mandanten-Self-Service**; Optionen offen: **einfacher Upload**, **kleiner Editor**, oder **Briefbogen-Generator** mit Platzhaltern aus Stammdaten – **gesondertes Detailthema** nach Abschluss der übrigen Entscheidungsrunde. | Siehe **Vico.md §11.2**. |
+| **PDF-Briefbogen** | ✅ **Phase 2 umgesetzt:** `shared/pdfLetterhead.ts` + `shared/briefbogenClient.ts`; Upload **Haupt-App Einstellungen** (Admin); PDFs mit Hintergrund: **Wartungsprotokoll**, **Zoll-PDF** + **Urlaubsbescheinigung** (Arbeitszeit-Portal). **Kundenportal:** nur Download fertiger PDFs (Briefbogen bereits enthalten). **Optional später:** Lizenzportal als zweite Upload-Quelle, Admin-Checklisten-PDF, weitere Generatoren. | **Vico.md §11.2** |
 | **GPS Stempel-Ortung** | **C:** Debug **später** (nach Live-Gang erneut prüfen); **Beta-Kennzeichnung** in UI. | `shared/BetaBadge.tsx`, Arbeitszeit, Einstellungen, Portal Alle Zeiten (Hinweis). |
 | **Standortabfrage (Recht / Go-Live)** | **B (minimal):** **Interne Checkliste** (§3a) abarbeiten, UI **Beta**, Feature nur mit **bewusstem** Lizenz-Flag `standortabfrage`. **Externe DS-Prüfung** nicht verpflichtend in dieser Runde. Thema **bleibt auf der Liste** (§3a, Merkliste), bis produktiv geklärt. | Portal `Standort.tsx`, Einstellungen, `CurrentLocationModal`. |
 | **IONOS / Deploy** | **C (später):** Umzug bzw. produktives Hosting auf **IONOS Deploy Now** (o. Ä.) **bewusst zurückstellen**; vorerst weiter mit bestehender/lokaler Umgebung. Anleitung bleibt in `docs/Zeiterfassung-Offene-Punkte-und-IONOS.md` §7. | |
@@ -61,8 +61,9 @@ Für den **späteren** Batch-Export auf **A4** (Laser/Farbe) eignen sich handels
 
 #### Ist-Stand im Code (Stand März 2026)
 
-- Tabelle **`leave_entitlements`** (`user_id`, `year`, `days_total`, **`days_carried_over`**) existiert in `supabase-complete.sql`, wird bei Urlaubs-Stammdaten-Update aber noch mit **`0`** geführt.
-- Portal **`Urlaub.tsx`:** „Resturlaub“ = nur **Jahresanspruch minus genehmigte Urlaubstage im gewählten Jahr** – **ohne** echtes **VJ** und ohne Frist.
+- Tabelle **`leave_entitlements`** (`user_id`, `year`, `days_total`, **`days_carried_over`**) in `supabase-complete.sql`; **Phase-3-MVP:** Saldo/Snapshot über RPC **`get_leave_balance_snapshot`** (VJ-Rest, Pending, Zusatz-Summe, Frist, Ack); Stammdaten setzen u. a. **`days_carried_over`** beim Jahreswechsel weiterhin wie bisher (kein neuer Cron in diesem Schritt zwingend).
+- **Arbeitszeit-Portal:** `Urlaub.tsx` + `Stammdaten.tsx` mit VJ-Frist (Mandant/Override), Hinweis „verstanden“, Zusatzposten (Admin), Teilgenehmigung; **`leave_requests.approved_from_date` / `approved_to_date`**.
+- **Optional später:** automatischer FIFO-Verbrauch der Zusatzposten bei Genehmigung; Option **„wie gesetzlicher Urlaub“** pro Posten in der UI.
 
 #### Vorschlag Funktionsumfang
 
@@ -221,16 +222,18 @@ Aus **Vico.md** §7.1 – Punkte **ohne** ✅ (bereits erledigt):
 | Phase | Nr. | Offener Punkt | Aufwand |
 |-------|-----|----------------|---------|
 | **J** | J1 | Wartungsplanung / Erinnerungen (z. B. 30 Tage vorher), optional E-Mail | 3–5 T |
-| **J** | J2 | Wartungsstatistik / Auswertung (pro Kunde/BV/Objekt, überfällige Wartungen) | 3–4 T |
-| **J** | J3 | Export für Buchhaltung (CSV/Excel) | 2–3 T |
-| **J** | J4 | Schnellzugriff / Zuletzt bearbeitet auf Startseite | 1–2 T |
+| **J** | J2 | ✅ Wartungsstatistik (`/wartungsstatistik`, KPI + Tabellen + CSV, Daten wie Erinnerungen) | 3–4 T |
+| **J** | J3 | ✅ Export Buchhaltung – **CSV-Basis** (`/buchhaltung-export`); SevDesk/API später | 2–3 T |
+| **J** | J4 | ✅ Zuletzt bearbeitet auf Startseite (`updated_at`, RLS) | 1–2 T |
 | **J** | J5 | ✅ Erweiterte Filter Kundenliste (PLZ, Wartungsstatus, BV-Anzahl) | 2 T |
 | **J** | J6 | ⏸️ **Zurückgestellt** – eigenes Konzept (Ablauf/Struktur) nach Rest der Roadmap; geschätzt 15–20 T wenn angegangen | 15–20 T |
 | **J** | J7 | Geplant: **1)** Mängel-Follow-up **2)** Bulk **3)** Portal-Push — **ohne** iCal (siehe Entscheidungstabelle) | je 2–3 T |
 | **J** | J9 | ✅ Ladezeiten-Monitoring / Performance-Dashboard (Admin) | 1–2 T |
-| **J** | J10 | PDF-Ausgabe mit Mandanten-Briefbogen (Wartungsprotokolle, Zoll-Export etc. auf Firmenbriefbogen) | 1–2 T |
+| **J** | J10 | ✅ **Phase 2:** Gemeinsame Module in **`shared/`**; Wartungsprotokoll + Arbeitszeit-Portal (**Zoll-PDF**, **Urlaubsbescheinigung**); Kundenportal über gespeicherte PDFs. | 1–2 T |
 
 **Referenz J10:** **`Vico.md` §11.2** (Mandanten-Briefbogen für PDFs)
+
+**Backlog Startseite / Dashboard:** zusätzliche Widgets (neben Arbeitszeit, Woche, Wartung, Aufträge, Zuletzt bearbeitet) später definieren und in `DASHBOARD_WIDGET_OPTIONS` + Einstellungen ergänzen.
 
 **Lizenzportal (operativ):** B3/L1 – separates Supabase-Projekt für Lizenzportal anlegen und Schema einspielen (falls noch nicht geschehen). L2/L3 ggf. bereits erledigt (laut Roadmap ✅).
 

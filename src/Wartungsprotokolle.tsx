@@ -25,6 +25,7 @@ import ConfirmDialog from './components/ConfirmDialog'
 import EmptyState from '../shared/EmptyState'
 import { fetchMyProfile, getProfileDisplayName } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
+import { fetchBriefbogenDataUrlForPdf } from './lib/briefbogenService'
 import type {
   Object as Obj,
   Customer,
@@ -356,6 +357,7 @@ const Wartungsprotokolle = () => {
     } as BV
     setSendingEmailFor(r.id)
     try {
+      const letterheadDataUrl = await fetchBriefbogenDataUrlForPdf()
       const { generateMaintenancePdf } = await import('./lib/generateMaintenancePdf')
       const details = reportDetails[r.id]
       const blob = await generateMaintenancePdf({
@@ -367,6 +369,7 @@ const Wartungsprotokolle = () => {
         photos: details?.photos ?? [],
         technicianSignaturePath: r.technician_signature_path,
         customerSignaturePath: r.customer_signature_path,
+        letterheadDataUrl,
       })
       const filename = `Wartungsprotokoll_${r.maintenance_date}_${getObjectDisplayName(object)}.pdf`
       const subject = `Wartungsprotokoll ${getObjectDisplayName(object)} – ${r.maintenance_date}`
@@ -387,7 +390,7 @@ const Wartungsprotokolle = () => {
 
   if (!objectId || !bvId || !customerId) {
     return (
-      <div className="p-4">
+      <div className="p-4 min-w-0">
         <p className="text-slate-600">Ungültige Navigation.</p>
         <Link to="/kunden" className="text-vico-primary hover:underline mt-2 inline-block">
           ← Kunden
@@ -398,14 +401,14 @@ const Wartungsprotokolle = () => {
 
   if (!bv || !customer || isLoading) {
     return (
-      <div className="p-4">
+      <div className="p-4 min-w-0">
         <LoadingSpinner message="Lade…" className="py-8" />
       </div>
     )
   }
 
   return (
-    <div className="p-4">
+    <div className="p-4 min-w-0">
       <div className="mb-4 flex items-center gap-2 text-sm text-slate-600">
         <Link to="/kunden" className="hover:text-slate-800">
           Kunden
@@ -437,7 +440,7 @@ const Wartungsprotokolle = () => {
           <button
             type="button"
             onClick={handleOpenCreate}
-            className="px-4 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+            className="px-4 py-2 bg-vico-button dark:bg-vico-primary text-slate-800 dark:text-white rounded-lg hover:bg-vico-button-hover dark:hover:opacity-90 font-medium border border-slate-300 dark:border-slate-600"
             aria-label="Neues Wartungsprotokoll anlegen"
           >
             + Neues Protokoll
@@ -458,24 +461,24 @@ const Wartungsprotokolle = () => {
             return (
               <li
                 key={r.id}
-                className="bg-white rounded-lg border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
               >
                 <div>
-                  <p className="font-medium text-slate-800">
+                  <p className="font-medium text-slate-800 dark:text-slate-100">
                     {r.maintenance_date}
                     {r.maintenance_time ? ` · ${r.maintenance_time}` : ''}
                   </p>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
                     {r.reason ? REASON_LABELS[r.reason] : '–'}
                     {r.deficiencies_found && ' · Mängel festgestellt'}
                   </p>
                   {details?.smokeDetectors?.length ? (
-                    <p className="text-xs text-slate-400 mt-1">
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                       Rauchmelder: {details.smokeDetectors.map((sd) => `${sd.label}: ${STATUS_LABELS[sd.status]}`).join(', ')}
                     </p>
                   ) : null}
                   {(r.technician_signature_path || r.customer_signature_path) && (
-                    <p className="text-xs text-slate-400 mt-1">
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                       Unterschriften:{' '}
                       {r.technician_signature_path && `Techniker ✓${r.technician_name_printed ? ` (${r.technician_name_printed})` : ''}`}
                       {r.technician_signature_path && r.customer_signature_path && ' · '}
@@ -492,7 +495,7 @@ const Wartungsprotokolle = () => {
                           <button
                             type="button"
                             onClick={() => setExpandedPhotoUrl(photoUrl)}
-                            className="block w-12 h-12 rounded border border-slate-200 overflow-hidden focus:outline-none focus:ring-2 focus:ring-vico-primary cursor-zoom-in"
+                            className="block w-12 h-12 rounded border border-slate-200 dark:border-slate-600 overflow-hidden focus:outline-none focus:ring-2 focus:ring-vico-primary cursor-zoom-in"
                             aria-label="Foto vergrößern"
                           >
                             <img
@@ -521,7 +524,7 @@ const Wartungsprotokolle = () => {
                   <button
                     type="button"
                     onClick={() => handleDownloadPdf(r)}
-                    className="px-3 py-1.5 text-sm text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50"
+                    className="px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700"
                     aria-label="PDF herunterladen"
                   >
                     PDF
@@ -537,7 +540,7 @@ const Wartungsprotokolle = () => {
                           r.synced === false ||
                           r.id.startsWith('temp-')
                         }
-                        className="px-3 py-1.5 text-sm text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         aria-label="E-Mail senden"
                       >
                         {sendingEmailFor === r.id
@@ -551,7 +554,7 @@ const Wartungsprotokolle = () => {
                         onClick={() =>
                           setConfirmDialog({ open: true, reportId: r.id })
                         }
-                        className="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                        className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/50"
                         aria-label="Protokoll löschen"
                       >
                         Löschen
@@ -587,48 +590,48 @@ const Wartungsprotokolle = () => {
           onClick={handleCloseForm}
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-2xl w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col"
+            className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-2xl w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col text-slate-900 dark:text-slate-100"
             role="dialog"
             aria-modal
             aria-labelledby="wartung-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-4 sticky top-0 bg-white border-b border-slate-200">
-              <h3 id="wartung-title" className="text-lg font-bold text-slate-800">
+            <div className="p-4 sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-600">
+              <h3 id="wartung-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
                 Neues Wartungsprotokoll
               </h3>
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="min-w-0">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Datum der Wartung
                   </label>
                   <input
                     type="date"
                     value={formData.maintenance_date}
                     onChange={(e) => handleFormChange('maintenance_date', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                     required
                     aria-label="Datum der Wartung"
                   />
                 </div>
                 <div className="min-w-0">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Uhrzeit
                   </label>
                   <input
                     type="time"
                     value={formData.maintenance_time}
                     onChange={(e) => handleFormChange('maintenance_time', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                     aria-label="Uhrzeit"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Prüfgrund
                 </label>
                 <select
@@ -636,7 +639,7 @@ const Wartungsprotokolle = () => {
                   onChange={(e) =>
                     handleFormChange('reason', e.target.value as MaintenanceReason)
                   }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                   aria-label="Prüfgrund"
                 >
                   {Object.entries(REASON_LABELS).map(([value, label]) => (
@@ -651,13 +654,13 @@ const Wartungsprotokolle = () => {
                     placeholder="Sonstiges (Bitte angeben)"
                     value={formData.reason_other}
                     onChange={(e) => handleFormChange('reason_other', e.target.value)}
-                    className="mt-2 w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    className="mt-2 w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                     aria-label="Sonstiges"
                   />
                 )}
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 text-slate-800 dark:text-slate-200">
                 <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -684,13 +687,13 @@ const Wartungsprotokolle = () => {
 
               {formData.smoke_detector_statuses.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                     Rauchmelder
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {formData.smoke_detector_statuses.map((sd, i) => (
                       <div key={i}>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                           {sd.label}
                         </label>
                         <select
@@ -701,7 +704,7 @@ const Wartungsprotokolle = () => {
                               e.target.value as SmokeDetectorStatus
                             )
                           }
-                          className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                           aria-label={`${sd.label} Status`}
                         >
                           {Object.entries(STATUS_LABELS).map(([value, label]) => (
@@ -736,7 +739,7 @@ const Wartungsprotokolle = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Fotos
                 </label>
                 <input
@@ -744,7 +747,7 @@ const Wartungsprotokolle = () => {
                   accept="image/*"
                   multiple
                   onChange={handlePhotoSelect}
-                  className="w-full text-sm text-slate-600 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                  className="w-full text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600"
                   aria-label="Fotos hinzufügen"
                 />
                 {photoFiles.length > 0 && (
@@ -771,7 +774,7 @@ const Wartungsprotokolle = () => {
               </div>
 
               <div>
-                <label className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-slate-800 dark:text-slate-200">
                   <input
                     type="checkbox"
                     checked={formData.deficiencies_found}
@@ -784,7 +787,7 @@ const Wartungsprotokolle = () => {
                 {formData.deficiencies_found && (
                   <div className="mt-2 space-y-2">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                         Beschreibung
                       </label>
                       <textarea
@@ -792,14 +795,14 @@ const Wartungsprotokolle = () => {
                         onChange={(e) =>
                           handleFormChange('deficiency_description', e.target.value)
                         }
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                         rows={2}
                         placeholder="Mängel beschreiben"
                         aria-label="Mängel Beschreibung"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                         Dringlichkeit
                       </label>
                       <select
@@ -807,7 +810,7 @@ const Wartungsprotokolle = () => {
                         onChange={(e) =>
                           handleFormChange('urgency', e.target.value as MaintenanceUrgency)
                         }
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                         aria-label="Dringlichkeit"
                       >
                         {Object.entries(URGENCY_LABELS).map(([value, label]) => (
@@ -841,14 +844,14 @@ const Wartungsprotokolle = () => {
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="flex-1 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover disabled:opacity-50 border border-slate-300"
+                  className="flex-1 py-2 bg-vico-button dark:bg-vico-primary text-slate-800 dark:text-white rounded-lg hover:bg-vico-button-hover dark:hover:opacity-90 disabled:opacity-50 border border-slate-300 dark:border-slate-600"
                 >
                   {isSaving ? 'Speichern...' : 'Speichern'}
                 </button>
                 <button
                   type="button"
                   onClick={handleCloseForm}
-                  className="px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50"
+                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
                   Abbrechen
                 </button>

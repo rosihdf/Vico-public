@@ -2,14 +2,17 @@
  * System-Bereich: Historie, Fehlerberichte, Ladezeiten unter einem gemeinsamen Menüpunkt.
  */
 import { NavLink, Outlet } from 'react-router-dom'
-
-const TABS = [
-  { to: '/system/historie', label: 'Historie' },
-  { to: '/system/fehlerberichte', label: 'Fehlerberichte' },
-  { to: '/system/ladezeiten', label: 'Ladezeiten' },
-] as const
+import { useLicense } from '../LicenseContext'
+import { hasFeature } from '../lib/licenseService'
 
 const System = () => {
+  const { license } = useLicense()
+  const tabs = [
+    ...(license && hasFeature(license, 'historie') ? [{ to: '/system/historie', label: 'Historie' }] : []),
+    ...(license && hasFeature(license, 'fehlerberichte') ? [{ to: '/system/fehlerberichte', label: 'Fehlerberichte' }] : []),
+    ...(license && hasFeature(license, 'ladezeiten') ? [{ to: '/system/ladezeiten', label: 'Ladezeiten' }] : []),
+  ]
+
   return (
     <div className="min-h-full">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 px-4 pt-4">
@@ -18,7 +21,7 @@ const System = () => {
           className="flex flex-wrap gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800"
           aria-label="System-Bereiche"
         >
-          {TABS.map(({ to, label }) => (
+          {tabs.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}

@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import { supabase } from './supabase'
-import { fetchProfiles, updateProfileRole, updateProfileName, updateProfileSollMinutes, getProfileDisplayName, updateProfileRoleByEmail, fetchTeams, updateProfileTeam, createTeam, deleteTeam } from './lib/userService'
+import { fetchProfiles, updateProfileRole, updateProfileName, getProfileDisplayName, updateProfileRoleByEmail, fetchTeams, updateProfileTeam, createTeam, deleteTeam } from './lib/userService'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalBadge from './components/PortalBadge'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { useLicense } from './LicenseContext'
 import { useSync } from './SyncContext'
-import { checkCanInviteUser, getUsageLevel, getUsageMessage } from './lib/licenseService'
+import { checkCanInviteUser, getUsageLevel, getUsageMessage, hasFeature } from './lib/licenseService'
 import { getStoredLicenseNumber, reportLimitExceeded, isLicenseApiConfigured } from './lib/licensePortalApi'
 import {
   fetchCustomers,
@@ -67,29 +67,11 @@ const Benutzerverwaltung = () => {
   const [bvsByCustomer, setBvsByCustomer] = useState<Record<string, BV[]>>({})
   const [savingVisibilityUserId, setSavingVisibilityUserId] = useState<string | null>(null)
   const [linkingUserId, setLinkingUserId] = useState<string | null>(null)
-  const [savingSollId, setSavingSollId] = useState<string | null>(null)
-  const [editingSoll, setEditingSoll] = useState<Record<string, string>>({})
   const [teams, setTeams] = useState<Team[]>([])
   const [savingTeamId, setSavingTeamId] = useState<string | null>(null)
   const [newTeamName, setNewTeamName] = useState('')
   const [isCreatingTeam, setIsCreatingTeam] = useState(false)
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null)
-
-  const handleSollBlur = async (profileId: string, value: string) => {
-    setEditingSoll((prev) => {
-      const next = { ...prev }
-      delete next[profileId]
-      return next
-    })
-    const parsed = value === '' ? null : parseInt(value, 10)
-    const toSave: number | null =
-      value === '' ? null : parsed === null || Number.isNaN(parsed) || parsed < 0 ? null : parsed
-    setSavingSollId(profileId)
-    const { error } = await updateProfileSollMinutes(profileId, toSave)
-    setSavingSollId(null)
-    if (!error) await loadProfiles()
-    else setFormError(getSupabaseErrorMessage(error.message))
-  }
 
   const handleTeamChange = async (profileId: string, teamId: string | null) => {
     setSavingTeamId(profileId)
@@ -214,7 +196,7 @@ const Benutzerverwaltung = () => {
       setFormError('Passwort muss mindestens 6 Zeichen haben.')
       return
     }
-    if (newRole === 'kunde' && !(license?.features?.kundenportal)) {
+    if (newRole === 'kunde' && (!license || !hasFeature(license, 'kundenportal'))) {
       setFormError('Portalbenutzer können nur angelegt werden, wenn das Kundenportal in der Lizenz enthalten ist.')
       return
     }
@@ -377,22 +359,22 @@ const Benutzerverwaltung = () => {
 
   if (userRole !== 'admin') {
     return (
-      <div className="p-4">
-        <h2 className="text-xl font-bold text-slate-800">Benutzerverwaltung</h2>
-        <p className="mt-2 text-slate-600">Zugriff nur für Administratoren.</p>
+      <div className="p-4 min-w-0">
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Benutzerverwaltung</h2>
+        <p className="mt-2 text-slate-600 dark:text-slate-400">Zugriff nur für Administratoren.</p>
       </div>
     )
   }
 
   return (
-    <div className="p-4">
-      <h2 className="text-xl font-bold text-slate-800">Benutzerverwaltung</h2>
-      <p className="mt-1 text-sm text-slate-600">
+    <div className="p-4 min-w-0">
+      <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Benutzerverwaltung</h2>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
         Benutzer anlegen und Rollen verwalten (nur Admin).
       </p>
 
       {license && (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
           Verfügbare Rollen können je nach Lizenz und aktivierten Modulen eingeschränkt sein (z.B. Portalbenutzer nur bei aktivem Kundenportal).
         </p>
       )}
@@ -438,7 +420,7 @@ const Benutzerverwaltung = () => {
       ) : (
         <>
           {formError && (
-            <p className="mt-2 p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-200" role="alert">
+            <p className="mt-2 p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-lg border border-red-200 dark:border-red-800" role="alert">
               {formError}
             </p>
           )}
@@ -456,74 +438,64 @@ const Benutzerverwaltung = () => {
                 {list.map((p) => (
                   <li
                     key={p.id}
-                    className="flex flex-wrap items-center justify-between gap-2 p-3 bg-white rounded-lg border border-slate-200"
+                    className="flex min-w-0 flex-col gap-2 p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600"
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-slate-800">
-                          {getProfileDisplayName(p)}
-                          {(p.first_name || p.last_name) && p.email && (
-                            <span className="text-slate-400 font-normal"> ({p.email})</span>
-                          )}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditName(p)}
-                          className="text-xs text-vico-primary hover:underline"
-                          aria-label="Name bearbeiten"
-                        >
-                          bearbeiten
-                        </button>
-                      </div>
-                      <span className="ml-2 text-sm text-slate-500 flex items-center gap-1.5">
-                        {ROLE_LABELS[p.role]}
-                        {!isAppUser(p) && <PortalBadge />}
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="min-w-0 max-w-full truncate font-medium text-slate-800 dark:text-slate-100">
+                        {getProfileDisplayName(p)}
                       </span>
-                    </div>
-                    {canChangeRole ? (
-                      <select
-                        value={p.role}
-                        onChange={(e) => handleRoleChange(p, e.target.value as 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde')}
-                        disabled={updatingId === p.id || isLastAdmin(p)}
-                        className="px-3 py-1.5 text-sm rounded-lg border border-slate-300 text-slate-700 bg-white disabled:opacity-50 min-w-[140px]"
-                        aria-label={`Rolle von ${getProfileDisplayName(p)} ändern`}
-                        title={isLastAdmin(p) ? 'Letzter Admin – Rolle kann nicht geändert werden' : 'Rolle'}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditName(p)}
+                        className="shrink-0 text-xs text-vico-primary hover:underline"
+                        aria-label="Name bearbeiten"
                       >
-                        {(Object.entries(ROLE_LABELS) as [keyof typeof ROLE_LABELS, string][])
-                          .filter(([value]) => availableRoles.includes(value))
-                          .map(([value, label]) => (
-                            <option key={value} value={value}>
-                              {label}
-                            </option>
-                          ))}
-                      </select>
-                    ) : (
-                      <span className="px-3 py-1.5 text-sm text-slate-600 min-w-[140px]">
-                        {ROLE_LABELS[p.role]}
-                      </span>
-                    )}
+                        bearbeiten
+                      </button>
+                    </div>
+                    <div className="flex w-full min-w-0 items-center gap-2">
+                      {p.email ? (
+                        <p
+                          className="min-w-0 flex-1 truncate text-sm text-slate-500 dark:text-slate-400"
+                          title={p.email}
+                        >
+                          {p.email}
+                        </p>
+                      ) : (
+                        <span className="min-w-0 flex-1" aria-hidden />
+                      )}
+                      {canChangeRole ? (
+                        <select
+                          value={p.role}
+                          onChange={(e) =>
+                            handleRoleChange(
+                              p,
+                              e.target.value as 'admin' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
+                            )
+                          }
+                          disabled={updatingId === p.id || isLastAdmin(p)}
+                          className="shrink-0 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 disabled:opacity-50 min-w-[8.75rem] max-w-[min(100%,12rem)]"
+                          aria-label={`Rolle von ${getProfileDisplayName(p)} ändern`}
+                          title={isLastAdmin(p) ? 'Letzter Admin – Rolle kann nicht geändert werden' : 'Rolle'}
+                        >
+                          {(Object.entries(ROLE_LABELS) as [keyof typeof ROLE_LABELS, string][])
+                            .filter(([value]) => availableRoles.includes(value))
+                            .map(([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ))}
+                        </select>
+                      ) : (
+                        <span className="shrink-0 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-400 min-w-[8.75rem]">
+                          {ROLE_LABELS[p.role]}
+                          {!isAppUser(p) && <PortalBadge />}
+                        </span>
+                      )}
+                    </div>
                     {canChangeRole && (
                       <div className="flex items-center gap-1">
-                        <label htmlFor={`soll-${p.id}`} className="text-xs text-slate-500 whitespace-nowrap">
-                          Soll Min/Monat
-                        </label>
-                        <input
-                          id={`soll-${p.id}`}
-                          type="number"
-                          min={0}
-                          step={60}
-                          value={editingSoll[p.id] ?? p.soll_minutes_per_month ?? ''}
-                          onChange={(e) => setEditingSoll((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                          onBlur={(e) => handleSollBlur(p.id, e.target.value.trim())}
-                          disabled={savingSollId === p.id}
-                          className="w-20 px-2 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white disabled:opacity-50"
-                          aria-label={`Soll-Arbeitszeit pro Monat (Minuten) für ${getProfileDisplayName(p)}`}
-                        />
-                      </div>
-                    )}
-                    {canChangeRole && (
-                      <div className="flex items-center gap-1">
-                        <label htmlFor={`team-${p.id}`} className="text-xs text-slate-500 whitespace-nowrap">
+                        <label htmlFor={`team-${p.id}`} className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                           Team
                         </label>
                         <select
@@ -531,7 +503,7 @@ const Benutzerverwaltung = () => {
                           value={p.team_id ?? ''}
                           onChange={(e) => handleTeamChange(p.id, e.target.value || null)}
                           disabled={savingTeamId === p.id}
-                          className="px-2 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white disabled:opacity-50 min-w-[120px]"
+                          className="px-2 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 disabled:opacity-50 min-w-[120px]"
                           aria-label={`Team für ${getProfileDisplayName(p)}`}
                           title="Team (für Teamleiter-Zuordnung)"
                         >
@@ -554,10 +526,10 @@ const Benutzerverwaltung = () => {
                 <section aria-labelledby="teams-heading">
                   {teams.length === 0 ? (
                     <>
-                      <h3 id="teams-heading" className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                      <h3 id="teams-heading" className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-2">
                         Teams
                       </h3>
-                      <p className="text-xs text-slate-500 mb-2">Noch keine Teams. Neues Team anlegen:</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Noch keine Teams. Neues Team anlegen:</p>
                       <div className="flex flex-wrap items-center gap-2">
                         <input
                           type="text"
@@ -565,7 +537,7 @@ const Benutzerverwaltung = () => {
                           onChange={(e) => setNewTeamName(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && handleCreateTeam()}
                           placeholder="Neues Team (Name)"
-                          className="px-3 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white w-48"
+                          className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 w-48"
                           aria-label="Name für neues Team"
                           disabled={isCreatingTeam || isOffline}
                         />
@@ -574,7 +546,7 @@ const Benutzerverwaltung = () => {
                           onClick={handleCreateTeam}
                           disabled={!newTeamName.trim() || isCreatingTeam || isOffline}
                           title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
-                          className="px-3 py-1.5 text-sm rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:pointer-events-none"
+                          className="px-3 py-1.5 text-sm rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:pointer-events-none"
                           aria-label="Team anlegen"
                         >
                           Team anlegen
@@ -583,10 +555,10 @@ const Benutzerverwaltung = () => {
                     </>
                   ) : (
                     <>
-                      <h3 id="teams-heading" className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                      <h3 id="teams-heading" className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-2">
                         Teams ({teams.length})
                       </h3>
-                      <p className="text-xs text-slate-500 mb-2">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                         Teamleiter sehen nur Zeiten ihres Teams. Mitglieder pro Team zuweisen.
                       </p>
                       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -596,7 +568,7 @@ const Benutzerverwaltung = () => {
                           onChange={(e) => setNewTeamName(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && handleCreateTeam()}
                           placeholder="Neues Team (Name)"
-                          className="px-3 py-1.5 text-sm rounded border border-slate-300 text-slate-700 bg-white w-48"
+                          className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 w-48"
                           aria-label="Name für neues Team"
                           disabled={isCreatingTeam || isOffline}
                         />
@@ -605,7 +577,7 @@ const Benutzerverwaltung = () => {
                           onClick={handleCreateTeam}
                           disabled={!newTeamName.trim() || isCreatingTeam || isOffline}
                           title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
-                          className="px-3 py-1.5 text-sm rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:pointer-events-none"
+                          className="px-3 py-1.5 text-sm rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:pointer-events-none"
                           aria-label="Team anlegen"
                         >
                           Team anlegen
@@ -669,19 +641,19 @@ const Benutzerverwaltung = () => {
                   )}
                 </section>
                 <section>
-                  <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                  <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-2">
                     App-Benutzer ({appProfiles.length})
                   </h3>
-                  <p className="text-xs text-slate-500 mb-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                     Zugriff auf die AMRtech Web-App (Admin, Mitarbeiter, Operator, Leser, Demo). Team-Zuordnung für Teamleiter und Mitarbeiter.
                   </p>
                   {renderUserList(appProfiles, APP_ROLES, true)}
                 </section>
                 <section>
-                  <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                  <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-2">
                     Portal-Benutzer ({portalProfiles.length})
                   </h3>
-                  <p className="text-xs text-slate-500 mb-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                     Zugriff auf das Kundenportal (Wartungsberichte). Kunden zuweisen und Sichtbarkeit Objekte/BV einschränken.
                   </p>
                   <ul className="space-y-2" aria-label="Portal-Benutzerliste">
@@ -762,7 +734,7 @@ const Benutzerverwaltung = () => {
                                             e.stopPropagation()
                                             handleUnlinkPortalUser(a.id)
                                           }}
-                                          className="text-red-600 hover:text-red-800 font-medium"
+                                          className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
                                           aria-label={`${customerName(a.customer_id)} entfernen`}
                                         >
                                           ×
@@ -787,7 +759,7 @@ const Benutzerverwaltung = () => {
                                         }
                                       }}
                                       disabled={linkingUserId === p.id}
-                                      className="text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 disabled:opacity-50"
+                                      className="text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 disabled:opacity-50"
                                       aria-label="Kunde zuweisen"
                                     >
                                       <option value="">+ Kunde zuweisen</option>
@@ -811,7 +783,7 @@ const Benutzerverwaltung = () => {
                                     {visibilityExpandedUserId === p.id ? '▼ Sichtbare Objekte/BV ausblenden' : '▶ Sichtbare Objekte/BV bearbeiten'}
                                   </button>
                                   {visibilityExpandedUserId === p.id && (
-                                <div className="pl-2 border-l-2 border-slate-200 space-y-3">
+                                <div className="pl-2 border-l-2 border-slate-200 dark:border-slate-600 space-y-3">
                                   {assignments.map((a) => {
                                     const bvs = bvsByCustomer[a.customer_id] ?? []
                                     const selectedBvIds = userVis[a.customer_id] ?? []
@@ -819,7 +791,7 @@ const Benutzerverwaltung = () => {
                                     return (
                                       <div key={a.customer_id} className="space-y-1.5">
                                         <div className="flex items-center justify-between gap-2">
-                                          <span className="font-medium text-slate-700">{customerName(a.customer_id)}</span>
+                                          <span className="font-medium text-slate-700 dark:text-slate-200">{customerName(a.customer_id)}</span>
                                           <button
                                             type="button"
                                             onClick={() => handleSaveVisibility(p.id, a.customer_id)}
@@ -829,7 +801,7 @@ const Benutzerverwaltung = () => {
                                             {savingVisibilityUserId === p.id ? 'Speichern…' : 'Sichtbarkeit speichern'}
                                           </button>
                                         </div>
-                                        <p className="text-xs text-slate-500">
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">
                                           {bvs.length === 0
                                             ? 'Keine BV angelegt.'
                                             : allSelected || selectedBvIds.length === 0
@@ -850,11 +822,11 @@ const Benutzerverwaltung = () => {
                                                     onChange={(e) =>
                                                       handleVisibilityCheck(p.id, a.customer_id, bv.id, e.target.checked)
                                                     }
-                                                    className="rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                                                    className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800 text-vico-primary focus:ring-vico-primary"
                                                   />
                                                   <label
                                                     htmlFor={`vis-${p.id}-${a.customer_id}-${bv.id}`}
-                                                    className="text-sm text-slate-700 cursor-pointer"
+                                                    className="text-sm text-slate-700 dark:text-slate-200 cursor-pointer"
                                                   >
                                                     {bv.name}
                                                   </label>
@@ -894,16 +866,16 @@ const Benutzerverwaltung = () => {
           aria-labelledby="create-user-title"
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-sm w-full min-w-0 p-6"
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full min-w-0 max-h-[min(90vh,90dvh)] overflow-y-auto overflow-x-hidden p-6 border border-slate-200 dark:border-slate-600"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 id="create-user-title" className="text-lg font-bold text-slate-800">
+            <h3 id="create-user-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
               Neuen Benutzer anlegen
             </h3>
-            <form onSubmit={handleCreateUser} className="mt-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="user-first-name" className="block text-sm font-medium text-slate-700 mb-1">
+            <form onSubmit={handleCreateUser} className="mt-4 flex min-w-0 flex-col gap-4">
+              <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="min-w-0">
+                  <label htmlFor="user-first-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Vorname
                   </label>
                   <input
@@ -912,12 +884,13 @@ const Benutzerverwaltung = () => {
                     value={newFirstName}
                     onChange={(e) => setNewFirstName(e.target.value)}
                     placeholder="Vorname"
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     disabled={isSaving}
+                    autoComplete="given-name"
                   />
                 </div>
-                <div>
-                  <label htmlFor="user-last-name" className="block text-sm font-medium text-slate-700 mb-1">
+                <div className="min-w-0">
+                  <label htmlFor="user-last-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Nachname
                   </label>
                   <input
@@ -926,13 +899,14 @@ const Benutzerverwaltung = () => {
                     value={newLastName}
                     onChange={(e) => setNewLastName(e.target.value)}
                     placeholder="Nachname"
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                     disabled={isSaving}
+                    autoComplete="family-name"
                   />
                 </div>
               </div>
-              <div>
-                <label htmlFor="user-email" className="block text-sm font-medium text-slate-700 mb-1">
+              <div className="min-w-0 shrink-0">
+                <label htmlFor="user-email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   E-Mail
                 </label>
                 <input
@@ -941,13 +915,14 @@ const Benutzerverwaltung = () => {
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   placeholder="name@beispiel.de"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   required
                   disabled={isSaving}
+                  autoComplete="email"
                 />
               </div>
-              <div>
-                <label htmlFor="user-password" className="block text-sm font-medium text-slate-700 mb-1">
+              <div className="min-w-0 shrink-0">
+                <label htmlFor="user-password" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Passwort (min. 6 Zeichen)
                 </label>
                 <input
@@ -956,14 +931,15 @@ const Benutzerverwaltung = () => {
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   minLength={6}
                   required
                   disabled={isSaving}
+                  autoComplete="new-password"
                 />
               </div>
-              <div>
-                <label htmlFor="user-role" className="block text-sm font-medium text-slate-700 mb-1">
+              <div className="min-w-0 shrink-0">
+                <label htmlFor="user-role" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Rolle
                 </label>
                 <select
@@ -971,12 +947,12 @@ const Benutzerverwaltung = () => {
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value as typeof newRole)}
                   disabled={isSaving}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary bg-white text-slate-700"
+                  className="box-border w-full min-w-0 max-w-full appearance-auto rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   aria-label="Rolle auswählen"
                 >
                   {(Object.entries(ROLE_LABELS) as [keyof typeof ROLE_LABELS, string][])
                     .filter(([role]) => {
-                      if (role === 'kunde') return license?.features?.kundenportal === true
+                      if (role === 'kunde') return license ? hasFeature(license, 'kundenportal') : false
                       return APP_ROLES.includes(role)
                     })
                     .map(([value, label]) => (
@@ -987,12 +963,12 @@ const Benutzerverwaltung = () => {
                 </select>
               </div>
               {formError && (
-                <p className="text-sm text-red-600" role="alert">
+                <p className="text-sm text-red-600 dark:text-red-400" role="alert">
                   {formError}
                 </p>
               )}
               {formMessage && (
-                <p className="text-sm text-green-600">{formMessage}</p>
+                <p className="text-sm text-green-600 dark:text-green-400">{formMessage}</p>
               )}
               <div className="flex gap-2">
                 <button
@@ -1005,7 +981,7 @@ const Benutzerverwaltung = () => {
                 <button
                   type="button"
                   onClick={handleCloseForm}
-                  className="px-4 py-2 rounded-lg font-medium border border-slate-300 text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50"
                 >
                   Abbrechen
                 </button>
@@ -1026,18 +1002,18 @@ const Benutzerverwaltung = () => {
           aria-labelledby="edit-name-title"
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-sm w-full min-w-0 p-6"
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full min-w-0 max-h-[min(90vh,90dvh)] overflow-y-auto overflow-x-hidden p-6 border border-slate-200 dark:border-slate-600"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 id="edit-name-title" className="text-lg font-bold text-slate-800">
+            <h3 id="edit-name-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
               Name bearbeiten
             </h3>
-            <p className="text-sm text-slate-600 mt-1">
+            <p className="mt-1 min-w-0 break-words text-sm text-slate-600 dark:text-slate-400">
               {editingProfile.email || '(keine E-Mail)'}
             </p>
-            <form onSubmit={handleSaveName} className="mt-4 space-y-4">
-              <div>
-                <label htmlFor="edit-first-name" className="block text-sm font-medium text-slate-700 mb-1">
+            <form onSubmit={handleSaveName} className="mt-4 flex min-w-0 flex-col gap-4">
+              <div className="min-w-0">
+                <label htmlFor="edit-first-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Vorname
                 </label>
                 <input
@@ -1046,12 +1022,13 @@ const Benutzerverwaltung = () => {
                   value={editFirstName}
                   onChange={(e) => setEditFirstName(e.target.value)}
                   placeholder="Vorname"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   disabled={updatingId === editingProfile.id}
+                  autoComplete="given-name"
                 />
               </div>
-              <div>
-                <label htmlFor="edit-last-name" className="block text-sm font-medium text-slate-700 mb-1">
+              <div className="min-w-0">
+                <label htmlFor="edit-last-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Nachname
                 </label>
                 <input
@@ -1060,8 +1037,9 @@ const Benutzerverwaltung = () => {
                   value={editLastName}
                   onChange={(e) => setEditLastName(e.target.value)}
                   placeholder="Nachname"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
                   disabled={updatingId === editingProfile.id}
+                  autoComplete="family-name"
                 />
               </div>
               <div className="flex gap-2">
@@ -1075,7 +1053,7 @@ const Benutzerverwaltung = () => {
                 <button
                   type="button"
                   onClick={handleCloseEditName}
-                  className="px-4 py-2 rounded-lg font-medium border border-slate-300 text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50"
                 >
                   Abbrechen
                 </button>

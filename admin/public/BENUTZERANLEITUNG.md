@@ -85,6 +85,7 @@ Nach dem Login sehen Sie die Startseite mit:
 
 - **QR-Code** – zeigt einen QR-Code für das Objekt.
 - Kann per Bluetooth-Drucker gedruckt werden.
+- **A4-Sammel-PDF** (wenn in der Lizenz aktiviert): In der Kundenliste **Türen/Tore ankreuzen**, Etikettgröße wählen und **PDF herunterladen** – mehrere QR-Etiketten auf A4 (HERMA-/Avery-nahe Rastergrößen).
 - Beim Scannen wird direkt zur Objektansicht navigiert.
 
 ### Fotos

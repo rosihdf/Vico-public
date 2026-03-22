@@ -1,11 +1,14 @@
 /**
  * Compliance-Exporte: Zollprüfung (MiLoG § 17), Urlaubsbescheinigung (§ 6 Abs. 2 BUrlG)
+ * PDFs nutzen optional den Mandanten-Briefbogen (shared, gleiches Supabase-Projekt).
  */
 import { LEAVE_TYPE_LABELS } from './leaveService'
 import { jsPDF } from 'jspdf'
 import type { TimeEntry, TimeBreak } from '../types/time'
 import { calcWorkMinutes } from '../../../shared/timeUtils'
 import { formatDateTimeShort } from '../../../shared/format'
+import { paintLetterheadOnCurrentPage } from '../../../shared/pdfLetterhead'
+import { fetchBriefbogenDataUrlForPdf } from '../../../shared/briefbogenClient'
 
 /** CSV für Zoll-/Mindestlohnprüfung (MiLoG § 17): Beginn, Ende, Dauer, Pausen */
 export const exportZollCsv = (
@@ -37,15 +40,20 @@ export const exportZollCsv = (
   URL.revokeObjectURL(url)
 }
 
-/** PDF für Zollprüfung */
-export const exportZollPdf = (
+/** PDF für Zollprüfung (optional Briefbogen-Hintergrund pro Seite) */
+export const exportZollPdf = async (
   entries: TimeEntry[],
   breaksMap: Record<string, TimeBreak[]>,
   employeeName: string,
   fromDate: string,
-  toDate: string
-): void => {
+  toDate: string,
+  supabase: unknown
+): Promise<void> => {
+  const letterheadDataUrl = await fetchBriefbogenDataUrlForPdf(supabase)
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+  if (letterheadDataUrl) {
+    paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+  }
   doc.setFontSize(10)
   doc.text(`Zeiterfassung für Zoll-/Mindestlohnprüfung (MiLoG § 17)`, 14, 10)
   doc.text(`Mitarbeiter: ${employeeName} | Zeitraum: ${fromDate} bis ${toDate}`, 14, 16)
@@ -65,6 +73,9 @@ export const exportZollPdf = (
   for (const e of entries) {
     if (y > 180) {
       doc.addPage('a4', 'landscape')
+      if (letterheadDataUrl) {
+        paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+      }
       y = 20
     }
     const breaks = breaksMap[e.id] ?? []
@@ -93,15 +104,20 @@ export type LeaveForBescheinigung = {
   days_count: number | null
 }
 
-/** Urlaubsbescheinigung gemäß § 6 Abs. 2 BUrlG */
-export const exportUrlaubsbescheinigungPdf = (
+/** Urlaubsbescheinigung gemäß § 6 Abs. 2 BUrlG (optional Briefbogen) */
+export const exportUrlaubsbescheinigungPdf = async (
   employeeName: string,
   year: number,
   approvedLeaves: LeaveForBescheinigung[],
-  entitlementDays: number | null
-): void => {
+  entitlementDays: number | null,
+  supabase: unknown
+): Promise<void> => {
   const totalDays = approvedLeaves.reduce((s, l) => s + (l.days_count ?? 0), 0)
+  const letterheadDataUrl = await fetchBriefbogenDataUrlForPdf(supabase)
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  if (letterheadDataUrl) {
+    paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+  }
   doc.setFontSize(14)
   doc.text('Urlaubsbescheinigung', 105, 25, { align: 'center' })
   doc.setFontSize(10)
@@ -118,7 +134,11 @@ export const exportUrlaubsbescheinigungPdf = (
   let y = 122
   for (const l of approvedLeaves) {
     if (y > 260) break
-    doc.text(`  ${l.from_date} – ${l.to_date}: ${l.days_count ?? '–'} Tage (${LEAVE_TYPE_LABELS[l.leave_type as keyof typeof LEAVE_TYPE_LABELS] ?? l.leave_type})`, 14, y)
+    doc.text(
+      `  ${l.from_date} – ${l.to_date}: ${l.days_count ?? '–'} Tage (${LEAVE_TYPE_LABELS[l.leave_type as keyof typeof LEAVE_TYPE_LABELS] ?? l.leave_type})`,
+      14,
+      y
+    )
     y += 7
   }
   doc.text('', 14, y + 10)

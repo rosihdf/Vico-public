@@ -1,1 +1,9 @@
-{"version":"1.0.0","buildTime":""}
+{
+  "version": "1.0.1",
+  "buildTime": "",
+  "releaseNotes": [
+    "Beta-Testversion: Vom produktiven Einsatz wird abgeraten.",
+    "Diese Ausgabe dient der Erprobung; kein Ersatz für einen produktiven Rollout ohne Freigabe."
+  ],
+  "releaseLabel": "Beta"
+}

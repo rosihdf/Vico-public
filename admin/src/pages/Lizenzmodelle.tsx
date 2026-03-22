@@ -5,13 +5,7 @@ import {
   deleteLicenseModel,
   type LicenseModel,
 } from '../lib/licensePortalService'
-
-const FEATURE_LABELS: Record<string, string> = {
-  kundenportal: 'Kundenportal',
-  historie: 'Historie',
-  arbeitszeiterfassung: 'Arbeitszeiterfassung',
-  standortabfrage: 'Standortabfrage',
-}
+import { LICENSE_FEATURE_LABELS } from '../../../shared/licenseFeatures'
 
 const checkIntervalLabel = (v: string) =>
   v === 'on_start' ? 'Bei jedem Start' : v === 'daily' ? 'Täglich' : 'Wöchentlich'
@@ -113,7 +107,7 @@ const Lizenzmodelle = () => {
             const activeFeatures = m.features
               ? Object.entries(m.features)
                   .filter(([, v]) => v)
-                  .map(([k]) => FEATURE_LABELS[k] ?? k)
+                  .map(([k]) => LICENSE_FEATURE_LABELS[k] ?? k)
               : []
             return (
               <div

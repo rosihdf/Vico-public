@@ -5,6 +5,7 @@
 const LAZY_IMPORTS = [
   () => import('../Startseite'),
   () => import('../Kunden'),
+  () => import('../pages/Wartungsstatistik'),
   () => import('../BVRedirect'),
   () => import('../ObjectRedirect'),
   () => import('../Wartungsprotokolle'),
@@ -18,6 +19,7 @@ const LAZY_IMPORTS = [
   () => import('../pages/Ladezeiten'),
   () => import('../Scan'),
   () => import('../AuftragAnlegen'),
+  () => import('../pages/BuchhaltungExport'),
   () => import('../Auftragsdetail'),
   () => import('../Login'),
   () => import('../ResetPassword'),

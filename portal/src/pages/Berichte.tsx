@@ -56,6 +56,7 @@ const Berichte = ({ user }: BerichteProps) => {
     setExpandedId((prev) => (prev === reportId ? null : reportId))
   }
 
+  /** PDF stammt aus der Haupt-App (gespeicherter Export); Mandanten-Briefbogen ist dort bereits enthalten, wenn konfiguriert. */
   const handleDownloadPdf = async (report: PortalReport) => {
     if (!report.pdf_path) return
 

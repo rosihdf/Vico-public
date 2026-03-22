@@ -7,9 +7,21 @@ export const getAppVersion = (appRoot) => {
   return pkg.version ?? '0.0.1'
 }
 
+/** Optional: `package.json` → `vico.releaseLabel` (z. B. „Beta“), erscheint in `version.json` und UI. */
+export const getAppReleaseLabel = (appRoot) => {
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(appRoot, 'package.json'), 'utf-8'))
+    const label = pkg.vico?.releaseLabel
+    return typeof label === 'string' ? label.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
 /** @param {string} appRoot */
 export const vicoVersionPlugin = (appRoot) => {
   const appVersion = getAppVersion(appRoot)
+  const releaseLabel = getAppReleaseLabel(appRoot)
   let releaseNotes = []
   const rnPath = path.join(appRoot, 'release-notes.json')
   if (existsSync(rnPath)) {
@@ -27,6 +39,7 @@ export const vicoVersionPlugin = (appRoot) => {
         version: appVersion,
         buildTime: new Date().toISOString(),
         releaseNotes,
+        ...(releaseLabel ? { releaseLabel } : {}),
       })
       this.emitFile({
         type: 'asset',

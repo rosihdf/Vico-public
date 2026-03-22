@@ -57,6 +57,30 @@ export const updateTimeEntryAsAdmin = async (
   return { error: null }
 }
 
+/** Neuer Zeiteintrag durch Admin/Teamleiter (Portal: vergessene Stempelung nachtragen). */
+export const insertTimeEntryAsAdmin = async (
+  userId: string,
+  workDate: string,
+  startIso: string,
+  endIso: string | null,
+  reason: string,
+  reasonCode: TimeEntryEditReasonCode = 'nachreichung',
+  notes: string | null = null
+): Promise<{ data: string | null; error: { message: string } | null }> => {
+  const { data, error } = await supabase.rpc('insert_time_entry_admin', {
+    p_user_id: userId,
+    p_date: workDate,
+    p_start: startIso,
+    p_end: endIso,
+    p_reason: reason.trim() || 'Manuell nachtragen',
+    p_reason_code: reasonCode,
+    p_order_id: null,
+    p_notes: notes?.trim() || null,
+  })
+  if (error) return { data: null, error: { message: error.message } }
+  return { data: typeof data === 'string' ? data : null, error: null }
+}
+
 export const submitTimeEntryForApproval = async (entryId: string): Promise<{ error: { message: string } | null }> => {
   const { error } = await supabase
     .from('time_entries')

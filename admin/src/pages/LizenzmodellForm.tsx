@@ -6,10 +6,10 @@ import {
   updateLicenseModel,
   type LicenseModelInsert,
 } from '../lib/licensePortalService'
+import { LICENSE_FEATURE_KEYS, LICENSE_FEATURE_LABELS, emptyLicenseFeatures } from '../../../shared/licenseFeatures'
 
 const TIER_OPTIONS = ['free', 'professional', 'enterprise'] as const
 const CHECK_INTERVAL_OPTIONS = ['on_start', 'daily', 'weekly'] as const
-const FEATURE_KEYS = ['kundenportal', 'historie', 'arbeitszeiterfassung', 'standortabfrage'] as const
 
 const DEFAULT_FORM: LicenseModelInsert & { sort_order: number } = {
   name: '',
@@ -18,13 +18,13 @@ const DEFAULT_FORM: LicenseModelInsert & { sort_order: number } = {
   max_customers: null,
   max_storage_mb: null,
   check_interval: 'daily',
-  features: { kundenportal: false, historie: false, arbeitszeiterfassung: false, standortabfrage: false },
+  features: emptyLicenseFeatures(),
   sort_order: 0,
 }
 
 const ensureFeatures = (f: Record<string, boolean> | undefined): Record<string, boolean> => {
   const base: Record<string, boolean> = {}
-  for (const k of FEATURE_KEYS) {
+  for (const k of LICENSE_FEATURE_KEYS) {
     base[k] = f?.[k] ?? false
   }
   return base
@@ -263,7 +263,7 @@ const LizenzmodellForm = () => {
         <div>
           <span className="block text-sm font-medium text-slate-700 mb-2">Features</span>
           <div className="flex flex-wrap gap-4">
-            {FEATURE_KEYS.map((key) => (
+            {LICENSE_FEATURE_KEYS.map((key) => (
               <label key={key} className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -276,7 +276,7 @@ const LizenzmodellForm = () => {
                   }
                   className="w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
                 />
-                <span className="text-sm text-slate-700 capitalize">{key}</span>
+                <span className="text-sm text-slate-700">{LICENSE_FEATURE_LABELS[key] ?? key}</span>
               </label>
             ))}
           </div>

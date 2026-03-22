@@ -1,6 +1,13 @@
 import { Link } from 'react-router-dom'
 import { useTheme } from '../ThemeContext'
+import type { Theme } from '../ThemeContext'
 import { useDesign } from '../DesignContext'
+import { saveProfileThemePreference } from '../../../shared/themePreferenceDb'
+import { supabase } from '../lib/supabase'
+
+const THEME_ORDER: Theme[] = ['light', 'dark', 'system']
+const getNextTheme = (current: Theme): Theme =>
+  THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length]
 
 type LegalPageProps = {
   title: string
@@ -10,8 +17,18 @@ type LegalPageProps = {
 }
 
 const LegalPage = ({ title, children, backTo = '/', backLabel = 'Zurück' }: LegalPageProps) => {
-  const { resolvedTheme, cycleTheme } = useTheme()
+  const { resolvedTheme, theme, setTheme } = useTheme()
   const { appName } = useDesign()
+
+  const handleCycleTheme = () => {
+    const next = getNextTheme(theme)
+    setTheme(next)
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) {
+        void saveProfileThemePreference(supabase, session.user.id, next)
+      }
+    })
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 px-4 py-10">
@@ -34,7 +51,7 @@ const LegalPage = ({ title, children, backTo = '/', backLabel = 'Zurück' }: Leg
       <div className="flex items-center justify-center gap-2 text-xs text-slate-400 dark:text-slate-500 mt-8">
         <button
           type="button"
-          onClick={cycleTheme}
+          onClick={handleCycleTheme}
           className="hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
           aria-label="Darstellung wechseln"
         >

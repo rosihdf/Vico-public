@@ -1,7 +1,7 @@
 -- -----------------------------------------------------------------------------
 -- Vico – Datenbank-Schema (vollständig)
 -- Supabase SQL Editor: Inhalt einfügen und Run ausführen. Idempotent.
--- Zuletzt geprüft/aufgeräumt: 2025-03 (Standortabfrage, admin_config)
+-- Zuletzt geprüft/aufgeräumt: 2026-03 (DDL-Reihenfolge Urlaub/Profile, admin_config-Defaults)
 -- -----------------------------------------------------------------------------
 --
 -- Struktur:
@@ -9,14 +9,17 @@
 --   2. Stammdaten: Customers, BVs, Objects, Object Photos/Documents, maintenance_contracts;
 --      customer_portal_users (für Trigger handle_new_user)
 --   3. Wartung: Maintenance Reports, Photos, Smoke Detectors
---   4. Aufträge, Zeit, Component Settings, Audit Log + Audit-Trigger (nur für zu dem Zeitpunkt existierende Tabellen)
---   5. RPC: get_my_role, get_all_profiles_for_admin, get_audit_log, get_audit_log_detail,
---      get_maintenance_reminders, search_entities, resolve_object_to_navigation, cleanup_demo
+--   4. Aufträge, Zeit, Urlaubstabellen (leave_*), Component Settings, Audit Log + Audit-Trigger
+--   5. RPC: Zeiterfassung, Urlaub (inkl. Teilgenehmigung), Audit, Suche, Lizenz, Standort …
 --   5b. Lizenzmodell: license, get_license_status, check_can_create_customer, check_can_invite_user
---   5c. Standortabfrage: employee_current_location, admin_config, update_my_current_location, get_employee_locations
+--   5c. Standortabfrage: employee_current_location, admin_config (+ Default-Keys), …
 --   6. Kundenportal: customer_portal_users RLS, portal_user_object_visibility, Portal-Helfer, get_portal_*
 --   7. Storage Buckets + Policies
---   8. Indizes (Stammdaten, Wartung, Aufträge, Lizenz, Audit, Kundenportal), Realtime
+--   7b. Urlaub Phase 3: Zusatzposten, VJ-Ack, Balance-/Frist-RPCs (Tabellen nach Storage, vor Indizes)
+--   8. Indizes (Stammdaten, Wartung, Aufträge, Lizenz, Audit, Kundenportal, Urlaub), Realtime
+--
+-- Hinweis Reihenfolge: Spalten/Tabellen, die von Funktionen in Abschn. 5 referenziert werden, müssen
+--   vor diesen Funktionen per ALTER/CREATE existieren (z. B. leave_requests.approved_*, profiles.urlaub_vj_*).
 
 -- -----------------------------------------------------------------------------
 -- 1. PROFILES & ROLLEN
@@ -50,6 +53,16 @@ alter table public.profiles add column if not exists gps_consent_at timestamptz 
 alter table public.profiles add column if not exists gps_consent_revoked_at timestamptz default null;
 alter table public.profiles add column if not exists standortabfrage_consent_at timestamptz default null;
 alter table public.profiles add column if not exists standortabfrage_consent_revoked_at timestamptz default null;
+alter table public.profiles add column if not exists dashboard_layout jsonb default null;
+alter table public.profiles add column if not exists theme_preference text default null;
+
+do $$
+begin
+  alter table public.profiles drop constraint if exists profiles_theme_preference_check;
+exception when others then null;
+end $$;
+alter table public.profiles add constraint profiles_theme_preference_check
+  check (theme_preference is null or theme_preference in ('light', 'dark', 'system'));
 
 -- Rollen-Helper (SECURITY DEFINER, keine RLS-Rekursion)
 create or replace function public.is_admin()
@@ -479,7 +492,7 @@ create policy "Authenticated users can read maintenance_report_smoke_detectors" 
 create policy "Non-leser can insert maintenance_report_smoke_detectors" on public.maintenance_report_smoke_detectors for insert with check (auth.uid() is not null and not public.is_leser());
 
 -- -----------------------------------------------------------------------------
--- 4. AUFTRÄGE, SETTINGS, AUDIT
+-- 4. AUFTRÄGE, ZEIT, URLAUB (leave_*), WORK SETTINGS, COMPONENT SETTINGS, AUDIT
 -- -----------------------------------------------------------------------------
 
 create table if not exists public.orders (
@@ -693,7 +706,6 @@ create table if not exists public.public_holidays (
   created_at timestamptz default now(),
   unique (bundesland, "date")
 );
-create index if not exists idx_public_holidays_bundesland_date on public.public_holidays(bundesland, "date");
 alter table public.public_holidays enable row level security;
 do $$ declare r record; begin
   for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'public_holidays' loop
@@ -792,6 +804,10 @@ create policy "Admin and teamleiter can update leave_requests" on public.leave_r
   public.is_admin() or (public.is_teamleiter() and user_id in (select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null))
 );
 
+-- Teilgenehmigung (Spalten vor approve_leave_request / get_leave_requests in Abschn. 5)
+alter table public.leave_requests add column if not exists approved_from_date date;
+alter table public.leave_requests add column if not exists approved_to_date date;
+
 create table if not exists public.leave_entitlements (
   id uuid default gen_random_uuid() primary key,
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -802,7 +818,6 @@ create table if not exists public.leave_entitlements (
   updated_at timestamptz default now(),
   unique (user_id, year)
 );
-create index if not exists idx_leave_entitlements_user_year on public.leave_entitlements(user_id, year);
 alter table public.leave_entitlements enable row level security;
 do $$ declare r record; begin
   for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'leave_entitlements' loop
@@ -816,6 +831,9 @@ create policy "Admin and teamleiter can read leave_entitlements" on public.leave
 create policy "Admins can manage leave_entitlements" on public.leave_entitlements for all using (public.is_admin());
 
 alter table public.profiles add column if not exists vacation_days_per_year numeric(4,2) default null;
+-- Optional: Frist Resturlaub VJ pro Mitarbeiter (Override; global in admin_config)
+alter table public.profiles add column if not exists urlaub_vj_deadline_month smallint;
+alter table public.profiles add column if not exists urlaub_vj_deadline_day smallint;
 
 alter table public.profiles add column if not exists bundesland text default null;
 alter table public.profiles add column if not exists work_days int[] default null;
@@ -862,6 +880,86 @@ begin
 end;
 $$;
 grant execute on function public.update_time_entry_admin(uuid, timestamptz, timestamptz, text, text, uuid) to authenticated;
+
+-- Manuelles Nachtragen (Portal Admin/Teamleiter): neuer Zeiteintrag + Log (old_* = NULL bei Neuanlage)
+alter table public.time_entry_edit_log alter column old_start drop not null;
+alter table public.time_entry_edit_log alter column old_end drop not null;
+
+create or replace function public.insert_time_entry_admin(
+  p_user_id uuid,
+  p_date date,
+  p_start timestamptz,
+  p_end timestamptz,
+  p_reason text,
+  p_reason_code text default 'nachreichung',
+  p_order_id uuid default null,
+  p_notes text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_new_id uuid;
+begin
+  if p_user_id is null or p_date is null or p_start is null then
+    raise exception 'Benutzer, Arbeitstag und Startzeit sind erforderlich';
+  end if;
+  if p_end is not null and p_end <= p_start then
+    raise exception 'Ende muss nach Start liegen';
+  end if;
+  if not public.is_admin() and not (
+    public.is_teamleiter() and exists (
+      select 1 from public.profiles p
+      where p.id = p_user_id and p.team_id = public.get_my_team_id() and p.team_id is not null
+    )
+  ) then
+    raise exception 'Nur Admin oder Teamleiter (eigenes Team) darf Zeiten nachtragen';
+  end if;
+
+  insert into public.time_entries (
+    user_id,
+    date,
+    start,
+    "end",
+    notes,
+    order_id,
+    approval_status,
+    approved_by,
+    approved_at,
+    updated_at
+  )
+  values (
+    p_user_id,
+    p_date,
+    p_start,
+    p_end,
+    nullif(trim(coalesce(p_notes, '')), ''),
+    p_order_id,
+    'approved',
+    auth.uid(),
+    now(),
+    now()
+  )
+  returning id into v_new_id;
+
+  insert into public.time_entry_edit_log (time_entry_id, edited_by, reason, reason_code, old_start, old_end, new_start, new_end)
+  values (
+    v_new_id,
+    auth.uid(),
+    coalesce(nullif(trim(p_reason), ''), 'Manuell nachtragen'),
+    p_reason_code,
+    null,
+    null,
+    p_start,
+    p_end
+  );
+
+  return v_new_id;
+end;
+$$;
+grant execute on function public.insert_time_entry_admin(uuid, date, timestamptz, timestamptz, text, text, uuid, text) to authenticated;
 
 -- RPC: Zeiterfassungs-Bearbeitungslog (Admin: alle, User: nur eigene Einträge). Filter optional.
 create or replace function public.get_time_entry_edit_log(
@@ -916,20 +1014,6 @@ as $$
   offset greatest(0, p_offset);
 $$;
 grant execute on function public.get_time_entry_edit_log(int, int, date, date, uuid) to authenticated;
-
--- RPC: User-IDs, die der aktuelle User für Zeiterfassung sehen darf (Admin: alle mit Rolle; Teamleiter: gleiches Team).
-create or replace function public.get_zeiterfassung_visible_user_ids()
-returns setof uuid
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  select p.id from public.profiles p
-  where p.role in ('admin', 'teamleiter', 'mitarbeiter', 'operator', 'leser')
-  and (public.is_admin() or (public.is_teamleiter() and p.team_id = public.get_my_team_id() and p.team_id is not null));
-$$;
-grant execute on function public.get_zeiterfassung_visible_user_ids() to authenticated;
 
 -- Bug-Erfassungsmodul: automatisch erfasste Fehler (onerror, unhandledrejection, ErrorBoundary)
 create table if not exists public.app_errors (
@@ -1070,9 +1154,21 @@ grant execute on function public.get_all_profiles_for_admin() to authenticated;
 -- Für Arbeitszeitenportal: nur Profile, die der User sehen darf (Admin: alle mit Zeiterfassung-Rollen, Teamleiter: gleiches Team).
 drop function if exists public.get_profiles_for_zeiterfassung();
 create or replace function public.get_profiles_for_zeiterfassung()
-returns table (id uuid, email text, first_name text, last_name text, role text, soll_minutes_per_month int, soll_minutes_per_week int, vacation_days_per_year numeric)
+returns table (
+  id uuid,
+  email text,
+  first_name text,
+  last_name text,
+  role text,
+  soll_minutes_per_month int,
+  soll_minutes_per_week int,
+  vacation_days_per_year numeric,
+  urlaub_vj_deadline_month smallint,
+  urlaub_vj_deadline_day smallint
+)
 language sql security definer set search_path = public stable as $$
-  select p.id, p.email, p.first_name, p.last_name, p.role, p.soll_minutes_per_month, p.soll_minutes_per_week, p.vacation_days_per_year
+  select p.id, p.email, p.first_name, p.last_name, p.role, p.soll_minutes_per_month, p.soll_minutes_per_week, p.vacation_days_per_year,
+    p.urlaub_vj_deadline_month, p.urlaub_vj_deadline_day
   from public.profiles p
   where p.role in ('admin', 'teamleiter', 'mitarbeiter', 'operator', 'leser')
   and (public.is_admin() or (public.is_teamleiter() and p.team_id = public.get_my_team_id() and p.team_id is not null))
@@ -1144,12 +1240,11 @@ set search_path = public
 stable
 as $$
 declare
-  v_sum int := 0;
-  v_m int;
+  v_sum int;
 begin
-  for v_m in 1..12 loop
-    v_sum := v_sum + public.calc_soll_minutes_for_month(p_user_id, p_year, v_m);
-  end loop;
+  select coalesce(sum(public.calc_soll_minutes_for_month(p_user_id, p_year, m::int)), 0)
+  into v_sum
+  from generate_series(1, 12) m;
   return v_sum;
 end;
 $$;
@@ -1167,17 +1262,21 @@ security definer
 set search_path = public
 stable
 as $$
-  select coalesce(sum(
-    greatest(0,
-      extract(epoch from (te."end" - te.start))::int / 60
-      - coalesce((
-        select sum(extract(epoch from (tb."end" - tb.start))::int / 60)
-        from public.time_breaks tb
-        where tb.time_entry_id = te.id and tb."end" is not null
-      ), 0)
-    )
-  ), 0)::int
+  with break_mins as (
+    select tb.time_entry_id, sum(extract(epoch from (tb."end" - tb.start))::int / 60) as mins
+    from public.time_breaks tb
+    where tb."end" is not null
+      and tb.time_entry_id in (
+        select te2.id from public.time_entries te2
+        where te2.user_id = p_user_id and te2.date >= p_from_date and te2.date <= p_to_date and te2."end" is not null
+      )
+    group by tb.time_entry_id
+  )
+  select coalesce(sum(greatest(0,
+    extract(epoch from (te."end" - te.start))::int / 60 - coalesce(bm.mins, 0)
+  )), 0)::int
   from public.time_entries te
+  left join break_mins bm on bm.time_entry_id = te.id
   where te.user_id = p_user_id
     and te.date >= p_from_date and te.date <= p_to_date
     and te."end" is not null;
@@ -1220,17 +1319,22 @@ end;
 $$;
 grant execute on function public.count_work_days_in_range(uuid, date, date) to authenticated;
 
--- RPC: Urlaubsantrag genehmigen oder ablehnen
+-- RPC: Urlaubsantrag genehmigen oder ablehnen (optional Teilgenehmigung: p_approved_from / p_approved_to)
+drop function if exists public.approve_leave_request(uuid, boolean, text);
 create or replace function public.approve_leave_request(
   p_request_id uuid,
   p_approved boolean,
-  p_rejection_reason text default null
+  p_rejection_reason text default null,
+  p_approved_from date default null,
+  p_approved_to date default null
 )
 returns void language plpgsql security definer set search_path = public as $$
 declare
   v_user_id uuid;
   v_from_date date;
   v_to_date date;
+  v_eff_from date;
+  v_eff_to date;
   v_days numeric;
 begin
   if auth.uid() is null then
@@ -1251,22 +1355,34 @@ begin
     raise exception 'Antrag nicht gefunden';
   end if;
   if p_approved then
-    v_days := public.count_work_days_in_range(v_user_id, v_from_date, v_to_date);
+    v_eff_from := coalesce(p_approved_from, v_from_date);
+    v_eff_to := coalesce(p_approved_to, v_to_date);
+    if v_eff_from > v_eff_to then
+      raise exception 'Genehmigter Zeitraum ungültig (Von nach Bis).';
+    end if;
+    if v_eff_from < v_from_date or v_eff_to > v_to_date then
+      raise exception 'Genehmigter Zeitraum muss innerhalb des Antrags liegen.';
+    end if;
+    v_days := public.count_work_days_in_range(v_user_id, v_eff_from, v_eff_to);
     update public.leave_requests
-    set status = 'approved', days_count = v_days, approved_by = auth.uid(), approved_at = now(),
+    set status = 'approved', days_count = v_days,
+        approved_from_date = v_eff_from, approved_to_date = v_eff_to,
+        approved_by = auth.uid(), approved_at = now(),
         rejection_reason = null, updated_at = now()
     where id = p_request_id;
   else
     update public.leave_requests
     set status = 'rejected', approved_by = auth.uid(), approved_at = now(),
-        rejection_reason = nullif(trim(p_rejection_reason), ''), updated_at = now()
+        rejection_reason = nullif(trim(p_rejection_reason), ''), updated_at = now(),
+        approved_from_date = null, approved_to_date = null
     where id = p_request_id;
   end if;
 end;
 $$;
-grant execute on function public.approve_leave_request(uuid, boolean, text) to authenticated;
+grant execute on function public.approve_leave_request(uuid, boolean, text, date, date) to authenticated;
 
 -- RPC: Urlaubsanträge abrufen (Admin: alle/gefiltert, Teamleiter: Team, User: eigene)
+drop function if exists public.get_leave_requests(uuid, date, date, text);
 create or replace function public.get_leave_requests(
   p_user_id uuid default null,
   p_date_from date default null,
@@ -1283,6 +1399,8 @@ returns table (
   leave_type text,
   status text,
   days_count numeric,
+  approved_from_date date,
+  approved_to_date date,
   approved_by uuid,
   approved_at timestamptz,
   rejection_reason text,
@@ -1293,6 +1411,7 @@ language sql security definer set search_path = public stable as $$
   select lr.id, lr.user_id, p.email as user_email,
     trim(concat_ws(' ', p.first_name, p.last_name)) as user_name,
     lr.from_date, lr.to_date, lr.leave_type, lr.status, lr.days_count,
+    lr.approved_from_date, lr.approved_to_date,
     lr.approved_by, lr.approved_at, lr.rejection_reason, lr.notes, lr.created_at
   from public.leave_requests lr
   join public.profiles p on p.id = lr.user_id
@@ -1767,6 +1886,9 @@ end $$;
 create policy "Authenticated read" on public.admin_config for select using (auth.uid() is not null);
 create policy "Admin manage" on public.admin_config for all using (public.is_admin());
 insert into public.admin_config (key, value) values ('standortabfrage_teamleiter_allowed', 'false') on conflict (key) do nothing;
+insert into public.admin_config (key, value)
+values ('urlaub_vj_deadline_mmdd', '{"month":3,"day":31}'::jsonb)
+on conflict (key) do nothing;
 
 -- Migration: standortabfrage_config → admin_config (falls vorhanden)
 do $$ begin
@@ -2123,12 +2245,6 @@ $$;
 grant execute on function public.portal_user_sees_all_for_customer(uuid, uuid) to authenticated;
 grant execute on function public.portal_object_visible_to_user(uuid, uuid, uuid) to authenticated;
 
-create or replace function public.customer_ids_for_portal_user(uid uuid)
-returns setof uuid language sql security definer set search_path = public stable as $$
-  select customer_id from public.customer_portal_users where user_id = uid;
-$$;
-grant execute on function public.customer_ids_for_portal_user(uuid) to authenticated;
-
 drop function if exists public.get_portal_maintenance_reports(uuid);
 create or replace function public.get_portal_maintenance_reports(p_user_id uuid)
 returns table (
@@ -2177,6 +2293,7 @@ grant execute on function public.get_portal_pdf_path(uuid) to authenticated;
 insert into storage.buckets (id, name, public) values ('object-photos', 'object-photos', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('object-documents', 'object-documents', true) on conflict (id) do nothing;
 insert into storage.buckets (id, name, public) values ('maintenance-photos', 'maintenance-photos', true) on conflict (id) do nothing;
+insert into storage.buckets (id, name, public) values ('briefbogen', 'briefbogen', false) on conflict (id) do nothing;
 
 -- RPC: Speichernutzung in MB (für Speicherkontingent-Warnung)
 create or replace function public.get_storage_usage()
@@ -2194,7 +2311,7 @@ as $$
     0
   )
   from storage.objects
-  where bucket_id in ('object-photos', 'object-documents', 'maintenance-photos');
+  where bucket_id in ('object-photos', 'object-documents', 'maintenance-photos', 'briefbogen');
 $$;
 grant execute on function public.get_storage_usage() to authenticated;
 grant execute on function public.get_storage_usage() to service_role;
@@ -2220,6 +2337,326 @@ create policy "Authenticated users can read maintenance-photos" on storage.objec
 create policy "Authenticated users can upload maintenance-photos" on storage.objects for insert with check (bucket_id = 'maintenance-photos' and auth.uid() is not null);
 create policy "Authenticated users can delete maintenance-photos" on storage.objects for delete using (bucket_id = 'maintenance-photos' and auth.uid() is not null);
 
+drop policy if exists "Authenticated read briefbogen" on storage.objects;
+drop policy if exists "Admin upload briefbogen" on storage.objects;
+drop policy if exists "Admin update briefbogen" on storage.objects;
+drop policy if exists "Admin delete briefbogen" on storage.objects;
+create policy "Authenticated read briefbogen" on storage.objects for select using (bucket_id = 'briefbogen' and auth.uid() is not null);
+create policy "Admin upload briefbogen" on storage.objects for insert with check (bucket_id = 'briefbogen' and public.is_admin());
+create policy "Admin update briefbogen" on storage.objects for update using (bucket_id = 'briefbogen' and public.is_admin());
+create policy "Admin delete briefbogen" on storage.objects for delete using (bucket_id = 'briefbogen' and public.is_admin());
+
+-- -----------------------------------------------------------------------------
+-- 7b. Urlaub Phase 3: Zusatzurlaub-Posten, VJ-Hinweis (Ack), erweiterte RPCs
+--     (Spalten leave_requests / profiles + admin_config-Default bereits in Abschn. 4 bzw. 5c)
+-- -----------------------------------------------------------------------------
+create table if not exists public.leave_extra_entitlements (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  days_remaining numeric(4,2) not null,
+  expires_on date not null,
+  title text not null default 'Zusatzurlaub',
+  same_rules_as_statutory boolean not null default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  constraint leave_extra_days_remaining_nonneg check (days_remaining >= 0)
+);
+create index if not exists idx_leave_extra_entitlements_user on public.leave_extra_entitlements(user_id);
+create index if not exists idx_leave_extra_entitlements_expires on public.leave_extra_entitlements(expires_on);
+alter table public.leave_extra_entitlements enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'leave_extra_entitlements' loop
+    execute format('drop policy if exists %I on public.leave_extra_entitlements', r.policyname);
+  end loop;
+end $$;
+create policy "leave_extra_select" on public.leave_extra_entitlements for select using (
+  auth.uid() is not null and (
+    user_id = auth.uid()
+    or public.is_admin()
+    or (public.is_teamleiter() and user_id in (select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null))
+  )
+);
+create policy "leave_extra_admin_mutate" on public.leave_extra_entitlements for all using (public.is_admin()) with check (public.is_admin());
+
+create table if not exists public.leave_vj_acknowledgments (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  calendar_year int not null,
+  acknowledged_at timestamptz not null default now(),
+  primary key (user_id, calendar_year)
+);
+alter table public.leave_vj_acknowledgments enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'leave_vj_acknowledgments' loop
+    execute format('drop policy if exists %I on public.leave_vj_acknowledgments', r.policyname);
+  end loop;
+end $$;
+create policy "vj_ack_select" on public.leave_vj_acknowledgments for select using (
+  user_id = auth.uid()
+  or public.is_admin()
+  or (public.is_teamleiter() and user_id in (select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null))
+);
+create policy "vj_ack_insert_own" on public.leave_vj_acknowledgments for insert with check (user_id = auth.uid());
+
+create or replace function public.set_urlaub_vj_deadline_global(p_month int, p_day int)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.is_admin() then
+    raise exception 'Nur Admin';
+  end if;
+  if p_month < 1 or p_month > 12 or p_day < 1 or p_day > 31 then
+    raise exception 'Ungültiges Datum';
+  end if;
+  insert into public.admin_config (key, value)
+  values ('urlaub_vj_deadline_mmdd', jsonb_build_object('month', p_month, 'day', p_day))
+  on conflict (key) do update set value = jsonb_build_object('month', p_month, 'day', p_day);
+end;
+$$;
+grant execute on function public.set_urlaub_vj_deadline_global(int, int) to authenticated;
+
+create or replace function public.update_profile_urlaub_vj_deadline_override(
+  p_profile_id uuid,
+  p_month int,
+  p_day int
+)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.is_admin() then
+    raise exception 'Nur Admin';
+  end if;
+  if p_month is null or p_day is null then
+    update public.profiles
+    set urlaub_vj_deadline_month = null, urlaub_vj_deadline_day = null, updated_at = now()
+    where id = p_profile_id;
+    return;
+  end if;
+  if p_month < 1 or p_month > 12 or p_day < 1 or p_day > 31 then
+    raise exception 'Ungültiges Datum';
+  end if;
+  update public.profiles
+  set urlaub_vj_deadline_month = p_month::smallint, urlaub_vj_deadline_day = p_day::smallint, updated_at = now()
+  where id = p_profile_id;
+end;
+$$;
+grant execute on function public.update_profile_urlaub_vj_deadline_override(uuid, int, int) to authenticated;
+
+create or replace function public.get_urlaub_vj_deadline_settings()
+returns table (global_month int, global_day int)
+language sql security definer set search_path = public stable as $$
+  select
+    coalesce((cfg.value->>'month')::int, 3),
+    coalesce((cfg.value->>'day')::int, 31)
+  from (select 1) _ensure_row
+  left join lateral (
+    select c.value from public.admin_config c where c.key = 'urlaub_vj_deadline_mmdd' limit 1
+  ) cfg on true;
+$$;
+grant execute on function public.get_urlaub_vj_deadline_settings() to authenticated;
+
+create or replace function public.acknowledge_leave_vj_hint(p_year int)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Nicht authentifiziert';
+  end if;
+  insert into public.leave_vj_acknowledgments (user_id, calendar_year, acknowledged_at)
+  values (auth.uid(), p_year, now())
+  on conflict (user_id, calendar_year) do update set acknowledged_at = now();
+end;
+$$;
+grant execute on function public.acknowledge_leave_vj_hint(int) to authenticated;
+
+create or replace function public.insert_leave_extra_entitlement(
+  p_user_id uuid,
+  p_days_remaining numeric,
+  p_expires_on date,
+  p_title text default 'Zusatzurlaub',
+  p_same_rules_as_statutory boolean default false
+)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  if auth.uid() is null or not public.is_admin() then
+    raise exception 'Nur Admin';
+  end if;
+  if p_days_remaining is null or p_days_remaining < 0 then
+    raise exception 'Ungültige Tage';
+  end if;
+  insert into public.leave_extra_entitlements (user_id, days_remaining, expires_on, title, same_rules_as_statutory, updated_at)
+  values (p_user_id, p_days_remaining, p_expires_on, coalesce(nullif(trim(p_title), ''), 'Zusatzurlaub'), coalesce(p_same_rules_as_statutory, false), now())
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+grant execute on function public.insert_leave_extra_entitlement(uuid, numeric, date, text, boolean) to authenticated;
+
+create or replace function public.delete_leave_extra_entitlement(p_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not public.is_admin() then
+    raise exception 'Nur Admin';
+  end if;
+  delete from public.leave_extra_entitlements where id = p_id;
+end;
+$$;
+grant execute on function public.delete_leave_extra_entitlement(uuid) to authenticated;
+
+create or replace function public.get_leave_extra_entitlements(p_user_id uuid)
+returns table (
+  id uuid,
+  user_id uuid,
+  days_remaining numeric,
+  expires_on date,
+  title text,
+  same_rules_as_statutory boolean,
+  created_at timestamptz
+)
+language sql security definer set search_path = public stable as $$
+  select e.id, e.user_id, e.days_remaining, e.expires_on, e.title, e.same_rules_as_statutory, e.created_at
+  from public.leave_extra_entitlements e
+  where e.user_id = p_user_id
+    and (
+      e.user_id = auth.uid()
+      or public.is_admin()
+      or (public.is_teamleiter() and e.user_id in (select id from public.profiles where team_id = public.get_my_team_id() and team_id is not null))
+    )
+  order by e.expires_on asc, e.created_at asc;
+$$;
+grant execute on function public.get_leave_extra_entitlements(uuid) to authenticated;
+
+create or replace function public.get_leave_balance_snapshot(p_user_id uuid, p_year int)
+returns table (
+  days_total numeric,
+  days_carried_over numeric,
+  approved_urlaub_in_year numeric,
+  pending_urlaub_in_year numeric,
+  zusatz_sum numeric,
+  vj_deadline date,
+  vj_hint_acknowledged boolean,
+  available_statutory numeric
+)
+language plpgsql security definer set search_path = public as $$
+declare
+  v_prev int := p_year - 1;
+  v_vac numeric;
+  v_used_prev numeric;
+  v_prev_total numeric;
+  v_prev_carried numeric;
+  v_new_carry numeric;
+  v_curr_total numeric;
+  v_curr_carried numeric;
+  v_appr numeric;
+  v_pend numeric;
+  v_zusatz numeric;
+  v_gm int;
+  v_gd int;
+  v_pm smallint;
+  v_pd smallint;
+  v_dm int;
+  v_dd int;
+  v_deadline date;
+  v_ack boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'Nicht authentifiziert';
+  end if;
+  if p_user_id <> auth.uid() and not public.is_admin() and not (
+    public.is_teamleiter() and exists (
+      select 1 from public.profiles p where p.id = p_user_id and p.team_id = public.get_my_team_id() and p.team_id is not null
+    )
+  ) then
+    raise exception 'Keine Berechtigung';
+  end if;
+
+  select vacation_days_per_year into v_vac from public.profiles where id = p_user_id;
+
+  insert into public.leave_entitlements (user_id, year, days_total, days_carried_over, updated_at)
+  values (p_user_id, v_prev, coalesce(v_vac, 0), 0, now())
+  on conflict (user_id, year) do nothing;
+  insert into public.leave_entitlements (user_id, year, days_total, days_carried_over, updated_at)
+  values (p_user_id, p_year, coalesce(v_vac, 0), 0, now())
+  on conflict (user_id, year) do nothing;
+
+  update public.leave_entitlements
+  set days_total = coalesce(v_vac, 0), updated_at = now()
+  where user_id = p_user_id and year in (v_prev, p_year);
+
+  select coalesce(sum(public.count_work_days_in_range(
+    p_user_id,
+    greatest(coalesce(r.approved_from_date, r.from_date), make_date(v_prev, 1, 1)),
+    least(coalesce(r.approved_to_date, r.to_date), make_date(v_prev, 12, 31))
+  )), 0) into v_used_prev
+  from public.leave_requests r
+  where r.user_id = p_user_id and r.status = 'approved' and r.leave_type = 'urlaub'
+    and r.to_date >= make_date(v_prev, 1, 1) and r.from_date <= make_date(v_prev, 12, 31);
+
+  select le.days_total, le.days_carried_over into v_prev_total, v_prev_carried
+  from public.leave_entitlements le where le.user_id = p_user_id and le.year = v_prev;
+
+  v_new_carry := greatest(0, coalesce(v_prev_total, 0) + coalesce(v_prev_carried, 0) - coalesce(v_used_prev, 0));
+
+  update public.leave_entitlements
+  set days_carried_over = v_new_carry, updated_at = now()
+  where user_id = p_user_id and year = p_year;
+
+  select le.days_total, le.days_carried_over into v_curr_total, v_curr_carried
+  from public.leave_entitlements le where le.user_id = p_user_id and le.year = p_year;
+
+  select coalesce(sum(public.count_work_days_in_range(
+    p_user_id,
+    greatest(coalesce(r.approved_from_date, r.from_date), make_date(p_year, 1, 1)),
+    least(coalesce(r.approved_to_date, r.to_date), make_date(p_year, 12, 31))
+  )), 0) into v_appr
+  from public.leave_requests r
+  where r.user_id = p_user_id and r.status = 'approved' and r.leave_type = 'urlaub'
+    and r.to_date >= make_date(p_year, 1, 1) and r.from_date <= make_date(p_year, 12, 31);
+
+  select coalesce(sum(public.count_work_days_in_range(
+    p_user_id,
+    greatest(r.from_date, make_date(p_year, 1, 1)),
+    least(r.to_date, make_date(p_year, 12, 31))
+  )), 0) into v_pend
+  from public.leave_requests r
+  where r.user_id = p_user_id and r.status = 'pending' and r.leave_type = 'urlaub'
+    and r.to_date >= make_date(p_year, 1, 1) and r.from_date <= make_date(p_year, 12, 31);
+
+  select coalesce(sum(e.days_remaining), 0) into v_zusatz
+  from public.leave_extra_entitlements e
+  where e.user_id = p_user_id and e.expires_on >= current_date;
+
+  select (c.value->>'month')::int, (c.value->>'day')::int into v_gm, v_gd
+  from public.admin_config c where c.key = 'urlaub_vj_deadline_mmdd' limit 1;
+  v_gm := coalesce(v_gm, 3);
+  v_gd := coalesce(v_gd, 31);
+
+  select p.urlaub_vj_deadline_month, p.urlaub_vj_deadline_day into v_pm, v_pd
+  from public.profiles p where p.id = p_user_id;
+
+  v_dm := coalesce(v_pm::int, v_gm);
+  v_dd := coalesce(v_pd::int, v_gd);
+  begin
+    v_deadline := make_date(p_year, v_dm, v_dd);
+  exception when others then
+    v_deadline := make_date(p_year, 3, 31);
+  end;
+
+  select exists (
+    select 1 from public.leave_vj_acknowledgments a
+    where a.user_id = p_user_id and a.calendar_year = p_year
+  ) into v_ack;
+
+  return query select
+    coalesce(v_curr_total, 0)::numeric,
+    coalesce(v_curr_carried, 0)::numeric,
+    coalesce(v_appr, 0)::numeric,
+    coalesce(v_pend, 0)::numeric,
+    coalesce(v_zusatz, 0)::numeric,
+    v_deadline,
+    coalesce(v_ack, false),
+    (coalesce(v_curr_carried, 0) + coalesce(v_curr_total, 0) - coalesce(v_appr, 0) - coalesce(v_pend, 0))::numeric;
+end;
+$$;
+grant execute on function public.get_leave_balance_snapshot(uuid, int) to authenticated;
+
 -- -----------------------------------------------------------------------------
 -- 8. INDIZES & REALTIME
 -- -----------------------------------------------------------------------------
@@ -2243,8 +2680,8 @@ create index if not exists idx_object_documents_object_id on public.object_docum
 create index if not exists idx_license_valid_until on public.license(valid_until);
 
 -- Wartung
-create index if not exists idx_maintenance_reports_object_id on public.maintenance_reports(object_id);
 create index if not exists idx_maintenance_reports_object_date on public.maintenance_reports(object_id, maintenance_date desc);
+create index if not exists idx_maintenance_reports_technician_id on public.maintenance_reports(technician_id) where technician_id is not null;
 create index if not exists idx_maintenance_report_photos_report_id on public.maintenance_report_photos(report_id);
 create index if not exists idx_maintenance_report_smoke_detectors_report_id on public.maintenance_report_smoke_detectors(report_id);
 
@@ -2255,6 +2692,7 @@ create index if not exists idx_orders_customer_id on public.orders(customer_id);
 create index if not exists idx_orders_bv_id on public.orders(bv_id);
 create index if not exists idx_orders_status on public.orders(status);
 create index if not exists idx_time_entries_user_date on public.time_entries(user_id, date desc);
+create index if not exists idx_time_entries_order_id on public.time_entries(order_id) where order_id is not null;
 create index if not exists idx_time_breaks_time_entry_id on public.time_breaks(time_entry_id);
 create index if not exists idx_time_entry_edit_log_time_entry_id on public.time_entry_edit_log(time_entry_id);
 create index if not exists idx_time_entry_edit_log_edited_at on public.time_entry_edit_log(edited_at desc);
@@ -2262,6 +2700,11 @@ create index if not exists idx_audit_log_created_at on public.audit_log(created_
 create index if not exists idx_app_errors_created_at on public.app_errors(created_at desc);
 create index if not exists idx_app_errors_status on public.app_errors(status);
 create index if not exists idx_component_settings_sort_order on public.component_settings(sort_order);
+
+-- Urlaub (Saldo: user_id + Typ + Status + Datumsbereich)
+create index if not exists idx_leave_requests_user_type_status_dates
+  on public.leave_requests (user_id, leave_type, status, from_date, to_date);
+create index if not exists idx_leave_requests_approved_by on public.leave_requests(approved_by) where approved_by is not null;
 
 -- Kundenportal
 create index if not exists idx_customer_portal_users_user_id on public.customer_portal_users(user_id);

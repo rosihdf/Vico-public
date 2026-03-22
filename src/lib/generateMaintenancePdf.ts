@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf'
 import { getMaintenancePhotoUrl } from './dataService'
 import { getObjectDisplayName } from './objectUtils'
+import { paintLetterheadOnCurrentPage } from '../../shared/pdfLetterhead'
 import type {
   MaintenanceReport,
   Customer,
@@ -64,6 +65,8 @@ export type MaintenancePdfData = {
   photos: MaintenancePdfPhoto[]
   technicianSignaturePath: string | null
   customerSignaturePath: string | null
+  /** Optional: Data-URL PNG/JPEG – Hintergrund pro Seite (Mandanten-Briefbogen). */
+  letterheadDataUrl?: string | null
 }
 
 export const generateMaintenancePdf = async (
@@ -78,6 +81,7 @@ export const generateMaintenancePdf = async (
     photos,
     technicianSignaturePath,
     customerSignaturePath,
+    letterheadDataUrl,
   } = data
 
   const doc = new jsPDF({ format: 'a4', unit: 'mm' })
@@ -85,6 +89,10 @@ export const generateMaintenancePdf = async (
   const margin = 15
   let y = margin
   const lineH = 6
+
+  if (letterheadDataUrl) {
+    paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+  }
 
   const addText = (text: string, opts?: { fontSize?: number; fontStyle?: string }) => {
     doc.setFontSize(opts?.fontSize ?? 10)
@@ -210,6 +218,9 @@ export const generateMaintenancePdf = async (
       if (!hasImage) continue
       if (y + rowH > 285) {
         doc.addPage()
+        if (letterheadDataUrl) {
+          paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+        }
         y = margin
         col = 0
       }

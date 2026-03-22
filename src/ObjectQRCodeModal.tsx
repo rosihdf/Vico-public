@@ -1,10 +1,13 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 import WebBluetoothReceiptPrinter from '@point-of-sale/webbluetooth-receipt-printer'
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder'
-const LOGO_SRC = '/logo_vico.png'
 import type { Object as Obj } from './types'
 import { getObjectDisplayName } from './lib/objectUtils'
+import { getObjectDeepLinkUrl } from './lib/objectQrUrl'
+import { useLicense } from './LicenseContext'
+
+const DEFAULT_LOGO_SRC = '/logo_vico.png'
 
 type ObjectQRCodeModalProps = {
   object: Obj
@@ -13,12 +16,6 @@ type ObjectQRCodeModalProps = {
   customerId: string
   bvId: string | null
   onClose: () => void
-}
-
-const getObjectUrl = (customerId: string, bvId: string | null, objectId: string): string => {
-  const base = (window.location.origin + (import.meta.env.BASE_URL || '/')).replace(/\/$/, '')
-  if (bvId) return `${base}/kunden?customerId=${customerId}&bvId=${bvId}&objectId=${objectId}`
-  return `${base}/kunden?customerId=${customerId}&objectId=${objectId}`
 }
 
 const isWebBluetoothSupported = (): boolean =>
@@ -32,11 +29,17 @@ const ObjectQRCodeModal = ({
   bvId,
   onClose,
 }: ObjectQRCodeModalProps) => {
+  const { design } = useLicense()
+  const brandLine = useMemo(
+    () => (design?.app_name ? `${design.app_name} Türen & Tore` : 'AMRtech Türen & Tore'),
+    [design?.app_name]
+  )
+  const logoSrc = design?.logo_url?.trim() || DEFAULT_LOGO_SRC
   const printRef = useRef<HTMLDivElement>(null)
   const [btStatus, setBtStatus] = useState<'idle' | 'connecting' | 'printing' | 'done' | 'error'>('idle')
   const [btMessage, setBtMessage] = useState<string>('')
 
-  const url = getObjectUrl(customerId, bvId, object.id)
+  const url = getObjectDeepLinkUrl(customerId, bvId, object.id)
   const displayName = getObjectDisplayName(object)
   const roomInfo = object.internal_id?.trim() && object.room ? ` · ${object.room}` : ''
 
@@ -65,7 +68,7 @@ const ObjectQRCodeModal = ({
         const data = encoder
           .initialize()
           .align('center')
-          .line('AMRtech Türen & Tore')
+          .line(brandLine)
           .newline()
           .line(customerName)
           .line(bvName || '–')
@@ -98,7 +101,7 @@ const ObjectQRCodeModal = ({
       setBtStatus('error')
       setBtMessage('Verbindung abgebrochen oder fehlgeschlagen.')
     })
-  }, [url, customerName, bvName, displayName, roomInfo])
+  }, [url, customerName, bvName, displayName, roomInfo, brandLine])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
@@ -136,7 +139,7 @@ const ObjectQRCodeModal = ({
             className="print-content bg-white p-4 rounded-lg border border-slate-200 flex flex-col items-center print:border-0 print:p-0"
           >
             <div className="hidden print:flex print:justify-center print:mb-2">
-              <img src={LOGO_SRC} alt="AMRtech" className="h-10 object-contain" />
+              <img src={logoSrc} alt={brandLine} className="h-10 object-contain max-w-[200px]" />
             </div>
             <QRCodeCanvas
               value={url}
@@ -187,7 +190,7 @@ const ObjectQRCodeModal = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="flex-1 py-2 bg-vico-button text-slate-800 rounded-lg hover:bg-vico-button-hover font-medium border border-slate-300"
+              className="flex-1 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
               aria-label="QR-Code drucken"
             >
               Drucken
