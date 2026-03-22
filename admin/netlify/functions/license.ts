@@ -66,6 +66,19 @@ const mergeGlobalAndTenantAppVersions = (globalJson: unknown, tenantJson: unknow
   return out
 }
 
+/** CORS: Haupt-App (andere Origin) ruft /api/license per fetch – Browser braucht diese Header + OPTIONS. */
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Accept, Authorization, Content-Type',
+}
+
+const jsonHeaders = (extra?: Record<string, string>) => ({
+  'Content-Type': 'application/json',
+  ...CORS_HEADERS,
+  ...extra,
+})
+
 type LicenseResponse = {
   license: {
     tier: string
@@ -93,20 +106,36 @@ type LicenseResponse = {
   appVersions?: Record<string, AppVersionEntry>
 }
 
-const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: number; body: string }> => {
+const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: number; body: string; headers?: Record<string, string> }> => {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, body: '', headers: CORS_HEADERS }
+  }
+
   if (event.httpMethod !== 'GET') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) }
+    return {
+      statusCode: 405,
+      headers: jsonHeaders(),
+      body: JSON.stringify({ error: 'Method not allowed' }),
+    }
   }
 
   const licenseNumber = event.queryStringParameters?.licenseNumber?.trim()
   if (!licenseNumber) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'licenseNumber required' }) }
+    return {
+      statusCode: 400,
+      headers: jsonHeaders(),
+      body: JSON.stringify({ error: 'licenseNumber required' }),
+    }
   }
 
   const url = process.env.SUPABASE_LICENSE_PORTAL_URL
   const key = process.env.SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY
   if (!url || !key) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'License portal not configured' }) }
+    return {
+      statusCode: 500,
+      headers: jsonHeaders(),
+      body: JSON.stringify({ error: 'License portal not configured' }),
+    }
   }
 
   const supabase = createClient(url, key)
@@ -152,7 +181,11 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
   ])
 
   if (licenseError || !licenseRow) {
-    return { statusCode: 404, body: JSON.stringify({ error: 'License not found' }) }
+    return {
+      statusCode: 404,
+      headers: jsonHeaders(),
+      body: JSON.stringify({ error: 'License not found' }),
+    }
   }
 
   const tenant = licenseRow.tenants as Record<string, unknown> | null
@@ -177,7 +210,7 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
     if (!isAllowed) {
       return {
         statusCode: 403,
-        headers: { 'Content-Type': 'application/json' },
+        headers: jsonHeaders(),
         body: JSON.stringify({ error: 'Domain nicht für diese Lizenz freigegeben' }),
       }
     }
@@ -241,7 +274,7 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
 
   return {
     statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(response),
   }
 }
