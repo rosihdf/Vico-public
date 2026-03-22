@@ -1353,7 +1353,7 @@ Details zu J1–J10 u. a.: **Vico.md §7** (Roadmap) und `docs/Noch-zu-erledig
 
 ### 11.12 Dokumentation, die bewusst in `docs/` bleibt
 
-- **Setup & Betrieb:** `Lizenzportal-Setup.md`, `Demokunde-Setup.md`, `Release-Checkliste.md`, `App-Updates-und-Versionierung.md`, `Supabase-Datenbank-Backup.md`
+- **Setup & Betrieb:** `Lizenzportal-Setup.md`, `Demokunde-Setup.md`, `Release-Checkliste.md`, `App-Updates-und-Versionierung.md`, `Supabase-Datenbank-Backup.md`, `Benutzer-loeschen-Supabase.md` (Auth-User löschen, FK-Migration)
 - **Technik/Performance:** `Optimierungsplan.md`
 - **Migrationen / SQL-Hinweise:** wie in Repo dokumentiert (`supabase-*.sql`)
 - **Vertiefung Arbeitszeit:** `Arbeitszeit-Feature-Liste.md`, `Arbeitszeit-Soll-Urlaub-Planung.md`, `Arbeitszeit-Rechtliche-Compliance.md`

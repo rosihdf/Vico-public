@@ -225,6 +225,7 @@ Bei Fragen zu **einer** konkreten Domain oder API-URL: Werte mit interner Doku /
 | **Lizenz nicht gefunden oder Verbindungsfehler** (Aktivierung), API im Browser am Admin-URL ok | **CORS** oder **403** `allowed_domains` oder alter Build ohne `VITE_*` | CORS: Admin-Function `license` mit Headern (siehe §5). `allowed_domains`: Host der Haupt-App eintragen. Env: neu bauen. |
 | **403** `Domain nicht für diese Lizenz freigegeben` | `Origin` der anfragenden App steht nicht in `allowed_domains` | Mandant im Lizenzportal: `allowed_domains` um den **Host** der App ergänzen (ohne `https://`). |
 | **Kundenportal / Arbeitszeitenportal: Design/Lizenz lädt nicht** | `VITE_LICENSE_NUMBER` oder `VITE_LICENSE_API_URL` fehlt | Beide Variablen in **Netlify der jeweiligen Portal-Site** setzen; Nummer = Zeile `licenses.license_number`. |
+| **Auth-User lässt sich im Dashboard nicht löschen** | FK in der **Mandanten-DB** | Siehe **`docs/Benutzer-loeschen-Supabase.md`** und Migration **`docs/sql/mandanten-db-fix-auth-user-delete-fks.sql`**. |
 
 **Schnelltest Lizenz-API (Netlify-Variante):**  
 `GET https://<admin-site>/api/license?licenseNumber=VIC-…` → **200** + JSON mit `license` und `design`.
