@@ -1,5 +1,7 @@
 # Vier Apps auf Netlify – Schrittfolge
 
+> **Kurzfassung (1 Seite):** [`Netlify-README.md`](./Netlify-README.md) – inkl. **Alternativen zu `VITE_LICENSE_NUMBER`**.
+
 Diese Anleitung bezieht sich auf das Monorepo **Vico** mit vier deploybaren Frontends:
 
 | App | Verzeichnis | Typische Netlify-Site |
@@ -111,6 +113,8 @@ Damit kann die Haupt-App die Lizenz-API z. B. unter `https://<admin-site>/api/
 | `VITE_LICENSE_API_KEY` | Optional, wie oben (bei Netlify `/api` meist nicht nötig) |
 
 **Hinweis:** `VITE_LICENSE_NUMBER` ersetzt keine Nutzereingabe – sie wird **beim Build** eingebettet (wie `VITE_*` üblich).
+
+**Alternativen** (API nach Host, RPC nach Login, `portal-config.json`, Query-Parameter): siehe **`docs/Netlify-README.md`** – der **Code der Portale** nutzt derzeit nur diese Env-Variable; andere Wege wären Erweiterungen.
 
 ---
 

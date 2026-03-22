@@ -8,7 +8,7 @@
 
 ## Vor dem Release auf Netlify
 
-**Vier Netlify-Sites (Haupt-App, Admin, Portal, Arbeitszeit-Portal).** Tabelle mit Base directory, Build, Publish, Env: **`docs/Netlify-Vier-Apps.md`**.
+**Vier Netlify-Sites (Haupt-App, Admin, Portal, Arbeitszeit-Portal).** Schnell **`docs/Netlify-README.md`**, ausführlich **`docs/Netlify-Vier-Apps.md`** (Base directory, Build, Publish, Env).
 
 ### Version & Release Notes (pro deployter App)
 
