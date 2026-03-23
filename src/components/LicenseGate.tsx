@@ -7,9 +7,12 @@ import {
   getCachedLicenseResponse,
   getCachedLicenseWithMeta,
   fetchLicenseFromApi,
+  fetchLicenseFromApiByHost,
+  getEnvEmbeddedLicenseNumber,
+  formatLicenseNumberInput,
   setCachedLicenseResponse,
 } from '../lib/licensePortalApi'
-import { getLicenseNumberFromDb } from '../lib/licenseService'
+import { getLicenseNumberFromDb, setLicenseNumberInDb } from '../lib/licenseService'
 import { useAuth } from '../AuthContext'
 import { LoadingSpinner } from './LoadingSpinner'
 import AktivierungsScreen from '../pages/AktivierungsScreen'
@@ -29,8 +32,9 @@ type LicenseGateProps = {
 
 /**
  * Prüft Lizenz bei API-Modus (Mandantenfähigkeit).
- * Reihenfolge: Ohne Lizenz zuerst Login anzeigen. Nach Login Lizenz aus DB holen.
- * Admin aktiviert Lizenz einmalig → alle Nutzer loggen sich ohne Lizenznummer-Eingabe ein.
+ * Reihenfolge: Ohne Lizenz zuerst Login. Nach Login: Lizenznummer aus Mandanten-DB,
+ * sonst Host-Lookup (Lizenz-API wie Portale) oder `VITE_LICENSE_NUMBER`.
+ * Admin kann fehlende DB-Zeile per Host-Lookup nachziehen; manuelle Aktivierung nur Fallback.
  */
 const LicenseGate = ({ children }: LicenseGateProps) => {
   const location = useLocation()
@@ -93,39 +97,55 @@ const LicenseGate = ({ children }: LicenseGateProps) => {
     }
 
     if (isAuthenticated) {
-      // Eingeloggt: Lizenz aus DB holen
-      getLicenseNumberFromDb().then((dbLicense) => {
-        if (dbLicense?.trim()) {
-          setStoredLicenseNumber(dbLicense)
-          const cachedMeta = getCachedLicenseWithMeta(dbLicense)
+      void (async () => {
+        try {
+          const fromDb = (await getLicenseNumberFromDb())?.trim() || null
+          let effective = fromDb
+          if (!effective) {
+            effective = getEnvEmbeddedLicenseNumber()
+          }
+          if (!effective) {
+            const hostResp = await fetchLicenseFromApiByHost(8_000)
+            const raw = hostResp?.license_number?.trim()
+            if (raw) {
+              effective = formatLicenseNumberInput(raw)
+            }
+          }
+          if (!effective) {
+            if (userRole === 'admin') setStatus('needs_activation')
+            else setStatus('needs_admin')
+            return
+          }
+
+          setStoredLicenseNumber(effective)
+
+          if (!fromDb && userRole === 'admin') {
+            const { error } = await setLicenseNumberInDb(effective)
+            if (error) {
+              console.warn('[LicenseGate] Lizenznummer konnte nicht in Mandanten-DB gespeichert werden:', error)
+            }
+          }
+
+          const cachedMeta = getCachedLicenseWithMeta(effective)
           if (cachedMeta && isAllowed(cachedMeta.data) && Date.now() - cachedMeta.ts < CACHE_FRESH_MS) {
             setStatus('ready')
             return
           }
-          fetchLicenseFromApi(dbLicense, 8_000).then((data) => {
-            if (isAllowed(data)) {
-              if (data) setCachedLicenseResponse(data, dbLicense)
-              setStatus('ready')
-            } else if (userRole === 'admin') {
-              setStatus('needs_activation')
-            } else {
-              setStatus('needs_admin')
-            }
-          }).catch((err) => {
-            console.warn('LicenseGate: fetchLicenseFromApi (db license)', err)
-            if (userRole === 'admin') setStatus('needs_activation')
-            else setStatus('needs_admin')
-          })
-        } else if (userRole === 'admin') {
-          setStatus('needs_activation')
-        } else {
-          setStatus('needs_admin')
+          const data = await fetchLicenseFromApi(effective, 8_000)
+          if (isAllowed(data)) {
+            if (data) setCachedLicenseResponse(data, effective)
+            setStatus('ready')
+          } else if (userRole === 'admin') {
+            setStatus('needs_activation')
+          } else {
+            setStatus('needs_admin')
+          }
+        } catch (err) {
+          console.warn('LicenseGate: Lizenz nach Login', err)
+          if (userRole === 'admin') setStatus('needs_activation')
+          else setStatus('needs_admin')
         }
-      }).catch((err) => {
-        console.warn('LicenseGate: getLicenseNumberFromDb', err)
-        if (userRole === 'admin') setStatus('needs_activation')
-        else setStatus('needs_admin')
-      })
+      })()
       return
     }
 

@@ -72,7 +72,99 @@ const mergeGlobalAndTenantAppVersions = (globalJson: unknown, tenantJson: unknow
   return out
 }
 
+/** Phase B: Host-Lookup – gleiche Semantik wie shared/licenseHostLookup.ts (Edge-Deploy ohne Monorepo-Import). */
+const extractHostnameFromOriginOrReferer = (originOrReferer: string): string => {
+  const t = originOrReferer.trim()
+  if (!t) return ''
+  try {
+    const u = new URL(t)
+    return u.hostname.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+const normalizeTenantDomainField = (raw: string | null | undefined): string => {
+  if (!raw || typeof raw !== 'string') return ''
+  const s = raw.trim()
+  if (!s) return ''
+  try {
+    if (s.includes('://')) return new URL(s).hostname.toLowerCase()
+    const first = s.split('/')[0] ?? ''
+    return first.split(':')[0].toLowerCase()
+  } catch {
+    return s.split('/')[0].split(':')[0].toLowerCase()
+  }
+}
+
+const hostMatchesAllowedRule = (requestHost: string, rule: string): boolean => {
+  const domain = String(rule).trim().toLowerCase()
+  if (!domain) return false
+  const h = requestHost.toLowerCase()
+  if (domain.startsWith('*.')) {
+    const suffix = domain.slice(1)
+    return h === suffix || h.endsWith(suffix)
+  }
+  return h === domain
+}
+
+const tenantMatchesRequestHost = (
+  tenant: {
+    portal_domain?: string | null
+    arbeitszeitenportal_domain?: string | null
+    app_domain?: string | null
+    allowed_domains?: unknown
+  },
+  requestHost: string
+): boolean => {
+  const h = requestHost.trim().toLowerCase()
+  if (!h) return false
+  const pf = normalizeTenantDomainField(tenant.portal_domain ?? null)
+  if (pf && pf === h) return true
+  const az = normalizeTenantDomainField(tenant.arbeitszeitenportal_domain ?? null)
+  if (az && az === h) return true
+  const ad = normalizeTenantDomainField(tenant.app_domain ?? null)
+  if (ad && ad === h) return true
+  const allowed = tenant.allowed_domains
+  if (Array.isArray(allowed)) {
+    return allowed.some((rule) => typeof rule === 'string' && hostMatchesAllowedRule(h, rule))
+  }
+  return false
+}
+
+const assertOriginAllowedForTenantRequest = (req: Request, tenant: Record<string, unknown> | null): boolean => {
+  const allowedDomains = tenant?.allowed_domains as string[] | null | undefined
+  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) return true
+
+  const origin = req.headers.get('origin') ?? req.headers.get('referer') ?? ''
+  let requestHostFromHeader = ''
+  try {
+    requestHostFromHeader = origin ? new URL(origin.trim()).host : ''
+  } catch {
+    requestHostFromHeader = ''
+  }
+  if (!requestHostFromHeader) return false
+
+  const isAllowed = allowedDomains.some((d) => {
+    const domain = String(d).trim().toLowerCase()
+    if (!domain) return false
+    if (domain.startsWith('*.')) {
+      const suffix = domain.slice(1)
+      return requestHostFromHeader === suffix || requestHostFromHeader.endsWith(suffix)
+    }
+    return requestHostFromHeader === domain
+  })
+  return Boolean(isAllowed)
+}
+
+const jsonLicenseHeaders = () => ({
+  ...corsHeaders,
+  'Content-Type': 'application/json',
+  'Cache-Control': 'private, no-store',
+})
+
 type LicenseResponse = {
+  license_number?: string
   license: {
     tier: string
     valid_until: string | null
@@ -86,6 +178,7 @@ type LicenseResponse = {
     expired: boolean
     read_only: boolean
     is_trial: boolean
+    client_config_version: number
   }
   design: {
     app_name: string
@@ -113,30 +206,24 @@ serve(async (req) => {
   }
 
   try {
-    const url = new URL(req.url)
-    const licenseNumber = url.searchParams.get('licenseNumber')?.trim()
-    if (!licenseNumber) {
-      return new Response(
-        JSON.stringify({ error: 'licenseNumber required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    const licenseNumber = new URL(req.url).searchParams.get('licenseNumber')?.trim()
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     if (!supabaseUrl || !serviceRoleKey) {
-      return new Response(
-        JSON.stringify({ error: 'License portal not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return new Response(JSON.stringify({ error: 'License portal not configured' }), {
+        status: 500,
+        headers: jsonLicenseHeaders(),
+      })
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey)
 
-    const [{ data: licenseRow, error: licenseError }, { data: globalAppCfg }] = await Promise.all([
-      supabase
-        .from('licenses')
-        .select(`
+    const requestHost = extractHostnameFromOriginOrReferer(
+      (req.headers.get('origin') ?? '').trim() || (req.headers.get('referer') ?? '').trim()
+    )
+
+    const LICENSE_SELECT = `
         id,
         tenant_id,
         tier,
@@ -148,6 +235,8 @@ serve(async (req) => {
         max_storage_mb,
         check_interval,
         features,
+        license_number,
+        client_config_version,
         license_model_id,
         tenants (
           id,
@@ -170,47 +259,93 @@ serve(async (req) => {
           app_versions
         ),
         license_models (features)
-      `)
-        .eq('license_number', licenseNumber)
-        .maybeSingle(),
-      supabase.from('platform_config').select('value').eq('key', 'default_app_versions').maybeSingle(),
-    ])
+      `
 
-    if (licenseError || !licenseRow) {
-      return new Response(
-        JSON.stringify({ error: 'License not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    let licenseRow: Record<string, unknown>
+    let globalAppCfg: { value?: unknown } | null = null
+
+    if (licenseNumber) {
+      const [{ data: lr, error: licenseError }, { data: gac }] = await Promise.all([
+        supabase.from('licenses').select(LICENSE_SELECT).eq('license_number', licenseNumber).maybeSingle(),
+        supabase.from('platform_config').select('value').eq('key', 'default_app_versions').maybeSingle(),
+      ])
+      globalAppCfg = gac
+      if (licenseError || !lr) {
+        return new Response(JSON.stringify({ error: 'License not found' }), {
+          status: 404,
+          headers: jsonLicenseHeaders(),
+        })
+      }
+      licenseRow = lr as Record<string, unknown>
+    } else {
+      if (!requestHost) {
+        return new Response(
+          JSON.stringify({
+            error:
+              'licenseNumber fehlt: Host-Lookup erfordert einen Browser-Request mit Origin/Referer (oder ?licenseNumber= für Tests)',
+          }),
+          { status: 400, headers: jsonLicenseHeaders() }
+        )
+      }
+
+      const { data: tenantRows, error: tenantErr } = await supabase
+        .from('tenants')
+        .select('id, portal_domain, arbeitszeitenportal_domain, app_domain, allowed_domains')
+
+      if (tenantErr) {
+        return new Response(JSON.stringify({ error: 'Host-Lookup fehlgeschlagen' }), {
+          status: 500,
+          headers: jsonLicenseHeaders(),
+        })
+      }
+
+      const matches = (tenantRows ?? []).filter((t) => tenantMatchesRequestHost(t, requestHost))
+      if (matches.length > 1) {
+        return new Response(
+          JSON.stringify({
+            error: 'Mehrere Mandanten für diesen Host – Domains in portal_domain / allowed_domains prüfen',
+          }),
+          { status: 409, headers: jsonLicenseHeaders() }
+        )
+      }
+      if (matches.length === 0) {
+        return new Response(JSON.stringify({ error: 'License not found' }), {
+          status: 404,
+          headers: jsonLicenseHeaders(),
+        })
+      }
+
+      const tenantId = matches[0].id as string
+
+      const [{ data: lr, error: licErr }, { data: gac }] = await Promise.all([
+        supabase
+          .from('licenses')
+          .select(LICENSE_SELECT)
+          .eq('tenant_id', tenantId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase.from('platform_config').select('value').eq('key', 'default_app_versions').maybeSingle(),
+      ])
+      globalAppCfg = gac
+      if (licErr || !lr) {
+        return new Response(JSON.stringify({ error: 'License not found' }), {
+          status: 404,
+          headers: jsonLicenseHeaders(),
+        })
+      }
+      licenseRow = lr as Record<string, unknown>
     }
 
     const tenant = licenseRow.tenants as Record<string, unknown> | null
-    const allowedDomains = tenant?.allowed_domains as string[] | null | undefined
-    if (Array.isArray(allowedDomains) && allowedDomains.length > 0) {
-      const origin = req.headers.get('origin') ?? req.headers.get('referer') ?? ''
-      let requestHost = ''
-      try {
-        requestHost = origin ? new URL(origin).host : ''
-      } catch {
-        requestHost = ''
-      }
-      const isAllowed = requestHost && allowedDomains.some((d) => {
-        const domain = String(d).trim().toLowerCase()
-        if (!domain) return false
-        if (domain.startsWith('*.')) {
-          const suffix = domain.slice(1)
-          return requestHost === suffix || requestHost.endsWith(suffix)
-        }
-        return requestHost === domain
+    if (!assertOriginAllowedForTenantRequest(req, tenant)) {
+      return new Response(JSON.stringify({ error: 'Domain nicht für diese Lizenz freigegeben' }), {
+        status: 403,
+        headers: jsonLicenseHeaders(),
       })
-      if (!isAllowed) {
-        return new Response(
-          JSON.stringify({ error: 'Domain nicht für diese Lizenz freigegeben' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
     }
 
-    const validUntil = licenseRow.valid_until ? new Date(licenseRow.valid_until) : null
+    const validUntil = licenseRow.valid_until ? new Date(licenseRow.valid_until as string) : null
     const isExpired = validUntil !== null && validUntil < new Date()
     const graceDays = Math.max(0, Number(licenseRow.grace_period_days) || 0)
     const graceEnd = validUntil && graceDays > 0 ? new Date(validUntil) : null
@@ -223,7 +358,12 @@ serve(async (req) => {
     /** Keine Tier-Auto-Features: nur Lizenzmodell + Lizenz-Zeile (manuell gepflegt). */
     const features = { ...modelFeatures, ...licenseFeatures }
 
+    const clientConfigVersion = Math.max(0, Math.floor(Number(licenseRow.client_config_version) || 0))
+    const licenseNumberRaw =
+      licenseRow.license_number != null ? String(licenseRow.license_number).trim() : ''
+
     const response: LicenseResponse = {
+      ...(licenseNumberRaw ? { license_number: licenseNumberRaw } : {}),
       license: {
         tier: licenseRow.tier ?? 'professional',
         valid_until: licenseRow.valid_until,
@@ -237,6 +377,7 @@ serve(async (req) => {
         expired: isExpired,
         read_only: readOnly,
         is_trial: Boolean(licenseRow.is_trial),
+        client_config_version: clientConfigVersion,
       },
       design: {
         app_name: (tenant?.app_name as string) ?? 'AMRtech',
@@ -273,12 +414,12 @@ serve(async (req) => {
 
     return new Response(JSON.stringify(response), {
       status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: jsonLicenseHeaders(),
     })
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Unbekannter Fehler' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unbekannter Fehler' }), {
+      status: 500,
+      headers: jsonLicenseHeaders(),
+    })
   }
 })

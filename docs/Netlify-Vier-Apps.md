@@ -204,6 +204,53 @@ Wenn **kein** Request auf die Lizenz-API: Variable fehlt, falscher Build, oder A
 
 ---
 
+## 9.5 Staging / Test-Umgebung
+
+### Warum
+
+- Gleicher Code wie in Produktion, aber **andere URLs**, **andere Supabase-Projekte** (oder klar abgegrenzte Testdaten).
+- Reduziert Risiko vor **Go-Live** und bei **größeren Refactorings**.
+
+### Variante A: Netlify Branch Deploys / Deploy Previews
+
+1. Im Netlify-Dashboard pro Site: **Deploy Previews** / **Branch deploys** aktivieren (Standard bei Git-Verbindung oft schon an).
+2. Jeder Branch/PR erhält eine URL wie `https://<hash>--<site-name>.netlify.app`.
+3. **Build-Env:** Entweder dieselben Variablen wie Produktion (dann Vorsicht: ggf. echte APIs) oder in Netlify **„Deploy contexts“** / **Branch-specific environment variables** nutzen, um Staging-Supabase und Staging-Lizenz-API zu setzen.
+4. **Lizenz-API / Host-Lookup:** Preview-Host steht oft **nicht** in `allowed_domains` → **403/404**. Lösungen:
+   - Test-Mandant im Lizenzportal: Preview-Host in **`allowed_domains`** eintragen, **oder**
+   - In der Preview-Site **`VITE_LICENSE_NUMBER`** setzen (ohne Host-Lookup), **oder**
+   - Nur **`?licenseNumber=`** in manuellen Tests.
+
+### Variante B: Eigene „Staging“-Sites (empfohlen bei fester QA-URL)
+
+- Vier (oder weniger) zusätzliche Netlify-Sites, z. B. interne Namen `staging-app-…`, eigene Subdomains `staging.app.example.de`.
+- **Environment variables** komplett auf **Staging-Supabase** und **Staging-Lizenz-Admin** ausrichten (`VITE_LICENSE_API_URL` = `https://<staging-admin>/api`).
+- Vorteil: stabile URLs für Tester, kein Wechsel der Preview-Hash-URLs.
+
+### Lizenzportal-Datenbank
+
+| Ansatz | Vorteil | Nachteil |
+|--------|---------|----------|
+| **Eigenes Supabase-Projekt** „Lizenzportal Staging“ | Keine Kollision mit Produktions-Mandanten | Zweites Schema-Pflege / Deploy der Functions |
+| **Gleiches Projekt**, nur Test-Mandanten | Ein Schema | Fehlbedienung möglich (falsche Mandanten) |
+
+Server-Env der **Staging-Admin-Site:** `SUPABASE_LICENSE_PORTAL_*` muss auf das gewählte **Lizenzportal-Projekt** zeigen.
+
+### Mandanten-App(s)
+
+- **Staging-Mandanten-DB** (eigenes Supabase-Projekt): `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in allen Staging-Apps setzen.
+- Nach Schema-Migrationen: Staging **vor** Produktion migrieren oder parallel testen.
+
+### Kurz-Checkliste Staging
+
+- [ ] Alle beteiligten URLs intern dokumentiert (wer testet welche Site).
+- [ ] Keine **Production-Service-Role**-Keys in öffentlichen Staging-Branches; Secrets in Netlify/CI geschützt.
+- [ ] Einmal **Ende-zu-Ende:** Login → Lizenz → Hauptfunktion mit Staging-Daten.
+
+Ausführung im Überblick: [`Netlify-README.md`](./Netlify-README.md) (Abschnitt Staging).
+
+---
+
 ## 10. Checkliste nach Go-Live
 
 - [ ] Alle vier Sites: HTTPS, keine Konsolen-Fehler beim Login

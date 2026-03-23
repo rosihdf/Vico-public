@@ -54,6 +54,8 @@ const DEFAULT_DESIGN: DesignConfig = {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 const MS_PER_WEEK = 7 * MS_PER_DAY
+/** Abstand für Abgleich „client_config_version“ (Lizenzportal-Push) – unabhängig von daily/weekly */
+const LICENSE_CLIENT_CONFIG_POLL_MS = 90_000
 
 export const LicenseProvider = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, userRole } = useAuth()
@@ -222,6 +224,47 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
     const id = setTimeout(() => refresh(), msUntilNext)
     return () => clearTimeout(id)
   }, [license?.check_interval, refresh])
+
+  /**
+   * Wenn das Lizenzportal `client_config_version` erhöht (Button „an Apps signalisieren“),
+   * erkennen wir das hier – ohne auf daily/weekly zu warten.
+   */
+  useEffect(() => {
+    if (!isAuthenticated || userRole === 'kunde') return
+    if (!isLicenseApiConfigured()) return
+
+    const checkClientConfigVersion = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      const licenseNumber = getStoredLicenseNumber()
+      if (!licenseNumber) return
+      const cached = getCachedLicenseResponse(licenseNumber)
+      const prev = Math.max(0, Math.floor(Number(cached?.license?.client_config_version) || 0))
+      const api = await fetchLicenseFromApi(licenseNumber, 8_000)
+      if (!api?.license) return
+      const next = Math.max(0, Math.floor(Number(api.license.client_config_version) || 0))
+      if (next !== prev) {
+        await refresh({ force: true })
+      }
+    }
+
+    const id = window.setInterval(() => {
+      void checkClientConfigVersion()
+    }, LICENSE_CLIENT_CONFIG_POLL_MS)
+
+    /** Einmal kurz nach Start: Admin-Push muss nicht bis zum ersten 90s-Takt warten */
+    const kickoff = window.setTimeout(() => void checkClientConfigVersion(), 5_000)
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void checkClientConfigVersion()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      window.clearInterval(id)
+      window.clearTimeout(kickoff)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [isAuthenticated, userRole, refresh])
 
   const readOnly = license?.read_only === true
 

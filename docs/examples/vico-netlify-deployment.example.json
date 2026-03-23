@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "meta": {
+    "tenantName": "Beispiel-Mandant",
+    "note": "siteId: Netlify → Site settings → Site details → Site ID"
+  },
+  "licenseApiUrl": "https://<admin-host>/api",
+  "supabase": {
+    "url": "https://<ref>.supabase.co",
+    "anonKey": "<ANON-KEY aus Mandanten-Supabase>"
+  },
+  "sites": {
+    "main": { "siteId": "" },
+    "portal": { "siteId": "" },
+    "arbeitszeit": { "siteId": "" }
+  },
+  "portalEnv": {
+    "includeLicenseNumber": true,
+    "licenseNumber": "VIC-XXXX-XXXX"
+  },
+  "options": {
+    "dryRun": false,
+    "markAnonKeyAsSecret": true
+  }
+}

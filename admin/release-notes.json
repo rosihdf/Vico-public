@@ -1,4 +1,12 @@
 {
+  "1.0.5": [
+    "Responsive Layout: Mandantenliste, Mandanten-Formular und Deployment-Bereich für Mobilgeräte und schmale Viewports (flexible Grids, Zeilenumbruch, größere Tap-Flächen).",
+    "Mandanten: neuer Bereich „Deployment / Netlify“ – vorgefüllte Umgebungsvariablen (Haupt-App, Kundenportal, Arbeitszeitenportal) zum Kopieren in Netlify.",
+    "Deployment: Checkliste, optional Lizenz-Dropdown bei mehreren Lizenzen; Supabase-URL aus Mandanten-Stammdaten, falls hinterlegt.",
+    "Export: JSON-Datei für das Skript „Netlify-Env setzen“ (npm run netlify:apply-env) sowie kombinierte Textdatei „.env-Paket“; Hinweise in der Oberfläche.",
+    "Portal-Env: optional ohne VITE_LICENSE_NUMBER exportieren (Host-Lookup / Phase B) – per Checkbox steuerbar.",
+    "Begleitend (Plattform): Lizenz-API kann Mandanten anhand der aufrufenden Domain zuordnen; Staging- und Skript-Doku in docs/ ergänzt."
+  ],
   "1.0.1": [
     "Beta-Testversion: Vom produktiven Einsatz wird abgeraten.",
     "Diese Ausgabe dient der Erprobung; kein Ersatz für einen produktiven Rollout ohne Freigabe."

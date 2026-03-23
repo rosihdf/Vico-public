@@ -10,6 +10,7 @@ import { parseAppVersionsFromDb } from '../../shared/appVersions'
  *     - Supabase Edge: …/functions/v1 → Aufrufe z. B. …/functions/v1/limit-exceeded
  *     - Netlify Admin: https://<lizenz-domain>/api → …/api/limit-exceeded (Redirect zu Netlify Function)
  *   VITE_LICENSE_API_KEY – Optional, für Supabase Edge Function (anon key) wenn verify_jwt=true
+ *   Kunden-/Arbeitszeitenportal: VITE_LICENSE_NUMBER optional – Host-Lookup (GET …/license ohne Query), siehe docs/Netlify-README.md
  * Wenn nicht gesetzt: Legacy-Modus (Lizenz aus Mandanten-Supabase via get_license_status).
  */
 
@@ -115,6 +116,8 @@ export const clearStoredLicenseNumber = (): void => {
 }
 
 export type LicenseApiResponse = {
+  /** Aus Lizenz-API (Host-Lookup); zum Speichern wenn Mandanten-DB noch keine Nummer hat */
+  license_number?: string
   license: {
     tier: string
     valid_until: string | null
@@ -128,6 +131,8 @@ export type LicenseApiResponse = {
     expired: boolean
     read_only?: boolean
     is_trial?: boolean
+    /** Mandanten-Apps vergleichen mit Cache; Admin erhöht im Portal (Push-Signal) */
+    client_config_version?: number
   }
   design: {
     app_name: string
@@ -160,6 +165,71 @@ const DEFAULT_DESIGN: LicenseApiResponse['design'] = {
   favicon_url: null,
 }
 
+const parseLicenseApiPayload = (
+  data: LicenseApiResponse & { app_versions?: unknown }
+): LicenseApiResponse | null => {
+  if (!data?.license) return null
+  const appVersions =
+    parseAppVersionsFromDb(data.appVersions) ?? parseAppVersionsFromDb(data.app_versions)
+  const ccv = Math.max(0, Math.floor(Number(data.license.client_config_version) || 0))
+  const licNumRaw = data.license_number
+  const licNum =
+    typeof licNumRaw === 'string' && licNumRaw.trim() ? licNumRaw.trim() : undefined
+  return {
+    ...data,
+    ...(licNum ? { license_number: licNum } : {}),
+    license: { ...data.license, client_config_version: ccv },
+    design: { ...DEFAULT_DESIGN, ...data.design },
+    ...(appVersions ? { appVersions } : {}),
+  }
+}
+
+/**
+ * Optional: `VITE_LICENSE_NUMBER` im Build (Netlify) – gleiche Quelle wie Portale.
+ * Nur nutzbar wenn vollständig normalisiert (11 Zeichen).
+ */
+export const getEnvEmbeddedLicenseNumber = (): string | null => {
+  const raw = (import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()
+  if (!raw) return null
+  const n = normalizeLicenseNumber(raw)
+  if (n.length < 11) return null
+  return formatLicenseNumberInput(raw)
+}
+
+/**
+ * Lizenz-API ohne `licenseNumber`-Query: Mandant per Browser-`Origin` (Host-Lookup).
+ * Liefert u. a. `license_number` zum lokalen Speichern (neues Gerät nach Login).
+ */
+export const fetchLicenseFromApiByHost = async (timeoutMs = 10_000): Promise<LicenseApiResponse | null> => {
+  const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
+  if (!apiUrl) return null
+
+  const base = apiUrl.replace(/\/$/, '')
+  const url = `${base}/license`
+
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  const apiKey = (import.meta.env.VITE_LICENSE_API_KEY ?? '').trim()
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+    if (!res.ok) return null
+    const data = (await res.json()) as LicenseApiResponse & { app_versions?: unknown }
+    return parseLicenseApiPayload(data)
+  } catch {
+    clearTimeout(timeoutId)
+    return null
+  }
+}
+
 /** Timeout in ms (Standard 10s für schnellere Fehlerbehandlung). */
 export const fetchLicenseFromApi = async (
   licenseNumber: string,
@@ -188,14 +258,7 @@ export const fetchLicenseFromApi = async (
     clearTimeout(timeoutId)
     if (!res.ok) return null
     const data = (await res.json()) as LicenseApiResponse & { app_versions?: unknown }
-    if (!data?.license) return null
-    const appVersions =
-      parseAppVersionsFromDb(data.appVersions) ?? parseAppVersionsFromDb(data.app_versions)
-    return {
-      ...data,
-      design: { ...DEFAULT_DESIGN, ...data.design },
-      ...(appVersions ? { appVersions } : {}),
-    }
+    return parseLicenseApiPayload(data)
   } catch {
     clearTimeout(timeoutId)
     return null

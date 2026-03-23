@@ -17,6 +17,7 @@ import {
 } from '../lib/licensePortalService'
 import { LICENSE_FEATURE_KEYS, LICENSE_FEATURE_LABELS, emptyLicenseFeatures } from '../../../shared/licenseFeatures'
 import AppVersionRowsEditor from '../components/AppVersionRowsEditor'
+import TenantDeploymentPanel from '../components/TenantDeploymentPanel'
 import {
   appVersionRowsFromJson,
   appVersionRowsToPayload,
@@ -92,6 +93,8 @@ const MandantForm = () => {
   })
 
   const [appVersionRows, setAppVersionRows] = useState<AppVersionRowsState>(initialAppVersionRows)
+  /** Aus DB (tenants.supabase_url) – für Deployment-JSON-Export */
+  const [loadedSupabaseUrl, setLoadedSupabaseUrl] = useState<string | null>(null)
 
   const loadLicenses = useCallback(async (tenantId: string) => {
     try {
@@ -130,6 +133,7 @@ const MandantForm = () => {
           fetchLicenseModels(),
         ])
         if (t) {
+          setLoadedSupabaseUrl(t.supabase_url ?? null)
           setForm({
             name: t.name ?? '',
             app_domain: t.app_domain ?? '',
@@ -155,6 +159,7 @@ const MandantForm = () => {
         console.info(`[Lizenzportal] MandantForm load: ${Math.round(performance.now() - loadStart)}ms`)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Laden fehlgeschlagen')
+        setLoadedSupabaseUrl(null)
         setTenantLicenses([])
       } finally {
         setIsLoading(false)
@@ -419,7 +424,7 @@ const MandantForm = () => {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="w-full max-w-2xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 mb-6">
         {isNew ? 'Neuer Mandant' : 'Mandant bearbeiten'}
       </h2>
@@ -438,20 +443,20 @@ const MandantForm = () => {
 
       {!isNew && id && (
         <div className="mb-8">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <h3 className="text-sm font-semibold text-slate-700">Lizenzen & Lizenzstatus</h3>
-            <div className="flex gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 mb-4">
+            <h3 className="text-sm font-semibold text-slate-700 shrink-0">Lizenzen & Lizenzstatus</h3>
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end">
               <button
                 type="button"
                 onClick={handleStartTrial}
-                className="px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors"
+                className="px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors min-h-[44px] sm:min-h-0"
               >
                 Trial starten (14 Tage)
               </button>
               <button
                 type="button"
                 onClick={handleOpenCreateLicense}
-                className="px-3 py-1.5 text-sm font-medium text-vico-primary hover:bg-vico-primary/10 rounded-lg transition-colors"
+                className="px-3 py-1.5 text-sm font-medium text-vico-primary hover:bg-vico-primary/10 rounded-lg transition-colors min-h-[44px] sm:min-h-0"
               >
                 Lizenz anlegen
               </button>
@@ -495,7 +500,7 @@ const MandantForm = () => {
               <form onSubmit={handleCreateLicense} className="space-y-3">
                 <div>
                   <label htmlFor="create-license-number" className="block text-sm font-medium text-slate-700 mb-1">Lizenznummer *</label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
                     <input
                       id="create-license-number"
                       type="text"
@@ -503,18 +508,18 @@ const MandantForm = () => {
                       onChange={(e) => setCreateForm((f) => ({ ...f, license_number: e.target.value }))}
                       placeholder="VIC-XXXX-XXXX"
                       required
-                      className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono"
+                      className="min-w-0 w-full sm:flex-1 px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono"
                     />
                     <button
                       type="button"
                       onClick={() => setCreateForm((f) => ({ ...f, license_number: generateLicenseNumber() }))}
-                      className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm"
+                      className="shrink-0 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm min-h-[44px] sm:min-h-0"
                     >
                       Generieren
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Tier</label>
                     <select
@@ -630,17 +635,17 @@ const MandantForm = () => {
                     ))}
                   </div>
                 </div>
-                <div className="flex gap-2 pt-2">
+                <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:flex-wrap">
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover min-h-[44px] sm:min-h-0"
                   >
                     Lizenz anlegen
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowCreateLicense(false)}
-                    className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 min-h-[44px] sm:min-h-0"
                   >
                     Abbrechen
                   </button>
@@ -667,7 +672,7 @@ const MandantForm = () => {
                     {isEditing ? (
                       <form onSubmit={handleUpdateLicense} className="space-y-3">
                         <h4 className="font-mono font-medium text-slate-800">{lic.license_number}</h4>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Tier</label>
                             <select
@@ -764,17 +769,17 @@ const MandantForm = () => {
                             ))}
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap">
                           <button
                             type="submit"
-                            className="px-4 py-2 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover"
+                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover min-h-[44px] sm:min-h-0"
                           >
                             Speichern
                           </button>
                           <button
                             type="button"
                             onClick={() => setEditingLicenseId(null)}
-                            className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 min-h-[44px] sm:min-h-0"
                           >
                             Abbrechen
                           </button>
@@ -782,29 +787,31 @@ const MandantForm = () => {
                       </form>
                     ) : (
                       <>
-                        <div className="flex items-start justify-between gap-4 mb-3">
-                          <div>
-                            <p className="font-mono font-medium text-slate-800">{lic.license_number}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4 mb-3 min-w-0">
+                          <div className="min-w-0">
+                            <p className="font-mono font-medium text-slate-800 break-all">{lic.license_number}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 break-words">
                               {lic.license_models?.name && (
                                 <span>Modell: {lic.license_models.name} · </span>
                               )}
                               Tier: {lic.tier} · Prüfintervall: {checkIntervalLabel}
                             </p>
                           </div>
-                          <span
-                            className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${expired ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}
-                            aria-label={expired ? 'Lizenz abgelaufen' : 'Lizenz gültig'}
-                          >
-                            {expired ? 'Abgelaufen' : 'Gültig'}
-                          </span>
-                          {lic.is_trial && (
-                            <span className="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                              Trial
+                          <div className="flex flex-wrap gap-2 shrink-0">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium ${expired ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}
+                              aria-label={expired ? 'Lizenz abgelaufen' : 'Lizenz gültig'}
+                            >
+                              {expired ? 'Abgelaufen' : 'Gültig'}
                             </span>
-                          )}
+                            {lic.is_trial && (
+                              <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                Trial
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
                           <div>
                             <span className="text-slate-500">Gültig bis</span>
                             <p className="font-medium text-slate-800">
@@ -832,11 +839,11 @@ const MandantForm = () => {
                             </p>
                           </div>
                         </div>
-                        <div className="flex gap-2 mt-3">
+                        <div className="flex flex-wrap gap-x-3 gap-y-2 mt-3">
                           <button
                             type="button"
                             onClick={() => handleEditLicense(lic)}
-                            className="text-sm font-medium text-vico-primary hover:underline"
+                            className="text-sm font-medium text-vico-primary hover:underline min-h-[44px] sm:min-h-0 py-1"
                           >
                             Bearbeiten
                           </button>
@@ -922,14 +929,16 @@ const MandantForm = () => {
         </div>
         <div>
           <label htmlFor="primary_color" className="block text-sm font-medium text-slate-700 mb-1">Primärfarbe</label>
-          <input
-            id="primary_color"
-            type="color"
-            value={form.primary_color}
-            onChange={(e) => setForm((f) => ({ ...f, primary_color: e.target.value }))}
-            className="w-12 h-10 rounded border border-slate-300 cursor-pointer"
-          />
-          <span className="ml-2 text-sm text-slate-600">{form.primary_color}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              id="primary_color"
+              type="color"
+              value={form.primary_color}
+              onChange={(e) => setForm((f) => ({ ...f, primary_color: e.target.value }))}
+              className="w-12 h-10 min-w-[3rem] rounded border border-slate-300 cursor-pointer shrink-0"
+            />
+            <span className="text-sm text-slate-600 font-mono break-all">{form.primary_color}</span>
+          </div>
         </div>
         <div>
           <label htmlFor="app_name" className="block text-sm font-medium text-slate-700 mb-1">App-Name</label>
@@ -1040,23 +1049,42 @@ const MandantForm = () => {
             </div>
           </div>
         </div>
-        <div className="flex gap-2 pt-4">
+        <div className="flex flex-col-reverse gap-2 pt-4 sm:flex-row sm:flex-wrap">
           <button
             type="submit"
             disabled={isSaving}
-            className="px-4 py-2 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover disabled:opacity-50"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover disabled:opacity-50 min-h-[44px] sm:min-h-0"
           >
             {isSaving ? 'Speichern…' : 'Speichern'}
           </button>
           <button
             type="button"
             onClick={() => navigate('/mandanten')}
-            className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 min-h-[44px] sm:min-h-0"
           >
             Abbrechen
           </button>
         </div>
       </form>
+
+      {!isNew && tenantLicenses.length > 0 && (
+        <div className="mt-8">
+          <TenantDeploymentPanel
+            licenses={tenantLicenses.map((l) => ({
+              id: l.id,
+              license_number: l.license_number,
+              client_config_version: l.client_config_version ?? 0,
+            }))}
+            tenantName={form.name}
+            supabaseUrl={loadedSupabaseUrl ?? ''}
+            appDomain={form.app_domain}
+            portalDomain={form.portal_domain}
+            arbeitszeitDomain={form.arbeitszeitenportal_domain}
+            allowedDomainsText={form.allowed_domains}
+            onClientPushComplete={id ? () => void loadLicenses(id) : undefined}
+          />
+        </div>
+      )}
     </div>
   )
 }

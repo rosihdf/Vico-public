@@ -12,7 +12,7 @@ Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2025.
 4. [Datenbank](#4-datenbank)
 5. [Deployment](#5-deployment)
 6. [Projektstand](#6-projektstand)
-7. [Roadmap](#7-roadmap)
+7. [Roadmap](#7-roadmap) – Struktur: **7.1** Legende, **7.2** offene Arbeiten, **7.3** Archiv, **7.4** Backlog-Referenz, **7.5** Kontext
 8. [Projektstruktur](#8-projektstruktur)
 9. [Plan: Mandantenfähigkeit & Lizenzportal](#9-plan-mandantenfähigkeit--lizenzportal)
 10. [Konzept: Geplante Änderungen Hauptapp](#10-konzept-geplante-änderungen-hauptapp)
@@ -164,7 +164,7 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 
 **Lizenz-Admin** (`admin/`): Separates Netlify-Site, Root: `admin/`, Subdomain z.B. `admin.vico-tueren.de`.
 
-**Alle vier Apps (Haupt-App, Admin, Kundenportal, Arbeitszeitenportal):** Kurzüberblick **`docs/Netlify-README.md`**, Details **`docs/Netlify-Vier-Apps.md`** (inkl. **§11 Fehlerbehebung**, **§12 TS-Build Monorepo**). **Lizenz-API:** Empfohlen **`VITE_LICENSE_API_URL = https://<Admin-Subdomain>/api`**. Portale: **`VITE_LICENSE_NUMBER`** (Alternativen: `Netlify-README.md`). Setup/Fehler: **`docs/Lizenzportal-Setup.md`**.
+**Alle vier Apps (Haupt-App, Admin, Kundenportal, Arbeitszeitenportal):** Kurzüberblick **`docs/Netlify-README.md`** (inkl. **Staging**), Details **`docs/Netlify-Vier-Apps.md`** (inkl. **§9.5 Staging**, **§11 Fehlerbehebung**, **§12 TS-Build Monorepo**). **Lizenz-API:** Empfohlen **`VITE_LICENSE_API_URL = https://<Admin-Subdomain>/api`**. Portale: **`VITE_LICENSE_NUMBER`** optional (Host-Lookup) – **`docs/Netlify-README.md`**. **Netlify-Env automatisieren:** **`docs/Netlify-Mandanten-Env-Skript.md`**. Setup/Fehler: **`docs/Lizenzportal-Setup.md`**.
 
 ### Supabase Keep-Alive (Free-Tier)
 
@@ -266,129 +266,135 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 
 ## 7. Roadmap
 
-**Maßgeblich** ist die **konsolidierte Roadmap in Abschnitt 7.1** weiter unten (eine Tabelle mit Erledigt-Status ✅ und offenen Punkten). **7.2** ist die Feature-Referenz (Priorität, Aufwand). Die frühere Doppeltabelle (A–H, Weitere W1–W7 ohne ✅) ist darin aufgegangen.
+Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** = was noch offen ist, **§7.3** = erledigte Meilensteine (Archiv), **§7.4** = Backlog-Referenz mit Priorität/Aufwand, **§7.5** = Kontext (grosse Epics, Checklisten, Ist-Stand). Technische Detailentscheidungen: **§9** (Lizenzportal), **§10** (Hauptapp), **§11** (Konsolidiert).
 
-### 7.2 Roadmap: Geplante Features (mit Aufwand) – Referenz
+### 7.1 Legende
 
-| # | Feature | Priorität | Aufwand | Beschreibung |
-|---|---------|-----------|---------|--------------|
-| 1 | Wartungsplanung / Erinnerungen | Hoch | 3–5 T | Erinnerungen (z.B. 30 Tage vorher), optional E-Mail an Techniker/Kunden |
-| 2 | Wartungsstatistik / Auswertung | Hoch | 3–4 T | Wartungen pro Kunde/BV/Objekt, Auslastung, überfällige Wartungen |
-| 3 | Export für Buchhaltung | Hoch | 2–3 T | CSV/Excel-Export für Abrechnung |
-| 4 | Schnellzugriff / Zuletzt bearbeitet | Hoch | 1–2 T | Zuletzt bearbeitete Kunden/Objekte auf Startseite |
-| 5 | Erweiterte Filter | Hoch | 2 T | Filter Kundenliste (PLZ, Wartungsstatus, BV-Anzahl) |
-| 6 | Umbau Wartung (MVP) | Hoch | 15–20 T | Auftrag → Monteursbericht → Freigabe → Portal (Phasen 1–4) |
-| 7 | Arbeitszeiterfassung (Modul) | Mittel | 5–8 T | Lizenzmodul: Start/Ende, Pausen, ArbZG, Outbox |
-| 8 | Wartungs-Checkliste pro Objekttyp | Mittel | 3–4 T | Vordefinierte Checklisten je Tür-/Tortyp |
-| 9 | Mängel-Follow-up | Mittel | 3 T | Offene Mängel tracken, Status offen/behoben |
-| 10 | Kalender-Sync (iCal) | Mittel | 2–3 T | Aufträge als iCal/Google-Kalender |
-| 11 | 2FA | Mittel | 2–3 T | Zwei-Faktor-Authentifizierung für Admins |
-| 12 | Offline-Erweiterungen | Mittel | 3–5 T | ~~Komponenten-Einstellungen, Historie-Cache, PDF, Profil, E-Mail-Outbox~~ ✅ |
-| 13 | Dokumente/Anhänge pro Objekt | Niedrig | 4 T | ~~Zeichnungen, Zertifikate pro Objekt~~ ✅ |
-| 14 | Bulk-Operationen | Niedrig | 3 T | Mehrere Objekte/Kunden gleichzeitig bearbeiten |
-| 15 | Portal: Push-Benachrichtigungen | Niedrig | 2–3 T | Kunden bei neuem Wartungsbericht informieren |
-| 16 | ✅ Ladezeiten-Monitoring / Performance-Dashboard | – | – | Umgesetzt: `src/pages/Ladezeiten.tsx` – Sync- und Startseiten-Metriken (Admin). |
-| 17 | **Bug-Erfassungsmodul** | Niedrig | 1–2 T | Automatische Erfassung von JS-Fehlern (onerror, unhandledrejection, ErrorBoundary) und Speicherung in DB; Admin unter **System → Fehlerberichte**. Konzept: **§11.3**. |
+| Symbol | Bedeutung |
+|--------|-----------|
+| 🔲 | Offen |
+| ⚠️ | Teilweise / nächste Ausbaustufe |
+| ✅ | Erledigt (siehe Archiv **§7.3**) |
 
-**Aufwand:** T = Tage (geschätzt, 1 Entwickler)
-
-### Umbau Wartung: Auftrag → Monteursbericht (Detail)
-
-**Ziel:** Detaillierte Aufträge, Abarbeitung durch Monteur, Monteursbericht (Zeiten, Material), Freigabe → Kundenportal + Buchhaltung.
-
-**Auftragstypen:** Einbau, Reparatur, Wartung, Nachprüfung, Sonstiges. Bei Wartung: Wartungsprotokoll nach DIN 14677 (Feststellanlagen) und ASR A1.7 (Türen/Tore).
-
-**Phasen:** (1) Aufträge erweitern → (2) Monteursbericht (Tabellen, CRUD) → (3) Freigabe-Workflow → (4) Kundenportal → (5) Wartungsprotokoll DIN/ASR → (6) Buchhaltungs-Export → (7) Offline, Material-Stammdaten → (8) Erweiterungen (Mehrfachbesuche, Vorlagen).
-
-### Arbeitszeiterfassung (Modul)
-
-**Aktivierung:** Lizenzmodul über admin/. **Ablauf:** Start/Ende Arbeitszeit, Pausen (manuell oder automatisch nach ArbZG § 4). **Technisch:** Tabelle `time_entries`, `time_breaks`, Feature-Flag, Component Setting, Route `/arbeitszeit`, RLS.
-
-**Phase 1 (MVP) abgeschlossen:** Tagesansicht, Start/Pause/Ende, ArbZG §3/§4/§5, Wochen-Summe, „Vergessen auszustempeln“-Hinweis, Admin sieht alle (User-Dropdown), Offline/Outbox. **Details:** **§11.6**.
-
-**Phase 2 (umgesetzt):** Bearbeiten mit Grund (`time_entry_edit_log`, RPC `update_time_entry_admin`), Admin-Modal mit Grund-Auswahl (Korrektur/Nachreichung/Fehler/Sonstiges), **Wochenansicht** (Mo–So, Vorherige/Nächste Woche), **Monatsansicht** (Kalender-Grid mit Stundensummen pro Tag). **LOG-Übersicht:** Tab „Log“ mit Filter (Zeitraum, Benutzer), Paginierung, „Filter zurücksetzen“. **Auftragszuordnung:** per Entscheidung **entfernt** (UI/Code); Spalte `order_id` kann in der DB bleiben – **§11.1 §7**. **Arbeitszeitkonto:** `profiles.soll_minutes_per_month` / `soll_minutes_per_week`; Monatsansicht Soll/Ist/Saldo; Admin in Benutzerverwaltung.
-**IONOS-Hosting, weitere AZK-Themen:** **§11.8**. **Ortung (GPS):** **§11.7**. **Standortabfrage** (Arbeitszeitenportal): **§11.9**.
+**Aufwand:** „T“ = Arbeitstage, Schätzung für **1 Entwickler**.
 
 ---
 
-### 7.1 Konsolidierte Roadmap (offene Punkte, empfohlene Abarbeitsreihenfolge)
+### 7.2 Offene Arbeiten (priorisiert)
 
-Alle noch offenen Punkte aus Vico.md (Abschnitte 7, 9, 10) in einer sinnvollen Reihenfolge. Empfehlung: zuerst schnelle UX-Anpassungen und Lizenz-Abschluss, dann fachliche Erweiterungen (Auftrag, Datenmodell), zuletzt Mobile/APK und optionale Auswertungen.
+**Empfohlene Reihenfolge:** kurze, isolierte Themen zuerst (Lizenzportal-UX, Qualität), dann Produkt-Auswertungen, dann grosse Epics (Umbau Wartung), zuletzt optionales Mobile-Zubehör.
 
-| Phase | Nr. | Offener Punkt | Quelle | Geschätzter Aufwand |
-|-------|-----|----------------|--------|---------------------|
-| **A – Menü & Einstellungen** | A1 | ✅ Neuer Menüpunkt **„Info“** (oder „App-Info“): Appversion, Lizenz, Anleitung. Diese Inhalte aus Einstellungen entfernen. | 10.5 | 0,5–1 T |
-| | A2 | ✅ Aus **Einstellungen:** Benutzerverwaltung-Link entfernen. Aus **Benutzerverwaltung:** Einstellungen-Link entfernen. | 10.5 | 0,25 T |
-| **B – Lizenzportal (Abschluss)** | B1 | ✅ **Grenzwarnungen** (80 %/90 %/100 %) in Benutzerverwaltung + ggf. Einstellungen/Dashboard. | 9.17 | 1 T |
-| | B2 | ✅ **Verhalten bei abgelaufener Lizenz:** Schonfrist Nur-Lesen (Tage im Lizenzportal konfigurierbar), danach Redirect. **§11.1 §2.** | 9.10, 9.17 | 1–2 T |
-| | B3 | ✅ **Lizenzportal-Supabase-Projekt** anlegen, Schema `supabase-license-portal.sql` im neuen Projekt ausführen (operativer Schritt). | 9.17 | 0,5 T |
-| **C – Benutzerverwaltung** | C1 | ✅ **Benutzer anlegen:** Auswahl der Rolle (Rollenliste abhängig von Lizenz/Modulen). | 10.6, 10.12 | 0,5 T |
-| | C2 | ✅ **Portalbenutzer:** Anzeige/Bearbeitung zu welchem Kunde; Auswahl der Objekte/BV für Zugriff (Whitelist-UI). | 10.3, 10.6 | 1–2 T |
-| **D – Auftrag** | D1 | ✅ **Auftrag anlegen:** Objekt/BV nur anzeigen wenn Kunde mehrere hat; Uhrzeit optional. Felder wie in 10.8. | 10.8 | 0,5 T |
-| | D2 | ✅ **Tabelle `order_completions`** (Monteursbericht): Schema, RLS, CRUD. Felder: ausgeführte Arbeiten, Material, Arbeitszeit, Unterschriften (Bild + Name/Datum). | 10.9, 10.12 | 2–3 T |
-| | D3 | ✅ **Route `/auftrag/:orderId`**, Auftragsdetail-Seite (kein Popup): Kunden-/Objekt/BV-Daten, Beschreibung, Completion-Formular, Unterschriften. | 10.9 | 1,5–2 T |
-| | D4 | ✅ Dashboard: Klick auf Auftrag führt zu Auftragsdetail; Mitarbeiter kann Auftrag von dort abarbeiten. | 10.9 | 0,5 T |
-| **E – Datenmodell & Labels** | E1 | ✅ **Labels:** BV → „Objekt/BV“, Objekt → „Tür/Tor“ in UI (Menü, Titel, Formulare). URLs unverändert. | 10.2, 10.12 | 1 T |
-| | E2 | ✅ **Tür/Tor direkt unter Kunde:** Schema erweitern (`objects.bv_id` optional, ggf. `customer_id` oder Default-Objekt/BV). UI: Tür unter Kunde anlegbar wenn keine Objekte/BV. | 10.2, 10.12 | 1,5–2 T |
-| | E3 | ✅ **Verschieben von Türen:** Dropdown „Zuordnung: [Objekt/BV wählen]“ pro Tür; Protokolle/Fotos/Dokumente bleiben der Tür zugeordnet. | 10.2, 10.12 | 1 T |
-| | E4 | ✅ **Wartungsvertrag:** Tabelle/Felder (Vertragsnummer JJJJ/0000, Datum Beginn, Ende); unter Kunde (wenn keine Objekte/BV) oder unter Objekt/BV. Mehrere Verträge pro Kunde/Objekt/BV. | 10.10, 10.12 | 1,5–2 T |
-| **F – Kundenportal** | F1 | ✅ **Tabelle `portal_user_object_visibility`** (Whitelist); RLS/API im Portal: nur sichtbare Objekte/BV liefern. Standard: alle. | 10.3, 10.12 | 1,5–2 T |
-| **G – Historie** | G1 | ✅ **Historie:** Details on-demand (Klick auf Zeile → RPC `get_audit_log_detail(id)`). Optional: audit_log um Vorher/Nachher erweitern. | 10.4, 10.12 | 1–2 T |
-| **H – Stammdatenimport** | H1 | ✅ **Menüpunkt „Import“** (oder unter Kunden). CSV/Excel-Upload, Spalten-Mapping (Firma, PLZ, Straße, Stadt, Mail, Tel, Anprechpartner, Objekt/BV). Objekt/BV verknüpfen oder neu anlegen; Fehlerzeilen überspringen, Fehlerliste am Ende. | 10.7, 10.12 | 2–3 T |
-| **I – Mobile (Capacitor + APK/iOS)** | I1 | ✅ **Capacitor** einbinden; Web-App in native Hülle; **Android-APK** + **iOS** von Anfang an mitgeplant. Parallel zur PWA. (Siehe Abschnitt 5: Mobile-Build.) | 10.1, 10.12 | 3–5 T |
-| | I2 | Optional: **Bluetooth-Drucker-Plugin** für QR-Etikettendruck aus der App (**§11.4**). | 10.1, docs | 1–2 T |
-| **J – Optionale Auswertungen & Sonstiges** | J1 | Wartungsplanung / Erinnerungen (z. B. 30 Tage vorher), optional E-Mail. | 7 | 3–5 T |
-| | J2 | Wartungsstatistik / Auswertung (pro Kunde/BV/Objekt, überfällige Wartungen). | 7 | 3–4 T |
-| | J3 | Export für Buchhaltung (CSV/Excel). | 7 | 2–3 T |
-| | J4 | Schnellzugriff / Zuletzt bearbeitet auf Startseite. | 7 | 1–2 T |
-| | J5 | ✅ **Erweiterte Filter Kundenliste** (PLZ, Wartungsstatus, BV-Anzahl). | 7 | 2 T |
-| | J6 | Umbau Wartung (MVP) – Auftrag → Monteursbericht → Freigabe → Portal (Phasen 1–4, Detail in Abschnitt 7). | 7 | 15–20 T |
-| | J7 | Mängel-Follow-up, Kalender-Sync (iCal), Bulk-Operationen, Portal Push-Benachrichtigungen. | 7 | je 2–3 T |
-| | J8 | ✅ **Lizenzportal: Daten-Export bei Mandantenkündigung;** ggf. manuelle Statusabfrage pro Mandant. (Export: Button „Daten exportieren (JSON, z. B. bei Kündigung)“ in Mandanten, `exportService.ts`.) | 9.11, 9.12 | 1–2 T |
-| | J9 | ✅ **Ladezeiten-Monitoring / Performance-Dashboard:** `src/pages/Ladezeiten.tsx` – Sync- und Startseiten-Metriken, grafische Anzeige (Admin). | 5 (Supabase-Region), 10.12 | 1–2 T |
-| | J10 | **Bug-Erfassungsmodul:** Automatische Erfassung von Fehlern und Speicherung in DB; Admin unter **System → Fehlerberichte**. **§11.3.** | docs | 1–2 T |
-| **Lizenzportal** | L1 | ✅ **Lizenzportal-Supabase** anlegen, Schema `supabase-license-portal.sql` ausführen (operativer Schritt, siehe B3). | 9.17 | 0,5 T |
-| | L2 | ✅ **Status pro Mandant:** Letzte Grenzüberschreitungs-Meldung in Mandantenliste; Link „Grenzüberschreitungen anzeigen“ (Filter nach Mandant). | 9.12 | 1 T |
-| | L3 | ✅ **Daten-Export bei Kündigung:** Button „Export“ pro Mandant → JSON-Download (Mandant, Lizenzen, limit_exceeded_log). | 9.11 | 1–2 T |
+| ID | Stream | Thema | Status | Aufwand | Detail |
+|----|--------|--------|--------|---------|--------|
+| **L4** | Lizenzportal | **Logo-Upload** (Storage, WebP, Limits, Vorschau, entfernen, Platzhalter) | 🔲 | 2–4 T | **§9.4a** |
+| **J10** | Qualität | **Bug-Erfassungsmodul** (Fehler in DB, **System → Fehlerberichte**) | 🔲 | 1–2 T | **§11.3** |
+| **J4** | UX / Start | **Schnellzugriff / Zuletzt bearbeitet** auf der Startseite | 🔲 | 1–2 T | Backlog **§7.4** #4 |
+| **J3** | Export | **Buchhaltung:** CSV/Excel-Export | 🔲 | 2–3 T | **§7.4** #3 |
+| **J2** | Auswertung | **Wartungsstatistik** (pro Kunde/BV/Objekt, überfällig) | 🔲 | 3–4 T | **§7.4** #2 |
+| **J1** | Planung | **Wartungsplanung / Erinnerungen** inkl. **E-Mail** (Liste/„due_soon“ existiert) | ⚠️ | 3–5 T | **§7.4** #1; E-Mail offen |
+| **J6** | Fachlich | **Umbau Wartung (MVP):** Freigabe-Workflow, Portal-Anbindung, ggf. DIN/ASR (Monteursbericht vorhanden) | ⚠️ | 15–20 T | **§7.5** |
+| **J7** | Fachlich | Paket: **Mängel-Follow-up**, **iCal**, **Bulk-Operationen**, **Portal-Push** (einzeln planbar) | 🔲 | je 2–3 T | **§7.4** #9–11, #15 |
+| **I2** | Mobile | Optional: **Bluetooth-Drucker** (QR-Etiketten) | 🔲 | 1–2 T | **§11.4** |
 
-**Hinweis:** Arbeitszeiterfassung (Modul) und 2FA sind bereits implementiert. Die Tabelle oben enthält nur **noch offene** Punkte. Aufwand „T“ = Tage (Schätzung, 1 Entwickler).
+**Hinweis:** **2FA**, **Arbeitszeiterfassung** (Modul), **Capacitor/APK** (**I1**) und die früheren Phasen **A–H** sind umgesetzt → **§7.3**.
 
-#### Status B3 / L1 (Lizenzportal-Supabase – operativer Schritt)
+**GitHub:** Issues aus dieser Liste anlegen: **`docs/GitHub-Roadmap-7.2.md`** · Skript **`scripts/gh-roadmap-issues.sh`** (nach `gh auth login`).
 
-B3 und L1 sind derselbe Schritt: **ein separates Supabase-Projekt nur für das Lizenzportal** anlegen und das Schema einspielen. Die Haupt-App (Vico Web-App) nutzt weiterhin ihr eigenes Supabase-Projekt; die **Admin-App** (`admin/`) spricht mit dem **Lizenzportal-Supabase**.
+---
 
-**Checkliste – erledigt, wenn:**
+### 7.3 Erledigte Meilensteine (Archiv)
+
+Übersicht der umgesetzten Pakete (ohne vollständige Issue-Liste). Details weiterhin in **§9**, **§10**, **§11**.
+
+| Paket | Inhalt (kurz) |
+|-------|----------------|
+| **A** | Menü **Info**, Trennung Einstellungen ↔ Benutzerverwaltung |
+| **B** | Lizenzportal: Grenzwarnungen, abgelaufene Lizenz + Schonfrist, Supabase-Projekt/Schema (operativ **B3** = **L1**) |
+| **C** | Benutzer anlegen mit Rollen; Portalbenutzer + Objekt/BV-Whitelist |
+| **D** | Auftrag, `order_completions`, `/auftrag/:id`, Dashboard-Verlinkung |
+| **E** | Labels Tür/Tor/Objekt-BV, Schema Tür unter Kunde, Türen verschieben, Wartungsvertrag |
+| **F** | `portal_user_object_visibility` + Portal-API |
+| **G** | Historie Detail-RPC |
+| **H** | Stammdaten-Import |
+| **I1** | Capacitor, Android/iOS Scripts |
+| **J5** | Erweiterte Filter Kundenliste |
+| **J8** | Lizenzportal: Mandanten-Export bei Kündigung |
+| **J9** | Ladezeiten-Dashboard (`Ladezeiten.tsx`) |
+| **L2–L3** | Status Grenzüberschreitung in Mandantenliste; Export JSON |
+
+---
+
+### 7.4 Backlog: Features nach Priorität (Referenz)
+
+Langfristige Feature-Liste mit **Priorität** und **Aufwand** – nicht alles ist zeitnah in **§7.2** eingeplant. Nummern entsprechen der früheren Übersicht.
+
+| # | Feature | Priorität | Aufwand | Hinweis |
+|---|---------|-----------|---------|---------|
+| 1 | Wartungsplanung / Erinnerungen | Hoch | 3–5 T | ⚠️ Teilweise, siehe **J1** |
+| 2 | Wartungsstatistik / Auswertung | Hoch | 3–4 T | 🔲 **J2** |
+| 3 | Export für Buchhaltung | Hoch | 2–3 T | 🔲 **J3** |
+| 4 | Schnellzugriff / Zuletzt bearbeitet | Hoch | 1–2 T | 🔲 **J4** |
+| 5 | Erweiterte Filter Kundenliste | Hoch | 2 T | ✅ **J5** |
+| 6 | Umbau Wartung (MVP) | Hoch | 15–20 T | ⚠️ **J6** |
+| 7 | Arbeitszeiterfassung (Modul) | Mittel | 5–8 T | ✅ umgesetzt (**§7.5** AZK) |
+| 8 | Wartungs-Checkliste pro Objekttyp | Mittel | 3–4 T | Backlog |
+| 9 | Mängel-Follow-up | Mittel | 3 T | 🔲 **J7** |
+| 10 | Kalender-Sync (iCal) | Mittel | 2–3 T | 🔲 **J7** |
+| 11 | 2FA | Mittel | 2–3 T | ✅ umgesetzt |
+| 12 | Offline-Erweiterungen | Mittel | 3–5 T | ✅ (Kern) |
+| 13 | Dokumente/Anhänge pro Objekt | Niedrig | 4 T | ✅ |
+| 14 | Bulk-Operationen | Niedrig | 3 T | 🔲 **J7** |
+| 15 | Portal: Push-Benachrichtigungen | Niedrig | 2–3 T | 🔲 **J7** |
+| 16 | Ladezeiten-Monitoring | – | – | ✅ **J9** |
+| 17 | Bug-Erfassungsmodul | Niedrig | 1–2 T | 🔲 **J10** |
+
+---
+
+### 7.5 Kontext: Epics, Checklisten, Ist-Stand
+
+#### Umbau Wartung: Auftrag → Monteursbericht
+
+**Ziel:** Detaillierte Aufträge, Abarbeitung durch Monteur, Monteursbericht (Zeiten, Material), Freigabe → Kundenportal + Buchhaltung.
+
+**Auftragstypen:** Einbau, Reparatur, Wartung, Nachprüfung, Sonstiges. Bei Wartung: Wartungsprotokoll nach DIN 14677 / ASR A1.7.
+
+**Phasen:** (1) Aufträge erweitern → (2) Monteursbericht → (3) Freigabe-Workflow → (4) Kundenportal → (5) Wartungsprotokoll DIN/ASR → (6) Buchhaltungs-Export → (7) Offline, Material-Stammdaten → (8) Erweiterungen.
+
+**Stand:** Monteursbericht / Completions / Auftragsdetail vorhanden; **Freigabe**, **Portal-Flow** und weitere Phasen offen (**J6**).
+
+#### Arbeitszeiterfassung (Modul)
+
+**Aktivierung:** Lizenzmodul. **Technisch:** `time_entries`, `time_breaks`, Route `/arbeitszeit`, RLS.
+
+**Phase 1 ✅:** Tagesansicht, Start/Pause/Ende, ArbZG, Wochen-Summe, Offline/Outbox. **Phase 2 ✅:** Bearbeiten mit Grund, Wochen-/Monatsansicht, Log-Tab, Soll/Ist-Konto. **§11.6**, **§11.7–11.9** (GPS, Standort, IONOS).
+
+#### Lizenzportal-Supabase anlegen (B3 = L1)
+
+Ein separates Supabase-Projekt für das **Lizenzportal**; Haupt-App bleibt eigenes Projekt. **Checkliste:**
 
 | # | Aufgabe | Erledigt? |
 |---|---------|------------|
-| 1 | Neues Supabase-Projekt im Dashboard anlegen (z. B. Name „vico-license-portal“, Region wählen). | |
-| 2 | Im neuen Projekt: **SQL Editor** → Inhalt von `supabase-license-portal.sql` einfügen und ausführen (idempotent). | |
-| 3 | **Auth:** E-Mail bestätigen ggf. deaktivieren (Settings → Auth), Redirect-URLs für Admin-App eintragen (z. B. `https://admin.vico-tueren.de/**`, `http://localhost:*/**`). | |
-| 4 | **API Keys** kopieren: Project URL + anon key (für Admin-Frontend). Optional: service_role key für Netlify/Backend (Lizenz-API). | |
-| 5 | Admin-App konfigurieren: `admin/.env` (lokal) bzw. Netlify-Umgebungsvariablen: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` = Werte aus dem **Lizenzportal**-Projekt (nicht Haupt-App). | |
-| 6 | Optional (Lizenz-API aus Haupt-App/Netlify): `SUPABASE_LICENSE_PORTAL_URL` + `SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY` setzen. | |
-| 7 | Test: Admin-App starten (`cd admin && npm run dev`), Login mit neuem Benutzer (wird über Trigger als `profiles.role = 'admin'` angelegt). Mandanten/Lizenzen anlegen prüfen. | |
+| 1 | Neues Supabase-Projekt anlegen | |
+| 2 | `supabase-license-portal.sql` ausführen | |
+| 3 | Auth: Redirect-URLs, ggf. E-Mail-Bestätigung | |
+| 4 | API Keys (anon + ggf. service_role für Lizenz-API) | |
+| 5 | Admin-App `VITE_SUPABASE_*` = Lizenzportal-Projekt | |
+| 6 | Optional: `SUPABASE_LICENSE_PORTAL_*` für Netlify Functions | |
+| 7 | Test: Admin-Login, Mandanten/Lizenzen | |
 
-**Status im Repo prüfen:** Im Repo liegt **kein** `.env` (nur `admin/.env.example`). Ob B3/L1 erledigt sind, erkennst du nur außerhalb des Repos: zweites Supabase-Projekt vorhanden? Admin-App mit korrekten Env-Variablen deployt und Login funktionsfähig? Wenn ja → B3/L1 in der Roadmap als ✅ markieren.
+#### Verifikation ausgewählter Epics (Code-/Betriebsstand)
 
-#### Verifizierung „bereits umgesetzt?“ (Stand Prüfung)
-
-Alle Punkte ohne ✅ wurden im Code geprüft. Ergebnis:
-
-| Punkt | Im Code geprüft | Ergebnis |
-|-------|------------------|----------|
-| **B3 / L1** | Nicht prüfbar (operativer Schritt: zweites Supabase-Projekt). | Nur manuell prüfbar (Checkliste oben). |
-| **I1** Capacitor | `@capacitor/core`, `@capacitor/cli`, `android`, `ios`; `capacitor.config.ts`; Scripts `build:mobile`, `cap:sync`, `cap:android`, `cap:ios`. | ✅ Umgesetzt. |
-| **I2** Bluetooth-Drucker | Kein Plugin/Code. | ❌ Nicht umgesetzt. |
-| **J1** Wartungsplanung/Erinnerungen | `get_maintenance_reminders` (30-Tage-Status), Anzeige Startseite/Kunden. | ⚠️ Teilweise: Erinnerungsliste & „due_soon“ ja, **optionale E-Mail** fehlt. |
-| **J2** Wartungsstatistik | Keine dedizierte Statistik-/Auswertungsseite. | ❌ Nicht umgesetzt. |
-| **J3** Export Buchhaltung | Nur Import (CSV), kein Export für Buchhaltung. | ❌ Nicht umgesetzt. |
-| **J4** Schnellzugriff/Zuletzt bearbeitet | Startseite: Aufträge, Erinnerungen; kein „Zuletzt bearbeitet“. | ❌ Nicht umgesetzt. |
-| **J5** Erweiterte Filter Kundenliste | `Kunden.tsx`: Filter-Panel PLZ, Wartungsstatus, BV Min/Max. | ✅ Umgesetzt (März 2026). |
-| **J6** Umbau Wartung MVP | `order_completions`, Auftragsdetail, Unterschriften vorhanden. | ⚠️ Teilweise: Monteursbericht ja; Freigabe-Workflow & Portal-Integration offen. |
-| **J7** Mängel-Follow-up, iCal, Bulk, Push | Kein iCal, kein Mängel-Tracking, keine Bulk-UI, kein Portal-Push. | ❌ Nicht umgesetzt. |
-| **J8** Lizenzportal Export Kündigung | `admin/exportService.ts`, Button „Daten exportieren“ in Mandanten. | ✅ Umgesetzt → als erledigt markiert. |
-| **J9** Ladezeiten-Dashboard | `src/pages/Ladezeiten.tsx` – Sync- und Startseiten-Metriken, grafisches Dashboard (Admin). | ✅ Umgesetzt. |
+| Thema | Ergebnis |
+|-------|----------|
+| **B3 / L1** | Nur manuell prüfbar (zweites Supabase-Projekt) |
+| **I1** Capacitor | ✅ |
+| **I2** Bluetooth-Drucker | ❌ |
+| **J1** Wartungsplanung | ⚠️ Liste ja, **E-Mail** fehlt |
+| **J2–J4** | ❌ offen |
+| **J5** Filter | ✅ |
+| **J6** Umbau Wartung | ⚠️ Teilweise |
+| **J7** | ❌ |
+| **J8–J9** | ✅ |
 
 ---
 
@@ -518,6 +524,51 @@ Vico/
 **Frage 7:** Soll das Design zur Laufzeit per API geladen werden (App fragt Mandanten-Config ab) oder bei der Bereitstellung fest eingebaut (Build pro Mandant)?
 
 → **Entscheidung:** Zur Laufzeit – die Design-Config (Logo-URL, Farben, App-Name) wird zusammen mit der Lizenz beim Lizenz-Abruf geliefert. Ein Build-Deploy pro Codebasis, keine separaten Builds pro Mandant. Änderungen im Lizenzportal wirken nach nächstem App-Start/Refresh.
+
+---
+
+### 9.4a Logo-Upload im Lizenzportal (geplant – Roadmap **L4**)
+
+**Ziel:** Mandanten-Logo nicht nur per freier URL, sondern **direkt im Lizenzportal hochladen**; Speicherung an einem definierten Ort; **Dateigröße** und **Pixelmaße** begrenzen; beim Upload **optimieren** (kurze Ladezeiten); ohne Logo **einheitlicher Platzhalter** in allen Apps.
+
+#### Entscheidungen (Abstimmung, Stand festgehalten)
+
+| # | Thema | Entscheidung |
+|---|--------|----------------|
+| – | **CDN** zusätzlich | **Nein** – ausreichend öffentliche Storage-URL des Lizenzportal-Supabase. |
+| – | **SVG** | **Nein** – nur **PNG/JPEG** als Upload. |
+| – | **Auslieferungsformat** | **WebP** nach Optimierung (siehe unten); Konvertierung im Browser vor Upload. |
+| – | **Roh-Upload max.** | **2 MB** |
+| – | **Zielgröße nach Optimierung** | **150–300 KB** |
+| – | **Max. Breite (Pixel)** | **512 px** (Höhe proportional, `object-contain`) |
+| – | **Live-Vorschau** im Lizenzportal | **Ja** (z. B. Header- und Login-ähnliche Rahmen) |
+| – | **Logo entfernen** | **Ja** – zurück zu Platzhalter, Storage-Objekt löschen |
+| – | **Rechtstext / Nutzungshinweis** | **Nein** – kein zusätzlicher Pflicht-Hinweis im UI |
+
+#### Vorschläge (Repo / Architektur, wo keine explizite Nutzerwahl)
+
+| Thema | Vorschlag |
+|-------|-----------|
+| **1 – Gesamtansatz** | **Supabase Storage** (Lizenzportal), Bucket mit öffentlichem Lesen; `tenants.logo_url` = öffentliche URL; Upload in **Admin** (`MandantForm`): wählen → skalieren/komprimieren → **WebP** → `upload` → URL in DB; optional **altes Objekt** beim Überschreiben **löschen**. |
+| **4 – WebP** | Ein **WebP**-Objekt pro Logo reicht für moderne Clients; optional später **PNG-Fallback** nur wenn nötig (ältere Druck-/PDF-Pfade). |
+| **8 – Seitenverhältnis** | **Weich:** Verhältnis **Breite:Höhe** zwischen **1:4 und 4:1** – innerhalb normal hochladen; **außerhalb** nur **Warnhinweis** („sehr breites/hohes Logo kann in der Kopfzeile klein wirken“), **kein** harter Block. Weiterhin CSS **`object-contain`** (`Logo.tsx` etc.). |
+| **11 – Versionen** | **Ein aktuelles Logo**, neuer Upload **ersetzt** das vorherige; **keine Historie** im MVP (weniger Speicher, einfachere Policies). |
+| **13 – Einheitliches Asset** | **Eine** `logo_url` für **alle** Oberflächen: Haupt-App, Kundenportal, Arbeitszeitportal, QR/Druck – alles über **`design.logo_url`** der Lizenz-API. Keine separaten „Report-“ vs. „Header-“-Logos in L4. |
+| **Speicher-Kontingent Mandant** | Logo-Speicher **nicht** gegen **`max_storage_mb`** der Haupt-App rechnen; Kontingent liegt im **Lizenzportal** (Bucket + ggf. internes Limit pro Mandant). |
+
+#### Technische Umsetzung (Kurz)
+
+| Thema | Festlegung |
+|-------|------------|
+| **Speicherort** | **Supabase Storage** im **Lizenzportal-Projekt**, Bucket z. B. `tenant-branding`, Pfad z. B. `logos/{tenant_id}/logo.webp` (überschreiben bei neuem Upload). |
+| **Metadaten** | `tenants.logo_url` = öffentliche URL; manuelle URL-Eingabe optional **parallel** oder nach Upload nur noch Anzeige (UI-Entscheidung bei Implementierung). |
+| **Upload** | Client: max. **2 MB** Roh, **PNG/JPEG** → Skalierung max. **512 px** Breite → Kompression auf **150–300 KB** Ziel → **WebP** → Upload. |
+| **Server** | Optional: Storage-Policy + MIME-Check; Roh-Upload nur `image/png`, `image/jpeg`. |
+
+#### Platzhalter
+
+- Haupt-App: `public/logo_vico.png`, wenn `design.logo_url` leer (**bereits** `Logo.tsx`).
+- Portale/Arbeitszeit: gleicher Fallback prüfen/anpassen bei Umsetzung L4.
 
 ---
 
@@ -1353,7 +1404,7 @@ Details zu J1–J10 u. a.: **Vico.md §7** (Roadmap) und `docs/Noch-zu-erledig
 
 ### 11.12 Dokumentation, die bewusst in `docs/` bleibt
 
-- **Setup & Betrieb:** `Lizenzportal-Setup.md`, `Demokunde-Setup.md`, `Release-Checkliste.md`, `App-Updates-und-Versionierung.md`, `Supabase-Datenbank-Backup.md`, `Benutzer-loeschen-Supabase.md` (Auth-User löschen, FK-Migration)
+- **Setup & Betrieb:** `Lizenzportal-Setup.md`, `Demokunde-Setup.md`, `Release-Checkliste.md`, `App-Updates-und-Versionierung.md`, `Supabase-Datenbank-Backup.md`, `Benutzer-loeschen-Supabase.md` (Auth-User löschen, FK-Migration), `Roadmap-Weiterentwicklung-und-Mandanten.md` (Workflow, Mandanten-Onboarding-Phasen)
 - **Technik/Performance:** `Optimierungsplan.md`
 - **Migrationen / SQL-Hinweise:** wie in Repo dokumentiert (`supabase-*.sql`)
 - **Vertiefung Arbeitszeit:** `Arbeitszeit-Feature-Liste.md`, `Arbeitszeit-Soll-Urlaub-Planung.md`, `Arbeitszeit-Rechtliche-Compliance.md`

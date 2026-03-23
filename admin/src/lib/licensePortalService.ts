@@ -14,6 +14,8 @@ export type License = {
   max_storage_mb: number | null
   check_interval: 'on_start' | 'daily' | 'weekly'
   features: Record<string, boolean>
+  /** Erhöhen signalisiert Mandanten-Apps (Lizenz-API client_config_version) */
+  client_config_version?: number
   created_at: string
   updated_at: string
 }
@@ -140,6 +142,7 @@ export const fetchLicensesByTenant = async (tenantId: string): Promise<LicenseWi
       max_storage_mb,
       check_interval,
       features,
+      client_config_version,
       created_at,
       updated_at,
       license_models (id, name)
@@ -181,6 +184,32 @@ export const createLicense = async (payload: LicenseInsert): Promise<{ id: strin
     .single()
   if (error) return { error: error.message }
   return { id: data.id, license_number: data.license_number }
+}
+
+/**
+ * Erhöht `client_config_version` – Mandanten-Apps pollen die Lizenz-API und laden die Konfiguration neu.
+ */
+export const bumpClientConfigVersion = async (
+  licenseId: string
+): Promise<{ ok: boolean; client_config_version?: number; error?: string }> => {
+  const { data: row, error: selErr } = await supabase
+    .from('licenses')
+    .select('client_config_version')
+    .eq('id', licenseId)
+    .maybeSingle()
+  if (selErr) return { ok: false, error: selErr.message }
+  if (!row) return { ok: false, error: 'Lizenz nicht gefunden' }
+  const next =
+    Math.max(0, Math.floor(Number((row as { client_config_version?: number }).client_config_version) || 0)) + 1
+  const { error } = await supabase
+    .from('licenses')
+    .update({
+      client_config_version: next,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', licenseId)
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, client_config_version: next }
 }
 
 export const updateLicense = async (id: string, payload: LicenseUpdate): Promise<{ ok: boolean; error?: string }> => {

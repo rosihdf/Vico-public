@@ -1,6 +1,7 @@
 /**
  * Holt Design (app_name, etc.) aus der Lizenz-API.
- * Für Portal und Arbeitszeitenportal – nutzt VITE_LICENSE_API_URL und VITE_LICENSE_NUMBER.
+ * Für Portal und Arbeitszeitenportal – nutzt VITE_LICENSE_API_URL und optional VITE_LICENSE_NUMBER.
+ * Ohne Nummer: GET …/license (Host-Lookup per Browser-Origin), siehe Phase B / Netlify-README.
  */
 
 import type { AppVersionsMap } from './appVersions'
@@ -19,12 +20,17 @@ const DEFAULT_APP_NAME = 'AMRtech'
 export const fetchDesignFromLicense = async (
   apiUrl: string,
   licenseNumber: string,
-  options?: { timeoutMs?: number; apiKey?: string }
+  options?: { timeoutMs?: number; apiKey?: string; resolveByHost?: boolean }
 ): Promise<DesignFromLicense | null> => {
   const timeoutMs = options?.timeoutMs ?? 8_000
   const base = apiUrl.replace(/\/$/, '')
   const url = new URL(`${base}/license`)
-  url.searchParams.set('licenseNumber', licenseNumber.trim())
+  const num = licenseNumber.trim()
+  if (num) {
+    url.searchParams.set('licenseNumber', num)
+  } else if (!options?.resolveByHost) {
+    return null
+  }
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
@@ -81,12 +87,17 @@ export type LicenseFullResponse = LicenseApiPayload
 export const fetchLicenseFull = async (
   apiUrl: string,
   licenseNumber: string,
-  options?: { timeoutMs?: number; apiKey?: string }
+  options?: { timeoutMs?: number; apiKey?: string; resolveByHost?: boolean }
 ): Promise<LicenseFullResponse | null> => {
   const timeoutMs = options?.timeoutMs ?? 8_000
   const base = apiUrl.replace(/\/$/, '')
   const url = new URL(`${base}/license`)
-  url.searchParams.set('licenseNumber', licenseNumber.trim())
+  const num = licenseNumber.trim()
+  if (num) {
+    url.searchParams.set('licenseNumber', num)
+  } else if (!options?.resolveByHost) {
+    return null
+  }
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)

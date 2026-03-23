@@ -10,12 +10,21 @@
 
 **Vier Netlify-Sites (Haupt-App, Admin, Portal, Arbeitszeit-Portal).** Schnell **`docs/Netlify-README.md`**, ausführlich **`docs/Netlify-Vier-Apps.md`** (Base directory, Build, Publish, Env).
 
+### Staging (vor größeren Releases / Mandanten-Änderungen)
+
+**Doku:** `docs/Netlify-README.md` (Abschnitt **Staging**), `docs/Netlify-Vier-Apps.md` **§9.5**.
+
+- [ ] Staging-Sites oder Deploy Previews nutzen; **`VITE_LICENSE_API_URL`** zeigt auf **Staging-Admin**, nicht auf Produktion
+- [ ] Mandanten-**Staging-Supabase** (oder klar abgegrenzte Testdaten); keine Produktions-Keys in öffentlichen Branches
+- [ ] Lizenzportal: Test-Mandant mit passenden **`allowed_domains`** / Domains für Staging-Hosts (Host-Lookup) oder **`VITE_LICENSE_NUMBER`** in der Staging-Portal-Site
+- [ ] Smoke-Test: Login, Lizenz, eine Kernfunktion – erst danach Produktions-Deploy
+
 ### Version & Release Notes (pro deployter App)
 
 - [ ] **Haupt-App:** Root-`package.json` `version` + Root-**`release-notes.json`**
 - [ ] **Kundenportal:** `portal/package.json` + **`portal/release-notes.json`**
 - [ ] **Arbeitszeit-Portal:** `arbeitszeit-portal/package.json` + **`arbeitszeit-portal/release-notes.json`**
-- [ ] **Admin:** `admin/package.json` + **`admin/release-notes.json`**
+- [ ] **Admin:** `admin/package.json` + **`admin/release-notes.json`** (Versionen müssen übereinstimmen)
 - [ ] Nur die Apps bauen/deployen, die sich geändert haben (getrennte Sites)
 
 ### Lizenz-Architektur

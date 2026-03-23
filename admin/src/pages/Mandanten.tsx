@@ -151,26 +151,26 @@ const Mandanten = () => {
   }
 
   return (
-    <div className="max-w-4xl">
+    <div className="w-full max-w-4xl min-w-0">
       {storageSummary && (
         <div
           className="mb-6 p-4 rounded-xl border border-slate-200 bg-slate-50/50"
           role="status"
           aria-label="Speicher-Kontingent"
         >
-          <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 mb-2">
             <h3 className="text-sm font-semibold text-slate-700">Speicher-Kontingent</h3>
             {!editingStorageTotal ? (
               <button
                 type="button"
                 onClick={handleEditStorageTotal}
-                className="text-xs font-medium text-vico-primary hover:underline"
+                className="text-xs font-medium text-vico-primary hover:underline self-start sm:self-auto"
                 aria-label="Gesamtspeicher anpassen"
               >
                 Gesamtspeicher anpassen
               </button>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <input
                   type="number"
                   min={0}
@@ -218,11 +218,11 @@ const Mandanten = () => {
           </p>
         </div>
       )}
-      <div className="flex items-center justify-between gap-4 mb-6">
-        <h2 className="text-xl font-bold text-slate-800">Mandanten</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 mb-6">
+        <h2 className="text-xl font-bold text-slate-800 shrink-0">Mandanten</h2>
         <Link
           to="/mandanten/neu"
-          className="px-4 py-2 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover transition-colors"
+          className="inline-flex justify-center px-4 py-2.5 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover transition-colors min-h-[44px] items-center sm:min-h-0 sm:py-2 w-full sm:w-auto"
           aria-label="Neuen Mandanten anlegen"
           onMouseEnter={prefetchMandantForm}
         >
@@ -268,13 +268,13 @@ const Mandanten = () => {
             return (
               <div
                 key={t.id}
-                className={`p-4 rounded-xl border flex items-center justify-between gap-4 ${primaryLicense && expired ? 'bg-red-50/50 border-red-200' : 'bg-white border-slate-200'}`}
+                className={`p-4 rounded-xl border flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between lg:gap-4 ${primaryLicense && expired ? 'bg-red-50/50 border-red-200' : 'bg-white border-slate-200'}`}
                 onMouseEnter={prefetchMandantForm}
               >
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-medium text-slate-800 truncate">{t.name}</h3>
-                  <p className="text-sm text-slate-500 truncate">
-                    {t.app_domain || '–'} · {t.portal_domain || '–'} · {t.arbeitszeitenportal_domain || '–'}
+                <div className="min-w-0 flex-1 w-full">
+                  <h3 className="font-medium text-slate-800 break-words">{t.name}</h3>
+                  <p className="text-sm text-slate-500 break-words leading-relaxed">
+                    {[t.app_domain, t.portal_domain, t.arbeitszeitenportal_domain].map((d) => d || '–').join(' · ')}
                   </p>
                   {primaryLicense ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -319,12 +319,12 @@ const Mandanten = () => {
                     )
                   })()}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap gap-2 shrink-0 w-full lg:w-auto lg:justify-end border-t border-slate-100 pt-3 lg:border-t-0 lg:pt-0">
                   <button
                     type="button"
                     onClick={() => handleExport(t)}
                     disabled={exportingId === t.id}
-                    className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50"
+                    className="flex-1 min-w-[5rem] sm:flex-none px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-50 min-h-[44px] sm:min-h-0 sm:py-1.5"
                     title="Daten exportieren (JSON, z.B. bei Kündigung)"
                     aria-label="Daten exportieren"
                   >
@@ -332,7 +332,7 @@ const Mandanten = () => {
                   </button>
                   <Link
                     to={`/mandanten/${t.id}`}
-                    className="px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                    className="flex-1 min-w-[5rem] sm:flex-none text-center px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors min-h-[44px] sm:min-h-0 sm:py-1.5 flex items-center justify-center"
                   >
                     Bearbeiten
                   </Link>
@@ -343,7 +343,7 @@ const Mandanten = () => {
                         ? { openCreateLicense: true }
                         : { editLicenseId: primaryLicense.id }
                     }
-                    className="px-3 py-1.5 text-sm font-medium text-vico-primary hover:bg-vico-primary/10 rounded-lg transition-colors"
+                    className="flex-1 min-w-[5rem] sm:flex-none text-center px-3 py-2 text-sm font-medium text-vico-primary hover:bg-vico-primary/10 rounded-lg transition-colors min-h-[44px] sm:min-h-0 sm:py-1.5 flex items-center justify-center"
                     aria-label={tenantLicenses.length === 0 ? 'Lizenz anlegen' : 'Lizenz bearbeiten'}
                   >
                     {tenantLicenses.length === 0 ? 'Lizenz anlegen' : 'Lizenz bearbeiten'}
@@ -352,7 +352,7 @@ const Mandanten = () => {
                     type="button"
                     onClick={() => handleDelete(t)}
                     disabled={deletingId === t.id}
-                    className="px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                    className="flex-1 min-w-[5rem] sm:flex-none px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50 min-h-[44px] sm:min-h-0 sm:py-1.5"
                   >
                     {deletingId === t.id ? 'Löschen…' : 'Löschen'}
                   </button>

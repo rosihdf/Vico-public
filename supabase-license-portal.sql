@@ -203,6 +203,17 @@ begin
   end if;
 end $$;
 
+-- client_config_version: Hochzählen im Admin signalisiert Mandanten-Apps (Polling der Lizenz-API)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'licenses' and column_name = 'client_config_version'
+  ) then
+    alter table public.licenses add column client_config_version int not null default 0 check (client_config_version >= 0);
+  end if;
+end $$;
+
 alter table public.licenses enable row level security;
 
 do $$ declare r record; begin

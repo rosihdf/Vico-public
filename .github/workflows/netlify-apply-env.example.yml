@@ -1,0 +1,26 @@
+# Umbenennen nach .github/workflows/netlify-apply-env.yml und anpassen.
+# Die JSON-Datei mit Secrets sollte NICHT öffentlich im Repo liegen.
+
+name: Netlify Mandanten-Env (manuell)
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_path:
+        description: 'Pfad zur deployment.json im Runner-Arbeitsverzeichnis'
+        required: true
+        default: 'configs/mandant.example.json'
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Netlify Env anwenden
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_ACCOUNT_ID: ${{ secrets.NETLIFY_ACCOUNT_ID }}
+        run: node scripts/netlify-apply-tenant-env.mjs "${{ inputs.config_path }}" --dry-run

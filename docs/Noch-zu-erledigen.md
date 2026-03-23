@@ -217,7 +217,7 @@ In der Haupt-App wurde `Arbeitszeit.tsx` dauerhaft bereinigt (siehe `docs/Arbeit
 
 ## 6. Roadmap Vico (A–J, Lizenzportal) – noch offen
 
-Aus **Vico.md** §7.1 – Punkte **ohne** ✅ (bereits erledigt):
+Aus **Vico.md** **§7.2** (offene Arbeiten) – ergänzend zu lokalen Notizen; maßgeblich ist immer die aktuelle **Roadmap in `Vico.md`**:
 
 | Phase | Nr. | Offener Punkt | Aufwand |
 |-------|-----|----------------|---------|

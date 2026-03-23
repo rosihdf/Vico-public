@@ -42,7 +42,7 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
   const load = useCallback(async () => {
     const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
     const licenseNumber = (import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()
-    if (!apiUrl || !licenseNumber) {
+    if (!apiUrl) {
       setAppName(getDefaultAppName())
       setLogoUrl(null)
       setAppVersionInfo(null)
@@ -54,6 +54,7 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
     const apiKey = (import.meta.env.VITE_LICENSE_API_KEY ?? '').trim()
     const full = await fetchLicenseFull(apiUrl, licenseNumber, {
       apiKey: apiKey || undefined,
+      resolveByHost: !licenseNumber,
     })
     if (!full?.design) {
       setAppName(getDefaultAppName())

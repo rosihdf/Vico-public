@@ -67,14 +67,14 @@ Dann wird nach Signup direkt eine Session erstellt, kein E-Mail-Link nötig.
 
 ## 7. Lizenz-API (für Mandanten-App & Portale)
 
-Die Haupt-App und die **Portale** rufen die Lizenz per HTTP ab (`GET …/license?licenseNumber=…`). Es gibt zwei übliche Varianten – **wähle eine** und halte `VITE_LICENSE_API_URL` konsistent:
+Die Haupt-App und die **Portale** rufen die Lizenz per HTTP ab: `GET …/license?licenseNumber=…` **oder** (Portale) `GET …/license` **ohne** Query – dann **Host-Lookup** per Browser-`Origin` (siehe `docs/Netlify-README.md`). Es gibt zwei übliche Server-Varianten – **wähle eine** und halte `VITE_LICENSE_API_URL` konsistent:
 
 | Variante | `VITE_LICENSE_API_URL` (Beispiel) | Server-Geheimnis |
 |----------|-----------------------------------|------------------|
 | **A) Netlify Functions** (Admin-Site) | `https://<admin-site>/api` | `SUPABASE_LICENSE_PORTAL_*` nur in **Netlify Env der Admin-Site** (Service Role) |
 | **B) Supabase Edge Functions** | `https://<ref>.supabase.co/functions/v1` | Von Supabase für die Functions gesetzt |
 
-**Empfehlung im Repo:** Variante **A** – siehe `admin/netlify.toml` (Redirects `/api/license` → Function) und **`docs/Netlify-Vier-Apps.md`** (§9, §11).
+**Empfehlung im Repo:** Variante **A** – siehe `admin/netlify.toml` (Redirects `/api/license` → Function) und **`docs/Netlify-Vier-Apps.md`** (§9, §11). **Env per API/Skript:** **`docs/Netlify-Mandanten-Env-Skript.md`**.
 
 ### Edge Functions deployen (Variante B)
 
@@ -114,6 +114,28 @@ Im **Lizenz-Admin** unter **Mandant bearbeiten** (neben App-Name und Primärfarb
 - Ohne Logo: Standard `public/logo_vico.png` bzw. bisheriges Platzhalter-Icon im Kundenportal.
 
 **CORS:** Wird das Logo von einer anderen Domain geladen als die App, muss der Server ggf. `Access-Control-Allow-Origin` setzen (bei reinem `<img src="…">` meist unkritisch; bei Canvas/Export beachten).
+
+### Haupt-App: Login, neue Geräte, Konten
+
+| Thema | Verhalten |
+|-------|-----------|
+| **Neues Gerät / leerer Browser** | Nach erfolgreichem Login holt die App die Lizenznummer in dieser Reihenfolge: **`public.license.license_number`** (Mandanten-Supabase, RPC `get_license_number`), optional **`VITE_LICENSE_NUMBER`** (Build-Env), sonst **Lizenz-API-Host-Lookup** (`GET …/license` ohne Query, Browser-`Origin` wie bei den Portalen). Die API-Antwort enthält `license_number`, damit die Nummer lokal gespeichert werden kann. |
+| **Mandanten-DB** | Fehlt die Nummer in `public.license`, schreibt ein **Admin** sie nach Host-Lookup beim ersten Login mit (RPC `set_license_number`). |
+| **Manuelle Aktivierung** | Nur Fallback: Screen **Lizenz aktivieren** (`/aktivierung`), wenn weder DB, Host-Lookup noch Env greifen (z. B. lokaler Test ohne Domain). |
+| **Konten** | **Keine Selbstregistrierung** an der Login-Seite der Haupt-App. Alle Konten legt der **Mandanten-Admin** an (Benutzerverwaltung / Einladung). In **Supabase Auth** des Mandantenprojekts: **Email Signup** deaktivieren, wenn nur noch Admin-angelegte Nutzer erlaubt sein sollen. |
+
+### Lizenzänderung an Mandanten-Apps signalisieren (Push)
+
+Mandanten-Apps nutzen für die Lizenz ein **Intervall** (`check_interval`: täglich/wöchentlich). Wenn du Features, Design oder Limits im Lizenzportal änderst, sollen Nutzer **nicht** auf dieses Intervall warten und **keine** manuelle „Lizenz neu laden“-Aktion in der Haupt-App brauchen:
+
+| Bestandteil | Beschreibung |
+|-------------|--------------|
+| **DB** | Spalte `licenses.client_config_version` (nicht negativ, Start bei 0). Migration in `supabase-license-portal.sql` – bei bestehenden Projekten den neuen Block im SQL Editor ausführen. |
+| **Lizenz-API** | Liefert `license.client_config_version` in der JSON-Antwort (Netlify Function `admin/netlify/functions/license.ts` und/oder Edge `supabase-license-portal/supabase/functions/license/index.ts`). |
+| **Admin** | **Mandant bearbeiten** → Bereich **Deployment / Netlify** → **Jetzt signalisieren** erhöht die Version um 1 für die gewählte Lizenz. |
+| **Haupt-App** | Vergleicht die API-Version mit dem lokalen Cache: **Poll ca. alle 90 s**, bei **Tab-Fokus**, und **einmal kurz nach App-Start** – bei Abweichung → vollständiger Lizenz-Refresh (`force`). |
+
+**Hinweis:** Es gibt keinen echten Server-Push an alle Geräte; die Apps **holen** die aktuelle Lizenz über die bestehende URL. Typische Verzögerung bis zur Anzeige: **1–2 Minuten**, oft schneller bei **sichtbarem Tab** oder **neuem Laden** der Seite. Nach Schema-Änderung: Lizenzportal-SQL migrieren, Functions/Admin neu deployen, Haupt-App neu bauen.
 
 ### Hinweise vor Release
 

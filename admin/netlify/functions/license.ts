@@ -1,5 +1,9 @@
 import type { Handler, HandlerEvent } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
+import {
+  extractHostnameFromOriginOrReferer,
+  tenantMatchesRequestHost,
+} from '../../../shared/licenseHostLookup'
 
 const APP_VERSION_KEYS = ['main', 'kundenportal', 'arbeitszeit_portal', 'admin'] as const
 
@@ -75,11 +79,14 @@ const CORS_HEADERS: Record<string, string> = {
 
 const jsonHeaders = (extra?: Record<string, string>) => ({
   'Content-Type': 'application/json',
+  'Cache-Control': 'private, no-store',
   ...CORS_HEADERS,
   ...extra,
 })
 
 type LicenseResponse = {
+  /** Pro Mandant; u. a. für neue Geräte nach Login (Host-Lookup ohne gespeicherte Nummer) */
+  license_number?: string
   license: {
     tier: string
     valid_until: string | null
@@ -93,6 +100,8 @@ type LicenseResponse = {
     expired: boolean
     read_only: boolean
     is_trial: boolean
+    /** Erhöht im Lizenzportal-Admin → Mandanten-Apps erkennen Änderung per Polling */
+    client_config_version: number
   }
   design: {
     app_name: string
@@ -106,117 +115,78 @@ type LicenseResponse = {
   appVersions?: Record<string, AppVersionEntry>
 }
 
-const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: number; body: string; headers?: Record<string, string> }> => {
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, body: '', headers: CORS_HEADERS }
-  }
+const LICENSE_WITH_TENANT_SELECT = `
+  id,
+  tenant_id,
+  license_number,
+  tier,
+  valid_until,
+  is_trial,
+  grace_period_days,
+  max_users,
+  max_customers,
+  max_storage_mb,
+  check_interval,
+  features,
+  client_config_version,
+  tenants (
+    id,
+    name,
+    app_name,
+    logo_url,
+    primary_color,
+    secondary_color,
+    favicon_url,
+    allowed_domains,
+    impressum_company_name,
+    impressum_address,
+    impressum_contact,
+    impressum_represented_by,
+    impressum_register,
+    impressum_vat_id,
+    datenschutz_responsible,
+    datenschutz_contact_email,
+    datenschutz_dsb_email,
+    app_versions
+  )
+`
 
-  if (event.httpMethod !== 'GET') {
-    return {
-      statusCode: 405,
-      headers: jsonHeaders(),
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    }
-  }
+const getRequestHostFromEvent = (event: HandlerEvent): string => {
+  const origin = event.headers?.origin ?? event.headers?.Origin ?? ''
+  const referer = event.headers?.referer ?? event.headers?.Referer ?? ''
+  const headerForHost = origin.trim() || referer.trim()
+  return extractHostnameFromOriginOrReferer(headerForHost)
+}
 
-  const licenseNumber = event.queryStringParameters?.licenseNumber?.trim()
-  if (!licenseNumber) {
-    return {
-      statusCode: 400,
-      headers: jsonHeaders(),
-      body: JSON.stringify({ error: 'licenseNumber required' }),
-    }
-  }
-
-  const url = process.env.SUPABASE_LICENSE_PORTAL_URL
-  const key = process.env.SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY
-  if (!url || !key) {
-    return {
-      statusCode: 500,
-      headers: jsonHeaders(),
-      body: JSON.stringify({ error: 'License portal not configured' }),
-    }
-  }
-
-  const supabase = createClient(url, key)
-
-  const [{ data: licenseRow, error: licenseError }, { data: globalAppCfg }] = await Promise.all([
-    supabase
-      .from('licenses')
-      .select(`
-      id,
-      tenant_id,
-      tier,
-      valid_until,
-      is_trial,
-      grace_period_days,
-      max_users,
-      max_customers,
-      check_interval,
-      features,
-      tenants (
-        id,
-        name,
-        app_name,
-        logo_url,
-        primary_color,
-        secondary_color,
-        favicon_url,
-        allowed_domains,
-        impressum_company_name,
-        impressum_address,
-        impressum_contact,
-        impressum_represented_by,
-        impressum_register,
-        impressum_vat_id,
-        datenschutz_responsible,
-        datenschutz_contact_email,
-        datenschutz_dsb_email,
-        app_versions
-      )
-    `)
-      .eq('license_number', licenseNumber)
-      .maybeSingle(),
-    supabase.from('platform_config').select('value').eq('key', 'default_app_versions').maybeSingle(),
-  ])
-
-  if (licenseError || !licenseRow) {
-    return {
-      statusCode: 404,
-      headers: jsonHeaders(),
-      body: JSON.stringify({ error: 'License not found' }),
-    }
-  }
-
-  const tenant = licenseRow.tenants as Record<string, unknown> | null
+const assertOriginAllowedForTenant = (event: HandlerEvent, tenant: Record<string, unknown> | null): boolean => {
   const allowedDomains = tenant?.allowed_domains as string[] | null | undefined
-  if (Array.isArray(allowedDomains) && allowedDomains.length > 0) {
-    const origin = event.headers?.origin ?? event.headers?.Origin ?? event.headers?.referer ?? event.headers?.Referer ?? ''
-    let requestHost = ''
-    try {
-      requestHost = origin ? new URL(origin).host : ''
-    } catch {
-      requestHost = ''
-    }
-    const isAllowed = requestHost && allowedDomains.some((d) => {
-      const domain = String(d).trim().toLowerCase()
-      if (!domain) return false
-      if (domain.startsWith('*.')) {
-        const suffix = domain.slice(1)
-        return requestHost === suffix || requestHost.endsWith(suffix)
-      }
-      return requestHost === domain
-    })
-    if (!isAllowed) {
-      return {
-        statusCode: 403,
-        headers: jsonHeaders(),
-        body: JSON.stringify({ error: 'Domain nicht für diese Lizenz freigegeben' }),
-      }
-    }
-  }
+  if (!Array.isArray(allowedDomains) || allowedDomains.length === 0) return true
 
-  const validUntil = licenseRow.valid_until ? new Date(licenseRow.valid_until) : null
+  const origin = event.headers?.origin ?? event.headers?.Origin ?? event.headers?.referer ?? event.headers?.Referer ?? ''
+  let requestHost = ''
+  try {
+    requestHost = origin ? new URL(origin.trim()).host : ''
+  } catch {
+    requestHost = ''
+  }
+  if (!requestHost) return false
+
+  const isAllowed = allowedDomains.some((d) => {
+    const domain = String(d).trim().toLowerCase()
+    if (!domain) return false
+    if (domain.startsWith('*.')) {
+      const suffix = domain.slice(1)
+      return requestHost === suffix || requestHost.endsWith(suffix)
+    }
+    return requestHost === domain
+  })
+  return Boolean(isAllowed)
+}
+
+const buildLicenseJson = (licenseRow: Record<string, unknown>, globalAppCfg: { value?: unknown } | null): LicenseResponse => {
+  const tenant = licenseRow.tenants as Record<string, unknown> | null
+
+  const validUntil = licenseRow.valid_until ? new Date(String(licenseRow.valid_until)) : null
   const isExpired = validUntil !== null && validUntil < new Date()
   const graceDays = Math.max(0, Number(licenseRow.grace_period_days) || 0)
   const graceEnd = validUntil && graceDays > 0 ? new Date(validUntil.getTime()) : null
@@ -224,20 +194,26 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
   const withinGrace = isExpired && graceEnd !== null && graceEnd >= new Date()
   const readOnly = withinGrace
 
+  const clientConfigVersion = Math.max(0, Math.floor(Number(licenseRow.client_config_version) || 0))
+  const licenseNumberRaw =
+    licenseRow.license_number != null ? String(licenseRow.license_number).trim() : ''
+
   const response: LicenseResponse = {
+    ...(licenseNumberRaw ? { license_number: licenseNumberRaw } : {}),
     license: {
-      tier: licenseRow.tier ?? 'professional',
-      valid_until: licenseRow.valid_until,
+      tier: (licenseRow.tier as string) ?? 'professional',
+      valid_until: licenseRow.valid_until as string | null,
       grace_period_days: graceDays,
-      max_users: licenseRow.max_users,
-      max_customers: licenseRow.max_customers,
-      max_storage_mb: licenseRow.max_storage_mb ?? null,
+      max_users: licenseRow.max_users as number | null,
+      max_customers: licenseRow.max_customers as number | null,
+      max_storage_mb: (licenseRow.max_storage_mb as number | null) ?? null,
       check_interval: (licenseRow.check_interval as 'on_start' | 'daily' | 'weekly') ?? 'daily',
       features: (licenseRow.features as Record<string, boolean>) ?? {},
       valid: !isExpired || withinGrace,
       expired: isExpired,
       read_only: readOnly,
       is_trial: Boolean(licenseRow.is_trial),
+      client_config_version: clientConfigVersion,
     },
     design: {
       app_name: (tenant?.app_name as string) ?? 'AMRtech',
@@ -272,10 +248,144 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
     response.appVersions = appVersions
   }
 
+  return response
+}
+
+const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: number; body: string; headers?: Record<string, string> }> => {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, body: '', headers: { ...CORS_HEADERS, 'Cache-Control': 'private, no-store' } }
+  }
+
+  if (event.httpMethod !== 'GET') {
+    return {
+      statusCode: 405,
+      headers: jsonHeaders(),
+      body: JSON.stringify({ error: 'Method not allowed' }),
+    }
+  }
+
+  const licenseNumber = event.queryStringParameters?.licenseNumber?.trim()
+
+  const url = process.env.SUPABASE_LICENSE_PORTAL_URL
+  const key = process.env.SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY
+  if (!url || !key) {
+    return {
+      statusCode: 500,
+      headers: jsonHeaders(),
+      body: JSON.stringify({ error: 'License portal not configured' }),
+    }
+  }
+
+  const supabase = createClient(url, key)
+
+  const requestHost = getRequestHostFromEvent(event)
+
+  let licenseRow: Record<string, unknown> | null = null
+  let globalAppCfg: { value?: unknown } | null = null
+
+  if (licenseNumber) {
+    const [{ data: licRow, error: licenseError }, { data: gac }] = await Promise.all([
+      supabase.from('licenses').select(LICENSE_WITH_TENANT_SELECT).eq('license_number', licenseNumber).maybeSingle(),
+      supabase.from('platform_config').select('value').eq('key', 'default_app_versions').maybeSingle(),
+    ])
+    globalAppCfg = gac
+    if (licenseError || !licRow) {
+      return {
+        statusCode: 404,
+        headers: jsonHeaders(),
+        body: JSON.stringify({ error: 'License not found' }),
+      }
+    }
+    licenseRow = licRow as Record<string, unknown>
+  } else {
+    if (!requestHost) {
+      return {
+        statusCode: 400,
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          error:
+            'licenseNumber fehlt: Host-Lookup erfordert einen Browser-Request mit Origin/Referer (oder ?licenseNumber= für Tests)',
+        }),
+      }
+    }
+
+    const { data: tenantRows, error: tenantErr } = await supabase
+      .from('tenants')
+      .select('id, portal_domain, arbeitszeitenportal_domain, app_domain, allowed_domains')
+
+    if (tenantErr) {
+      console.error('license host lookup tenants', tenantErr)
+      return {
+        statusCode: 500,
+        headers: jsonHeaders(),
+        body: JSON.stringify({ error: 'Host-Lookup fehlgeschlagen' }),
+      }
+    }
+
+    const matches = (tenantRows ?? []).filter((t) => tenantMatchesRequestHost(t, requestHost))
+    if (matches.length > 1) {
+      return {
+        statusCode: 409,
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          error: 'Mehrere Mandanten für diesen Host – Domains in portal_domain / allowed_domains prüfen',
+        }),
+      }
+    }
+    if (matches.length === 0) {
+      return {
+        statusCode: 404,
+        headers: jsonHeaders(),
+        body: JSON.stringify({ error: 'License not found' }),
+      }
+    }
+
+    const tenantId = matches[0].id as string
+
+    const [{ data: licRow, error: licErr }, { data: gac }] = await Promise.all([
+      supabase
+        .from('licenses')
+        .select(LICENSE_WITH_TENANT_SELECT)
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from('platform_config').select('value').eq('key', 'default_app_versions').maybeSingle(),
+    ])
+    globalAppCfg = gac
+    if (licErr || !licRow) {
+      return {
+        statusCode: 404,
+        headers: jsonHeaders(),
+        body: JSON.stringify({ error: 'License not found' }),
+      }
+    }
+    licenseRow = licRow as Record<string, unknown>
+  }
+
+  if (!licenseRow) {
+    return {
+      statusCode: 404,
+      headers: jsonHeaders(),
+      body: JSON.stringify({ error: 'License not found' }),
+    }
+  }
+  const tenant = licenseRow.tenants as Record<string, unknown> | null
+
+  if (!assertOriginAllowedForTenant(event, tenant)) {
+    return {
+      statusCode: 403,
+      headers: jsonHeaders(),
+      body: JSON.stringify({ error: 'Domain nicht für diese Lizenz freigegeben' }),
+    }
+  }
+
+  const body = buildLicenseJson(licenseRow, globalAppCfg)
+
   return {
     statusCode: 200,
     headers: jsonHeaders(),
-    body: JSON.stringify(response),
+    body: JSON.stringify(body),
   }
 }
 
