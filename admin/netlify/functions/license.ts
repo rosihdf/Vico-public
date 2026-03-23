@@ -280,8 +280,8 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
 
   const requestHost = getRequestHostFromEvent(event)
 
-  let licenseRow: Record<string, unknown> | null = null
-  let globalAppCfg: { value?: unknown } | null = null
+  let licenseRow: Record<string, unknown> | null
+  let globalAppCfg: { value?: unknown } | null
 
   if (licenseNumber) {
     const [{ data: licRow, error: licenseError }, { data: gac }] = await Promise.all([

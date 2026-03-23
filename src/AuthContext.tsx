@@ -103,7 +103,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [])
 
   /**
-   * Konto anlegen (Supabase `signUp`) – nur für **interne Admin-Flows** (z. B. Benutzerverwaltung).
+   * Konto anlegen (Supabase `signUp`) – nur für **interne Admin-Flows** (z. B. Benutzerverwaltung).
    * Öffentliche Selbstregistrierung am Login ist deaktiviert; Konten vergibt der Mandanten-Admin.
    */
   const signUp = useCallback(async (email: string, password: string) => {

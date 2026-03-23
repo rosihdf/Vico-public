@@ -137,7 +137,7 @@ const Urlaub = () => {
     ])
     setBalance(snap)
     setExtras(ex)
-  }, [filterUserId, currentUserId, filterYear, isAdmin])
+  }, [filterUserId, currentUserId, filterYear])
 
   useEffect(() => {
     void refreshBalanceAndExtras()

@@ -62,7 +62,7 @@ const AktivierungsScreen = () => {
         </h2>
         <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
           Nur nötig, wenn die Lizenz weder in der Datenbank noch per Host-Zuordnung ermittelt werden konnte
-          (z. B. lokaler Test). Geben Sie die Lizenznummer ein – die Trennstriche werden automatisch gesetzt.
+          (z. B. lokaler Test). Geben Sie die Lizenznummer ein – die Trennstriche werden automatisch gesetzt.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
