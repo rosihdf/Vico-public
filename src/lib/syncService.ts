@@ -162,7 +162,7 @@ export const pullFromServer = async (): Promise<PullMetrics> => {
     supabase
       .from('profiles')
       .select(
-        'id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, dashboard_layout'
+        'id, email, first_name, last_name, role, created_at, updated_at, hours_per_day, employment_start_date, employment_end_date, dashboard_layout, maintenance_reminder_email_enabled, maintenance_reminder_email_frequency, maintenance_reminder_email_last_sent_at'
       )
       .order('email', { nullsFirst: false }),
     fetchLicenseStatus().catch(() => null),

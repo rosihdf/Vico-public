@@ -1,0 +1,6 @@
+# Eine PostgreSQL-Connection-URI pro Zeile (Session Pooler empfohlen).
+# Kopie nach configs/mandanten-db-urls.local.txt und echte URLs eintragen.
+# Diese Datei ist in .gitignore – niemals committen.
+#
+# Beispiel (Platzhalter):
+# postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:5432/postgres

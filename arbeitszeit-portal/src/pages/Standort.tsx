@@ -80,8 +80,8 @@ const Standort = () => {
       <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4 dark:bg-amber-950/30 dark:text-amber-100 dark:border-amber-800">
         <strong className="font-semibold">Beta &amp; Recht:</strong> Vor produktivem Einsatz die interne Checkliste in{' '}
         <code className="text-[0.8rem] rounded px-1 py-0.5 bg-slate-100 dark:bg-slate-900/80 text-slate-800 dark:text-slate-200">
-          docs/Noch-zu-erledigen.md
-        </code> §3a abarbeiten; Lizenz-Feature{' '}
+          docs/Standort-Abfrage-Arbeitszeitenportal.md
+        </code> (Checkliste); Lizenz-Feature{' '}
         <strong>standortabfrage</strong> nur bewusst aktivieren.
       </p>
       <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">

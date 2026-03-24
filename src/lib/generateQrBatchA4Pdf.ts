@@ -4,7 +4,7 @@ import { getObjectDeepLinkUrl } from './objectQrUrl'
 
 export type QrBatchPreset = 'mini' | 'mid' | 'max'
 
-/** Zellmaße orientiert an HERMA/Avery-Referenz (siehe docs/Noch-zu-erledigen.md, A4-Referenzetiketten). */
+/** Zellmaße orientiert an HERMA/Avery-Referenz (siehe Vico.md §7.6.5). */
 const PRESET_MM: Record<QrBatchPreset, { cellW: number; cellH: number; description: string }> = {
   mini: { cellW: 48.3, cellH: 25.4, description: 'Mini (~48,3×25,4 mm)' },
   mid: { cellW: 52.5, cellH: 29.7, description: 'Mittel (~52,5×29,7 mm)' },

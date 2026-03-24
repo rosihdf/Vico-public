@@ -51,6 +51,22 @@ export const calcSollMinutesForYear = async (
   return typeof data === 'number' ? data : null
 }
 
+/** Soll-Minuten für Datumsbereich (z. B. 1.1. bis heute – kein volles Jahres-Soll). */
+export const calcSollMinutesForDateRange = async (
+  userId: string,
+  fromDate: string,
+  toDate: string
+): Promise<number | null> => {
+  if (!isOnline()) return null
+  const { data, error } = await supabase.rpc('calc_soll_minutes_for_date_range', {
+    p_user_id: userId,
+    p_from: fromDate,
+    p_to: toDate,
+  })
+  if (error || data == null) return null
+  return typeof data === 'number' ? data : null
+}
+
 /** Summe Arbeitsminuten (ohne Pausen) für User in Datumsbereich. */
 export const getWorkMinutesForUserInRange = async (
   userId: string,

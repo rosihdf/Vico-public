@@ -371,12 +371,18 @@ const sortByUpdatedAtDesc = <T extends { updated_at: string }>(rows: T[]): T[] =
 export const buildRecentEditsFromCache = (options: {
   includeMaster: boolean
   includeOrders: boolean
+  scope?: 'all' | 'mine'
+  userId?: string
 }): DashboardRecentEdit[] => {
+  const scope = options.scope ?? 'all'
+  const uid = options.userId
   const perTable = 10
   const maxTotal = 10
   const raw: DashboardRecentEdit[] = []
 
-  if (options.includeMaster) {
+  const includeMaster = options.includeMaster && scope !== 'mine'
+
+  if (includeMaster) {
     const customers = sortByUpdatedAtDesc(getCachedCustomers() as Customer[]).slice(0, perTable)
     for (const c of customers) {
       raw.push({
@@ -416,8 +422,11 @@ export const buildRecentEditsFromCache = (options: {
   }
 
   if (options.includeOrders) {
-    const orders = sortByUpdatedAtDesc(getCachedOrders() as Order[]).slice(0, perTable)
-    for (const o of orders) {
+    let orders = sortByUpdatedAtDesc(getCachedOrders() as Order[])
+    if (scope === 'mine' && uid) {
+      orders = orders.filter((o) => o.assigned_to === uid || o.created_by === uid)
+    }
+    for (const o of orders.slice(0, perTable)) {
       const typeLabel = ORDER_TYPE_LABELS_SHORT[o.order_type] ?? o.order_type
       raw.push({
         key: `order-${o.id}`,
@@ -437,12 +446,17 @@ export const buildRecentEditsFromCache = (options: {
  * Liefert die zuletzt geänderten Stammdaten/Aufträge, die der Nutzer per RLS sehen darf.
  * @param options.includeMaster – Kunden, BVs, Objekte (Menü „Kunden“)
  * @param options.includeOrders – Aufträge (Menü „Auftrag“)
+ * @param options.scope – „mine“: nur Aufträge mit assigned_to/created_by = userId (Stammdaten entfallen)
  */
 export const fetchRecentEditsForDashboard = async (options: {
   includeMaster: boolean
   includeOrders: boolean
+  scope?: 'all' | 'mine'
+  userId?: string
 }): Promise<DashboardRecentEdit[]> => {
   if (!isOnline()) return buildRecentEditsFromCache(options)
+  const scope = options.scope ?? 'all'
+  const uid = options.userId
   const perTable = 10
   const maxTotal = 10
   /** Supabase-Query-Builder sind thenable, aber kein `Promise` im TS-Sinne. */
@@ -452,7 +466,9 @@ export const fetchRecentEditsForDashboard = async (options: {
   let fetchObjects = false
   let fetchOrders = false
 
-  if (options.includeMaster) {
+  const includeMaster = options.includeMaster && scope !== 'mine'
+
+  if (includeMaster) {
     fetchCustomers = true
     fetchBvs = true
     fetchObjects = true
@@ -472,13 +488,15 @@ export const fetchRecentEditsForDashboard = async (options: {
   }
   if (options.includeOrders) {
     fetchOrders = true
-    promises.push(
-      supabase
-        .from('orders')
-        .select('id,customer_id,bv_id,order_date,order_type,status,updated_at')
-        .order('updated_at', { ascending: false })
-        .limit(perTable)
-    )
+    let orderQ = supabase
+      .from('orders')
+      .select('id,customer_id,bv_id,order_date,order_type,status,updated_at,assigned_to,created_by')
+      .order('updated_at', { ascending: false })
+      .limit(perTable)
+    if (scope === 'mine' && uid) {
+      orderQ = orderQ.or(`assigned_to.eq.${uid},created_by.eq.${uid}`)
+    }
+    promises.push(orderQ)
   }
   if (promises.length === 0) return []
 

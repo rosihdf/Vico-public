@@ -23,8 +23,9 @@ export type Profile = {
   role: ProfileRole
   created_at?: string
   updated_at?: string
-  soll_minutes_per_month?: number | null
-  soll_minutes_per_week?: number | null
+  hours_per_day?: number | null
+  employment_start_date?: string | null
+  employment_end_date?: string | null
   vacation_days_per_year?: number | null
   team_id?: string | null
   team_name?: string | null
@@ -36,6 +37,10 @@ export type Profile = {
   dashboard_layout?: DashboardLayoutStored | null
   /** Hell / Dunkel / System – Sync mit Portalen */
   theme_preference?: string | null
+  /** E-Mail-Digest zu fälligen Wartungen (Roadmap J1) */
+  maintenance_reminder_email_enabled?: boolean
+  maintenance_reminder_email_frequency?: 'daily' | 'weekly'
+  maintenance_reminder_email_last_sent_at?: string | null
 }
 
 export type Team = {
@@ -55,7 +60,7 @@ export const fetchMyProfile = async (userId: string): Promise<Profile | null> =>
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, vacation_days_per_year, team_id, gps_consent_at, gps_consent_revoked_at, standortabfrage_consent_at, standortabfrage_consent_revoked_at, dashboard_layout, theme_preference'
+      'id, email, first_name, last_name, role, created_at, updated_at, hours_per_day, employment_start_date, employment_end_date, vacation_days_per_year, team_id, gps_consent_at, gps_consent_revoked_at, standortabfrage_consent_at, standortabfrage_consent_revoked_at, dashboard_layout, theme_preference, maintenance_reminder_email_enabled, maintenance_reminder_email_frequency, maintenance_reminder_email_last_sent_at'
     )
     .eq('id', userId)
     .single()
@@ -87,6 +92,34 @@ export const updateThemePreference = async (
   return { error }
 }
 
+export const updateMaintenanceReminderEmailSettings = async (
+  userId: string,
+  opts: {
+    maintenance_reminder_email_enabled: boolean
+    maintenance_reminder_email_frequency: 'daily' | 'weekly'
+  }
+): Promise<{ error: { message: string } | null }> => {
+  const payload = {
+    maintenance_reminder_email_enabled: opts.maintenance_reminder_email_enabled,
+    maintenance_reminder_email_frequency: opts.maintenance_reminder_email_frequency,
+    updated_at: new Date().toISOString(),
+  }
+  if (!isOnline()) {
+    addToOutbox({ table: 'profiles', action: 'update', payload: { id: userId, ...payload } })
+    const cached = getCachedProfiles() as Profile[]
+    const updated = cached.map((p) => (p.id === userId ? { ...p, ...payload } : p))
+    setCachedProfiles(updated)
+    return { error: null }
+  }
+  const { error } = await supabase.from('profiles').update(payload).eq('id', userId)
+  if (!error) {
+    const cached = getCachedProfiles() as Profile[]
+    const updated = cached.map((p) => (p.id === userId ? { ...p, ...payload } : p))
+    setCachedProfiles(updated)
+  }
+  return { error: error ? { message: error.message } : null }
+}
+
 export const fetchProfileByEmail = async (email: string): Promise<Profile | null> => {
   const { data, error } = await supabase
     .from('profiles')
@@ -104,21 +137,22 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
   const { data: rpcData, error: rpcError } = await supabase.rpc('get_all_profiles_for_admin')
   let result: Profile[]
   if (!rpcError && Array.isArray(rpcData) && rpcData.length > 0) {
-    result = rpcData.map((row: { id: string; email: string | null; first_name: string | null; last_name: string | null; role: string; soll_minutes_per_month?: number | null; soll_minutes_per_week?: number | null; team_id?: string | null; team_name?: string | null }) => ({
+    result = rpcData.map((row: { id: string; email: string | null; first_name: string | null; last_name: string | null; role: string; hours_per_day?: number | null; employment_start_date?: string | null; employment_end_date?: string | null; team_id?: string | null; team_name?: string | null }) => ({
       id: row.id,
       email: row.email,
       first_name: row.first_name ?? null,
       last_name: row.last_name ?? null,
       role: parseRole(row.role ?? ''),
-      soll_minutes_per_month: row.soll_minutes_per_month ?? null,
-      soll_minutes_per_week: row.soll_minutes_per_week ?? null,
+      hours_per_day: row.hours_per_day != null ? Number(row.hours_per_day) : null,
+      employment_start_date: row.employment_start_date ?? null,
+      employment_end_date: row.employment_end_date ?? null,
       team_id: row.team_id ?? null,
       team_name: row.team_name ?? null,
     }))
   } else {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, first_name, last_name, role, created_at, updated_at, soll_minutes_per_month, soll_minutes_per_week, team_id')
+      .select('id, email, first_name, last_name, role, created_at, updated_at, hours_per_day, employment_start_date, employment_end_date, team_id')
       .order('email', { nullsFirst: false })
     if (error) return getCachedProfiles() as Profile[]
     result = (data ?? []).map((row: { team_id?: string | null }) => ({ ...row, team_name: null })) as Profile[]

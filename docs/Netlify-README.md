@@ -11,9 +11,22 @@ Einmalige Orientierung: **vier getrennte Netlify-Sites** aus einem Repo, jeweils
 
 **Node:** In den jeweiligen `netlify.toml`-Dateien ist `NODE_VERSION = 20` gesetzt.
 
-**Ausführliche Anleitung:** [`Netlify-Vier-Apps.md`](./Netlify-Vier-Apps.md) (inkl. DNS, Fehlerbehebung §11, TS-Monorepo §12). **Strategie / Phasen:** [`Roadmap-Weiterentwicklung-und-Mandanten.md`](./Roadmap-Weiterentwicklung-und-Mandanten.md). **Env per Skript (Phase C):** [`Netlify-Mandanten-Env-Skript.md`](./Netlify-Mandanten-Env-Skript.md).
+**Ausführliche Anleitung:** [`Netlify-Vier-Apps.md`](./Netlify-Vier-Apps.md) (inkl. DNS, Fehlerbehebung §11, TS-Monorepo §12). **Strategie / Mandanten-Phasen A–D:** **`Vico.md` §7.6.3**. **Env per Skript (Phase C):** [`Netlify-Mandanten-Env-Skript.md`](./Netlify-Mandanten-Env-Skript.md).
 
 **Lizenzportal-Setup / API:** [`Lizenzportal-Setup.md`](./Lizenzportal-Setup.md).
+
+### Netlify: nichts mehr aktualisieren (eingefroren)
+
+**Im Repo:** In allen vier `netlify.toml` steht **`[build] ignore = "exit 0"`** – damit starten **keine** Builds mehr durch **Git-Push** oder **Deploy Previews** (PRs), solange die Site die Datei aus dem Repo nutzt ([Ignore builds](https://docs.netlify.com/configure-builds/ignore-builds/)).
+
+**Das allein reicht nicht**, wenn ihr wirklich **gar keine** neuen Deploys wollt: **Build Hooks**, **manueller „Trigger deploy“** und **Netlify CLI** können weiterhin Deploys auslösen. **Pflicht in Netlify (je Site wiederholen):**
+
+1. **Git-Verbindung trennen:** **Project configuration** → **Build & deploy** → **Continuous deployment** → **Manage repository** / **Unlink** (Repository vom Projekt abhängen). Dann löst **kein** GitHub-Event mehr einen Build aus.
+2. **Build Hooks löschen:** **Project configuration** → **Build & deploy** → **Build hooks** → alle Hooks **entfernen** (sonst kann z. B. CI oder ein externes Tool weiter triggern).
+3. **GitHub:** Unter **Repository → Settings → Integrations / GitHub Apps** prüfen, ob die **Netlify**-App noch auf dieses Repo zugreift – bei Bedarf **Zugriff entziehen** oder nur für andere Repos behalten.
+4. **CI:** Kein Workflow mit `netlify deploy` / Deploy-Hooks auf diese Sites (im Repo liegt nur eine **Beispiel**-Workflow-Datei für Env-Skript, kein Auto-Deploy).
+
+**Später wieder deployen:** Repo erneut verknüpfen, Hooks anlegen, `ignore`-Zeilen in den `netlify.toml` entfernen (falls gewünscht).
 
 ---
 

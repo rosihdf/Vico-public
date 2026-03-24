@@ -39,3 +39,7 @@ export const printLabel = async (qrPayload: string): Promise<EtikettendruckerRes
   }
   return { ok: false, error: 'Etikettendrucker-Plugin nicht verfügbar (nur in der nativen App).' }
 }
+
+/** Referenzmaße aus dem gewählten Etikett-Preset (Einstellungen, lokal). */
+export { getEtikettPresetDimensions, getEtikettPresetId, setEtikettPresetId, ETIKETT_PRESET_OPTIONS } from './etikettPreset'
+export type { EtikettPresetId, EtikettPresetOption } from './etikettPreset'

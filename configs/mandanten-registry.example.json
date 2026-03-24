@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "description": "Kopie nach configs/mandanten-registry.local.json – nur Metadaten, keine Secrets. Im Lizenzportal pro Mandant supabase_project_ref + supabase_url pflegen.",
+  "tenants": [
+    {
+      "name": "Beispiel GmbH",
+      "supabase_project_ref": "abcdefghijklmnop",
+      "license_portal_tenant_id": "00000000-0000-0000-0000-000000000000",
+      "notes": "Optional: interne Notizen"
+    }
+  ]
+}

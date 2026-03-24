@@ -288,3 +288,56 @@ Netlify baut mit **Base directory** nur den jeweiligen Ordner; `node_modules` li
 - **`vite.config.ts`:** `resolve.alias` für `react`, `react-dom`, `@supabase/supabase-js` (und ggf. `jspdf` im Arbeitszeitenportal) auf `./node_modules/...`, damit **Rollup** Imports aus `../shared` auflöst.
 
 Die **Haupt-App** (Repo-Root) ist davon unabhängig. Bei neuen **shared**-Modulen: ggf. `paths` / `alias` ergänzen.
+**Build:**
+
+- **Base directory:** `portal`
+- **Build command:** `npm run build`
+- **Publish directory:** `portal/dist`
+
+**Umgebungsvariablen (typisch):**
+
+| Variable | Beschreibung |
+|----------|--------------|
+| `VITE_SUPABASE_URL` | Supabase des **Kunden** (Mandanten-Projekt) |
+| `VITE_SUPABASE_ANON_KEY` | Anon Key |
+| `VITE_LICENSE_API_URL` | Wie Haupt-App |
+| `VITE_LICENSE_NUMBER` | Lizenznummer dieses Deployments (pro Site/Mandant) |
+| `VITE_LICENSE_API_KEY` | Optional, wie oben |
+
+---
+
+## 4. Arbeitszeitenportal – `arbeitszeit-portal/`
+
+**Build:**
+
+- **Base directory:** `arbeitszeit-portal`
+- **Build command:** `npm run build`
+- **Publish directory:** `arbeitszeit-portal/dist`
+
+**Umgebungsvariablen:** analog Kundenportal (`VITE_LICENSE_*`, Supabase des Mandanten).
+
+---
+
+## 5. DNS & mehrere Sites
+
+- Jede der vier Apps = **eigene Netlify-Site** (oder Monorepo mit unterschiedlichem Base directory).
+- **Custom Domain:** Netlify → Domain settings → Add domain; beim Hoster **CNAME** oder A-Records auf Netlify setzen (Anleitung in Netlify).
+- **Lizenz-API CORS:** Lizenz-Edge Function erlaubt `*`; für Produktion ggf. `allowed_domains` in `tenants` im Lizenzportal pflegen.
+
+---
+
+## 6. Datenbank – Kurz-Optimierung (bereits im Schema)
+
+- **Lizenzportal:** `licenses.license_number` ist **unique** (Index durch Constraint). Weitere Indizes: `licenses_tenant_created_idx`, `limit_exceeded_log_tenant_created_idx` (siehe `supabase-license-portal.sql`).
+- **Haupt-App (`supabase-complete.sql`):** bei langsamen Abfragen: `EXPLAIN ANALYZE` in Supabase SQL Editor; fehlende Indizes nur nach konkreten Queries ergänzen (nicht blind „Index-Spaß“).
+
+---
+
+## 7. Checkliste nach Go-Live
+
+- [ ] Alle vier Sites: HTTPS, keine Konsolen-Fehler beim Login
+- [ ] Lizenz aktivieren / Lizenz-API liefert `appVersions` (inkl. globale Defaults + Mandant)
+- [ ] `version.json` in jeder App erreichbar
+- [ ] Service Role **nur** in Netlify/Edge, nie im Client
+
+Bei Fragen zu **einer** konkreten Domain oder API-URL: die Werte aus der Tabelle oben mit dir abstimmen.

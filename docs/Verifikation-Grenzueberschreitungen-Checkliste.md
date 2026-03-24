@@ -2,7 +2,7 @@
 
 **Zweck (Roadmap Phase 0.2):** Sicherstellen, dass Limit-Überschreitungen von der **Haupt-App** (und ggf. Kundenportal) **im Lizenzportal** ankommen – **einmal** in Produktion oder Staging durchgehen.
 
-**Technische Basis:** `docs/Noch-zu-erledigen.md` §9, `docs/Lizenzportal-Setup.md`, Netlify Function `admin/netlify/functions/limit-exceeded.ts`.
+**Technische Basis:** `Vico.md` §9 (Lizenzportal), `docs/Lizenzportal-Setup.md`, Netlify Function `admin/netlify/functions/limit-exceeded.ts`.
 
 ---
 

@@ -321,4 +321,4 @@ Für **Haupt-App**, **`portal/`**, **`arbeitszeit-portal/`**, **`admin/`**:
 
 **Stand:** März 2026 – inkl. getrennte Updates pro App-Teil (§9–12), Tiefeneinsteig & Playbook **§9.5–9.6**, Rückfragen §10, Vorschlag §11.
 
-**Anleitung für Betrieb:** **`docs/Anleitung-App-Updates-fuer-Betrieb.md`** (siehe auch `Noch-zu-erledigen.md` §11).
+**Anleitung für Betrieb:** **`docs/Anleitung-App-Updates-fuer-Betrieb.md`** (siehe auch **`Vico.md` §7.6.2** Phase 0).

@@ -19,11 +19,14 @@ Typische Blockaden (im Repo adressiert):
 ## Lösung (einmalig)
 
 1. **SQL ausführen** im Mandanten-Projekt:  
-   [`docs/sql/mandanten-db-fix-auth-user-delete-fks.sql`](./sql/mandanten-db-fix-auth-user-delete-fks.sql)
+   [`docs/sql/mandanten-db-fix-auth-user-delete-fks.sql`](./sql/mandanten-db-fix-auth-user-delete-fks.sql)  
+   (In **`supabase-complete.sql`** sind dieselben Regeln für Neuinstallationen enthalten; bestehende DBs bitte mit dem Fix-Skript nachziehen.)
 
-2. Danach im Dashboard den User erneut löschen.
+2. Optional: **Jahres-Soll „bis heute“** (Arbeitszeit UI): RPC [`docs/sql/mandanten-db-calc-soll-date-range.sql`](./sql/mandanten-db-calc-soll-date-range.sql), falls noch nicht deployt.
 
-3. Wenn es **weiter** fehlschlägt: In der Fehlermeldung oder per Abfrage den **Constraint-Namen** finden und dieselbe Logik (DROP + FOREIGN KEY mit `ON DELETE SET NULL` oder `CASCADE`) anwenden.
+3. Danach im Dashboard den User erneut löschen.
+
+4. Wenn es **weiter** fehlschlägt: In der Fehlermeldung oder per Abfrage den **Constraint-Namen** finden und dieselbe Logik (DROP + FOREIGN KEY mit `ON DELETE SET NULL` oder `CASCADE`) anwenden.
 
 ## In der Vico-App
 

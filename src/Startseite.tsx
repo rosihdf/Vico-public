@@ -140,8 +140,16 @@ const Startseite = () => {
   const serverDashboardLayoutProp =
     !user ? undefined : isLoading ? undefined : (profile?.dashboard_layout ?? null)
 
-  const { layout: dashboardLayout, updateRecentEditsOpen, dismissRecentEdit, resetDismissedRecentEdits } =
-    useDashboardLayout(user?.id ?? null, serverDashboardLayoutProp)
+  const {
+    layout: dashboardLayout,
+    updateRecentEditsOpen,
+    dismissRecentEdit,
+    resetDismissedRecentEdits,
+    updateRecentEditsScope,
+    toggleFavoriteRecentEdit,
+  } = useDashboardLayout(user?.id ?? null, serverDashboardLayoutProp)
+
+  const recentEditsScope = dashboardLayout.recentEditsScope ?? 'all'
 
   const canUseZeiterfassung =
     license &&
@@ -279,7 +287,12 @@ const Startseite = () => {
     const includeOrders = isEnabled('auftrag')
     const recentPromise =
       includeMaster || includeOrders
-        ? fetchRecentEditsForDashboard({ includeMaster, includeOrders })
+        ? fetchRecentEditsForDashboard({
+            includeMaster,
+            includeOrders,
+            scope: recentEditsScope,
+            userId: user.id,
+          })
         : Promise.resolve([])
 
     const [profileData, assignedData, customerData, bvData, reminderData, recentList] = await Promise.all([
@@ -300,7 +313,7 @@ const Startseite = () => {
     const loadDataMs = Math.round(performance.now() - loadStart)
     console.info(`[Startseite] loadData: ${loadDataMs}ms`)
     recordStartseiteMetrics(loadDataMs)
-  }, [user?.id, isEnabled])
+  }, [user?.id, isEnabled, recentEditsScope])
 
   useEffect(() => {
     loadData()
@@ -376,16 +389,34 @@ const Startseite = () => {
     () => new Set(dashboardLayout.dismissedRecentEditKeys ?? []),
     [dashboardLayout.dismissedRecentEditKeys]
   )
+  const sortedRecentEdits = useMemo(() => {
+    const fav = new Set(dashboardLayout.favoriteRecentEditKeys ?? [])
+    const list = [...recentEdits]
+    if (fav.size > 0) {
+      list.sort((a, b) => {
+        const af = fav.has(a.key) ? 0 : 1
+        const bf = fav.has(b.key) ? 0 : 1
+        if (af !== bf) return af - bf
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      })
+    } else {
+      list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    }
+    return list
+  }, [recentEdits, dashboardLayout.favoriteRecentEditKeys])
+
   const visibleRecentEdits = useMemo(
-    () => recentEdits.filter((item) => !dismissedRecentKeys.has(item.key)),
-    [recentEdits, dismissedRecentKeys]
+    () => sortedRecentEdits.filter((item) => !dismissedRecentKeys.has(item.key)),
+    [sortedRecentEdits, dismissedRecentKeys]
   )
   const showRecentEditsWidget =
     !!user &&
     !isLoading &&
     (includeRecentMaster || includeRecentOrders) &&
     isDashboardWidgetVisible(dashboardLayout, 'recentEdits') &&
-    (recentEdits.length > 0 || (dashboardLayout.dismissedRecentEditKeys?.length ?? 0) > 0)
+    (recentEdits.length > 0 ||
+      (dashboardLayout.dismissedRecentEditKeys?.length ?? 0) > 0 ||
+      recentEditsScope === 'mine')
 
   const handleRecentDetailsToggle = useCallback(
     (open: boolean) => {
@@ -738,9 +769,39 @@ const Startseite = () => {
               )}
             </summary>
             <div className="px-4 pb-4 pt-0 border-t border-slate-200/80 dark:border-slate-600/80">
+              {includeRecentOrders && (
+                <div className="mt-3 mb-3 flex flex-wrap gap-2 items-center" role="group" aria-label="Filter Zuletzt bearbeitet">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Anzeige:</span>
+                  <button
+                    type="button"
+                    onClick={() => updateRecentEditsScope('all')}
+                    className={`px-2 py-1 rounded text-sm border focus:outline-none focus:ring-2 focus:ring-vico-primary ${
+                      recentEditsScope === 'all'
+                        ? 'border-vico-primary bg-vico-primary/10 text-vico-primary font-medium'
+                        : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200'
+                    }`}
+                    aria-pressed={recentEditsScope === 'all'}
+                  >
+                    Alle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateRecentEditsScope('mine')}
+                    className={`px-2 py-1 rounded text-sm border focus:outline-none focus:ring-2 focus:ring-vico-primary ${
+                      recentEditsScope === 'mine'
+                        ? 'border-vico-primary bg-vico-primary/10 text-vico-primary font-medium'
+                        : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200'
+                    }`}
+                    aria-pressed={recentEditsScope === 'mine'}
+                  >
+                    Nur meine Aufträge
+                  </button>
+                </div>
+              )}
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-3 mb-3">
-                Sortiert nach letzter Änderung (Kunden, Objekt/BV, Tür/Tor, Auftrag). „Ausblenden“ blendet nur hier ab –
-                keine Daten werden gelöscht.
+                {recentEditsScope === 'mine'
+                  ? 'Nur Aufträge, bei denen Sie erstellend oder zugewiesen sind. Kunden/BV/Objekte ohne Bearbeiter-Zeitstempel erscheinen bei „Alle“.'
+                  : 'Sortiert nach letzter Änderung (Kunden, Objekt/BV, Tür/Tor, Auftrag). Favoriten (Stern) oben. „Ausblenden“ blendet nur hier ab – keine Daten werden gelöscht.'}
               </p>
               {(dashboardLayout.dismissedRecentEditKeys?.length ?? 0) > 0 && (
                 <div className="mb-3 flex flex-wrap gap-2">
@@ -760,9 +821,24 @@ const Startseite = () => {
                 </p>
               ) : (
                 <ul className="space-y-2" aria-label="Zuletzt bearbeitete Einträge">
-                  {visibleRecentEdits.map((item) => (
+                  {visibleRecentEdits.map((item) => {
+                    const isFav = (dashboardLayout.favoriteRecentEditKeys ?? []).includes(item.key)
+                    return (
                     <li key={item.key}>
                       <div className="flex gap-2 items-stretch">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            toggleFavoriteRecentEdit(item.key)
+                          }}
+                          className="shrink-0 self-center px-2 py-2 rounded-lg text-lg text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/40 focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                          aria-label={isFav ? 'Favorit entfernen' : 'Als Favorit markieren'}
+                          aria-pressed={isFav}
+                          title={isFav ? 'Favorit' : 'Favorit'}
+                        >
+                          {isFav ? '★' : '☆'}
+                        </button>
                         <Link
                           to={item.to}
                           className="flex-1 min-w-0 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 p-4 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
@@ -783,7 +859,7 @@ const Startseite = () => {
                         </button>
                       </div>
                     </li>
-                  ))}
+                  )})}
                 </ul>
               )}
             </div>

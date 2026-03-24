@@ -14,8 +14,10 @@ export type Profile = {
   first_name: string | null
   last_name: string | null
   role: ProfileRole
-  soll_minutes_per_month: number | null
-  soll_minutes_per_week: number | null
+  /** Individuell; null = Mandanten-Default aus Arbeitseinstellungen */
+  hours_per_day: number | null
+  employment_start_date: string | null
+  employment_end_date: string | null
   vacation_days_per_year: number | null
   /** Optional: Frist-Override Resturlaub VJ (Monat/Tag im Kalenderjahr der Anzeige) */
   urlaub_vj_deadline_month: number | null
@@ -32,8 +34,9 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
         first_name: string | null
         last_name: string | null
         role: string
-        soll_minutes_per_month?: number | null
-        soll_minutes_per_week?: number | null
+        hours_per_day?: number | null
+        employment_start_date?: string | null
+        employment_end_date?: string | null
         vacation_days_per_year?: number | null
         urlaub_vj_deadline_month?: number | null
         urlaub_vj_deadline_day?: number | null
@@ -43,8 +46,9 @@ export const fetchProfiles = async (): Promise<Profile[]> => {
         first_name: row.first_name ?? null,
         last_name: row.last_name ?? null,
         role: parseRole(row.role ?? ''),
-        soll_minutes_per_month: row.soll_minutes_per_month ?? null,
-        soll_minutes_per_week: row.soll_minutes_per_week ?? null,
+        hours_per_day: row.hours_per_day != null ? Number(row.hours_per_day) : null,
+        employment_start_date: row.employment_start_date ?? null,
+        employment_end_date: row.employment_end_date ?? null,
         vacation_days_per_year: row.vacation_days_per_year ?? null,
         urlaub_vj_deadline_month: row.urlaub_vj_deadline_month ?? null,
         urlaub_vj_deadline_day: row.urlaub_vj_deadline_day ?? null,
@@ -60,16 +64,18 @@ export const getMyRole = async (): Promise<string | null> => {
   return data as string
 }
 
-/** Aktualisiert Soll Min/Monat und Min/Woche per RPC (umgeht RLS, zuverlässiger). */
-export const updateSollMinutes = async (
+/** Std/Tag, Eintritt, Austritt – Monatssoll wird aus Kalenderarbeitstagen × Stunden berechnet. */
+export const updateAzkStammdaten = async (
   profileId: string,
-  sollMinutesPerMonth: number | null,
-  sollMinutesPerWeek: number | null
+  hoursPerDay: number | null,
+  employmentStart: string | null,
+  employmentEnd: string | null
 ): Promise<{ error: { message: string } | null }> => {
-  const { error } = await supabase.rpc('update_profile_soll_minutes', {
+  const { error } = await supabase.rpc('update_profile_azk_stammdaten', {
     p_profile_id: profileId,
-    p_soll_minutes_per_month: sollMinutesPerMonth,
-    p_soll_minutes_per_week: sollMinutesPerWeek,
+    p_hours_per_day: hoursPerDay,
+    p_employment_start: employmentStart,
+    p_employment_end: employmentEnd,
   })
   if (error) return { error: { message: error.message } }
   return { error: null }

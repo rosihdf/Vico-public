@@ -102,7 +102,7 @@ Das Skript liest jeweils **`.env`** (nicht `.env.local` – bei Nutzung von `.en
 ## 6. Nach dem Betatest
 
 - Feedback bündeln (Showstopper vs. „später“)  
-- `docs/Noch-zu-erledigen.md` / Roadmap anpassen  
+- `Vico.md` §7 (Roadmap) anpassen  
 - Bei Schema-Änderungen: Migrationen dokumentieren (`App-Updates-und-Versionierung.md`)  
 
 ---

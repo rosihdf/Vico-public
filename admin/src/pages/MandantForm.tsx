@@ -24,6 +24,7 @@ import {
   initialAppVersionRows,
   type AppVersionRowsState,
 } from '../lib/appVersionFormUtils'
+import { removeTenantLogoFromStorage, uploadTenantLogoWebP } from '../lib/uploadTenantLogo'
 
 const TIER_OPTIONS = ['free', 'professional', 'enterprise'] as const
 const CHECK_INTERVAL_OPTIONS = ['on_start', 'daily', 'weekly'] as const
@@ -95,6 +96,9 @@ const MandantForm = () => {
   const [appVersionRows, setAppVersionRows] = useState<AppVersionRowsState>(initialAppVersionRows)
   /** Aus DB (tenants.supabase_url) – für Deployment-JSON-Export */
   const [loadedSupabaseUrl, setLoadedSupabaseUrl] = useState<string | null>(null)
+  /** Lokale Datei → WebP-Upload nach Speichern (L4) */
+  const [logoFilePending, setLogoFilePending] = useState<File | null>(null)
+  const [logoPreviewObjectUrl, setLogoPreviewObjectUrl] = useState<string | null>(null)
 
   const loadLicenses = useCallback(async (tenantId: string) => {
     try {
@@ -133,6 +137,7 @@ const MandantForm = () => {
           fetchLicenseModels(),
         ])
         if (t) {
+          setLogoFilePending(null)
           setLoadedSupabaseUrl(t.supabase_url ?? null)
           setForm({
             name: t.name ?? '',
@@ -169,6 +174,16 @@ const MandantForm = () => {
   }, [id, isNew])
 
   useEffect(() => {
+    if (!logoFilePending) {
+      setLogoPreviewObjectUrl(null)
+      return
+    }
+    const u = URL.createObjectURL(logoFilePending)
+    setLogoPreviewObjectUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [logoFilePending])
+
+  useEffect(() => {
     if (isNew || !id || !locationState) return
     if (locationState.openCreateLicense) {
       setShowCreateLicense(true)
@@ -193,6 +208,24 @@ const MandantForm = () => {
       navigate(location.pathname, { replace: true, state: undefined })
     }
   }, [locationState, tenantLicenses, isNew, id, navigate, location.pathname])
+
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (f) setLogoFilePending(f)
+    e.target.value = ''
+  }
+
+  const handleRemoveStoredLogo = async () => {
+    if (!id) return
+    setError(null)
+    const rm = await removeTenantLogoFromStorage(id)
+    if (rm.error) {
+      setError(rm.error)
+      return
+    }
+    setForm((prev) => ({ ...prev, logo_url: '' }))
+    setLogoFilePending(null)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -223,11 +256,36 @@ const MandantForm = () => {
           app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
         })
         if ('id' in result) {
+          let logoUrl = form.logo_url.trim() || null
+          if (logoFilePending) {
+            const up = await uploadTenantLogoWebP(result.id, logoFilePending)
+            if (up.error) {
+              setError(up.error)
+              return
+            }
+            if (up.publicUrl) {
+              logoUrl = up.publicUrl
+              const upd = await updateTenant(result.id, { logo_url: logoUrl })
+              if (!upd.ok) {
+                setError(upd.error ?? 'Logo-URL konnte nicht gespeichert werden.')
+                return
+              }
+            }
+          }
           navigate('/mandanten')
         } else {
           setError(result.error ?? 'Speichern fehlgeschlagen')
         }
       } else if (id) {
+        let logoUrl = form.logo_url.trim() || null
+        if (logoFilePending) {
+          const up = await uploadTenantLogoWebP(id, logoFilePending)
+          if (up.error) {
+            setError(up.error)
+            return
+          }
+          if (up.publicUrl) logoUrl = up.publicUrl
+        }
         const result = await updateTenant(id, {
           name: form.name,
           app_domain: form.app_domain || null,
@@ -241,7 +299,7 @@ const MandantForm = () => {
             : [],
           primary_color: form.primary_color,
           app_name: form.app_name,
-          logo_url: form.logo_url.trim() || null,
+          logo_url: logoUrl || null,
           impressum_company_name: form.impressum_company_name || null,
           impressum_address: form.impressum_address || null,
           impressum_contact: form.impressum_contact || null,
@@ -951,8 +1009,44 @@ const MandantForm = () => {
           />
         </div>
         <div>
-          <label htmlFor="logo_url" className="block text-sm font-medium text-slate-700 mb-1">
-            Logo-URL (öffentlich erreichbar)
+          <span className="block text-sm font-medium text-slate-700 mb-1">Logo</span>
+          <p className="text-xs text-slate-500 mb-2">
+            Optional: Datei hochladen (wird als WebP ins Storage-Bucket <code className="bg-slate-100 px-1 rounded">tenant_logos</code>{' '}
+            geschrieben) oder weiterhin eine öffentliche URL eintragen. Wird über die Lizenz-API als{' '}
+            <code className="bg-slate-100 px-1 rounded">design.logo_url</code> ausgeliefert.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <input
+              id="logo_file"
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={handleLogoFileChange}
+              aria-label="Logo-Datei auswählen"
+            />
+            <label
+              htmlFor="logo_file"
+              className="inline-flex px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 cursor-pointer"
+            >
+              Datei wählen (PNG/JPG …)
+            </label>
+            {logoFilePending ? (
+              <span className="text-xs text-slate-600 truncate max-w-[12rem]" title={logoFilePending.name}>
+                Auswahl: {logoFilePending.name}
+              </span>
+            ) : null}
+            {id && !isNew ? (
+              <button
+                type="button"
+                onClick={handleRemoveStoredLogo}
+                className="text-sm text-red-600 hover:text-red-800 underline"
+              >
+                Gespeichertes Storage-Logo entfernen
+              </button>
+            ) : null}
+          </div>
+          <label htmlFor="logo_url" className="block text-xs font-medium text-slate-600 mb-1">
+            Oder Logo-URL (öffentlich)
           </label>
           <input
             id="logo_url"
@@ -963,14 +1057,11 @@ const MandantForm = () => {
             onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
           />
-          <p className="mt-1 text-xs text-slate-500">
-            Wird wie der App-Name über die Lizenz-API an Haupt-App, Kundenportal und Arbeitszeitenportal ausgeliefert (PNG/SVG, idealerweise HTTPS, CORS für fremde Domains beachten).
-          </p>
-          {form.logo_url.trim() ? (
+          {(logoPreviewObjectUrl || form.logo_url.trim()) ? (
             <div className="mt-2 flex items-center gap-3">
               <span className="text-xs text-slate-500">Vorschau:</span>
               <img
-                src={form.logo_url.trim()}
+                src={logoPreviewObjectUrl ?? form.logo_url.trim()}
                 alt=""
                 className="h-10 max-w-[200px] object-contain border border-slate-200 rounded bg-white p-1"
                 onError={(e) => {
@@ -978,7 +1069,9 @@ const MandantForm = () => {
                 }}
               />
             </div>
-          ) : null}
+          ) : (
+            <p className="mt-2 text-xs text-slate-400">Kein Logo gesetzt (Platzhalter in Apps bis zur Konfiguration).</p>
+          )}
         </div>
         <div className="pt-4 border-t border-slate-200">
           <h3 className="text-sm font-semibold text-slate-700 mb-2">App-Versionen (optional, Mandant)</h3>

@@ -1,6 +1,9 @@
 [build]
   command = "npm run build"
   publish = "dist"
+  # Git → Netlify: keine automatischen Builds bei Push/PR (Webhook).
+  # Manuell: Netlify UI „Deploy site“ / Build Hooks / CLI deploy umgehen ignore teils – siehe docs/Netlify-README.md
+  ignore = "exit 0"
 
 [build.environment]
   NODE_VERSION = "20"

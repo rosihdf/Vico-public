@@ -1,6 +1,6 @@
 # Vico – Türen & Tore
 
-Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2025.
+Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2026.
 
 ---
 
@@ -12,7 +12,7 @@ Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2025.
 4. [Datenbank](#4-datenbank)
 5. [Deployment](#5-deployment)
 6. [Projektstand](#6-projektstand)
-7. [Roadmap](#7-roadmap) – Struktur: **7.1** Legende, **7.2** offene Arbeiten, **7.3** Archiv, **7.4** Backlog-Referenz, **7.5** Kontext
+7. [Roadmap](#7-roadmap) – Struktur: **7.1** Legende, **7.2** offene Arbeiten, **7.3** Archiv, **7.4** Backlog-Referenz, **7.5** Kontext, **7.6** konsolidierter Planungsstand (Phasen, Mandanten, Etikett-Referenzen)
 8. [Projektstruktur](#8-projektstruktur)
 9. [Plan: Mandantenfähigkeit & Lizenzportal](#9-plan-mandantenfähigkeit--lizenzportal)
 10. [Konzept: Geplante Änderungen Hauptapp](#10-konzept-geplante-änderungen-hauptapp)
@@ -166,6 +166,8 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 
 **Alle vier Apps (Haupt-App, Admin, Kundenportal, Arbeitszeitenportal):** Kurzüberblick **`docs/Netlify-README.md`** (inkl. **Staging**), Details **`docs/Netlify-Vier-Apps.md`** (inkl. **§9.5 Staging**, **§11 Fehlerbehebung**, **§12 TS-Build Monorepo**). **Lizenz-API:** Empfohlen **`VITE_LICENSE_API_URL = https://<Admin-Subdomain>/api`**. Portale: **`VITE_LICENSE_NUMBER`** optional (Host-Lookup) – **`docs/Netlify-README.md`**. **Netlify-Env automatisieren:** **`docs/Netlify-Mandanten-Env-Skript.md`**. Setup/Fehler: **`docs/Lizenzportal-Setup.md`**.
 
+**Geplanter Wechsel zu Cloudflare:** Roadmap **CF1** (**§7.2**), detaillierte Planung inkl. **Supabase-Auslagerung** der Lizenz-API-Optionen: **`docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md`**.
+
 ### Supabase Keep-Alive (Free-Tier)
 
 GitHub Actions `.github/workflows/supabase-keepalive.yml` – Mo + Do 9:00 UTC. Secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
@@ -266,7 +268,7 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 
 ## 7. Roadmap
 
-Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** = was noch offen ist, **§7.3** = erledigte Meilensteine (Archiv), **§7.4** = Backlog-Referenz mit Priorität/Aufwand, **§7.5** = Kontext (grosse Epics, Checklisten, Ist-Stand). Technische Detailentscheidungen: **§9** (Lizenzportal), **§10** (Hauptapp), **§11** (Konsolidiert).
+Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** = was noch offen ist, **§7.3** = erledigte Meilensteine (Archiv), **§7.4** = Backlog-Referenz mit Priorität/Aufwand, **§7.5** = Kontext (grosse Epics, Checklisten, Ist-Stand), **§7.6** = **konsolidierte Planung** (Phasen 0–7, Mandanten-Onboarding A–D, Entscheidungen Roadmap J, Etikett-Referenzmaße). Technische Detailentscheidungen: **§9** (Lizenzportal), **§10** (Hauptapp), **§11** (Konsolidiert).
 
 ### 7.1 Legende
 
@@ -282,23 +284,28 @@ Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** =
 
 ### 7.2 Offene Arbeiten (priorisiert)
 
-**Empfohlene Reihenfolge:** kurze, isolierte Themen zuerst (Lizenzportal-UX, Qualität), dann Produkt-Auswertungen, dann grosse Epics (Umbau Wartung), zuletzt optionales Mobile-Zubehör.
+**Empfohlene Reihenfolge:** **J7**-Teilpakete nach Bedarf, **J6** (grosses Epic) wenn operativ klar; **T1** (DB-Migrations) bei nächstem grösseren Schema-Umbau oder dediziertem Infrastruktur-Slot; **CF1** (Cloudflare-Umzug + optional Supabase-API) bei Hosting-/Kosten-Entscheid oder vor Mandanten-Skalierung. **L4, J4-B, J1 (E-Mail-Digest), I2 (Preset/UI)** sind umgesetzt → **§7.3** / **§7.2.1** (Betrieb).
 
 | ID | Stream | Thema | Status | Aufwand | Detail |
 |----|--------|--------|--------|---------|--------|
-| **L4** | Lizenzportal | **Logo-Upload** (Storage, WebP, Limits, Vorschau, entfernen, Platzhalter) | 🔲 | 2–4 T | **§9.4a** |
-| **J10** | Qualität | **Bug-Erfassungsmodul** (Fehler in DB, **System → Fehlerberichte**) | 🔲 | 1–2 T | **§11.3** |
-| **J4** | UX / Start | **Schnellzugriff / Zuletzt bearbeitet** auf der Startseite | 🔲 | 1–2 T | Backlog **§7.4** #4 |
-| **J3** | Export | **Buchhaltung:** CSV/Excel-Export | 🔲 | 2–3 T | **§7.4** #3 |
-| **J2** | Auswertung | **Wartungsstatistik** (pro Kunde/BV/Objekt, überfällig) | 🔲 | 3–4 T | **§7.4** #2 |
-| **J1** | Planung | **Wartungsplanung / Erinnerungen** inkl. **E-Mail** (Liste/„due_soon“ existiert) | ⚠️ | 3–5 T | **§7.4** #1; E-Mail offen |
 | **J6** | Fachlich | **Umbau Wartung (MVP):** Freigabe-Workflow, Portal-Anbindung, ggf. DIN/ASR (Monteursbericht vorhanden) | ⚠️ | 15–20 T | **§7.5** |
-| **J7** | Fachlich | Paket: **Mängel-Follow-up**, **iCal**, **Bulk-Operationen**, **Portal-Push** (einzeln planbar) | 🔲 | je 2–3 T | **§7.4** #9–11, #15 |
-| **I2** | Mobile | Optional: **Bluetooth-Drucker** (QR-Etiketten) | 🔲 | 1–2 T | **§11.4** |
+| **J7** | Fachlich | Paket: **Mängel-Follow-up**, **iCal**, **Bulk-Operationen**, **Portal-Push** (Reihenfolge **§7.6.4**) | 🔲 | je 2–3 T | **§7.4** #9–11, #15 |
+| **T1** | Technik / DB | **Supabase CLI-Migrations** (zeitlich geordnet) statt nur Monolith `supabase-complete.sql`; Baseline + künftige Deltas; **Lizenzportal** eigenes `supabase/`. Kein App-Runtime-Gewinn, aber klarere Reviews & Rollouts. Pragmatischer Einstieg (Inventar, Changelog, Multi-`psql`): **`docs/sql/Mandanten-DB-Workflow.md`**. | 🔲 | 0,5–2 T | **`docs/sql/Supabase-Migrations-Strategie.md`** |
+| **CF1** | Infrastruktur | **Cloudflare-Umzug** (Netlify → **Pages**, vier Projekte / ein Account): detaillierte **Migrationsplanung**, SPA-Builds, Env, DNS; **Entscheid** Lizenz-API: **Pages Functions** (Port `admin/netlify/functions`) **oder** **Supabase Edge** (rein statische Sites). Ersetzung Mandanten-Env-Automatisierung (`netlify-apply-tenant-env`). | 🔲 | 2–5 T (Planung+Staging); Umsetzung extra | **`docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md`** · Issue-Body **`docs/github-issues/CF1.body.md`** |
 
-**Hinweis:** **2FA**, **Arbeitszeiterfassung** (Modul), **Capacitor/APK** (**I1**) und die früheren Phasen **A–H** sind umgesetzt → **§7.3**.
+**Hinweis:** **J2, J3, J4, J10** (MVP), **2FA**, **Arbeitszeiterfassung** (Modul), **Capacitor/APK** (**I1**) und die früheren Phasen **A–H** sind umgesetzt → **§7.3**. **Abarbeitungs-Vorschlag** Phasen 0–7: **§7.6.2**.
 
-**GitHub:** Issues aus dieser Liste anlegen: **`docs/GitHub-Roadmap-7.2.md`** · Skript **`scripts/gh-roadmap-issues.sh`** (nach `gh auth login`).
+#### 7.2.1 Offene Entscheidungen (Betrieb / Feinschliff)
+
+| Thema | Stand |
+|-------|--------|
+| **J1 – Cron** | Edge Function `send-maintenance-reminder-digest` regelmässig aufrufen (z. B. Supabase Scheduler, täglich 07:00). Auth: `Authorization: Bearer <SERVICE_ROLE_KEY>` oder Header `x-cron-secret` = Secret `MAINTENANCE_DIGEST_CRON_SECRET`. |
+| **J1 – Secrets** | `RESEND_API_KEY`, `RESEND_FROM`, `APP_URL` (Link „Zur App“ in der E-Mail), optional `MAINTENANCE_DIGEST_CRON_SECRET`. |
+| **J1 – DSGVO** | Checkbox in **Einstellungen** = Einwilligung; Verantwortlicher/Kontakt über bestehende Stammdaten/Lizenz-API; Text bei Bedarf im Kunden-Onboarding ergänzen. |
+| **I2 – Hardware** | QR-Etikett: Preset + Maße in **Einstellungen** (`etikettPreset.ts`); Bluetooth-Druck weiterhin **natives Capacitor-Plugin** – Pairing/MAC bei konkretem Drucker (v. a. **Bixolon**, **§7.6.4**). |
+| **L4 – Pixel-Limit** | **§9.4a** nennt 512 px Breite; **Implementierung** `uploadTenantLogo.ts`: max. **Kante 2048 px** (WebP). Bei Bedarf angleichen oder Tabelle in §9.4a aktualisieren. |
+
+**GitHub:** Issues aus dieser Liste anlegen: **`docs/GitHub-Roadmap-7.2.md`** (inkl. **T1** · `docs/github-issues/T1.body.md`, **CF1** · `docs/github-issues/CF1.body.md`) · Skript **`scripts/gh-roadmap-issues.sh`** (nach `gh auth login`).
 
 ---
 
@@ -321,6 +328,14 @@ Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** =
 | **J8** | Lizenzportal: Mandanten-Export bei Kündigung |
 | **J9** | Ladezeiten-Dashboard (`Ladezeiten.tsx`) |
 | **L2–L3** | Status Grenzüberschreitung in Mandantenliste; Export JSON |
+| **J2** | **Wartungsstatistik (MVP):** `src/pages/Wartungsstatistik.tsx`, Route `/wartungsstatistik`, KPIs/Tabellen/CSV |
+| **J3** | **Buchhaltungs-Export (MVP):** `src/pages/BuchhaltungExport.tsx`, `/buchhaltung-export`, `accountingExportService.ts`, Feature `buchhaltung_export` |
+| **J4** | **Zuletzt bearbeitet (MVP):** `Startseite.tsx`, `fetchRecentEditsForDashboard`, Layout-Sync `profiles.dashboard_layout` |
+| **J4-B** | **Favoriten / „nur meine“:** `dashboardLayoutPreferences.ts`, `dataService.fetchRecentEditsForDashboard` (Scope), `Startseite.tsx` |
+| **J1** | **Wartungs-E-Mail-Digest:** `profiles.maintenance_reminder_email_*`, RPC `get_maintenance_reminders_for_user_digest`, Edge `send-maintenance-reminder-digest`, `Einstellungen.tsx` |
+| **L4** | **Logo-Upload Lizenzportal:** Bucket `tenant_logos` (**supabase-license-portal.sql**), `uploadTenantLogo.ts`, `MandantForm.tsx` |
+| **I2** | **Etikett-Preset (UI):** `etikettPreset.ts`, Anzeige in **Einstellungen**; natives Druck weiter **Capacitor-Plugin** – **§11.4** |
+| **J10** | **Bug-Erfassung (MVP):** `Fehlerberichte.tsx`, `app_errors`, `shared/errorReportService`, Feature `fehlerberichte` |
 
 ---
 
@@ -330,10 +345,10 @@ Langfristige Feature-Liste mit **Priorität** und **Aufwand** – nicht alles is
 
 | # | Feature | Priorität | Aufwand | Hinweis |
 |---|---------|-----------|---------|---------|
-| 1 | Wartungsplanung / Erinnerungen | Hoch | 3–5 T | ⚠️ Teilweise, siehe **J1** |
-| 2 | Wartungsstatistik / Auswertung | Hoch | 3–4 T | 🔲 **J2** |
-| 3 | Export für Buchhaltung | Hoch | 2–3 T | 🔲 **J3** |
-| 4 | Schnellzugriff / Zuletzt bearbeitet | Hoch | 1–2 T | 🔲 **J4** |
+| 1 | Wartungsplanung / Erinnerungen | Hoch | 3–5 T | ✅ In-App + **E-Mail-Digest** (**J1**) – Betrieb: **§7.2.1** |
+| 2 | Wartungsstatistik / Auswertung | Hoch | 3–4 T | ✅ **J2** (MVP); Charts optional |
+| 3 | Export für Buchhaltung | Hoch | 2–3 T | ✅ **J3** (MVP); SevDesk/API später |
+| 4 | Schnellzugriff / Zuletzt bearbeitet | Hoch | 1–2 T | ✅ **J4** (MVP) + **J4-B** Favoriten / „nur meine“ |
 | 5 | Erweiterte Filter Kundenliste | Hoch | 2 T | ✅ **J5** |
 | 6 | Umbau Wartung (MVP) | Hoch | 15–20 T | ⚠️ **J6** |
 | 7 | Arbeitszeiterfassung (Modul) | Mittel | 5–8 T | ✅ umgesetzt (**§7.5** AZK) |
@@ -346,7 +361,9 @@ Langfristige Feature-Liste mit **Priorität** und **Aufwand** – nicht alles is
 | 14 | Bulk-Operationen | Niedrig | 3 T | 🔲 **J7** |
 | 15 | Portal: Push-Benachrichtigungen | Niedrig | 2–3 T | 🔲 **J7** |
 | 16 | Ladezeiten-Monitoring | – | – | ✅ **J9** |
-| 17 | Bug-Erfassungsmodul | Niedrig | 1–2 T | 🔲 **J10** |
+| 17 | Bug-Erfassungsmodul | Niedrig | 1–2 T | ✅ **J10** (MVP) |
+| 18 | DB-Schema: Supabase-Migrations statt Monolith | Mittel | 0,5–2 T | 🔲 **T1** – **docs/sql/Supabase-Migrations-Strategie.md** |
+| 19 | Hosting: Netlify → Cloudflare + API-Strategie (Supabase Edge?) | Mittel | 2–5 T Planung/Staging; Umsetzung danach | 🔲 **CF1** – **docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md** |
 
 ---
 
@@ -388,13 +405,96 @@ Ein separates Supabase-Projekt für das **Lizenzportal**; Haupt-App bleibt eigen
 |-------|----------|
 | **B3 / L1** | Nur manuell prüfbar (zweites Supabase-Projekt) |
 | **I1** Capacitor | ✅ |
-| **I2** Bluetooth-Drucker | ❌ |
-| **J1** Wartungsplanung | ⚠️ Liste ja, **E-Mail** fehlt |
-| **J2–J4** | ❌ offen |
+| **I2** Bluetooth-Drucker | ⚠️ Preset/UI ✅; natives Plugin / Hardware optional |
+| **J1** Wartungsplanung | ✅ In-App + **E-Mail-Digest** (Betrieb **§7.2.1**) |
+| **J2–J4** | ✅ MVP (**§7.3**) |
 | **J5** Filter | ✅ |
 | **J6** Umbau Wartung | ⚠️ Teilweise |
 | **J7** | ❌ |
 | **J8–J9** | ✅ |
+| **J10** Bug-Erfassung | ✅ MVP (**§7.3**) |
+
+---
+
+### 7.6 Konsolidierter Planungsstand (März 2026)
+
+Ehemals verteilt auf `docs/Roadmap-Abarbeitung-Vorschlag.md`, `docs/Roadmap-Weiterentwicklung-und-Mandanten.md` und Teile von `docs/Noch-zu-erledigen.md` – **eine Quelle:** dieser Abschnitt + **§11**. Vertiefung **Urlaub/VJ/Soll:** `docs/Arbeitszeit-Soll-Urlaub-Planung.md`, `docs/Arbeitszeit-Rechtliche-Compliance.md`.
+
+#### 7.6.1 Roadmap-IDs: Ist-Stand (Kurz)
+
+| ID | Stand | Kurzreferenz |
+|----|--------|----------------|
+| **J1** | ✅ Digest | In-App ✅; **E-Mail** via Edge + Cron (**§7.2.1**). |
+| **J2** | ✅ MVP | `/wartungsstatistik`, KPIs, Tabellen, CSV; optional Charts. |
+| **J3** | ✅ MVP | `/buchhaltung-export`, `accountingExportService.ts`; **SevDesk/API** später. |
+| **J4** | ✅ MVP A | `Startseite`, `profiles.dashboard_layout`; **J4-B** ✅ Favoriten/nur meine. |
+| **J5** | ✅ | Erweiterte Filter `Kunden.tsx`. |
+| **J6** | ⚠️ | Monteursbericht vorhanden; Freigabe/Portal/DIN großes Paket. |
+| **J7** | 🔲 | Priorität: (1) Mängel-Follow-up → (2) Bulk → (3) Portal-Push; **iCal** nicht in dieser Runde. |
+| **J10** | ✅ MVP | `Fehlerberichte`, `app_errors`, `errorReportService`. |
+| **I2** | ⚠️ UI | Preset/Maße **Einstellungen**; Hardware/Plugin – **§11.4**, **§7.2.1**. |
+| **L4** | ✅ | Logo-Upload Lizenzportal – **§9.4a**, Bucket `tenant_logos`. |
+| **T1** | 🔲 | Supabase CLI-Migrations (Baseline + Deltas) – **docs/sql/Supabase-Migrations-Strategie.md**. |
+| **CF1** | 🔲 | Cloudflare-Umzug planen, Lizenz-API CF vs. Supabase – **docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md**. |
+
+#### 7.6.2 Empfohlene Abarbeitungsreihenfolge (Phasen 0–7)
+
+**Kurzfassung einer Sprint-Reihenfolge:** *Fundament → Haupt-App (J1–J4, Bug parallel) → einheitliche PDFs/Briefbogen → Urlaub-Block (Arbeitszeit) → J7-Paket → J6 → Ortung/Standort/I2 → Hosting/Performance.*
+
+| Phase | Inhalt | Stand (März 2026) |
+|-------|--------|-------------------|
+| **0** | Anleitung App-Updates, Grenzüberschreitungen-Checkliste, Build/TS | ✅ |
+| **1** | J4, J1 In-App, J2, J3, Bug-Modul parallel | ✅ MVP-Kern |
+| **2** | PDF/Briefbogen querschnittlich (`pdfLetterhead`, `briefbogenClient`, u. a. Wartungsprotokoll, Zoll-PDF, Urlaubsbescheinigung) | ✅ |
+| **3** | Urlaub VJ, Zusatzurlaub, Pending (Schema, Portal-UI) | ✅ MVP |
+| **4** | **J7** ohne iCal: Mängel-Follow-up → Bulk → Portal-Push | 🔲 |
+| **5** | **J6** Umbau Wartung (15–20 T) | 🔲 |
+| **6** | GPS-Debug nach Live, Standortabfrage-Checkliste, **I2**-Abstraktion (Preset ✅), A4-QR-Batch/Etikettendesign | teilweise |
+| **7** | **CF1:** Cloudflare-Umzug (Planung **docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md**); ggf. IONOS/Deploy parallel klären; `Optimierungsplan.md`, AZK-Optionen (Teamleiter-Extras) | 🔲 / später |
+
+**Bewusst zurückgestellt:** iCal vor stabilem J1–J4; **SevDesk** nach J3-Basis; **J6** nicht parallel zu unstabilem J1–J4.
+
+#### 7.6.3 Mandanten-Onboarding & Deploy (Phasen A–D)
+
+| Phase | Inhalt | Stand |
+|-------|--------|--------|
+| **A** | Deployment-Hilfe im Lizenzportal (Env-Blöcke, Checkliste pro Mandant) | ✅ |
+| **B** | Lizenz-API „nach Host“ (Portale ohne `VITE_LICENSE_NUMBER`) | ✅ |
+| **C** | Skript/CI: `scripts/netlify-apply-tenant-env.mjs`, Export im Mandanten-Formular | ✅ |
+| **D** | IaC (Terraform/Pulumi) + Supabase-/DNS-APIs | optional |
+
+**Manuell bleibend:** Mandanten-Supabase, Netlify-Sites, DNS, Secrets – siehe `docs/Netlify-README.md`, `docs/Netlify-Vier-Apps.md`.
+
+#### 7.6.4 Entscheidungen Roadmap J (übernommen)
+
+| Punkt | Entscheidung |
+|-------|----------------|
+| **J1** | In-App MVP ✅; **E-Mail-Digest** ✅ (Edge + Cron, **§7.2.1**). |
+| **J2–J4, J5** | MVP wie umgesetzt; **J4-B** ✅ Favoriten / „nur meine“. |
+| **J6** | Eigenes Thema nach übriger Roadmap. |
+| **J7** | Reihenfolge Mängel-Follow-up → Bulk → Portal-Push; **kein iCal** in dieser Runde. |
+| **I2** | Preset/Maße in **Einstellungen** ✅; **Bixolon**-Favorit; Pairing/MAC in Hardware-Phase. |
+| **GPS / Standort / IONOS** | Wie in **§11.7–11.9** und früheren Beschlüssen. |
+
+#### 7.6.5 Etiketten: Bixolon-Presets & A4-Referenz (HERMA/Avery)
+
+*Bixolon 2″:* typisch **58 mm** Rolle, bedruckbar oft **~48 mm** Breite – Layout/QR darin kalibrieren.
+
+| Preset | Vorschlag B×H | Nutzung |
+|--------|----------------|--------|
+| **mini** | 50 × 25 mm | Kompakt |
+| **mid** | 50 × 30 mm | Standard |
+| **max** | 58 × 40 mm | Max. auf 58-mm-Rolle |
+
+**A4-Sammel-PDF (Farbe):** Zellgröße ähnlich Thermo-Presets; exakte Kalibrierung pro gekauftem Bogen.
+
+| Preset (Mobil) | Ziel ca. | Beispiel HERMA (A4) | Alternativ Avery |
+|----------------|----------|---------------------|------------------|
+| **mini** (~50×25 mm) | klein, viele/Blatt | **48,3 × 25,4 mm:** z. B. **5051**, **4608**, **10726** | **L4736REV-25:** 45,7 × 21,2 mm, 48/Blatt |
+| **mid** (~50×30 mm) | Standard-Zelle | **52,5 × 29,7 mm:** z. B. **4610**, **4461**; Folie **4684** | Zweckform gleiche Klasse |
+| **max** (~58×40 mm) | größere Zelle | **63,5 × 38,1 mm:** z. B. **5029**, **4677**, **10301**, **10727**, **8632** | z. B. **L7163** |
+
+**Thermo-Rollen:** Händler nach „58 mm, Thermodirekt, Höhe 25/30/40 mm, Kern 12 mm“; max. Rollendurchmesser beachten. **Batch-Berechtigung:** Lizenz-Feature `qr_batch_a4` + vom Admin freigegebene Rollen – siehe **§11.4**.
 
 ---
 
@@ -411,7 +511,7 @@ Vico/
 ├── supabase-complete.sql
 ├── Vico.md           # Diese Dokumentation
 ├── BENUTZERANLEITUNG.md
-├── docs/             # Weitere Konzept- und Planungsdokumente (siehe Abschnitt 10.11)
+├── docs/             # Setup, Betrieb, Vertiefung (siehe Vico.md §10.11, §11.12)
 └── …
 ```
 
@@ -527,7 +627,7 @@ Vico/
 
 ---
 
-### 9.4a Logo-Upload im Lizenzportal (geplant – Roadmap **L4**)
+### 9.4a Logo-Upload im Lizenzportal (umgesetzt – Roadmap **L4**)
 
 **Ziel:** Mandanten-Logo nicht nur per freier URL, sondern **direkt im Lizenzportal hochladen**; Speicherung an einem definierten Ort; **Dateigröße** und **Pixelmaße** begrenzen; beim Upload **optimieren** (kurze Ladezeiten); ohne Logo **einheitlicher Platzhalter** in allen Apps.
 
@@ -560,7 +660,7 @@ Vico/
 
 | Thema | Festlegung |
 |-------|------------|
-| **Speicherort** | **Supabase Storage** im **Lizenzportal-Projekt**, Bucket z. B. `tenant-branding`, Pfad z. B. `logos/{tenant_id}/logo.webp` (überschreiben bei neuem Upload). |
+| **Speicherort** | **Supabase Storage** im **Lizenzportal-Projekt**, Bucket **`tenant_logos`**, Pfad **`{tenant_id}/logo.webp`** (überschreiben bei neuem Upload). |
 | **Metadaten** | `tenants.logo_url` = öffentliche URL; manuelle URL-Eingabe optional **parallel** oder nach Upload nur noch Anzeige (UI-Entscheidung bei Implementierung). |
 | **Upload** | Client: max. **2 MB** Roh, **PNG/JPEG** → Skalierung max. **512 px** Breite → Kompression auf **150–300 KB** Ziel → **WebP** → Upload. |
 | **Server** | Optional: Storage-Policy + MIME-Check; Roh-Upload nur `image/png`, `image/jpeg`. |
@@ -1012,7 +1112,7 @@ Die folgenden Punkte sind als Konzept für die Hauptapp vorgesehen. **Fachliche 
 | Demokunde | `docs/Demokunde-Setup.md` | Demo-Mandant einrichten, 24h-Löschung |
 | Release | `docs/Release-Checkliste.md` | Checkliste vor Release |
 | Updates & Versionierung | `docs/App-Updates-und-Versionierung.md` | SemVer, `version.json`, Release Notes, Multi-App, DB/Capacitor |
-| Roadmap-Reihenfolge | `docs/Roadmap-Abarbeitung-Vorschlag.md` | Vorschlag Phasen 0–7 aus Noch-zu-erledigen + Vico §7 |
+| Roadmap-Reihenfolge | **Vico.md §7.6.2** | Phasen 0–7 (konsolidiert) |
 | DB-Backup (Live) | `docs/Supabase-Datenbank-Backup.md` | GitHub Action, pg_dump lokal, Dashboard – nicht in Git |
 | App-Updates (Betrieb) | `docs/Anleitung-App-Updates-fuer-Betrieb.md` | Schritt-für-Schritt Releases je App |
 | Grenzüberschreitungen (Checkliste) | `docs/Verifikation-Grenzueberschreitungen-Checkliste.md` | Live-Verifikation Lizenzkette |
@@ -1287,6 +1387,8 @@ Hier sind die wichtigsten **fachlichen Konzepte** gebündelt, die zuvor als einz
 
 **Kern:** Tabelle `app_errors` (message, stack, source `main_app|portal|admin`, path, user_agent, status, fingerprint), RLS (Insert authentifiziert, Select/Update Admin), **Debounce/Deduplizierung** clientseitig, Service z. B. `errorReportService`.
 
+**Umsetzung (MVP ✅):** `src/Fehlerberichte.tsx`, Feature `fehlerberichte` (`LicenseFeatureGuard`), Einbindung in `main.tsx` / `ErrorBoundary` u. a.; Feinschliff (Filter, Workflow) optional – **§7.3** (**J10**).
+
 ---
 
 ### 11.4 Etikettendrucker (QR aus der App)
@@ -1299,7 +1401,7 @@ Hier sind die wichtigsten **fachlichen Konzepte** gebündelt, die zuvor als einz
 
 **Code:** `src/lib/etikettendrucker.ts` – `isEtikettendruckerAvailable()`, `printLabel(qrPayload)`.
 
-**Etikettendesign (Planung, Detail in `docs/Noch-zu-erledigen.md`):** Ein **mandantenweites Layout** (wie Druckvorlagen), **Presets mini/mid/max** für Bixolon 2″ (ca. 50×25 / 50×30 / 58×40 mm; **Druckbreite ~48 mm** beachten), **separates Etiketten-Logo** neben dem allgemeinen Mandantenlogo, **Vorschau** vor Druck. **Render:** ein farbfähiges Layout; **Thermo** druckt **Graustufen**. **A4-Sammel-PDF (Haupt-App):** Umgesetzt – `src/lib/generateQrBatchA4Pdf.ts`, Kundenansicht **Mehrfachauswahl** (Checkboxen), Lizenz-Feature **`qr_batch_a4`**, Rollen **admin / teamleiter / mitarbeiter / operator / demo** (Leser ausgeschlossen); **kein** Kundenportal. **A4-Bogenmaße:** HERMA/Avery-Referenzartikel siehe `Noch-zu-erledigen.md` (A4-Referenzetiketten).
+**Etikettendesign (Planung):** Ein **mandantenweites Layout** (wie Druckvorlagen), **Presets mini/mid/max** für Bixolon 2″ (ca. 50×25 / 50×30 / 58×40 mm; **Druckbreite ~48 mm** beachten), **separates Etiketten-Logo** neben dem allgemeinen Mandantenlogo, **Vorschau** vor Druck. **Render:** ein farbfähiges Layout; **Thermo** druckt **Graustufen**. **A4-Sammel-PDF (Haupt-App):** Umgesetzt – `src/lib/generateQrBatchA4Pdf.ts`, Kundenansicht **Mehrfachauswahl** (Checkboxen), Lizenz-Feature **`qr_batch_a4`**, Rollen **admin / teamleiter / mitarbeiter / operator / demo** (Leser ausgeschlossen); **kein** Kundenportal. **A4-Bogenmaße / HERMA-Avery:** **§7.6.5**.
 
 ---
 
@@ -1381,7 +1483,7 @@ Hier sind die wichtigsten **fachlichen Konzepte** gebündelt, die zuvor als einz
 | Sicherheit & Betrieb | 4 | 5–9 T |
 | Infrastruktur | 2 | 1–2 T |
 
-Details zu J1–J10 u. a.: **Vico.md §7** (Roadmap) und `docs/Noch-zu-erledigen.md`. `docs/Offene-Module-Vorschlaege.md` ist nur noch ein Stub-Verweis.
+Details zu J1–J10 u. a.: **Vico.md §7** und **§7.6**. `docs/Noch-zu-erledigen.md` ist ein **Kurz-Verweis**; `docs/Offene-Module-Vorschlaege.md` nur Stub.
 
 ---
 
@@ -1399,17 +1501,20 @@ Details zu J1–J10 u. a.: **Vico.md §7** (Roadmap) und `docs/Noch-zu-erledig
 | `docs/Zeiterfassung-Offene-Punkte-und-IONOS.md`, `docs/Arbeitszeit-Umstrukturierung-Portal.md` | **§11.8** + weiterführend in `docs/` |
 | `docs/Standort-Abfrage-Arbeitszeitenportal.md` | **§11.9** + Details in `docs/` |
 | `docs/Offene-Module-Vorschlaege.md` | **§11.10** (Stub-Verweis) |
+| `docs/Roadmap-Abarbeitung-Vorschlag.md` (entfernt) | **§7.6.2** |
+| `docs/Roadmap-Weiterentwicklung-und-Mandanten.md` (entfernt) | **§7.6.3** |
+| `docs/Noch-zu-erledigen.md` (Kurz-Stub) | **§7**, **§7.6**; Vertiefung in `docs/Arbeitszeit-*.md` |
 
 ---
 
 ### 11.12 Dokumentation, die bewusst in `docs/` bleibt
 
-- **Setup & Betrieb:** `Lizenzportal-Setup.md`, `Demokunde-Setup.md`, `Release-Checkliste.md`, `App-Updates-und-Versionierung.md`, `Supabase-Datenbank-Backup.md`, `Benutzer-loeschen-Supabase.md` (Auth-User löschen, FK-Migration), `Roadmap-Weiterentwicklung-und-Mandanten.md` (Workflow, Mandanten-Onboarding-Phasen)
+- **Roadmap & Mandanten-Strategie (Phasen A–D, Sprint-Reihenfolge):** **`Vico.md` §7.6** (einzige konsolidierte Planung)
+- **Setup & Betrieb:** `Lizenzportal-Setup.md`, `Demokunde-Setup.md`, `Release-Checkliste.md`, `App-Updates-und-Versionierung.md`, `Supabase-Datenbank-Backup.md`, `Benutzer-loeschen-Supabase.md` (Auth-User löschen, FK-Migration)
 - **Technik/Performance:** `Optimierungsplan.md`
 - **Migrationen / SQL-Hinweise:** wie in Repo dokumentiert (`supabase-*.sql`)
 - **Vertiefung Arbeitszeit:** `Arbeitszeit-Feature-Liste.md`, `Arbeitszeit-Soll-Urlaub-Planung.md`, `Arbeitszeit-Rechtliche-Compliance.md`
-- **Aufgabenliste:** `Noch-zu-erledigen.md`
-- **Roadmap-Reihenfolge (Vorschlag):** `Roadmap-Abarbeitung-Vorschlag.md`
+- **Kurz-Verweis ehem. Aufgabenliste:** `Noch-zu-erledigen.md` → zeigt auf **Vico.md §7**
 - **App-Updates (Betrieb):** `Anleitung-App-Updates-fuer-Betrieb.md`
 - **Grenzüberschreitungen (Checkliste):** `Verifikation-Grenzueberschreitungen-Checkliste.md`
 

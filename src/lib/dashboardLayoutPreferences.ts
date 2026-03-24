@@ -19,6 +19,10 @@ export type DashboardLayoutStored = {
   recentEditsOpen?: boolean
   /** Aus der Liste entfernte Einträge (nur Anzeige, kein Löschen in der DB) */
   dismissedRecentEditKeys?: string[]
+  /** „Nur meine Aufträge“: nur Aufträge mit Zuweisung/Erstellung durch den aktuellen Nutzer (kein Stammdaten-Filter ohne Audit) */
+  recentEditsScope?: 'all' | 'mine'
+  /** Favoriten (oben sortiert); Keys wie bei Zuletzt bearbeitet */
+  favoriteRecentEditKeys?: string[]
 }
 
 const STORAGE_VERSION = 1
@@ -120,11 +124,19 @@ export const parseDashboardLayoutFromUnknown = (raw: unknown): DashboardLayoutSt
     )
     widgetOrder = filtered.length > 0 ? filtered : undefined
   }
+  const scopeRaw = o.recentEditsScope
+  const recentEditsScope =
+    scopeRaw === 'all' || scopeRaw === 'mine' ? scopeRaw : undefined
+  const favRaw = o.favoriteRecentEditKeys
+  const favoriteRecentEditKeys =
+    Array.isArray(favRaw) && favRaw.every((k) => typeof k === 'string') ? favRaw : undefined
   return {
     widgets,
     widgetOrder,
     recentEditsOpen: typeof o.recentEditsOpen === 'boolean' ? o.recentEditsOpen : undefined,
     dismissedRecentEditKeys: dismissed,
+    recentEditsScope,
+    favoriteRecentEditKeys,
   }
 }
 
@@ -154,11 +166,19 @@ export const loadDashboardLayout = (userId: string | null): DashboardLayoutStore
       )
       widgetOrder = filtered.length > 0 ? filtered : undefined
     }
+    const scopeRaw = o.recentEditsScope
+    const recentEditsScope =
+      scopeRaw === 'all' || scopeRaw === 'mine' ? scopeRaw : undefined
+    const favRaw = o.favoriteRecentEditKeys
+    const favoriteRecentEditKeys =
+      Array.isArray(favRaw) && favRaw.every((k) => typeof k === 'string') ? favRaw : undefined
     return {
       widgets,
       widgetOrder,
       recentEditsOpen: typeof o.recentEditsOpen === 'boolean' ? o.recentEditsOpen : undefined,
       dismissedRecentEditKeys: dismissed,
+      recentEditsScope,
+      favoriteRecentEditKeys,
     }
   } catch {
     return { widgets: {} }
@@ -241,6 +261,29 @@ export const dismissRecentEditKey = (
 
 export const clearDismissedRecentEdits = (userId: string, prev: DashboardLayoutStored): DashboardLayoutStored => {
   const next: DashboardLayoutStored = { ...prev, dismissedRecentEditKeys: [] }
+  saveDashboardLayout(userId, next)
+  return next
+}
+
+export const setRecentEditsScope = (
+  userId: string,
+  prev: DashboardLayoutStored,
+  scope: 'all' | 'mine'
+): DashboardLayoutStored => {
+  const next: DashboardLayoutStored = { ...prev, recentEditsScope: scope }
+  saveDashboardLayout(userId, next)
+  return next
+}
+
+export const toggleFavoriteRecentEditKey = (
+  userId: string,
+  prev: DashboardLayoutStored,
+  key: string
+): DashboardLayoutStored => {
+  const cur = new Set(prev.favoriteRecentEditKeys ?? [])
+  if (cur.has(key)) cur.delete(key)
+  else cur.add(key)
+  const next: DashboardLayoutStored = { ...prev, favoriteRecentEditKeys: [...cur] }
   saveDashboardLayout(userId, next)
   return next
 }

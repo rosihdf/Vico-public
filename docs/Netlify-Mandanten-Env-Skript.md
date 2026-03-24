@@ -72,4 +72,4 @@ Secrets im CI: `NETLIFY_AUTH_TOKEN`, `NETLIFY_ACCOUNT_ID`. Die **JSON-Datei** mi
 
 ---
 
-*Ergänzung zu [`Netlify-README.md`](./Netlify-README.md) und [`Roadmap-Weiterentwicklung-und-Mandanten.md`](./Roadmap-Weiterentwicklung-und-Mandanten.md).*
+*Ergänzung zu [`Netlify-README.md`](./Netlify-README.md). Mandanten-Onboarding Phasen A–D: **`Vico.md` §7.6.3**.*

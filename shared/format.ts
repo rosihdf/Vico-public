@@ -9,9 +9,11 @@ export const formatTime = (iso: string): string => {
 }
 
 export const formatMinutes = (min: number): string => {
-  const h = Math.floor(min / 60)
-  const m = min % 60
-  return `${h}:${m.toString().padStart(2, '0')} h`
+  const sign = min < 0 ? '-' : ''
+  const abs = Math.abs(Math.round(min))
+  const h = Math.floor(abs / 60)
+  const m = abs % 60
+  return `${sign}${h}:${m.toString().padStart(2, '0')} h`
 }
 
 export const formatDateShort = (dateStr: string): string => {

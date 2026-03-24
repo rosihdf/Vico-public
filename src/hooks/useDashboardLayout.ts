@@ -9,6 +9,8 @@ import {
   dismissRecentEditKey,
   clearDismissedRecentEdits,
   saveDashboardLayout,
+  setRecentEditsScope,
+  toggleFavoriteRecentEditKey,
 } from '../lib/dashboardLayoutPreferences'
 import { updateProfileDashboardLayout } from '../lib/userService'
 
@@ -130,6 +132,30 @@ export const useDashboardLayout = (
     })
   }, [userId, schedulePersistToProfile])
 
+  const updateRecentEditsScope = useCallback(
+    (scope: 'all' | 'mine') => {
+      if (!userId) return
+      setLayout((prev) => {
+        const next = setRecentEditsScope(userId, prev, scope)
+        schedulePersistToProfile(next)
+        return next
+      })
+    },
+    [userId, schedulePersistToProfile]
+  )
+
+  const toggleFavoriteRecentEdit = useCallback(
+    (key: string) => {
+      if (!userId) return
+      setLayout((prev) => {
+        const next = toggleFavoriteRecentEditKey(userId, prev, key)
+        schedulePersistToProfile(next)
+        return next
+      })
+    },
+    [userId, schedulePersistToProfile]
+  )
+
   return {
     layout,
     updateWidgetVisible,
@@ -137,5 +163,7 @@ export const useDashboardLayout = (
     updateRecentEditsOpen,
     dismissRecentEdit,
     resetDismissedRecentEdits,
+    updateRecentEditsScope,
+    toggleFavoriteRecentEdit,
   }
 }

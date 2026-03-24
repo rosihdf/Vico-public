@@ -1,25 +1,29 @@
 -- -----------------------------------------------------------------------------
--- Vico – Datenbank-Schema (vollständig)
+-- Vico – Datenbank-Schema (vollständig, Mandanten-Haupt-App)
 -- Supabase SQL Editor: Inhalt einfügen und Run ausführen. Idempotent.
--- Zuletzt geprüft/aufgeräumt: 2026-03 (DDL-Reihenfolge Urlaub/Profile, admin_config-Defaults)
+-- Zuletzt strukturell aufgeräumt: 2026-03 (Header, keine fachliche Logik geändert).
 -- -----------------------------------------------------------------------------
 --
--- Struktur:
---   1. Profiles + Rollen (admin, mitarbeiter, operator, leser, demo, kunde)
---   2. Stammdaten: Customers, BVs, Objects, Object Photos/Documents, maintenance_contracts;
---      customer_portal_users (für Trigger handle_new_user)
---   3. Wartung: Maintenance Reports, Photos, Smoke Detectors
---   4. Aufträge, Zeit, Urlaubstabellen (leave_*), Component Settings, Audit Log + Audit-Trigger
---   5. RPC: Zeiterfassung, Urlaub (inkl. Teilgenehmigung), Audit, Suche, Lizenz, Standort …
---   5b. Lizenzmodell: license, get_license_status, check_can_create_customer, check_can_invite_user
---   5c. Standortabfrage: employee_current_location, admin_config (+ Default-Keys), …
---   6. Kundenportal: customer_portal_users RLS, portal_user_object_visibility, Portal-Helfer, get_portal_*
---   7. Storage Buckets + Policies
---   7b. Urlaub Phase 3: Zusatzposten, VJ-Ack, Balance-/Frist-RPCs (Tabellen nach Storage, vor Indizes)
---   8. Indizes (Stammdaten, Wartung, Aufträge, Lizenz, Audit, Kundenportal, Urlaub), Realtime
+-- Inhaltsverzeichnis (Reihenfolge = Abhängigkeiten)
+--   1. Profiles & Rollen, RLS, Trigger (inkl. maintenance_reminder_* / Urlaub-Spalten)
+--   2. Stammdaten: customers, bvs, objects, Fotos/Dokumente, maintenance_contracts, …
+--   3. Wartungsprotokolle (Reports, Fotos, Rauchmelder)
+--   4. orders, time_*, leave_*, work_*, component_settings, audit_log (+ Trigger)
+--   5. RPCs (Zeit, Urlaub, Audit, Suche, …)
+--   5b. Lizenz: license, get_license_status, Grenz-Checks
+--   5c. Standortabfrage: admin_config, location_requests, push_subscriptions, …
+--   6. Kundenportal (RLS, Sichtbarkeit, get_portal_*)
+--   7. Storage-Buckets + Policies
+--   7b. Urlaub Phase 3 (Zusatzposten, VJ-Ack, erweiterte RPCs) – nach Storage, vor Indizes
+--   8. Indizes & Realtime (Querschnitt; weitere idx_* auch direkt bei neuen Tabellen in §4/5c)
 --
--- Hinweis Reihenfolge: Spalten/Tabellen, die von Funktionen in Abschn. 5 referenziert werden, müssen
---   vor diesen Funktionen per ALTER/CREATE existieren (z. B. leave_requests.approved_*, profiles.urlaub_vj_*).
+-- Hinweise
+--   • DDL vor Funktionen: Tabellen/Spalten, die RPCs nutzen, müssen zuerst existieren
+--     (z. B. leave_requests.approved_*, profiles.urlaub_vj_*).
+--   • Indizes: überwiegend CREATE INDEX IF NOT EXISTS; doppelte Strategie ist Absicht –
+--     „nah an der Tabelle“ für Lesbarkeit bei großen Blöcken, Abschn. 8 für Überblick & Realtime.
+--   • Laufzeit-Optimierung: EXPLAIN/ANALYZE in Staging; ggf. pg_stat_statements; keine
+--     Index-Löschungen hier ohne Messung (Partial Indizes z. B. demo_user_id bewusst gesetzt).
 
 -- -----------------------------------------------------------------------------
 -- 1. PROFILES & ROLLEN
@@ -63,6 +67,18 @@ exception when others then null;
 end $$;
 alter table public.profiles add constraint profiles_theme_preference_check
   check (theme_preference is null or theme_preference in ('light', 'dark', 'system'));
+
+-- Wartungs-Erinnerungen per E-Mail (Roadmap J1; Versand via Edge Function + Cron)
+alter table public.profiles add column if not exists maintenance_reminder_email_enabled boolean default false not null;
+alter table public.profiles add column if not exists maintenance_reminder_email_frequency text default 'weekly' not null;
+alter table public.profiles add column if not exists maintenance_reminder_email_last_sent_at timestamptz default null;
+do $$
+begin
+  alter table public.profiles drop constraint if exists profiles_maint_email_freq_check;
+exception when others then null;
+end $$;
+alter table public.profiles add constraint profiles_maint_email_freq_check
+  check (maintenance_reminder_email_frequency in ('daily', 'weekly'));
 
 -- Rollen-Helper (SECURITY DEFINER, keine RLS-Rekursion)
 create or replace function public.is_admin()
@@ -169,6 +185,16 @@ begin
   end if;
 end $$;
 
+-- profiles → auth.users: Löschen im Supabase-Dashboard (auth.users) kaskadiert Profil
+do $$
+begin
+  alter table public.profiles drop constraint if exists profiles_id_fkey;
+  alter table public.profiles
+    add constraint profiles_id_fkey foreign key (id) references auth.users(id) on delete cascade;
+exception
+  when duplicate_object then null;
+end $$;
+
 -- -----------------------------------------------------------------------------
 -- 2. STAMMDATEN
 -- -----------------------------------------------------------------------------
@@ -198,6 +224,14 @@ create table if not exists public.customer_portal_users (
   invited_at timestamptz default now(),
   created_at timestamptz default now()
 );
+do $$
+begin
+  alter table public.customer_portal_users drop constraint if exists customer_portal_users_invited_by_fkey;
+  alter table public.customer_portal_users
+    add constraint customer_portal_users_invited_by_fkey foreign key (invited_by) references public.profiles(id) on delete set null;
+exception
+  when duplicate_object then null;
+end $$;
 
 -- Trigger: Neuer User → Profile anlegen (nach customer_portal_users, da darauf zugegriffen wird)
 create or replace function public.handle_new_user()
@@ -446,6 +480,14 @@ create table if not exists public.maintenance_reports (
   pdf_path text, synced boolean default true,
   created_at timestamptz default now(), updated_at timestamptz default now()
 );
+do $$
+begin
+  alter table public.maintenance_reports drop constraint if exists maintenance_reports_technician_id_fkey;
+  alter table public.maintenance_reports
+    add constraint maintenance_reports_technician_id_fkey foreign key (technician_id) references public.profiles(id) on delete set null;
+exception
+  when duplicate_object then null;
+end $$;
 alter table public.maintenance_reports enable row level security;
 
 do $$ declare r record; begin
@@ -506,6 +548,22 @@ create table if not exists public.orders (
   description text, assigned_to uuid references public.profiles(id), created_by uuid references public.profiles(id),
   created_at timestamptz default now(), updated_at timestamptz default now()
 );
+do $$
+begin
+  alter table public.orders drop constraint if exists orders_assigned_to_fkey;
+  alter table public.orders
+    add constraint orders_assigned_to_fkey foreign key (assigned_to) references public.profiles(id) on delete set null;
+exception
+  when duplicate_object then null;
+end $$;
+do $$
+begin
+  alter table public.orders drop constraint if exists orders_created_by_fkey;
+  alter table public.orders
+    add constraint orders_created_by_fkey foreign key (created_by) references public.profiles(id) on delete set null;
+exception
+  when duplicate_object then null;
+end $$;
 do $$
 begin
   if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'orders' and column_name = 'order_time') then
@@ -780,7 +838,15 @@ create table if not exists public.leave_requests (
   updated_at timestamptz default now(),
   constraint leave_requests_dates check (to_date >= from_date)
 );
-create index if not exists idx_leave_requests_user_id on public.leave_requests(user_id);
+do $$
+begin
+  alter table public.leave_requests drop constraint if exists leave_requests_approved_by_fkey;
+  alter table public.leave_requests
+    add constraint leave_requests_approved_by_fkey foreign key (approved_by) references public.profiles(id) on delete set null;
+exception
+  when duplicate_object then null;
+end $$;
+-- Indizes siehe Abschn. 8 (idx_leave_requests_user_status_dates u. a.)
 create index if not exists idx_leave_requests_dates on public.leave_requests(from_date, to_date);
 create index if not exists idx_leave_requests_status on public.leave_requests(status);
 alter table public.leave_requests enable row level security;
@@ -838,6 +904,9 @@ alter table public.profiles add column if not exists urlaub_vj_deadline_day smal
 alter table public.profiles add column if not exists bundesland text default null;
 alter table public.profiles add column if not exists work_days int[] default null;
 alter table public.profiles add column if not exists hours_per_day numeric(4,2) default null;
+-- AZK: Soll aus Stunden/Tag × Arbeitstage (kein manuelles Soll Min/Monat mehr); nur Tage ab Eintritt bis Austritt
+alter table public.profiles add column if not exists employment_start_date date default null;
+alter table public.profiles add column if not exists employment_end_date date default null;
 
 -- RPC: Admin aktualisiert time_entry und schreibt Eintrag in time_entry_edit_log (eine Transaktion). order_id optional.
 create or replace function public.update_time_entry_admin(
@@ -1090,6 +1159,14 @@ create table if not exists public.audit_log (
 );
 do $$
 begin
+  alter table public.audit_log drop constraint if exists audit_log_user_id_fkey;
+  alter table public.audit_log
+    add constraint audit_log_user_id_fkey foreign key (user_id) references auth.users(id) on delete set null;
+exception
+  when duplicate_object then null;
+end $$;
+do $$
+begin
   if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'audit_log' and column_name = 'record_id') then
     alter table public.audit_log alter column record_id type text using record_id::text;
   end if;
@@ -1141,9 +1218,20 @@ grant execute on function public.get_my_role() to authenticated;
 
 drop function if exists public.get_all_profiles_for_admin();
 create or replace function public.get_all_profiles_for_admin()
-returns table (id uuid, email text, first_name text, last_name text, role text, soll_minutes_per_month int, soll_minutes_per_week int, team_id uuid, team_name text)
+returns table (
+  id uuid,
+  email text,
+  first_name text,
+  last_name text,
+  role text,
+  hours_per_day numeric,
+  employment_start_date date,
+  employment_end_date date,
+  team_id uuid,
+  team_name text
+)
 language sql security definer set search_path = public stable as $$
-  select p.id, p.email, p.first_name, p.last_name, p.role, p.soll_minutes_per_month, p.soll_minutes_per_week, p.team_id, t.name as team_name
+  select p.id, p.email, p.first_name, p.last_name, p.role, p.hours_per_day, p.employment_start_date, p.employment_end_date, p.team_id, t.name as team_name
   from public.profiles p
   left join public.teams t on t.id = p.team_id
   where auth.uid() is not null
@@ -1160,14 +1248,15 @@ returns table (
   first_name text,
   last_name text,
   role text,
-  soll_minutes_per_month int,
-  soll_minutes_per_week int,
+  hours_per_day numeric,
+  employment_start_date date,
+  employment_end_date date,
   vacation_days_per_year numeric,
   urlaub_vj_deadline_month smallint,
   urlaub_vj_deadline_day smallint
 )
 language sql security definer set search_path = public stable as $$
-  select p.id, p.email, p.first_name, p.last_name, p.role, p.soll_minutes_per_month, p.soll_minutes_per_week, p.vacation_days_per_year,
+  select p.id, p.email, p.first_name, p.last_name, p.role, p.hours_per_day, p.employment_start_date, p.employment_end_date, p.vacation_days_per_year,
     p.urlaub_vj_deadline_month, p.urlaub_vj_deadline_day
   from public.profiles p
   where p.role in ('admin', 'teamleiter', 'mitarbeiter', 'operator', 'leser')
@@ -1199,15 +1288,26 @@ declare
   v_count int := 0;
   v_ws record;
   v_p record;
+  v_emp_start date;
+  v_emp_end date;
 begin
   select bundesland, work_days, hours_per_day into v_ws from public.work_settings limit 1;
-  select p.bundesland, p.work_days, p.hours_per_day into v_p from public.profiles p where p.id = p_user_id limit 1;
+  select p.bundesland, p.work_days, p.hours_per_day, p.employment_start_date, p.employment_end_date
+  into v_p from public.profiles p where p.id = p_user_id limit 1;
   v_bundesland := coalesce(v_p.bundesland, v_ws.bundesland, 'BE');
   v_work_days := coalesce(v_p.work_days, v_ws.work_days, array[1,2,3,4,5]);
   v_hours_per_day := coalesce(v_p.hours_per_day, v_ws.hours_per_day, 8);
+  v_emp_start := v_p.employment_start_date;
+  v_emp_end := v_p.employment_end_date;
   v_first := make_date(p_year, p_month, 1);
   v_last := (v_first + interval '1 month' - interval '1 day')::date;
   for v_d in select generate_series(v_first, v_last, '1 day'::interval)::date loop
+    if v_emp_start is not null and v_d < v_emp_start then
+      continue;
+    end if;
+    if v_emp_end is not null and v_d > v_emp_end then
+      continue;
+    end if;
     v_dow := extract(dow from v_d)::int;
     if v_dow = any(v_work_days) then
       if not exists (select 1 from public.public_holidays where bundesland = v_bundesland and "date" = v_d) then
@@ -1249,6 +1349,69 @@ begin
 end;
 $$;
 grant execute on function public.calc_soll_minutes_for_year(uuid, int) to authenticated;
+
+-- RPC: Soll-Minuten für ein Datumsintervall (gleiche Logik wie Monat, aber von p_from bis p_to)
+-- Für Jahresstand „bis heute“: p_from = (Jahr)-01-01, p_to = min(heute, (Jahr)-12-31)
+create or replace function public.calc_soll_minutes_for_date_range(
+  p_user_id uuid,
+  p_from date,
+  p_to date
+)
+returns int
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  v_bundesland text;
+  v_work_days int[];
+  v_hours_per_day numeric;
+  v_d date;
+  v_dow int;
+  v_count int := 0;
+  v_ws record;
+  v_p record;
+  v_emp_start date;
+  v_emp_end date;
+begin
+  if p_from > p_to then
+    return 0;
+  end if;
+  select bundesland, work_days, hours_per_day into v_ws from public.work_settings limit 1;
+  select p.bundesland, p.work_days, p.hours_per_day, p.employment_start_date, p.employment_end_date
+  into v_p from public.profiles p where p.id = p_user_id limit 1;
+  v_bundesland := coalesce(v_p.bundesland, v_ws.bundesland, 'BE');
+  v_work_days := coalesce(v_p.work_days, v_ws.work_days, array[1,2,3,4,5]);
+  v_hours_per_day := coalesce(v_p.hours_per_day, v_ws.hours_per_day, 8);
+  v_emp_start := v_p.employment_start_date;
+  v_emp_end := v_p.employment_end_date;
+  for v_d in select generate_series(p_from, p_to, '1 day'::interval)::date loop
+    if v_emp_start is not null and v_d < v_emp_start then
+      continue;
+    end if;
+    if v_emp_end is not null and v_d > v_emp_end then
+      continue;
+    end if;
+    v_dow := extract(dow from v_d)::int;
+    if v_dow = any(v_work_days) then
+      if not exists (select 1 from public.public_holidays where bundesland = v_bundesland and "date" = v_d) then
+        if not exists (select 1 from public.work_free_days where "date" = v_d) then
+          if not exists (
+            select 1 from public.leave_requests lr
+            where lr.user_id = p_user_id and lr.status = 'approved'
+            and v_d >= lr.from_date and v_d <= lr.to_date
+          ) then
+            v_count := v_count + 1;
+          end if;
+        end if;
+      end if;
+    end if;
+  end loop;
+  return (v_count * v_hours_per_day * 60)::int;
+end;
+$$;
+grant execute on function public.calc_soll_minutes_for_date_range(uuid, date, date) to authenticated;
 
 -- RPC: Summe Arbeitsminuten (ohne Pausen) für User in Datumsbereich
 create or replace function public.get_work_minutes_for_user_in_range(
@@ -1299,12 +1462,23 @@ declare
   v_count int := 0;
   v_ws record;
   v_p record;
+  v_emp_start date;
+  v_emp_end date;
 begin
   select bundesland, work_days into v_ws from public.work_settings limit 1;
-  select p.bundesland, p.work_days into v_p from public.profiles p where p.id = p_user_id limit 1;
+  select p.bundesland, p.work_days, p.employment_start_date, p.employment_end_date
+  into v_p from public.profiles p where p.id = p_user_id limit 1;
   v_bundesland := coalesce(v_p.bundesland, v_ws.bundesland, 'BE');
   v_work_days := coalesce(v_p.work_days, v_ws.work_days, array[1,2,3,4,5]);
+  v_emp_start := v_p.employment_start_date;
+  v_emp_end := v_p.employment_end_date;
   for v_d in select generate_series(p_from_date, p_to_date, '1 day'::interval)::date loop
+    if v_emp_start is not null and v_d < v_emp_start then
+      continue;
+    end if;
+    if v_emp_end is not null and v_d > v_emp_end then
+      continue;
+    end if;
     v_dow := extract(dow from v_d)::int;
     if v_dow = any(v_work_days) then
       if not exists (select 1 from public.public_holidays where bundesland = v_bundesland and "date" = v_d) then
@@ -1434,11 +1608,13 @@ language sql security definer set search_path = public stable as $$
 $$;
 grant execute on function public.get_leave_requests(uuid, date, date, text) to authenticated;
 
--- RPC für Sollwerte-Update (umgeht RLS, prüft Berechtigung intern)
-create or replace function public.update_profile_soll_minutes(
+-- RPC: AZK-Stammdaten (Std/Tag individuell, Eintritt/Austritt) – Monatssoll = Arbeitstage × Std/Tag (berechnet)
+drop function if exists public.update_profile_soll_minutes(uuid, int, int);
+create or replace function public.update_profile_azk_stammdaten(
   p_profile_id uuid,
-  p_soll_minutes_per_month int,
-  p_soll_minutes_per_week int
+  p_hours_per_day numeric,
+  p_employment_start date,
+  p_employment_end date
 )
 returns void language plpgsql security definer set search_path = public as $$
 declare
@@ -1449,11 +1625,20 @@ begin
   if auth.uid() is null then
     raise exception 'Nicht authentifiziert';
   end if;
+  if p_employment_start is not null and p_employment_end is not null and p_employment_end < p_employment_start then
+    raise exception 'Austritt darf nicht vor Eintritt liegen.';
+  end if;
+  if p_hours_per_day is not null and (p_hours_per_day < 0 or p_hours_per_day > 24) then
+    raise exception 'Stunden pro Tag zwischen 0 und 24.';
+  end if;
   v_caller_admin := public.is_admin();
   if v_caller_admin then
     update public.profiles
-    set soll_minutes_per_month = p_soll_minutes_per_month,
-        soll_minutes_per_week = p_soll_minutes_per_week,
+    set hours_per_day = p_hours_per_day,
+        employment_start_date = p_employment_start,
+        employment_end_date = p_employment_end,
+        soll_minutes_per_month = null,
+        soll_minutes_per_week = null,
         updated_at = now()
     where id = p_profile_id;
     return;
@@ -1463,17 +1648,20 @@ begin
     select team_id into v_target_team_id from public.profiles where id = p_profile_id limit 1;
     if v_caller_team_id is not null and v_caller_team_id = v_target_team_id then
       update public.profiles
-      set soll_minutes_per_month = p_soll_minutes_per_month,
-          soll_minutes_per_week = p_soll_minutes_per_week,
+      set hours_per_day = p_hours_per_day,
+          employment_start_date = p_employment_start,
+          employment_end_date = p_employment_end,
+          soll_minutes_per_month = null,
+          soll_minutes_per_week = null,
           updated_at = now()
       where id = p_profile_id;
       return;
     end if;
   end if;
-  raise exception 'Keine Berechtigung, Sollwerte zu ändern';
+  raise exception 'Keine Berechtigung, AZK-Stammdaten zu ändern';
 end;
 $$;
-grant execute on function public.update_profile_soll_minutes(uuid, int, int) to authenticated;
+grant execute on function public.update_profile_azk_stammdaten(uuid, numeric, date, date) to authenticated;
 
 create or replace function public.update_profile_vacation_days(p_profile_id uuid, p_vacation_days numeric)
 returns void language plpgsql security definer set search_path = public as $$
@@ -1582,6 +1770,36 @@ language sql security definer set search_path = public stable as $$
   where auth.uid() is not null and ((c.demo_user_id is null and not public.is_demo()) or (c.demo_user_id = auth.uid()));
 $$;
 grant execute on function public.get_maintenance_reminders() to authenticated;
+
+-- Für Edge Function (Service Role): gleiche Sicht wie get_maintenance_reminders, aber für feste User-ID (kein JWT).
+drop function if exists public.get_maintenance_reminders_for_user_digest(uuid);
+create or replace function public.get_maintenance_reminders_for_user_digest(p_user_id uuid)
+returns table (object_id uuid, customer_id uuid, customer_name text, bv_id uuid, bv_name text, internal_id text,
+  object_name text, object_room text, object_floor text, object_manufacturer text,
+  maintenance_interval_months int, last_maintenance_date date, next_maintenance_date date, status text, days_until_due int)
+language sql security definer set search_path = public stable as $$
+  with last_maint as (select object_id, max(maintenance_date) as d from public.maintenance_reports group by object_id),
+  objs as (
+    select o.id as object_id, o.bv_id, o.customer_id, o.internal_id, o.name as object_name, o.room as object_room, o.floor as object_floor, o.manufacturer as object_manufacturer,
+           o.maintenance_interval_months,
+           coalesce(lm.d, null::date) as last_maintenance_date,
+           case when o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
+             then (coalesce(lm.d, current_date) + (o.maintenance_interval_months || ' months')::interval)::date else null end as next_maintenance_date
+    from public.objects o left join last_maint lm on lm.object_id = o.id
+    where o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
+  )
+  select ob.object_id, c.id as customer_id, c.name as customer_name, b.id as bv_id, b.name as bv_name, ob.internal_id,
+         ob.object_name, ob.object_room, ob.object_floor, ob.object_manufacturer,
+         ob.maintenance_interval_months, ob.last_maintenance_date, ob.next_maintenance_date,
+         case when ob.next_maintenance_date is null then 'ok' when ob.next_maintenance_date < current_date then 'overdue'
+              when ob.next_maintenance_date <= current_date + interval '30 days' then 'due_soon' else 'ok' end as status,
+         case when ob.next_maintenance_date is not null then (ob.next_maintenance_date - current_date)::int else null end as days_until_due
+  from objs ob left join public.bvs b on b.id = ob.bv_id join public.customers c on c.id = coalesce(b.customer_id, ob.customer_id)
+  where p_user_id is not null
+    and ((c.demo_user_id is null and not exists (select 1 from public.profiles pr where pr.id = p_user_id and pr.role = 'demo'))
+      or (c.demo_user_id = p_user_id));
+$$;
+grant execute on function public.get_maintenance_reminders_for_user_digest(uuid) to service_role;
 
 drop function if exists public.search_entities(text);
 create or replace function public.search_entities(q text)
@@ -2691,6 +2909,8 @@ create index if not exists idx_orders_assigned_to on public.orders(assigned_to);
 create index if not exists idx_orders_customer_id on public.orders(customer_id);
 create index if not exists idx_orders_bv_id on public.orders(bv_id);
 create index if not exists idx_orders_status on public.orders(status);
+-- „Zuletzt bearbeitet“ / Dashboard: dataService + fetchRecentEdits sortieren nach updated_at
+create index if not exists idx_orders_updated_at on public.orders(updated_at desc);
 create index if not exists idx_time_entries_user_date on public.time_entries(user_id, date desc);
 create index if not exists idx_time_entries_order_id on public.time_entries(order_id) where order_id is not null;
 create index if not exists idx_time_breaks_time_entry_id on public.time_breaks(time_entry_id);
@@ -2701,9 +2921,16 @@ create index if not exists idx_app_errors_created_at on public.app_errors(create
 create index if not exists idx_app_errors_status on public.app_errors(status);
 create index if not exists idx_component_settings_sort_order on public.component_settings(sort_order);
 
--- Urlaub (Saldo: user_id + Typ + Status + Datumsbereich)
-create index if not exists idx_leave_requests_user_type_status_dates
-  on public.leave_requests (user_id, leave_type, status, from_date, to_date);
+-- Urlaub / leave_requests (Review 2026-03)
+-- • get_leave_requests: Filter user_id + optional status + Datums-Overlap (to_date >= from, from_date <= to)
+-- • calc_soll_minutes_for_*: EXISTS mit user_id, status = 'approved', Kalendertag in [from_date, to_date]
+--   → B-Tree (user_id, status, from_date, to_date) ohne leave_type in der Mitte
+-- • idx_leave_requests_user_type_status_dates entfiel: leave_type zwischen user_id und status erschwerte
+--   reine (user_id, status)-Zugriffe; leave_type-Filter ist selten genug für seq. Filter / idx_leave_requests_dates
+create index if not exists idx_leave_requests_user_status_dates
+  on public.leave_requests (user_id, status, from_date, to_date);
+drop index if exists public.idx_leave_requests_user_type_status_dates;
+drop index if exists public.idx_leave_requests_user_id;
 create index if not exists idx_leave_requests_approved_by on public.leave_requests(approved_by) where approved_by is not null;
 
 -- Kundenportal

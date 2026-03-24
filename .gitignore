@@ -9,4 +9,8 @@ tsconfig.tsbuildinfo
 supabase/.temp/
 **/supabase/.temp/
 *.tsbuildinfo
+
+# Mandanten: lokale Secrets / Kopien der Registry (keine DB-URLs committen)
+configs/mandanten-registry.local.json
+configs/mandanten-db-urls.local.txt
 admin/vite.config.d.ts

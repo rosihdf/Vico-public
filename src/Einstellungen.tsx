@@ -11,7 +11,13 @@ import {
   updateImpressum,
   isLicenseApiConfigured,
 } from './lib/licensePortalApi'
-import { fetchMyProfile, revokeGpsConsent, setStandortabfrageConsent, revokeStandortabfrageConsent } from './lib/userService'
+import {
+  fetchMyProfile,
+  revokeGpsConsent,
+  setStandortabfrageConsent,
+  revokeStandortabfrageConsent,
+  updateMaintenanceReminderEmailSettings,
+} from './lib/userService'
 import { hasFeature } from './lib/licenseService'
 import {
   getStandortabfrageTeamleiterAllowed,
@@ -38,6 +44,13 @@ import {
   removeBriefbogen,
 } from './lib/briefbogenService'
 import { isOnline } from '../shared/networkUtils'
+import {
+  getEtikettPresetId,
+  setEtikettPresetId,
+  ETIKETT_PRESET_OPTIONS,
+  type EtikettPresetId,
+} from './lib/etikettPreset'
+import { isEtikettendruckerAvailable } from './lib/etikettendrucker'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   offline: '🔴 Offline',
@@ -74,6 +87,13 @@ const Einstellungen = () => {
   const [briefbogenUploading, setBriefbogenUploading] = useState(false)
   const [briefbogenRemoving, setBriefbogenRemoving] = useState(false)
   const [briefbogenError, setBriefbogenError] = useState<string | null>(null)
+  const [maintEmailEnabled, setMaintEmailEnabled] = useState(false)
+  const [maintEmailFrequency, setMaintEmailFrequency] = useState<'daily' | 'weekly'>('weekly')
+  const [maintEmailSaving, setMaintEmailSaving] = useState(false)
+  const [maintEmailError, setMaintEmailError] = useState<string | null>(null)
+  const [etikettPreset, setEtikettPresetState] = useState<EtikettPresetId>(() =>
+    typeof window !== 'undefined' ? getEtikettPresetId() : 'mini_50x25'
+  )
   const [stammdatenForm, setStammdatenForm] = useState({
     company_name: '',
     address: '',
@@ -133,6 +153,11 @@ const Einstellungen = () => {
 
   const showBriefbogenSettings = userRole === 'admin' && isEnabled('wartungsprotokolle')
 
+  const showWartungExtrasSettings =
+    Boolean(license && hasFeature(license, 'wartungsprotokolle')) &&
+    userRole !== 'kunde' &&
+    Boolean(user?.id)
+
   const refreshBriefbogenPreview = useCallback(async () => {
     if (!showBriefbogenSettings) return
     setBriefbogenLoading(true)
@@ -158,6 +183,12 @@ const Einstellungen = () => {
   useEffect(() => {
     void refreshBriefbogenPreview()
   }, [refreshBriefbogenPreview])
+
+  useEffect(() => {
+    if (!myProfile) return
+    setMaintEmailEnabled(Boolean(myProfile.maintenance_reminder_email_enabled))
+    setMaintEmailFrequency(myProfile.maintenance_reminder_email_frequency === 'daily' ? 'daily' : 'weekly')
+  }, [myProfile])
 
   useEffect(() => {
     if (!showStandortabfrageSettings) return
@@ -292,6 +323,31 @@ const Einstellungen = () => {
     }
   }
 
+  const handleSaveMaintenanceEmail = async () => {
+    if (!user?.id || maintEmailSaving) return
+    if (!isOnline()) {
+      setMaintEmailError('Nur online speicherbar; bitte Verbindung herstellen.')
+      return
+    }
+    setMaintEmailSaving(true)
+    setMaintEmailError(null)
+    const { error } = await updateMaintenanceReminderEmailSettings(user.id, {
+      maintenance_reminder_email_enabled: maintEmailEnabled,
+      maintenance_reminder_email_frequency: maintEmailFrequency,
+    })
+    setMaintEmailSaving(false)
+    if (error) {
+      setMaintEmailError(error.message)
+      return
+    }
+    await loadProfile()
+  }
+
+  const handleEtikettPresetChange = (id: EtikettPresetId) => {
+    setEtikettPresetId(id)
+    setEtikettPresetState(id)
+  }
+
   return (
     <div className="p-4 max-w-xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">Einstellungen</h2>
@@ -402,6 +458,120 @@ const Einstellungen = () => {
               )
             })}
           </ul>
+        </section>
+      )}
+
+      {showWartungExtrasSettings && (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+          aria-labelledby="wartung-extras-heading"
+        >
+          <h3
+            id="wartung-extras-heading"
+            className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3"
+          >
+            Wartung & Etikettendruck
+          </h3>
+
+          <div className="border-b border-slate-200 dark:border-slate-600 pb-4 mb-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+              E-Mail-Erinnerungen (J1)
+            </h4>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+              Wenn aktiviert, erhalten Sie eine E-Mail mit Objekten, deren Wartung überfällig ist oder in den nächsten 30
+              Tagen fällig wird – sofern Ihr Administrator die Edge Function &quot;send-maintenance-reminder-digest&quot;
+              (z. B. per Cron) und Resend konfiguriert hat.
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer mb-3">
+              <input
+                type="checkbox"
+                checked={maintEmailEnabled}
+                onChange={(e) => setMaintEmailEnabled(e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+              />
+              <span className="text-sm text-slate-800 dark:text-slate-100">
+                E-Mail-Benachrichtigung zu fälligen Wartungen
+              </span>
+            </label>
+            <div className="mb-3">
+              <label htmlFor="maint-email-freq" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                Häufigkeit (nach Versand wird bis zum nächsten Zyklus gewartet)
+              </label>
+              <select
+                id="maint-email-freq"
+                value={maintEmailFrequency}
+                onChange={(e) =>
+                  setMaintEmailFrequency(e.target.value === 'daily' ? 'daily' : 'weekly')
+                }
+                className="w-full max-w-xs px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm"
+              >
+                <option value="weekly">Höchstens einmal pro Woche</option>
+                <option value="daily">Höchstens einmal pro Tag</option>
+              </select>
+            </div>
+            {maintEmailError ? (
+              <p className="text-sm text-red-600 dark:text-red-400 mb-2" role="alert">
+                {maintEmailError}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleSaveMaintenanceEmail}
+              disabled={maintEmailSaving}
+              className="inline-flex px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
+            >
+              {maintEmailSaving ? 'Speichern…' : 'E-Mail-Einstellungen speichern'}
+            </button>
+            {myProfile?.maintenance_reminder_email_last_sent_at ? (
+              <p className="mt-2 text-xs text-slate-500">
+                Zuletzt gesendet:{' '}
+                {new Date(myProfile.maintenance_reminder_email_last_sent_at).toLocaleString('de-DE')}
+              </p>
+            ) : null}
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+              QR-Etikett (I2)
+            </h4>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+              Referenzmaße für den späteren Bluetooth-Druck in der nativen App. Wird lokal auf diesem Gerät gespeichert.
+            </p>
+            <div className="space-y-2 mb-2">
+              {ETIKETT_PRESET_OPTIONS.map((opt) => (
+                <label
+                  key={opt.id}
+                  className="flex items-start gap-3 cursor-pointer rounded-lg border border-slate-200 dark:border-slate-600 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                >
+                  <input
+                    type="radio"
+                    name="etikett-preset"
+                    value={opt.id}
+                    checked={etikettPreset === opt.id}
+                    onChange={() => handleEtikettPresetChange(opt.id)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{opt.label}</span>
+                    {opt.description ? (
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">{opt.description}</span>
+                    ) : null}
+                    <span className="block text-xs text-slate-400 font-mono mt-0.5">
+                      {opt.widthMm}×{opt.heightMm} mm
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500">
+              Native Druck-Plugin:{' '}
+              {isEtikettendruckerAvailable() ? (
+                <span className="text-emerald-600 dark:text-emerald-400">verfügbar</span>
+              ) : (
+                <span>Nicht aktiv (Web/PWA – Druck nur in der Capacitor-App mit Plugin).</span>
+              )}
+            </p>
+          </div>
         </section>
       )}
 

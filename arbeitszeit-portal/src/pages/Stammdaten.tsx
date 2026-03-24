@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   fetchProfiles,
   getProfileDisplayName,
   getMyRole,
-  updateSollMinutes,
+  updateAzkStammdaten,
   updateVacationDays,
   updateUrlaubVjDeadlineOverride,
   type Profile,
@@ -21,15 +21,44 @@ import {
   type WorkSettings,
   type WorkFreeDay,
 } from '../lib/workSettingsService'
-import { formatMinutes } from '../../../shared/format'
+
+const formatFreeDayDateDe = (isoDate: string): string => {
+  const parts = isoDate.split('-')
+  if (parts.length !== 3) return isoDate
+  const y = Number(parts[0])
+  const m = Number(parts[1])
+  const day = Number(parts[2])
+  if (!y || !m || !day) return isoDate
+  try {
+    return new Date(y, m - 1, day).toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+  } catch {
+    return isoDate
+  }
+}
+
+const FREE_DAY_ROW_CLASS =
+  'flex flex-wrap items-stretch sm:items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900/80 px-3 py-2'
+const FREE_DAY_DATE_FIELD_CLASS =
+  'shrink-0 w-[11rem] px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 text-sm min-h-[2.25rem] flex items-center'
+const FREE_DAY_LABEL_FIELD_CLASS =
+  'min-w-[10rem] flex-1 min-h-[2.25rem] px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 text-sm flex items-center'
+const FREE_DAY_INPUT_DATE_CLASS =
+  `${FREE_DAY_DATE_FIELD_CLASS} bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100`
+const FREE_DAY_INPUT_LABEL_CLASS =
+  `${FREE_DAY_LABEL_FIELD_CLASS} bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100`
 
 const Stammdaten = () => {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [draftSoll, setDraftSoll] = useState<Record<string, string>>({})
-  const [draftSollWeek, setDraftSollWeek] = useState<Record<string, string>>({})
+  const [draftHoursPerDay, setDraftHoursPerDay] = useState<Record<string, string>>({})
+  const [draftEmpStart, setDraftEmpStart] = useState<Record<string, string>>({})
+  const [draftEmpEnd, setDraftEmpEnd] = useState<Record<string, string>>({})
   const [draftVacation, setDraftVacation] = useState<Record<string, string>>({})
   const [isAdmin, setIsAdmin] = useState(false)
   const [workSettings, setWorkSettings] = useState<WorkSettings | null>(null)
@@ -54,15 +83,21 @@ const Stammdaten = () => {
     ])
       .then(([list, role, ws, freeDays]) => {
         setProfiles(list)
-        setDraftSoll(
+        setDraftHoursPerDay(
           list.reduce<Record<string, string>>((acc, p) => {
-            acc[p.id] = p.soll_minutes_per_month != null ? String(p.soll_minutes_per_month) : ''
+            acc[p.id] = p.hours_per_day != null ? String(p.hours_per_day) : ''
             return acc
           }, {})
         )
-        setDraftSollWeek(
+        setDraftEmpStart(
           list.reduce<Record<string, string>>((acc, p) => {
-            acc[p.id] = p.soll_minutes_per_week != null ? String(p.soll_minutes_per_week) : ''
+            acc[p.id] = p.employment_start_date ?? ''
+            return acc
+          }, {})
+        )
+        setDraftEmpEnd(
+          list.reduce<Record<string, string>>((acc, p) => {
+            acc[p.id] = p.employment_end_date ?? ''
             return acc
           }, {})
         )
@@ -101,35 +136,71 @@ const Stammdaten = () => {
     load()
   }, [load])
 
-  const handleSollChange = (profileId: string, value: string) => {
-    setDraftSoll((prev) => ({ ...prev, [profileId]: value }))
+  const { freeDaysThisYear, freeDaysOlderByYear, olderFreeDaysCount, calendarYearLabel } = useMemo(() => {
+    const yNow = new Date().getFullYear()
+    const thisY: WorkFreeDay[] = []
+    const older: WorkFreeDay[] = []
+    for (const d of workFreeDays) {
+      const y = parseInt(d.date.slice(0, 4), 10)
+      if (Number.isNaN(y)) continue
+      if (y === yNow) thisY.push(d)
+      else older.push(d)
+    }
+    const byDate = (a: WorkFreeDay, b: WorkFreeDay) => a.date.localeCompare(b.date)
+    thisY.sort(byDate)
+
+    const yearMap = new Map<number, WorkFreeDay[]>()
+    for (const d of older) {
+      const y = parseInt(d.date.slice(0, 4), 10)
+      if (Number.isNaN(y)) continue
+      if (!yearMap.has(y)) yearMap.set(y, [])
+      yearMap.get(y)!.push(d)
+    }
+    const freeDaysOlderByYear = Array.from(yearMap.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([year, days]) => ({
+        year,
+        days: [...days].sort(byDate),
+      }))
+    const olderFreeDaysCount = older.length
+
+    return {
+      freeDaysThisYear: thisY,
+      freeDaysOlderByYear,
+      olderFreeDaysCount,
+      calendarYearLabel: yNow,
+    }
+  }, [workFreeDays])
+
+  const handleHoursPerDayChange = (profileId: string, value: string) => {
+    setDraftHoursPerDay((prev) => ({ ...prev, [profileId]: value }))
   }
-  const handleSollWeekChange = (profileId: string, value: string) => {
-    setDraftSollWeek((prev) => ({ ...prev, [profileId]: value }))
+  const handleEmpStartChange = (profileId: string, value: string) => {
+    setDraftEmpStart((prev) => ({ ...prev, [profileId]: value }))
+  }
+  const handleEmpEndChange = (profileId: string, value: string) => {
+    setDraftEmpEnd((prev) => ({ ...prev, [profileId]: value }))
   }
   const handleVacationChange = (profileId: string, value: string) => {
     setDraftVacation((prev) => ({ ...prev, [profileId]: value }))
   }
 
-  const handleSaveSoll = async (p: Profile) => {
-    const rawMonth = draftSoll[p.id]?.trim() ?? ''
-    const valueMonth: number | null =
-      rawMonth === '' ? null : parseInt(rawMonth, 10)
+  const handleSaveAzkRow = async (p: Profile) => {
+    const rawH = draftHoursPerDay[p.id]?.trim() ?? ''
+    const valueHours: number | null = rawH === '' ? null : parseFloat(rawH.replace(',', '.'))
     if (
-      rawMonth !== '' &&
-      (valueMonth === null || isNaN(valueMonth) || valueMonth < 0)
+      rawH !== '' &&
+      (valueHours === null || isNaN(valueHours) || valueHours < 0 || valueHours > 24)
     ) {
-      setError('Bitte eine gültige Zahl (Minuten) für Soll/Monat eingeben.')
+      setError('Stunden/Tag: leer (= Mandanten-Default) oder Zahl zwischen 0 und 24.')
       return
     }
-    const rawWeek = draftSollWeek[p.id]?.trim() ?? ''
-    const valueWeek: number | null =
-      rawWeek === '' ? null : parseInt(rawWeek, 10)
-    if (
-      rawWeek !== '' &&
-      (valueWeek === null || isNaN(valueWeek) || valueWeek < 0)
-    ) {
-      setError('Bitte eine gültige Zahl (Minuten) für Soll/Woche eingeben.')
+    const startStr = draftEmpStart[p.id]?.trim() ?? ''
+    const endStr = draftEmpEnd[p.id]?.trim() ?? ''
+    const valueStart = startStr === '' ? null : startStr
+    const valueEnd = endStr === '' ? null : endStr
+    if (valueStart && valueEnd && valueEnd < valueStart) {
+      setError('Austrittsdatum darf nicht vor dem Eintrittsdatum liegen.')
       return
     }
     const rawVacation = draftVacation[p.id]?.trim() ?? ''
@@ -163,15 +234,15 @@ const Stammdaten = () => {
       }
     }
 
-    const [errSoll, errVacation, errVj] = await Promise.all([
-      updateSollMinutes(p.id, valueMonth, valueWeek),
+    const [errAzk, errVacation, errVj] = await Promise.all([
+      updateAzkStammdaten(p.id, valueHours, valueStart, valueEnd),
       updateVacationDays(p.id, valueVacation),
       isAdmin && vjM !== undefined
         ? updateUrlaubVjDeadlineOverride(p.id, vjM, vjD ?? null)
         : Promise.resolve({ error: null }),
     ])
     setSavingId(null)
-    const err = errSoll || errVacation || errVj
+    const err = errAzk || errVacation || errVj
     if (err?.error) {
       setError(err.error.message)
       return
@@ -181,8 +252,9 @@ const Stammdaten = () => {
         x.id === p.id
           ? {
               ...x,
-              soll_minutes_per_month: valueMonth,
-              soll_minutes_per_week: valueWeek,
+              hours_per_day: valueHours,
+              employment_start_date: valueStart,
+              employment_end_date: valueEnd,
               vacation_days_per_year: valueVacation,
               ...(isAdmin && vjM !== undefined
                 ? { urlaub_vj_deadline_month: vjM, urlaub_vj_deadline_day: vjD ?? null }
@@ -413,57 +485,138 @@ const Stammdaten = () => {
             )}
           </div>
 
-          <div className="space-y-2">
-            <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300">Freie Tage (Betriebsferien, Brückentage)</h4>
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                Freie Tage (Betriebsferien, Brückentage)
+              </h4>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Unterhalb der Eingabe erscheinen nur freie Tage des Kalenderjahres{' '}
+                <strong>{calendarYearLabel}</strong>. Ältere Einträge sind unter „Frühere Jahre“ einsehbar.
+              </p>
+            </div>
+
+            <div className={FREE_DAY_ROW_CLASS}>
               <input
                 type="date"
                 value={newFreeDate}
                 onChange={(e) => setNewFreeDate(e.target.value)}
-                className="px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                aria-label="Datum"
+                className={FREE_DAY_INPUT_DATE_CLASS}
+                aria-label="Datum für neuen freien Tag"
               />
               <input
                 type="text"
                 value={newFreeLabel}
                 onChange={(e) => setNewFreeLabel(e.target.value)}
                 placeholder="z.B. Betriebsferien"
-                className="w-40 px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                aria-label="Bezeichnung"
+                className={FREE_DAY_INPUT_LABEL_CLASS}
+                aria-label="Bezeichnung für neuen freien Tag"
               />
               <button
                 type="button"
                 onClick={handleAddFreeDay}
                 disabled={!newFreeDate.trim()}
-                className="px-3 py-1 rounded bg-vico-primary text-white text-sm hover:bg-vico-primary-hover disabled:opacity-50"
+                className="shrink-0 px-3 py-1.5 rounded bg-vico-primary text-white text-sm hover:bg-vico-primary-hover disabled:opacity-50 self-start sm:self-center"
               >
                 Hinzufügen
               </button>
             </div>
-            {workFreeDays.length > 0 && (
-              <ul className="mt-2 space-y-1 text-sm">
-                {workFreeDays.map((d) => (
-                  <li key={d.id} className="flex items-center gap-2">
-                    <span className="text-slate-700 dark:text-slate-300">{d.date}</span>
-                    {d.label && <span className="text-slate-600 dark:text-slate-300">({d.label})</span>}
+
+            {freeDaysThisYear.length === 0 ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Noch keine freien Tage für {calendarYearLabel} erfasst.
+              </p>
+            ) : (
+              <div className="space-y-2" role="list" aria-label={`Freie Tage ${calendarYearLabel}`}>
+                {freeDaysThisYear.map((d) => (
+                  <div key={d.id} className={FREE_DAY_ROW_CLASS} role="listitem">
+                    <div
+                      className={`${FREE_DAY_DATE_FIELD_CLASS} bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-100 tabular-nums`}
+                    >
+                      {formatFreeDayDateDe(d.date)}
+                    </div>
+                    <div
+                      className={`${FREE_DAY_LABEL_FIELD_CLASS} bg-slate-50 dark:bg-slate-800/60 text-slate-800 dark:text-slate-100`}
+                    >
+                      {d.label?.trim() ? d.label : '—'}
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleDeleteFreeDay(d.id)}
-                      className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-xs"
-                      aria-label="Entfernen"
+                      className="shrink-0 px-3 py-1.5 rounded text-sm border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 self-start sm:self-center"
+                      aria-label={`Freien Tag ${formatFreeDayDateDe(d.date)} entfernen`}
                     >
-                      ×
+                      Entfernen
                     </button>
-                  </li>
+                  </div>
                 ))}
-              </ul>
+              </div>
+            )}
+
+            {freeDaysOlderByYear.length > 0 && (
+              <details className="group rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/40">
+                <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 [&::-webkit-details-marker]:hidden flex items-center gap-2">
+                  <span aria-hidden className="inline-block transition-transform group-open:rotate-90">
+                    ▸
+                  </span>
+                  Frühere Jahre ({olderFreeDaysCount}{' '}
+                  {olderFreeDaysCount === 1 ? 'Tag' : 'Tage'})
+                </summary>
+                <div className="border-t border-slate-200 dark:border-slate-600 px-3 pb-3 pt-2 space-y-4">
+                  {freeDaysOlderByYear.map(({ year, days }) => (
+                    <section
+                      key={year}
+                      className="space-y-2"
+                      aria-labelledby={`free-days-older-year-${year}`}
+                    >
+                      <h5
+                        id={`free-days-older-year-${year}`}
+                        className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                      >
+                        {year}
+                      </h5>
+                      <div
+                        className="space-y-2"
+                        role="list"
+                        aria-label={`Freie Tage ${year}`}
+                      >
+                        {days.map((d) => (
+                          <div key={d.id} className={FREE_DAY_ROW_CLASS} role="listitem">
+                            <div
+                              className={`${FREE_DAY_DATE_FIELD_CLASS} bg-white dark:bg-slate-900/80 text-slate-800 dark:text-slate-100 tabular-nums`}
+                            >
+                              {formatFreeDayDateDe(d.date)}
+                            </div>
+                            <div
+                              className={`${FREE_DAY_LABEL_FIELD_CLASS} bg-white dark:bg-slate-900/80 text-slate-800 dark:text-slate-100`}
+                            >
+                              {d.label?.trim() ? d.label : '—'}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFreeDay(d.id)}
+                              className="shrink-0 px-3 py-1.5 rounded text-sm border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 self-start sm:self-center"
+                              aria-label={`Freien Tag ${formatFreeDayDateDe(d.date)} entfernen`}
+                            >
+                              Entfernen
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </details>
             )}
           </div>
         </section>
       )}
 
       <p className="text-sm text-slate-600 dark:text-slate-300">
-        Soll-Arbeitszeit pro Monat und pro Woche (in Minuten) pro Mitarbeiter. Leer = nicht gesetzt. 40 h/Woche = 2400 Min, 40 h/Monat ≈ 2400 Min (bei 4,33 Wochen).
+        <strong>Monatssoll</strong> wird automatisch berechnet: <strong>Anzahl Arbeitstage im Monat</strong> (Wochenmodell,
+        Feiertage, freie Tage, genehmigter Urlaub) × <strong>Stunden pro Tag</strong>. Stunden/Tag leer = Wert aus den
+        Mandanten-Arbeitseinstellungen oben. <strong>Eintritt/Austritt:</strong> nur Tage innerhalb des
+        Beschäftigungszeitraums zählen für das Soll (kein Soll vor Eintritt oder nach Austritt).
       </p>
 
       {error && (
@@ -484,8 +637,9 @@ const Stammdaten = () => {
               <tr className="border-b border-slate-200 dark:border-slate-600">
                 <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Mitarbeiter</th>
                 <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Rolle</th>
-                <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Soll Min/Monat</th>
-                <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Soll Min/Woche</th>
+                <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Std/Tag (indiv.)</th>
+                <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Eintritt</th>
+                <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Austritt</th>
                 <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Urlaubstage/Jahr</th>
                 {isAdmin && <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Frist VJ Tag/Mo</th>}
                 <th className="text-left py-2 px-2 font-medium text-slate-700 dark:text-slate-300">Aktion</th>
@@ -505,35 +659,32 @@ const Stammdaten = () => {
                     <input
                       type="number"
                       min={0}
-                      step={60}
-                      value={draftSoll[p.id] ?? ''}
-                      onChange={(e) => handleSollChange(p.id, e.target.value)}
-                      placeholder="z.B. 2400"
-                      className="w-28 px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                      aria-label={`Soll Min/Monat für ${getProfileDisplayName(p)}`}
+                      max={24}
+                      step={0.25}
+                      value={draftHoursPerDay[p.id] ?? ''}
+                      onChange={(e) => handleHoursPerDayChange(p.id, e.target.value)}
+                      placeholder="Mandant"
+                      className="w-24 px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                      aria-label={`Stunden pro Tag für ${getProfileDisplayName(p)}`}
                     />
-                    {p.soll_minutes_per_month != null && (
-                      <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                        = {p.soll_minutes_per_month != null ? formatMinutes(p.soll_minutes_per_month) : '–'}
-                      </span>
-                    )}
                   </td>
                   <td className="py-2 px-2">
                     <input
-                      type="number"
-                      min={0}
-                      step={60}
-                      value={draftSollWeek[p.id] ?? ''}
-                      onChange={(e) => handleSollWeekChange(p.id, e.target.value)}
-                      placeholder="z.B. 2400"
-                      className="w-28 px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                      aria-label={`Soll Min/Woche für ${getProfileDisplayName(p)}`}
+                      type="date"
+                      value={draftEmpStart[p.id] ?? ''}
+                      onChange={(e) => handleEmpStartChange(p.id, e.target.value)}
+                      className="w-[11rem] px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                      aria-label={`Eintrittsdatum ${getProfileDisplayName(p)}`}
                     />
-                    {p.soll_minutes_per_week != null && (
-                      <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                        = {p.soll_minutes_per_week != null ? formatMinutes(p.soll_minutes_per_week) : '–'}
-                      </span>
-                    )}
+                  </td>
+                  <td className="py-2 px-2">
+                    <input
+                      type="date"
+                      value={draftEmpEnd[p.id] ?? ''}
+                      onChange={(e) => handleEmpEndChange(p.id, e.target.value)}
+                      className="w-[11rem] px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                      aria-label={`Austrittsdatum ${getProfileDisplayName(p)}`}
+                    />
                   </td>
                   <td className="py-2 px-2">
                     <input
@@ -580,7 +731,7 @@ const Stammdaten = () => {
                   <td className="py-2 px-2">
                     <button
                       type="button"
-                      onClick={() => handleSaveSoll(p)}
+                      onClick={() => handleSaveAzkRow(p)}
                       disabled={savingId === p.id}
                       className="px-2 py-1 rounded bg-vico-primary text-white text-sm hover:bg-vico-primary-hover disabled:opacity-50"
                       aria-label="Speichern"

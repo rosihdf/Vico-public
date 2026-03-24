@@ -26,6 +26,7 @@ ensure_labels() {
   gh label create lizenzportal --color "5319E7" --description "Lizenzportal-Admin" 2>/dev/null || true
   gh label create hauptapp --color "0E8A16" --description "Haupt-App Vico" 2>/dev/null || true
   gh label create mobile --color "FBCA04" --description "Capacitor / mobil" 2>/dev/null || true
+  gh label create infra --color "006B75" --description "Infrastruktur / DB-Tooling" 2>/dev/null || true
 }
 
 create_one() {
@@ -60,18 +61,6 @@ fi
 create_one "[L4] Logo-Upload im Lizenzportal (Storage, WebP, Vorschau)" \
   "$ROOT/docs/github-issues/L4.body.md" roadmap lizenzportal
 
-create_one "[J10] Bug-Erfassungsmodul (System → Fehlerberichte)" \
-  "$ROOT/docs/github-issues/J10.body.md" roadmap hauptapp
-
-create_one "[J4] Schnellzugriff / Zuletzt bearbeitet (Startseite)" \
-  "$ROOT/docs/github-issues/J4.body.md" roadmap hauptapp
-
-create_one "[J3] Export Buchhaltung (CSV/Excel)" \
-  "$ROOT/docs/github-issues/J3.body.md" roadmap hauptapp
-
-create_one "[J2] Wartungsstatistik / Auswertung" \
-  "$ROOT/docs/github-issues/J2.body.md" roadmap hauptapp
-
 create_one "[J1] Wartungsplanung inkl. E-Mail-Erinnerungen (teilweise)" \
   "$ROOT/docs/github-issues/J1.body.md" roadmap hauptapp
 
@@ -83,6 +72,12 @@ create_one "[J7] Paket: Mängel-Follow-up, iCal, Bulk, Portal-Push" \
 
 create_one "[I2] Optional: Bluetooth-Drucker (QR-Etiketten)" \
   "$ROOT/docs/github-issues/I2.body.md" roadmap mobile
+
+create_one "[T1] Supabase CLI-Migrations (Baseline + Deltas, zwei Projekte)" \
+  "$ROOT/docs/github-issues/T1.body.md" roadmap infra
+
+create_one "[CF1] Cloudflare-Umzug planen + Supabase-Auslagerung Lizenz-API" \
+  "$ROOT/docs/github-issues/CF1.body.md" roadmap infra
 
 if [[ "$DRY" == true ]]; then
   echo ""

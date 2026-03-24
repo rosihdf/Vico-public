@@ -15,9 +15,9 @@ import {
   calcWorkMinutes,
   getMonthBounds,
   getLastEndedEntry,
-  calcSollMinutesForMonth,
-  calcSollMinutesForYear,
+  calcSollMinutesForDateRange,
   getWorkMinutesForUserInRange,
+  getWeekBounds,
 } from './lib/timeService'
 import { fetchMyProfile, setGpsConsent } from './lib/userService'
 import {
@@ -35,11 +35,104 @@ import CurrentLocationModal from './components/CurrentLocationModal'
 import type { Profile } from './lib/userService'
 import { useToast } from './ToastContext'
 import { reportError } from './lib/errorReportService'
-import { formatTime, formatMinutes, toDateStr } from '../shared/format'
+import { formatTime, formatMinutes, formatDateShort, toDateStr } from '../shared/format'
 import { BetaBadge } from '../shared/BetaBadge'
 import type { TimeEntry, TimeBreak } from './types'
 
 const ELEVEN_HOURS_MS = 11 * 60 * 60 * 1000
+
+const yearBounds = (y: number) => ({ yearStart: `${y}-01-01`, yearEnd: `${y}-12-31` })
+
+type YearWorkRange =
+  | { kind: 'empty' }
+  | { kind: 'range'; rangeStart: string; rangeEnd: string }
+
+/** Soll/Ist-Jahresbogen: ab 1.1. oder ab Eintritt, bis heute / Jahresende / Austritt – keine Hochrechnung. */
+const computeYearWorkStatsRange = (
+  year: number,
+  profile: Profile | null,
+  todayStr: string,
+  yNow: number
+): YearWorkRange => {
+  const { yearStart, yearEnd } = yearBounds(year)
+  if (year > yNow) return { kind: 'empty' }
+
+  const es = profile?.employment_start_date?.slice(0, 10) ?? null
+  const ee = profile?.employment_end_date?.slice(0, 10) ?? null
+
+  let rangeStart = yearStart
+  if (es) {
+    if (es > yearEnd) return { kind: 'empty' }
+    if (es > rangeStart) rangeStart = es
+  }
+
+  let rangeEnd = year < yNow ? yearEnd : todayStr < yearEnd ? todayStr : yearEnd
+  if (ee) {
+    if (ee < yearStart) return { kind: 'empty' }
+    if (ee < rangeEnd) rangeEnd = ee
+  }
+
+  if (rangeStart > rangeEnd) return { kind: 'empty' }
+  return { kind: 'range', rangeStart, rangeEnd }
+}
+
+const buildYearStatsHint = (
+  year: number,
+  yNow: number,
+  r: YearWorkRange,
+  yearStart: string,
+  yearEnd: string,
+  todayStr: string
+): string => {
+  if (year > yNow) return 'Noch kein Kalenderjahr – ohne Hochrechnung.'
+  if (r.kind === 'empty') return 'Kein Beschäftigungszeitraum in diesem Jahr.'
+
+  const { rangeStart, rangeEnd } = r
+
+  if (year < yNow) {
+    if (rangeStart === yearStart && rangeEnd === yearEnd) {
+      return `Kalenderjahr ${year} (1. Jan.–31. Dez.).`
+    }
+    return `Zeitraum ${formatDateShort(rangeStart)}–${formatDateShort(rangeEnd)} (${year}, gemäß Eintritt/Austritt).`
+  }
+
+  if (rangeEnd < todayStr) {
+    if (rangeStart === yearStart) {
+      return `1. Jan. bis ${formatDateShort(rangeEnd)} (Ende der Beschäftigung) – keine Hochrechnung auf Jahresende.`
+    }
+    return `Ab Eintritt (${formatDateShort(rangeStart)}) bis ${formatDateShort(rangeEnd)} – keine Hochrechnung auf Jahresende.`
+  }
+
+  if (rangeStart > yearStart) {
+    return `Ab Eintritt (${formatDateShort(rangeStart)}) bis heute – keine Hochrechnung auf Jahresende.`
+  }
+  return '1. Jan. bis heute (keine Hochrechnung auf Jahresende).'
+}
+
+/**
+ * Zeitraum für Monats-Soll/Ist (ab Eintritt, im laufenden Monat nur bis heute).
+ * Entspricht dem Jahresblock, solange nur ein Kalendermonat seit Eintritt liegt.
+ */
+const getMonthStatDateRange = (
+  selectedDate: string,
+  employmentYmd: string | null | undefined,
+  todayYmd: string
+): { from: string; to: string } | null => {
+  const { from: mFrom, to: mTo } = getMonthBounds(selectedDate)
+  const selMonth = selectedDate.slice(0, 7)
+  const currMonth = todayYmd.slice(0, 7)
+  if (selMonth > currMonth) return null
+  const emp = employmentYmd?.slice(0, 10) ?? null
+  let fromD: string
+  if (!emp || emp <= mFrom) fromD = mFrom
+  else if (emp > mTo) return null
+  else fromD = emp
+  let toD: string
+  if (selMonth < currMonth) toD = mTo
+  else toD = mTo < todayYmd ? mTo : todayYmd
+  if (fromD > toD) return null
+  return { from: fromD, to: toD }
+}
 
 const Arbeitszeit = () => {
   const { user, userRole } = useAuth()
@@ -55,6 +148,8 @@ const Arbeitszeit = () => {
   const [calculatedSoll, setCalculatedSoll] = useState<number | null>(null)
   const [yearSoll, setYearSoll] = useState<number | null>(null)
   const [yearIst, setYearIst] = useState<number>(0)
+  /** Monats-Ist (Server), nur online; offline → useMemo aus Einträgen */
+  const [monthIstRpc, setMonthIstRpc] = useState<number>(0)
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
   const [leaveFormFrom, setLeaveFormFrom] = useState('')
   const [leaveFormTo, setLeaveFormTo] = useState('')
@@ -116,9 +211,9 @@ const Arbeitszeit = () => {
     })
   }, [canUse, userId, hasStandortabfrageConsent])
 
-  const [year, month] = useMemo(() => {
-    const [y, m] = selectedDate.split('-').map(Number)
-    return [y ?? new Date().getFullYear(), m ?? new Date().getMonth() + 1]
+  const year = useMemo(() => {
+    const [y] = selectedDate.split('-').map(Number)
+    return y ?? new Date().getFullYear()
   }, [selectedDate])
 
   const { urlaubsanspruch, resturlaub } = useMemo(() => {
@@ -138,21 +233,64 @@ const Arbeitszeit = () => {
     }
   }, [myProfile?.vacation_days_per_year, leaveRequests, year])
 
+  const monthStatRange = useMemo(
+    () => getMonthStatDateRange(selectedDate, myProfile?.employment_start_date, toDateStr(new Date())),
+    [selectedDate, myProfile?.employment_start_date]
+  )
+
+  const monthStatRangeCaption = useMemo(() => {
+    if (!monthStatRange) return null
+    const todayStr = toDateStr(new Date())
+    const selMonth = selectedDate.slice(0, 7)
+    const currMonth = todayStr.slice(0, 7)
+    const tail = selMonth < currMonth ? 'bis Monatsende' : 'bis heute'
+    return `Zeitraum: ${formatDateShort(monthStatRange.from)}–${formatDateShort(monthStatRange.to)} (${tail}, ab Eintritt)`
+  }, [monthStatRange, selectedDate])
+
   useEffect(() => {
-    if (!userId || !canUse || myProfile?.soll_minutes_per_month != null) {
+    if (!userId || !canUse) {
       setCalculatedSoll(null)
+      setMonthIstRpc(0)
       return
     }
-    calcSollMinutesForMonth(userId, year, month).then(setCalculatedSoll)
-  }, [userId, canUse, myProfile?.soll_minutes_per_month, year, month])
+    if (isOffline) {
+      setCalculatedSoll(null)
+      setMonthIstRpc(0)
+      return
+    }
+    const todayStr = toDateStr(new Date())
+    const range = getMonthStatDateRange(selectedDate, myProfile?.employment_start_date, todayStr)
+    if (!range) {
+      setCalculatedSoll(0)
+      setMonthIstRpc(0)
+      return
+    }
+    void calcSollMinutesForDateRange(userId, range.from, range.to).then(setCalculatedSoll)
+    void getWorkMinutesForUserInRange(userId, range.from, range.to).then(setMonthIstRpc)
+  }, [userId, canUse, isOffline, selectedDate, myProfile?.employment_start_date])
+
+  const yearStatsHint = useMemo(() => {
+    const todayStr = toDateStr(new Date())
+    const yNow = new Date().getFullYear()
+    const { yearStart, yearEnd } = yearBounds(year)
+    const r = computeYearWorkStatsRange(year, myProfile, todayStr, yNow)
+    return buildYearStatsHint(year, yNow, r, yearStart, yearEnd, todayStr)
+  }, [year, myProfile?.employment_start_date, myProfile?.employment_end_date])
 
   useEffect(() => {
     if (!userId || !canUse) return
-    const yearFrom = `${year}-01-01`
-    const yearTo = `${year}-12-31`
-    calcSollMinutesForYear(userId, year).then(setYearSoll)
-    getWorkMinutesForUserInRange(userId, yearFrom, yearTo).then(setYearIst)
-  }, [userId, canUse, year])
+    const todayStr = toDateStr(new Date())
+    const yNow = new Date().getFullYear()
+    const r = computeYearWorkStatsRange(year, myProfile, todayStr, yNow)
+    if (year > yNow || r.kind === 'empty') {
+      setYearSoll(0)
+      setYearIst(0)
+      return
+    }
+    const { rangeStart, rangeEnd } = r
+    void calcSollMinutesForDateRange(userId, rangeStart, rangeEnd).then(setYearSoll)
+    void getWorkMinutesForUserInRange(userId, rangeStart, rangeEnd).then(setYearIst)
+  }, [userId, canUse, year, myProfile?.employment_start_date, myProfile?.employment_end_date])
 
   const loadLeaveRequests = useCallback(async () => {
     if (!userId) return
@@ -197,22 +335,32 @@ const Arbeitszeit = () => {
       }, 0),
     [entries, breaksMap]
   )
+  const { from: weekFrom, to: weekTo } = useMemo(() => getWeekBounds(selectedDate), [selectedDate])
+
   const weekWorkMinutes = useMemo(
     () =>
-      weekEntries.reduce((sum, e) => {
-        const breaks = breaksMap[e.id] ?? []
-        return sum + calcWorkMinutes(e, breaks)
-      }, 0),
-    [weekEntries, breaksMap]
+      weekEntries
+        .filter((e) => e.date >= weekFrom && e.date <= weekTo)
+        .reduce((sum, e) => {
+          const breaks = breaksMap[e.id] ?? []
+          return sum + calcWorkMinutes(e, breaks)
+        }, 0),
+    [weekEntries, breaksMap, weekFrom, weekTo]
   )
-  const monthWorkMinutes = useMemo(() => {
-    const monthKey = selectedDate.slice(0, 7)
-    return weekEntries
-      .filter((e) => e.date.slice(0, 7) === monthKey)
-      .reduce((sum, e) => sum + calcWorkMinutes(e, breaksMap[e.id] ?? []), 0)
-  }, [weekEntries, breaksMap, selectedDate])
 
-  const sollMinutes = myProfile?.soll_minutes_per_month ?? calculatedSoll
+  /** Monats-Ist: gleicher Zeitraum wie Monats-Soll (Eintritt & „bis heute“) – nicht ganzer Kalendermonat mit Fremdtagen. */
+  const monthIstDisplay = useMemo(() => {
+    const r = monthStatRange
+    if (!r) return 0
+    if (isOffline) {
+      return weekEntries
+        .filter((e) => e.date >= r.from && e.date <= r.to)
+        .reduce((sum, e) => sum + calcWorkMinutes(e, breaksMap[e.id] ?? []), 0)
+    }
+    return monthIstRpc
+  }, [monthStatRange, isOffline, weekEntries, breaksMap, monthIstRpc])
+
+  const sollMinutes = calculatedSoll
 
   const arbzgLessThan11hRest =
     !activeEntry &&
@@ -705,24 +853,29 @@ const Arbeitszeit = () => {
         <div className="space-y-3">
           <div>
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Monat ({selectedDate.slice(0, 7)})</p>
+            {monthStatRangeCaption ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1" role="note">
+                {monthStatRangeCaption}
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-4 text-sm">
               <span className="text-slate-600 dark:text-slate-300">
                 Soll: {sollMinutes != null ? formatMinutes(sollMinutes) : 'nicht gesetzt'}
               </span>
               <span className="text-slate-700 dark:text-slate-200 font-medium">
-                Ist: {formatMinutes(monthWorkMinutes)}
+                Ist: {formatMinutes(monthIstDisplay)}
               </span>
               <span className="text-slate-600 dark:text-slate-300">
                 Saldo:{' '}
                 {sollMinutes != null ? (
                   <span
                     className={
-                      monthWorkMinutes - sollMinutes >= 0
+                      monthIstDisplay - sollMinutes >= 0
                         ? 'text-green-600 dark:text-green-400'
                         : 'text-amber-600 dark:text-amber-400'
                     }
                   >
-                    {formatMinutes(monthWorkMinutes - sollMinutes)}
+                    {formatMinutes(monthIstDisplay - sollMinutes)}
                   </span>
                 ) : (
                   '– (Soll fehlt)'
@@ -731,7 +884,12 @@ const Arbeitszeit = () => {
             </div>
           </div>
           <div>
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Gesamtjahr ({year})</p>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+              Jahresstand ({year})
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-500 mb-1" role="note">
+              {yearStatsHint}
+            </p>
             <div className="flex flex-wrap gap-4 text-sm">
               <span className="text-slate-600 dark:text-slate-300">
                 Soll: {yearSoll != null ? formatMinutes(yearSoll) : '…'}
@@ -760,7 +918,8 @@ const Arbeitszeit = () => {
         </div>
         {sollMinutes == null && (
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Soll-Arbeitszeit pro Monat kann von einem Admin im Arbeitszeitenportal hinterlegt werden oder wird aus Arbeitstagen berechnet. Nach dem Setzen „Aktualisieren“ klicken.
+            Monatssoll = Arbeitstage × Stunden/Tag (Mandant oder individuell im Arbeitszeitenportal). Offline ggf. nicht
+            berechenbar – „Aktualisieren“ erneut versuchen.
           </p>
         )}
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1" role="note">

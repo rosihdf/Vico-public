@@ -3,18 +3,23 @@
 -- -----------------------------------------------------------------------------
 -- Eigenes Supabase-Projekt für Mandanten & Lizenzen.
 -- Im Supabase SQL Editor ausführen (neues Projekt anlegen oder bestehendes).
--- Idempotent. Zuletzt geprüft/aufgeräumt: 2025-03
+-- Idempotent. Zuletzt strukturell aufgeräumt: 2026-03.
 --
 -- RLS: is_admin() als SECURITY DEFINER verhindert Rekursion (Policies lesen
 -- profiles nicht direkt, sondern über die Funktion).
 --
--- Struktur:
---   1. Profiles (Admin-Benutzer, get_my_role, Trigger Signup)
---   2. Tenants (Mandanten)
---   3. Licenses (Lizenzen pro Mandant)
---   3b. License_models (Vorlagen), FK licenses.license_model_id, Standard-Seeds
---   4. limit_exceeded_log (Grenzüberschreitungs-Meldungen)
---   5. Indizes
+-- Inhaltsverzeichnis
+--   1. Profiles (Admin, get_my_role, Signup-Trigger)
+--   2. Tenants (+ nachträgliche Spalten idempotent)
+--   3. Licenses (+ FK license_model_id)
+--   3b. License_models (Vorlagen, Seeds)
+--   4. limit_exceeded_log
+--   5. platform_config, get_storage_summary()
+--   5b. Storage: tenant_logos (L4)
+--   6. Indizes
+--
+-- Optimierung (Kurz): Indizes an FKs/Listen; Speicher-RPC nutzt license_models-
+-- Fallback. Kein zweites „Analytics“-Schema – bei Bedarf pg_stat_statements im Betrieb.
 -- -----------------------------------------------------------------------------
 
 -- -----------------------------------------------------------------------------
@@ -360,14 +365,6 @@ insert into public.platform_config (key, value) values ('total_storage_mb', '100
 -- Globale Standard-App-Versionen (Merge mit tenants.app_versions in der Lizenz-API)
 insert into public.platform_config (key, value) values ('default_app_versions', '{}'::jsonb) on conflict (key) do nothing;
 
--- default_app_versions: nachträglich (bestehende Installationen)
-do $$
-begin
-  if not exists (select 1 from public.platform_config where key = 'default_app_versions') then
-    insert into public.platform_config (key, value) values ('default_app_versions', '{}'::jsonb);
-  end if;
-end $$;
-
 -- RPC: Speicher-Zusammenfassung (verfügbar, zugewiesen, frei)
 -- Zugewiesen = Summe aus licenses.max_storage_mb, Fallback auf license_models.max_storage_mb wenn Lizenz kein eigenes hat
 create or replace function public.get_storage_summary()
@@ -396,6 +393,57 @@ as $$
   );
 $$;
 grant execute on function public.get_storage_summary() to authenticated;
+
+-- -----------------------------------------------------------------------------
+-- 5b. Storage: Mandanten-Logos (Roadmap L4)
+-- Bucket öffentlich lesbar; Schreiben nur für Portal-Admins (is_admin).
+-- -----------------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'tenant_logos',
+  'tenant_logos',
+  true,
+  2097152,
+  array['image/webp', 'image/png', 'image/jpeg', 'image/svg+xml']::text[]
+)
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+do $$
+declare
+  r record;
+begin
+  for r in
+    select policyname
+    from pg_policies
+    where schemaname = 'storage' and tablename = 'objects' and policyname like 'tenant_logo_%'
+  loop
+    execute format('drop policy if exists %I on storage.objects', r.policyname);
+  end loop;
+end $$;
+
+create policy "tenant_logo_public_read"
+on storage.objects for select
+to public
+using (bucket_id = 'tenant_logos');
+
+create policy "tenant_logo_admins_insert"
+on storage.objects for insert
+to authenticated
+with check (bucket_id = 'tenant_logos' and public.is_admin());
+
+create policy "tenant_logo_admins_update"
+on storage.objects for update
+to authenticated
+using (bucket_id = 'tenant_logos' and public.is_admin())
+with check (bucket_id = 'tenant_logos' and public.is_admin());
+
+create policy "tenant_logo_admins_delete"
+on storage.objects for delete
+to authenticated
+using (bucket_id = 'tenant_logos' and public.is_admin());
 
 -- -----------------------------------------------------------------------------
 -- 6. INDIZES
