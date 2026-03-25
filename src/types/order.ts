@@ -4,8 +4,10 @@ export type OrderStatus = 'offen' | 'in_bearbeitung' | 'erledigt' | 'storniert'
 export type Order = {
   id: string
   customer_id: string
-  bv_id: string
+  bv_id: string | null
   object_id: string | null
+  /** Mehrere Türen/Tore (optional); object_id bleibt erste ID für Abwärtskompatibilität */
+  object_ids?: string[] | null
   order_date: string
   order_time: string | null
   order_type: OrderType
@@ -19,7 +21,7 @@ export type Order = {
 
 export type OrderFormData = {
   customer_id: string
-  bv_id: string
+  bv_id: string | null
   object_id: string
   order_date: string
   order_type: OrderType
@@ -34,6 +36,8 @@ export type OrderCompletion = {
   ausgeführte_arbeiten: string | null
   material: string | null
   arbeitszeit_minuten: number | null
+  completion_extra?: unknown | null
+  monteur_pdf_path?: string | null
   unterschrift_mitarbeiter_path: string | null
   unterschrift_mitarbeiter_name: string | null
   unterschrift_mitarbeiter_date: string | null

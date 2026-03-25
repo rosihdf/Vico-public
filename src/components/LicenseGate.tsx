@@ -11,6 +11,7 @@ import {
   getEnvEmbeddedLicenseNumber,
   formatLicenseNumberInput,
   setCachedLicenseResponse,
+  LICENSE_NUMBER_STORAGE_EVENT,
 } from '../lib/licensePortalApi'
 import { getLicenseNumberFromDb, setLicenseNumberInDb } from '../lib/licenseService'
 import { useAuth } from '../AuthContext'
@@ -40,6 +41,14 @@ const LicenseGate = ({ children }: LicenseGateProps) => {
   const location = useLocation()
   const { isAuthenticated, userRole } = useAuth()
   const [status, setStatus] = useState<'checking' | 'needs_activation' | 'needs_admin' | 'ready'>('checking')
+  /** Neu prüfen z. B. nach Aktivierung (navigate('/') ändert pathname oft nicht). */
+  const [storageEpoch, setStorageEpoch] = useState(0)
+
+  useEffect(() => {
+    const onLicenseStorage = () => setStorageEpoch((n) => n + 1)
+    window.addEventListener(LICENSE_NUMBER_STORAGE_EVENT, onLicenseStorage)
+    return () => window.removeEventListener(LICENSE_NUMBER_STORAGE_EVENT, onLicenseStorage)
+  }, [])
 
   useEffect(() => {
     if (PUBLIC_PATHS.some((p) => location.pathname.startsWith(p))) {
@@ -150,7 +159,7 @@ const LicenseGate = ({ children }: LicenseGateProps) => {
     }
 
     setStatus('ready')
-  }, [location.pathname, isAuthenticated, userRole])
+  }, [location.pathname, isAuthenticated, userRole, storageEpoch])
 
   if (status === 'checking') {
     return (

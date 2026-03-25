@@ -4,7 +4,7 @@
 
 | Datum | SQL-Datei | Kurzbeschreibung | Bemerkung |
 |-------|-----------|------------------|-----------|
-| — | — | *(Erste Einträge bei der nächsten Migration)* | |
+| 2026-03-24 | mandanten-db-stammdaten-archived-at.sql | `archived_at` auf customers/bvs/objects; RPCs Wartungserinnerung, Suche, Portal-Zustellung | Nach App-Deploy ausführen |
 
 **Konvention:** Pro fachlicher Änderung idealerweise **eine** neue `mandanten-db-*.sql` (oder klar benannte Datei), Review im PR, dann Rollout pro Projekt.
 

@@ -1,0 +1,13 @@
+---
+description: Neuer Mandant startet ohne Daten (keine Einträge)
+alwaysApply: true
+---
+
+# Mandanten-Neuanlage
+
+Wenn ein **neuer Mandant** angelegt wird (Lizenzportal, Admin, Onboarding, DB-Seeds, Demodaten):
+
+- Der Mandant soll **leer** sein: **keine** Geschäfts-/Stammdaten-Einträge (z. B. keine Kunden, Aufträge, Objekte, BV, Nutzer außerhalb des minimal nötigen technischen Setups), **keine** Demo- oder Seed-Daten in der Mandanten-Datenbank.
+- Ausnahmen nur, wenn **explizit** Produktentscheidung oder Ticket das verlangt (dann dokumentieren).
+
+Bei Features, Skripten oder SQL, die Mandanten anlegen oder befüllen: **Default = leer**; optionale Beispieldaten nur **opt-in** (z. B. separates „Demo importieren“).

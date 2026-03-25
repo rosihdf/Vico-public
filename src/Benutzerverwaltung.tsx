@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import { supabase } from './supabase'
@@ -372,6 +372,18 @@ const Benutzerverwaltung = () => {
       <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
         Benutzer anlegen und Rollen verwalten (nur Admin).
       </p>
+
+      <div
+        className="mt-3 p-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 text-sm text-slate-600 dark:text-slate-300"
+        role="note"
+      >
+        <strong className="font-medium text-slate-800 dark:text-slate-100">2FA (Zwei-Faktor-Authentifizierung):</strong>{' '}
+        optional, standardmäßig aus. Jeder interne Nutzer kann TOTP in den{' '}
+        <Link to="/einstellungen#sicherheit-2fa" className="text-vico-primary hover:underline font-medium">
+          eigenen Einstellungen unter „Sicherheit“
+        </Link>{' '}
+        aktivieren. Hier in der Benutzerverwaltung kann 2FA nicht zentral erzwungen oder für andere konfiguriert werden.
+      </div>
 
       {license && (
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">

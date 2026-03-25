@@ -1,0 +1,32 @@
+---
+description: Cloudflare-Anleitungen mit deutscher Dashboard-UI (Nutzer nutzt CF auf Deutsch)
+alwaysApply: true
+---
+
+# Cloudflare-Dashboard: deutsche UI
+
+Wenn du dem Nutzer Schritte für **Cloudflare** (Dashboard, Pages, Workers, DNS) erklärst:
+
+- Von der **deutschsprachigen Cloudflare-Oberfläche** ausgehen.
+- **Menüpunkte und Beschriftungen auf Deutsch** nennen, z. B.:
+  - **Workers und Pages** (Compute)
+  - **Einstellungen**
+  - **Builds** / Build-Konfiguration
+  - **Build-Befehl**, **Bereitstellungsbefehl**, **Build-Ausgabeverzeichnis**
+  - **Stammverzeichnis** / **Pfad** (Root)
+  - **Umgebungsvariablen**
+  - **Bereitstellungen**, **Erneut bereitstellen** / **Wiederholen**
+  - **Mit Git verbinden**, **Speichern und bereitstellen**
+- Englische UI-Bezeichnungen nur **zusätzlich in Klammern**, wenn es der Abgleich mit der englischen Doku erleichtert.
+
+## Vico / Pages: bewährter Weg (deutsche UI)
+
+- Assistent **„Builds und Bereitstellungen einrichten“** (Git, z. B. `Vico-public`) zeigt oft **kein** Feld **Bereitstellungsbefehl** – das ist **normal**.
+- **Standard:** nur **Build-Befehl** `npm ci && npm run build`, **Build-Ausgabeverzeichnis** `dist`, **Stammverzeichnis** je App (Haupt-App leer); **Speichern und bereitstellen**. Cloudflare übernimmt die Auslieferung von `dist` **ohne** separaten Wrangler-Deploy-Befehl im Assistenten.
+- **Kein** `CLOUDFLARE_API_TOKEN` in den Build-Variablen nötig, solange kein `wrangler pages deploy` im Build läuft (Token war nur für den Wrangler-Pfad relevant).
+- Nur wenn die UI **zusätzlich** einen Bereitstellungsbefehl erzwingt oder das Deployment ohne Upload hängen bleibt: **Einstellungen → Builds** prüfen; **nicht** `npx wrangler deploy` (Worker unter `.workers.dev`).
+
+## Vico / Pages: **später nachziehen** (wenn alle vier URLs feststehen)
+
+- **Punkt 6:** Im **Haupt-App-Pages-Projekt** `VITE_ARBEITSZEIT_PORTAL_URL` auf die öffentliche URL des **Arbeitszeitenportal**-Pages-Projekts setzen (ohne trailing slash) → **neu bereitstellen**.
+- **Punkt 7:** Im **Lizenzportal** beim Mandanten **`allowed_domains`** (und ggf. `portal_domain` / `arbeitszeitenportal_domain` / `app_domain`) alle produktiven **`*.pages.dev`**-Hosts ergänzen (Hostname **ohne** `https://`), damit Host-Lookup und CORS passen.

@@ -17,6 +17,7 @@ import {
   setStoredCheckInterval,
   getCachedLicenseResponse,
   setCachedLicenseResponse,
+  LICENSE_NUMBER_STORAGE_EVENT,
 } from './lib/licensePortalApi'
 import DesignApplier from './components/DesignApplier'
 import type { AppVersionsMap } from '../shared/appVersions'
@@ -206,6 +207,17 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
     refresh()
   }, [isAuthenticated, userRole, refresh])
 
+  /** Nach Lizenz-Aktivierung (localStorage) — ohne Full-Reload; isAuthenticated ändert sich nicht. */
+  useEffect(() => {
+    if (!isAuthenticated || userRole === 'kunde') return
+    if (!isLicenseApiConfigured()) return
+    const onLicenseStorage = () => {
+      void refresh({ force: true })
+    }
+    window.addEventListener(LICENSE_NUMBER_STORAGE_EVENT, onLicenseStorage)
+    return () => window.removeEventListener(LICENSE_NUMBER_STORAGE_EVENT, onLicenseStorage)
+  }, [isAuthenticated, userRole, refresh])
+
   useEffect(() => {
     if (!license?.check_interval || license.check_interval === 'on_start') return
     const licenseNumber = getStoredLicenseNumber()
@@ -234,12 +246,11 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
     if (!isLicenseApiConfigured()) return
 
     const checkClientConfigVersion = async () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
       const licenseNumber = getStoredLicenseNumber()
       if (!licenseNumber) return
       const cached = getCachedLicenseResponse(licenseNumber)
       const prev = Math.max(0, Math.floor(Number(cached?.license?.client_config_version) || 0))
-      const api = await fetchLicenseFromApi(licenseNumber, 8_000)
+      const api = await fetchLicenseFromApi(licenseNumber, 8_000, { bustCache: true })
       if (!api?.license) return
       const next = Math.max(0, Math.floor(Number(api.license.client_config_version) || 0))
       if (next !== prev) {

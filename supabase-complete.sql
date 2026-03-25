@@ -209,6 +209,9 @@ create table if not exists public.customers (
   demo_user_id uuid references auth.users(id) on delete cascade,
   created_at timestamptz default now(), updated_at timestamptz default now()
 );
+alter table public.customers add column if not exists monteur_report_internal_only boolean not null default false;
+alter table public.customers add column if not exists monteur_report_portal boolean not null default true;
+alter table public.customers add column if not exists archived_at timestamptz;
 alter table public.customers add column if not exists house_number text;
 alter table public.customers add column if not exists demo_user_id uuid references auth.users(id) on delete cascade;
 alter table public.customers enable row level security;
@@ -328,6 +331,7 @@ create table if not exists public.bvs (
   created_at timestamptz default now(), updated_at timestamptz default now()
 );
 alter table public.bvs add column if not exists house_number text;
+alter table public.bvs add column if not exists archived_at timestamptz;
 alter table public.bvs enable row level security;
 
 do $$ declare r record; begin
@@ -369,6 +373,9 @@ end $$;
 alter table public.objects add column if not exists name text;
 alter table public.objects add column if not exists smoke_detector_build_years jsonb default '[]'::jsonb;
 alter table public.objects add column if not exists maintenance_interval_months int;
+alter table public.objects add column if not exists accessories_items jsonb default '[]'::jsonb;
+alter table public.objects add column if not exists profile_photo_path text;
+alter table public.objects add column if not exists archived_at timestamptz;
 alter table public.objects enable row level security;
 
 create or replace function public.object_visible_to_user(o_bv_id uuid, o_customer_id uuid)
@@ -570,6 +577,18 @@ begin
     alter table public.orders add column order_time time;
   end if;
 end $$;
+-- Mehrere Türen/Tore pro Auftrag; Aufträge ohne Objekt/BV (nur Türen direkt unter Kunde)
+alter table public.orders alter column bv_id drop not null;
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'orders' and column_name = 'object_ids') then
+    alter table public.orders add column object_ids uuid[];
+  end if;
+end $$;
+update public.orders o
+set object_ids = array[o.object_id]::uuid[]
+where o.object_id is not null
+  and (o.object_ids is null or cardinality(o.object_ids) = 0);
 alter table public.orders enable row level security;
 
 do $$ declare r record; begin
@@ -632,6 +651,16 @@ create policy "Authenticated users can read order_completions" on public.order_c
 create policy "Mitarbeiter/Admin can insert order_completions" on public.order_completions for insert with check (auth.uid() is not null and public.can_write_master_data());
 create policy "Mitarbeiter/Admin can update order_completions" on public.order_completions for update using (auth.uid() is not null and public.can_write_master_data());
 create policy "Mitarbeiter/Admin can delete order_completions" on public.order_completions for delete using (auth.uid() is not null and public.can_write_master_data());
+
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'order_completions' and column_name = 'completion_extra') then
+    alter table public.order_completions add column completion_extra jsonb default '{}'::jsonb;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'order_completions' and column_name = 'monteur_pdf_path') then
+    alter table public.order_completions add column monteur_pdf_path text;
+  end if;
+end $$;
 
 -- Arbeitszeiterfassung
 create table if not exists public.time_entries (
@@ -1151,6 +1180,50 @@ do $$ declare r record; begin
 end $$;
 create policy "Authenticated users can read component_settings" on public.component_settings for select using (auth.uid() is not null);
 create policy "Authenticated users can manage component_settings" on public.component_settings for all using (auth.uid() is not null);
+
+-- Firmenweite Zustellung Monteursbericht an Kunden (Abschluss-Auftrag)
+create table if not exists public.monteur_report_settings (
+  id int primary key default 1 check (id = 1),
+  customer_delivery_mode text not null default 'none'
+    check (customer_delivery_mode in ('none', 'email_auto', 'email_manual', 'portal_notify')),
+  updated_at timestamptz default now()
+);
+insert into public.monteur_report_settings (id, customer_delivery_mode)
+values (1, 'none')
+on conflict (id) do nothing;
+alter table public.monteur_report_settings enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'monteur_report_settings' loop
+    execute format('drop policy if exists %I on public.monteur_report_settings', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated read monteur_report_settings" on public.monteur_report_settings
+  for select using (auth.uid() is not null);
+create policy "Admin manage monteur_report_settings" on public.monteur_report_settings
+  for all using (public.is_admin());
+
+-- true, wenn mindestens ein aktiver Portal-User den Kunden nutzt und dieses Objekt (Firma/BV) ihm zugeordnet ist
+create or replace function public.monteur_portal_delivery_eligible(p_object_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.objects o
+    left join public.bvs b on b.id = o.bv_id
+    cross join lateral (select coalesce(b.customer_id, o.customer_id) as cid) x
+    join public.customer_portal_users cpu
+      on cpu.customer_id = x.cid and cpu.user_id is not null
+    where o.id = p_object_id
+      and o.archived_at is null
+      and x.cid is not null
+      and public.portal_object_visible_to_user(cpu.user_id, x.cid, o.bv_id)
+  );
+$$;
+grant execute on function public.monteur_portal_delivery_eligible(uuid) to authenticated;
 
 create table if not exists public.audit_log (
   id uuid default gen_random_uuid() primary key,
@@ -1758,7 +1831,8 @@ language sql security definer set search_path = public stable as $$
            case when o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
              then (coalesce(lm.d, current_date) + (o.maintenance_interval_months || ' months')::interval)::date else null end as next_maintenance_date
     from public.objects o left join last_maint lm on lm.object_id = o.id
-    where o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
+    where o.archived_at is null
+      and o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
   )
   select ob.object_id, c.id as customer_id, c.name as customer_name, b.id as bv_id, b.name as bv_name, ob.internal_id,
          ob.object_name, ob.object_room, ob.object_floor, ob.object_manufacturer,
@@ -1767,7 +1841,10 @@ language sql security definer set search_path = public stable as $$
               when ob.next_maintenance_date <= current_date + interval '30 days' then 'due_soon' else 'ok' end as status,
          case when ob.next_maintenance_date is not null then (ob.next_maintenance_date - current_date)::int else null end as days_until_due
   from objs ob left join public.bvs b on b.id = ob.bv_id join public.customers c on c.id = coalesce(b.customer_id, ob.customer_id)
-  where auth.uid() is not null and ((c.demo_user_id is null and not public.is_demo()) or (c.demo_user_id = auth.uid()));
+  where auth.uid() is not null
+    and c.archived_at is null
+    and (b.id is null or b.archived_at is null)
+    and ((c.demo_user_id is null and not public.is_demo()) or (c.demo_user_id = auth.uid()));
 $$;
 grant execute on function public.get_maintenance_reminders() to authenticated;
 
@@ -1786,7 +1863,8 @@ language sql security definer set search_path = public stable as $$
            case when o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
              then (coalesce(lm.d, current_date) + (o.maintenance_interval_months || ' months')::interval)::date else null end as next_maintenance_date
     from public.objects o left join last_maint lm on lm.object_id = o.id
-    where o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
+    where o.archived_at is null
+      and o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
   )
   select ob.object_id, c.id as customer_id, c.name as customer_name, b.id as bv_id, b.name as bv_name, ob.internal_id,
          ob.object_name, ob.object_room, ob.object_floor, ob.object_manufacturer,
@@ -1796,6 +1874,8 @@ language sql security definer set search_path = public stable as $$
          case when ob.next_maintenance_date is not null then (ob.next_maintenance_date - current_date)::int else null end as days_until_due
   from objs ob left join public.bvs b on b.id = ob.bv_id join public.customers c on c.id = coalesce(b.customer_id, ob.customer_id)
   where p_user_id is not null
+    and c.archived_at is null
+    and (b.id is null or b.archived_at is null)
     and ((c.demo_user_id is null and not exists (select 1 from public.profiles pr where pr.id = p_user_id and pr.role = 'demo'))
       or (c.demo_user_id = p_user_id));
 $$;
@@ -1849,6 +1929,7 @@ language sql security definer set search_path = public stable as $$
   from pattern pat
   join public.customers c on public.customer_visible_to_user(c.id)
   where trim(coalesce(q, '')) <> ''
+    and c.archived_at is null
     and (
       c.name ilike pat.p
       or coalesce(c.city, '') ilike pat.p
@@ -1880,6 +1961,8 @@ language sql security definer set search_path = public stable as $$
   join public.customers c on c.id = b.customer_id
   where trim(coalesce(q, '')) <> ''
     and public.customer_visible_to_user(c.id)
+    and c.archived_at is null
+    and b.archived_at is null
     and (
       b.name ilike pat.p
       or coalesce(b.city, '') ilike pat.p
@@ -1912,6 +1995,9 @@ language sql security definer set search_path = public stable as $$
   join public.customers c on c.id = coalesce(b.customer_id, o.customer_id)
   where trim(coalesce(q, '')) <> ''
     and public.object_visible_to_user(o.bv_id, o.customer_id)
+    and o.archived_at is null
+    and c.archived_at is null
+    and (b.id is null or b.archived_at is null)
     and (
       coalesce(o.name, '') ilike pat.p
       or coalesce(o.internal_id, '') ilike pat.p

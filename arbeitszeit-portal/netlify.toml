@@ -1,3 +1,4 @@
+# Legacy Netlify. Ziel: Cloudflare Pages – docs/Cloudflare-Umzug-Roadmap.md
 [build]
   command = "npm run build"
   publish = "dist"

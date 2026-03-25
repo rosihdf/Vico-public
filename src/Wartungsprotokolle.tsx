@@ -388,7 +388,7 @@ const Wartungsprotokolle = () => {
     }
   }
 
-  if (!objectId || !bvId || !customerId) {
+  if (!objectId || !customerId) {
     return (
       <div className="p-4 min-w-0">
         <p className="text-slate-600">Ungültige Navigation.</p>
@@ -399,10 +399,45 @@ const Wartungsprotokolle = () => {
     )
   }
 
-  if (!bv || !customer || isLoading) {
+  if (isLoading || !customer) {
     return (
       <div className="p-4 min-w-0">
         <LoadingSpinner message="Lade…" className="py-8" />
+      </div>
+    )
+  }
+
+  if (bvId && !bv) {
+    return (
+      <div className="p-4 min-w-0">
+        <p className="text-slate-600 dark:text-slate-400">Betriebsstätte nicht gefunden oder kein Zugriff.</p>
+        <Link to="/kunden" className="text-vico-primary hover:underline mt-2 inline-block">
+          ← Kunden
+        </Link>
+      </div>
+    )
+  }
+
+  if (!object) {
+    return (
+      <div className="p-4 min-w-0">
+        <p className="text-slate-600 dark:text-slate-400">Tür/Tor nicht gefunden.</p>
+        <Link to="/kunden" className="text-vico-primary hover:underline mt-2 inline-block">
+          ← Kunden
+        </Link>
+      </div>
+    )
+  }
+
+  if (bvId && object.bv_id != null && object.bv_id !== bvId) {
+    return (
+      <div className="p-4 min-w-0">
+        <p className="text-slate-600 dark:text-slate-400">
+          Dieses Tür/Tor ist nicht der gewählten Betriebsstätte zugeordnet.
+        </p>
+        <Link to="/kunden" className="text-vico-primary hover:underline mt-2 inline-block">
+          ← Kunden
+        </Link>
       </div>
     )
   }

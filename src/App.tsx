@@ -33,6 +33,8 @@ const SystemIndexRedirect = lazy(() => import('./pages/SystemIndexRedirect'))
 const Scan = lazy(() => import('./Scan'))
 const AuftragAnlegen = lazy(() => import('./AuftragAnlegen'))
 const Auftragsdetail = lazy(() => import('./Auftragsdetail'))
+const AuftragAusQr = lazy(() => import('./pages/AuftragAusQr'))
+const ObjektBearbeiten = lazy(() => import('./pages/ObjektBearbeiten'))
 const Login = lazy(() => import('./Login'))
 const ResetPassword = lazy(() => import('./ResetPassword'))
 const Profil = lazy(() => import('./Profil'))
@@ -74,6 +76,18 @@ const App = () => {
               <Route path="/" element={<Layout />}>
                 <Route index element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="dashboard"><ProtectedRoute><Startseite /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="kunden" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="kunden"><ProtectedRoute><Kunden /></ProtectedRoute></ComponentGuard></Suspense>} />
+                <Route
+                  path="objekt/:objectId/bearbeiten"
+                  element={
+                    <Suspense fallback={<PageFallback />}>
+                      <ComponentGuard componentKey="kunden">
+                        <ProtectedRoute>
+                          <ObjektBearbeiten />
+                        </ProtectedRoute>
+                      </ComponentGuard>
+                    </Suspense>
+                  }
+                />
                 <Route
                   path="wartungsstatistik"
                   element={
@@ -118,6 +132,18 @@ const App = () => {
                           </ProtectedRoute>
                         </ComponentGuard>
                       </LicenseFeatureGuard>
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="auftrag/neu-aus-qr"
+                  element={
+                    <Suspense fallback={<PageFallback />}>
+                      <ComponentGuard componentKey="auftrag">
+                        <ProtectedRoute>
+                          <AuftragAusQr />
+                        </ProtectedRoute>
+                      </ComponentGuard>
                     </Suspense>
                   }
                 />

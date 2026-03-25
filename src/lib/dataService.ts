@@ -64,16 +64,20 @@ export const subscribeToDataChange = (fn: Listener) => {
   }
 }
 
+const isActiveCustomer = (c: Customer) => !c.archived_at
+const isActiveBv = (b: BV) => !b.archived_at
+const isActiveObject = (o: Obj) => !o.archived_at
+
 export const fetchCustomers = async (): Promise<Customer[]> => {
   if (isOnline()) {
     const { data, error } = await supabase.from('customers').select(CUSTOMER_COLUMNS).order('name')
     if (!error && data) {
       const customers = data as unknown as Customer[]
       setCachedCustomers(customers)
-      return customers
+      return customers.filter(isActiveCustomer)
     }
   }
-  return getCachedCustomers() as Customer[]
+  return (getCachedCustomers() as Customer[]).filter(isActiveCustomer)
 }
 
 export const fetchCustomerCount = async (): Promise<number> => {
@@ -82,9 +86,10 @@ export const fetchCustomerCount = async (): Promise<number> => {
       .from('customers')
       .select('*', { count: 'exact', head: true })
       .is('demo_user_id', null)
+      .is('archived_at', null)
     if (!error && count !== null) return count
   }
-  return (getCachedCustomers() as Customer[]).filter((c) => !c.demo_user_id).length
+  return (getCachedCustomers() as Customer[]).filter((c) => !c.demo_user_id && isActiveCustomer(c)).length
 }
 
 export const fetchCustomer = async (id: string): Promise<Customer | null> => {
@@ -135,10 +140,10 @@ export const fetchBvs = async (customerId: string): Promise<BV[]> => {
       const all = getCachedBvs() as BV[]
       const others = all.filter((b) => b.customer_id !== customerId)
       setCachedBvs([...others, ...bvs])
-      return bvs
+      return bvs.filter(isActiveBv)
     }
   }
-  return (getCachedBvs() as BV[]).filter((b) => b.customer_id === customerId)
+  return (getCachedBvs() as BV[]).filter((b) => b.customer_id === customerId && isActiveBv(b))
 }
 
 export const fetchObject = async (objectId: string): Promise<Obj | null> => {
@@ -165,10 +170,10 @@ export const fetchObjects = async (bvId: string): Promise<Obj[]> => {
       const all = getCachedObjects() as Obj[]
       const others = all.filter((o) => o.bv_id !== bvId)
       setCachedObjects([...others, ...objs])
-      return objs
+      return objs.filter(isActiveObject)
     }
   }
-  return (getCachedObjects() as Obj[]).filter((o) => o.bv_id === bvId)
+  return (getCachedObjects() as Obj[]).filter((o) => o.bv_id === bvId && isActiveObject(o))
 }
 
 export const fetchObjectsDirectUnderCustomer = async (customerId: string): Promise<Obj[]> => {
@@ -184,10 +189,12 @@ export const fetchObjectsDirectUnderCustomer = async (customerId: string): Promi
       const all = getCachedObjects() as Obj[]
       const others = all.filter((o) => !(o.customer_id === customerId && o.bv_id == null))
       setCachedObjects([...others, ...objs])
-      return objs
+      return objs.filter(isActiveObject)
     }
   }
-  return (getCachedObjects() as Obj[]).filter((o) => o.customer_id === customerId && o.bv_id == null)
+  return (getCachedObjects() as Obj[]).filter(
+    (o) => o.customer_id === customerId && o.bv_id == null && isActiveObject(o)
+  )
 }
 
 export const fetchMaintenanceContractsByCustomer = async (customerId: string): Promise<MaintenanceContract[]> => {
@@ -256,10 +263,10 @@ export const fetchAllBvs = async (): Promise<BV[]> => {
     if (!error && data) {
       const bvs = data as unknown as BV[]
       setCachedBvs(bvs)
-      return bvs
+      return bvs.filter(isActiveBv)
     }
   }
-  return getCachedBvs() as BV[]
+  return (getCachedBvs() as BV[]).filter(isActiveBv)
 }
 
 export const fetchAllObjects = async (): Promise<Obj[]> => {
@@ -271,10 +278,10 @@ export const fetchAllObjects = async (): Promise<Obj[]> => {
     if (!error && data) {
       const objs = data as unknown as Obj[]
       setCachedObjects(objs)
-      return objs
+      return objs.filter(isActiveObject)
     }
   }
-  return getCachedObjects() as Obj[]
+  return (getCachedObjects() as Obj[]).filter(isActiveObject)
 }
 
 const mapReminderRow = (row: Record<string, unknown>): MaintenanceReminder => ({
@@ -383,7 +390,10 @@ export const buildRecentEditsFromCache = (options: {
   const includeMaster = options.includeMaster && scope !== 'mine'
 
   if (includeMaster) {
-    const customers = sortByUpdatedAtDesc(getCachedCustomers() as Customer[]).slice(0, perTable)
+    const customers = sortByUpdatedAtDesc((getCachedCustomers() as Customer[]).filter(isActiveCustomer)).slice(
+      0,
+      perTable
+    )
     for (const c of customers) {
       raw.push({
         key: `customer-${c.id}`,
@@ -393,7 +403,7 @@ export const buildRecentEditsFromCache = (options: {
         updatedAt: c.updated_at,
       })
     }
-    const bvs = sortByUpdatedAtDesc(getCachedBvs() as BV[]).slice(0, perTable)
+    const bvs = sortByUpdatedAtDesc((getCachedBvs() as BV[]).filter(isActiveBv)).slice(0, perTable)
     for (const b of bvs) {
       raw.push({
         key: `bv-${b.id}`,
@@ -403,7 +413,7 @@ export const buildRecentEditsFromCache = (options: {
         updatedAt: b.updated_at,
       })
     }
-    const objs = sortByUpdatedAtDesc(getCachedObjects() as Obj[]).slice(0, perTable)
+    const objs = sortByUpdatedAtDesc((getCachedObjects() as Obj[]).filter(isActiveObject)).slice(0, perTable)
     for (const o of objs) {
       const cid = o.customer_id
       if (!cid) continue
@@ -473,15 +483,26 @@ export const fetchRecentEditsForDashboard = async (options: {
     fetchBvs = true
     fetchObjects = true
     promises.push(
-      supabase.from('customers').select('id,name,updated_at').order('updated_at', { ascending: false }).limit(perTable)
+      supabase
+        .from('customers')
+        .select('id,name,updated_at')
+        .is('archived_at', null)
+        .order('updated_at', { ascending: false })
+        .limit(perTable)
     )
     promises.push(
-      supabase.from('bvs').select('id,name,customer_id,updated_at').order('updated_at', { ascending: false }).limit(perTable)
+      supabase
+        .from('bvs')
+        .select('id,name,customer_id,updated_at')
+        .is('archived_at', null)
+        .order('updated_at', { ascending: false })
+        .limit(perTable)
     )
     promises.push(
       supabase
         .from('objects')
         .select('id,name,internal_id,room,floor,manufacturer,bv_id,customer_id,updated_at')
+        .is('archived_at', null)
         .order('updated_at', { ascending: false })
         .limit(perTable)
     )
@@ -769,6 +790,78 @@ export const deleteObject = async (id: string): Promise<{ error: { message: stri
   return { error: null }
 }
 
+/** Tür/Tor aus Stammdaten ausblenden; Wartungsprotokolle & Aufträge bleiben erhalten (kein CASCADE-DELETE). */
+export const archiveObject = async (id: string): Promise<{ error: { message: string } | null }> => {
+  const t = new Date().toISOString()
+  return updateObject(id, { archived_at: t })
+}
+
+/** Objekt/BV und alle zugehörigen Türen/Tore archivieren. Nur online (kaskadierte Updates). */
+export const archiveBv = async (id: string): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) {
+    return { error: { message: 'Archivieren von Objekt/BV ist nur online möglich.' } }
+  }
+  const t = new Date().toISOString()
+  const { error: eObj } = await supabase
+    .from('objects')
+    .update({ archived_at: t, updated_at: t })
+    .eq('bv_id', id)
+    .is('archived_at', null)
+  if (eObj) return { error: { message: eObj.message } }
+  const { error: eBv } = await supabase.from('bvs').update({ archived_at: t, updated_at: t }).eq('id', id)
+  if (eBv) return { error: { message: eBv.message } }
+  const bvs = (getCachedBvs() as BV[]).map((b) => (b.id === id ? { ...b, archived_at: t, updated_at: t } : b))
+  setCachedBvs(bvs)
+  setCachedObjects(
+    (getCachedObjects() as Obj[]).map((o) => (o.bv_id === id ? { ...o, archived_at: t, updated_at: t } : o))
+  )
+  notifyDataChange()
+  return { error: null }
+}
+
+/** Kunden inkl. aller BV und Türen/Tore archivieren. Nur online. */
+export const archiveCustomer = async (id: string): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) {
+    return { error: { message: 'Archivieren eines Kunden ist nur online möglich.' } }
+  }
+  const t = new Date().toISOString()
+  const { data: bvRows, error: bvFetchErr } = await supabase.from('bvs').select('id').eq('customer_id', id)
+  if (bvFetchErr) return { error: { message: bvFetchErr.message } }
+  const bvIds = (bvRows ?? []).map((r) => r.id as string)
+  if (bvIds.length > 0) {
+    const { error: eObjBv } = await supabase
+      .from('objects')
+      .update({ archived_at: t, updated_at: t })
+      .in('bv_id', bvIds)
+      .is('archived_at', null)
+    if (eObjBv) return { error: { message: eObjBv.message } }
+  }
+  const { error: eObjDirect } = await supabase
+    .from('objects')
+    .update({ archived_at: t, updated_at: t })
+    .eq('customer_id', id)
+    .is('bv_id', null)
+    .is('archived_at', null)
+  if (eObjDirect) return { error: { message: eObjDirect.message } }
+  const { error: eBvs } = await supabase.from('bvs').update({ archived_at: t, updated_at: t }).eq('customer_id', id)
+  if (eBvs) return { error: { message: eBvs.message } }
+  const { error: eCust } = await supabase.from('customers').update({ archived_at: t, updated_at: t }).eq('id', id)
+  if (eCust) return { error: { message: eCust.message } }
+  setCachedCustomers(
+    (getCachedCustomers() as Customer[]).map((c) => (c.id === id ? { ...c, archived_at: t, updated_at: t } : c))
+  )
+  setCachedBvs((getCachedBvs() as BV[]).map((b) => (b.customer_id === id ? { ...b, archived_at: t, updated_at: t } : b)))
+  setCachedObjects(
+    (getCachedObjects() as Obj[]).map((o) => {
+      if (o.customer_id === id && o.bv_id == null) return { ...o, archived_at: t, updated_at: t }
+      if (o.bv_id && bvIds.includes(o.bv_id)) return { ...o, archived_at: t, updated_at: t }
+      return o
+    })
+  )
+  notifyDataChange()
+  return { error: null }
+}
+
 // --- Wartungsprotokolle ---
 
 export const fetchMaintenanceReports = async (
@@ -854,9 +947,61 @@ type MaintenanceReportPayload = Omit<
   'id' | 'created_at' | 'updated_at'
 > & { updated_at?: string }
 
+export type MonteurReportCustomerDeliveryMode =
+  | 'none'
+  | 'email_auto'
+  | 'email_manual'
+  | 'portal_notify'
+
+export const fetchMonteurReportSettings = async (): Promise<{
+  customer_delivery_mode: MonteurReportCustomerDeliveryMode
+} | null> => {
+  if (!isOnline()) return { customer_delivery_mode: 'none' }
+  const { data, error } = await supabase
+    .from('monteur_report_settings')
+    .select('customer_delivery_mode')
+    .eq('id', 1)
+    .maybeSingle()
+  if (error || !data) return null
+  const m = (data as { customer_delivery_mode: string }).customer_delivery_mode
+  const allowed: MonteurReportCustomerDeliveryMode[] = ['none', 'email_auto', 'email_manual', 'portal_notify']
+  return {
+    customer_delivery_mode: allowed.includes(m as MonteurReportCustomerDeliveryMode)
+      ? (m as MonteurReportCustomerDeliveryMode)
+      : 'none',
+  }
+}
+
+export const updateMonteurReportSettings = async (
+  mode: MonteurReportCustomerDeliveryMode
+): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) return { error: { message: 'Nur online speicherbar.' } }
+  const { error } = await supabase.from('monteur_report_settings').upsert(
+    { id: 1, customer_delivery_mode: mode, updated_at: new Date().toISOString() },
+    { onConflict: 'id' }
+  )
+  return { error: error ? { message: error.message } : null }
+}
+
+export const fetchMonteurPortalDeliveryEligible = async (objectId: string): Promise<boolean> => {
+  if (!isOnline() || !objectId) return false
+  const { data, error } = await supabase.rpc('monteur_portal_delivery_eligible', {
+    p_object_id: objectId,
+  })
+  if (error) return false
+  return Boolean(data)
+}
+
+export const notifyPortalOnMaintenanceReport = (reportId: string): void => {
+  supabase.functions.invoke('notify-portal-on-report', { body: { report_id: reportId } }).catch(() => {
+    /* fire-and-forget */
+  })
+}
+
 export const createMaintenanceReport = async (
   payload: MaintenanceReportPayload,
-  smokeDetectors: { label: string; status: MaintenanceReportSmokeDetector['status'] }[]
+  smokeDetectors: { label: string; status: MaintenanceReportSmokeDetector['status'] }[],
+  options?: { skipPortalNotify?: boolean }
 ): Promise<{ data: MaintenanceReport | null; error: { message: string } | null }> => {
   const full = { ...payload, updated_at: new Date().toISOString() }
   if (!isOnline()) {
@@ -890,9 +1035,9 @@ export const createMaintenanceReport = async (
   setCachedMaintenanceReports(payload.object_id, [reportTyped, ...cached])
   notifyDataChange()
 
-  supabase.functions.invoke('notify-portal-on-report', {
-    body: { report_id: reportTyped.id },
-  }).catch(() => { /* fire-and-forget */ })
+  if (!options?.skipPortalNotify) {
+    notifyPortalOnMaintenanceReport(reportTyped.id)
+  }
 
   return { data: reportTyped, error: null }
 }
@@ -1099,6 +1244,44 @@ export const uploadMaintenancePdf = async (
   return { path: error ? null : path, error: error ? { message: error.message } : null }
 }
 
+export const uploadOrderCompletionSignature = async (
+  completionId: string,
+  dataUrl: string,
+  type: 'technician' | 'customer'
+): Promise<{ path: string | null; error: { message: string } | null }> => {
+  const base64 = dataUrl.split(',')[1]
+  if (!base64) return { path: null, error: { message: 'Ungültige Signatur' } }
+  const byteChars = atob(base64)
+  const bytes = new Uint8Array(byteChars.length)
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+  const blob = new Blob([bytes], { type: 'image/png' })
+  const path = `order-completion-signatures/${completionId}/${type}.png`
+  const { error } = await supabase.storage.from(MAINTENANCE_PHOTOS_BUCKET).upload(path, blob, { upsert: true })
+  return { path: error ? null : path, error: error ? { message: error.message } : null }
+}
+
+export const uploadMonteurBerichtPdf = async (
+  completionId: string,
+  blob: Blob
+): Promise<{ path: string | null; error: { message: string } | null }> => {
+  const path = `monteur-berichte/${completionId}.pdf`
+  const { error } = await supabase.storage
+    .from(MAINTENANCE_PHOTOS_BUCKET)
+    .upload(path, blob, { upsert: true })
+  return { path: error ? null : path, error: error ? { message: error.message } : null }
+}
+
+export const updateMaintenanceReportPdfPath = async (
+  reportId: string,
+  pdfPath: string
+): Promise<{ error: { message: string } | null }> => {
+  const { error } = await supabase
+    .from('maintenance_reports')
+    .update({ pdf_path: pdfPath, updated_at: new Date().toISOString() })
+    .eq('id', reportId)
+  return { error: error ? { message: error.message } : null }
+}
+
 export const sendMaintenanceReportEmail = async (
   pdfStoragePath: string,
   toEmail: string,
@@ -1273,6 +1456,210 @@ export const getObjectPhotoUrl = (storagePath: string): string => {
 
 export const getObjectPhotoDisplayUrl = (p: ObjectPhotoDisplay): string =>
   p.localDataUrl ?? getObjectPhotoUrl(p.storage_path)
+
+const copyObjectStorageFileToNewObject = async (
+  sourcePath: string,
+  targetObjectId: string
+): Promise<string | null> => {
+  if (!isOnline()) return null
+  const { data: blob, error } = await supabase.storage.from(OBJECT_PHOTOS_BUCKET).download(sourcePath)
+  if (error || !blob) return null
+  const ext = sourcePath.includes('.') ? sourcePath.split('.').pop()?.replace(/[^a-z0-9]/gi, '') || 'jpg' : 'jpg'
+  const safeExt = ext.length > 0 && ext.length < 8 ? ext : 'jpg'
+  const newPath = `${targetObjectId}/${crypto.randomUUID()}.${safeExt}`
+  const contentType = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/jpeg'
+  const { error: upErr } = await supabase.storage.from(OBJECT_PHOTOS_BUCKET).upload(newPath, blob, {
+    contentType,
+    upsert: false,
+  })
+  if (upErr) return null
+  return newPath
+}
+
+const copyObjectDocumentStorageFileToNewObject = async (
+  sourcePath: string,
+  targetObjectId: string
+): Promise<string | null> => {
+  if (!isOnline()) return null
+  const { data: blob, error } = await supabase.storage.from(OBJECT_DOCUMENTS_BUCKET).download(sourcePath)
+  if (error || !blob) return null
+  const ext = sourcePath.includes('.') ? sourcePath.split('.').pop()?.replace(/[^a-z0-9]/gi, '') || 'pdf' : 'pdf'
+  const safeExt = ext.length > 0 && ext.length < 8 ? ext : 'pdf'
+  const newPath = `${targetObjectId}/${crypto.randomUUID()}.${safeExt}`
+  const contentType =
+    blob.type && blob.type.length > 0 ? blob.type : safeExt === 'pdf' ? 'application/pdf' : 'application/octet-stream'
+  const { error: upErr } = await supabase.storage.from(OBJECT_DOCUMENTS_BUCKET).upload(newPath, blob, {
+    contentType,
+    upsert: false,
+  })
+  if (upErr) return null
+  return newPath
+}
+
+/** Bezeichnung der Tür für eine Kopie: „… (Duplikat)“ bzw. „Duplikat“ wenn leer. */
+const markDuplicateObjectName = (name: string | null | undefined): string | null => {
+  const t = name?.trim() ?? ''
+  if (!t) return 'Duplikat'
+  if (/\(Duplikat\)\s*$/i.test(t)) return t
+  return `${t} (Duplikat)`
+}
+
+const objectRowToCreatePayload = (o: Obj): ObjectPayload => ({
+  bv_id: o.bv_id,
+  customer_id: o.customer_id,
+  name: o.name,
+  internal_id: o.internal_id,
+  door_position: o.door_position,
+  internal_door_number: o.internal_door_number,
+  floor: o.floor,
+  room: o.room,
+  type_tuer: o.type_tuer,
+  type_sektionaltor: o.type_sektionaltor,
+  type_schiebetor: o.type_schiebetor,
+  type_freitext: o.type_freitext,
+  wing_count: o.wing_count,
+  manufacturer: o.manufacturer,
+  build_year: o.build_year,
+  lock_manufacturer: o.lock_manufacturer,
+  lock_type: o.lock_type,
+  has_hold_open: o.has_hold_open,
+  hold_open_manufacturer: o.hold_open_manufacturer,
+  hold_open_type: o.hold_open_type,
+  hold_open_approval_no: o.hold_open_approval_no,
+  hold_open_approval_date: o.hold_open_approval_date,
+  smoke_detector_count: o.smoke_detector_count,
+  smoke_detector_build_years: o.smoke_detector_build_years,
+  panic_function: o.panic_function,
+  accessories_items: o.accessories_items ?? null,
+  accessories: o.accessories,
+  maintenance_by_manufacturer: o.maintenance_by_manufacturer,
+  hold_open_maintenance: o.hold_open_maintenance,
+  defects: o.defects,
+  remarks: o.remarks,
+  maintenance_interval_months: o.maintenance_interval_months ?? null,
+  profile_photo_path: null,
+})
+
+export type DuplicateObjectOptions = {
+  copyGalleryPhotos: boolean
+  copyProfilePhoto: boolean
+  copyDocuments: boolean
+}
+
+/**
+ * Neue Tür/Tor mit neuer ID; Stammdaten von der Quelle.
+ * Bezeichnung (name) erhält „ (Duplikat)“; interne ID mit Suffix „-Duplikat-…“.
+ * Profilfoto / Galerie / Dokumente nur bei gesetzter Option (jeweils eigene Storage-Dateien).
+ */
+export const duplicateObjectFromSource = async (
+  sourceId: string,
+  options: DuplicateObjectOptions
+): Promise<{ data: Obj | null; error: { message: string } | null }> => {
+  if (!isOnline()) {
+    return { data: null, error: { message: 'Kopieren ist nur online möglich.' } }
+  }
+  const source = await fetchObject(sourceId)
+  if (!source) return { data: null, error: { message: 'Tür/Tor nicht gefunden.' } }
+
+  const baseInternal = source.internal_id?.trim() || 'TUER'
+  const newInternal = `${baseInternal}-Duplikat-${crypto.randomUUID().slice(0, 8)}`
+  const payload = {
+    ...objectRowToCreatePayload(source),
+    internal_id: newInternal,
+    name: markDuplicateObjectName(source.name),
+  }
+
+  const { data: newObj, error: createErr } = await createObject(payload)
+  if (createErr || !newObj) {
+    return { data: null, error: createErr ?? { message: 'Anlegen fehlgeschlagen.' } }
+  }
+
+  let nextProfilePath: string | null = null
+  if (options.copyProfilePhoto && source.profile_photo_path?.trim()) {
+    const p = await copyObjectStorageFileToNewObject(source.profile_photo_path.trim(), newObj.id)
+    if (p) nextProfilePath = p
+  }
+  if (nextProfilePath) {
+    const { error: upErr } = await updateObject(newObj.id, { profile_photo_path: nextProfilePath })
+    if (upErr) {
+      return { data: newObj, error: null }
+    }
+  }
+
+  if (options.copyGalleryPhotos) {
+    const photos = await fetchObjectPhotos(sourceId)
+    for (const ph of photos) {
+      if (!ph.storage_path) continue
+      const newPath = await copyObjectStorageFileToNewObject(ph.storage_path, newObj.id)
+      if (!newPath) continue
+      await supabase.from('object_photos').insert({
+        object_id: newObj.id,
+        storage_path: newPath,
+        caption: ph.caption?.trim() || null,
+      })
+    }
+  }
+
+  if (options.copyDocuments) {
+    const docs = await fetchObjectDocuments(sourceId)
+    for (const doc of docs) {
+      if (!doc.storage_path?.trim()) continue
+      const newPath = await copyObjectDocumentStorageFileToNewObject(doc.storage_path.trim(), newObj.id)
+      if (!newPath) continue
+      await supabase.from('object_documents').insert({
+        object_id: newObj.id,
+        storage_path: newPath,
+        document_type: doc.document_type,
+        title: doc.title?.trim() || null,
+        file_name: doc.file_name ?? null,
+      })
+    }
+  }
+
+  const fresh = await fetchObject(newObj.id)
+  return { data: fresh ?? newObj, error: null }
+}
+
+export const setObjectProfilePhoto = async (
+  objectId: string,
+  file: File
+): Promise<{ path: string | null; error: { message: string } | null }> => {
+  if (!isOnline()) return { path: null, error: { message: 'Profilfoto nur online speicherbar.' } }
+  const existing = await fetchObject(objectId)
+  const oldPath = existing?.profile_photo_path?.trim() || null
+
+  const blob = await compressImageFile(file)
+  const ext = blob.type === 'image/jpeg' ? 'jpg' : 'png'
+  const newPath = `${objectId}/profile-${crypto.randomUUID()}.${ext}`
+  const { error: uploadError } = await supabase.storage
+    .from(OBJECT_PHOTOS_BUCKET)
+    .upload(newPath, blob, { upsert: false, contentType: blob.type || 'image/jpeg' })
+  if (uploadError) return { path: null, error: { message: uploadError.message } }
+
+  const { error: dbErr } = await updateObject(objectId, { profile_photo_path: newPath })
+  if (dbErr) {
+    await supabase.storage.from(OBJECT_PHOTOS_BUCKET).remove([newPath])
+    return { path: null, error: { message: dbErr.message } }
+  }
+
+  if (oldPath && oldPath !== newPath) {
+    await supabase.storage.from(OBJECT_PHOTOS_BUCKET).remove([oldPath]).catch(() => {})
+  }
+
+  return { path: newPath, error: null }
+}
+
+export const removeObjectProfilePhoto = async (
+  objectId: string,
+  currentPath: string | null | undefined
+): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) return { error: { message: 'Nur online möglich.' } }
+  const path = currentPath?.trim()
+  if (path) {
+    await supabase.storage.from(OBJECT_PHOTOS_BUCKET).remove([path]).catch(() => {})
+  }
+  return updateObject(objectId, { profile_photo_path: null })
+}
 
 // --- Object Documents ---
 
@@ -1546,14 +1933,28 @@ export const fetchOrdersAssignedTo = async (userId: string): Promise<Order[]> =>
 
 type OrderPayload = Omit<Order, 'id' | 'created_at' | 'updated_at'> & { updated_at?: string }
 
+const normalizeOrderObjectFields = (
+  objectId: string | null | undefined,
+  objectIds: string[] | null | undefined
+): { object_id: string | null; object_ids: string[] | null } => {
+  const unique = [...new Set((objectIds ?? []).filter(Boolean))]
+  if (unique.length > 0) {
+    return { object_id: unique[0] ?? null, object_ids: unique }
+  }
+  const single = objectId?.trim() || null
+  return { object_id: single, object_ids: single ? [single] : null }
+}
+
 export const createOrder = async (
   payload: Omit<OrderPayload, 'created_by'>,
   userId: string | null
 ): Promise<{ data: Order | null; error: { message: string } | null }> => {
+  const { object_id, object_ids } = normalizeOrderObjectFields(payload.object_id, payload.object_ids)
   const full = {
     ...payload,
     id: crypto.randomUUID(),
-    object_id: payload.object_id || null,
+    object_id,
+    object_ids,
     assigned_to: 'assigned_to' in payload && payload.assigned_to ? String(payload.assigned_to).trim() || null : null,
     created_by: userId,
     created_at: new Date().toISOString(),
@@ -1696,6 +2097,53 @@ export const updateOrderDate = async (
     const cached = (getCachedOrders() as Order[]).map((o) =>
       o.id === id ? { ...o, order_date: orderDate, updated_at } : o
     )
+    setCachedOrders(cached)
+    notifyDataChange()
+  }
+  return { error: error ? { message: error.message } : null }
+}
+
+export type OrderUpdatePayload = {
+  customer_id: string
+  bv_id: string | null
+  object_ids: string[]
+  order_date: string
+  order_time: string | null
+  order_type: Order['order_type']
+  status: Order['status']
+  description: string | null
+  assigned_to: string | null
+}
+
+export const updateOrder = async (
+  id: string,
+  payload: OrderUpdatePayload
+): Promise<{ error: { message: string } | null }> => {
+  const { object_id, object_ids } = normalizeOrderObjectFields(null, payload.object_ids)
+  const updated_at = new Date().toISOString()
+  const row = {
+    customer_id: payload.customer_id,
+    bv_id: payload.bv_id,
+    object_id,
+    object_ids,
+    order_date: payload.order_date,
+    order_time: payload.order_time,
+    order_type: payload.order_type,
+    status: payload.status,
+    description: payload.description,
+    assigned_to: payload.assigned_to,
+    updated_at,
+  }
+  if (!isOnline()) {
+    addToOutbox({ table: 'orders', action: 'update', payload: { id, ...row } })
+    const cached = (getCachedOrders() as Order[]).map((o) => (o.id === id ? { ...o, ...row } as Order : o))
+    setCachedOrders(cached)
+    notifyDataChange()
+    return { error: null }
+  }
+  const { error } = await supabase.from('orders').update(row).eq('id', id)
+  if (!error) {
+    const cached = (getCachedOrders() as Order[]).map((o) => (o.id === id ? { ...o, ...row } as Order : o))
     setCachedOrders(cached)
     notifyDataChange()
   }

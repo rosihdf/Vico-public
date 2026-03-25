@@ -54,15 +54,28 @@ const TenantDeploymentPanel = ({
     }
   }, [licenses, selectedLicense])
 
+  /** Supabase Edge (Variante B): VITE_LICENSE_API_URL oder aus Lizenzportal-Supabase URL abgeleitet. Legacy: Admin-Origin /api (Netlify). */
   const licenseApiBase = useMemo(() => {
-    if (typeof window === 'undefined') return ''
-    return `${window.location.origin.replace(/\/$/, '')}/api`
+    const fromLic = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim().replace(/\/$/, '')
+    if (fromLic) return fromLic
+    const sb = (import.meta.env.VITE_SUPABASE_URL ?? '').trim().replace(/\/$/, '')
+    if (sb) return `${sb}/functions/v1`
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin.replace(/\/$/, '')}/api`
+    }
+    return ''
   }, [])
 
   const selectedLicenseRow = useMemo(
     () => licenses.find((l) => l.license_number === selectedLicense),
     [licenses, selectedLicense]
   )
+
+  /** Nur für Legacy-Netlify-JSON: auf Admin /api zeigen, nicht auf Edge-URL. */
+  const netlifyExportLicenseUrl = useMemo(() => {
+    if (licenseApiBase.includes('/functions/v1')) return 'https://<admin-netlify-host>/api'
+    return licenseApiBase || 'https://<admin-site>/api'
+  }, [licenseApiBase])
 
   const handlePushClientConfig = async () => {
     const row = selectedLicenseRow
@@ -73,7 +86,7 @@ const TenantDeploymentPanel = ({
       const res = await bumpClientConfigVersion(row.id)
       if (res.ok) {
         setPushMessage(
-          'Konfigurations-Version erhöht. Eingeloggte Mandanten-Apps holen die Lizenz in der Regel innerhalb von 1–2 Minuten neu (Tab-Fokus beschleunigt).'
+          'Konfigurations-Version erhöht. Haupt-App, Kundenportal und Arbeitszeitenportal pollen die Lizenz-API (ca. alle 90 s bzw. kurz nach Seitenstart); ein Tab-Wechsel kann die nächste Prüfung auslösen. Vollständiger Reload ist nicht nötig.'
         )
         onClientPushComplete?.()
       } else {
@@ -103,8 +116,8 @@ const TenantDeploymentPanel = ({
         { key: 'VITE_SUPABASE_ANON_KEY', value: '<ANON-KEY>', comment: 'anon public' },
         {
           key: 'VITE_LICENSE_API_URL',
-          value: licenseApiBase || 'https://<admin-site>/api',
-          comment: 'Basis-URL Lizenz-API (ohne Slash am Ende)',
+          value: licenseApiBase || 'https://<lizenzportal-ref>.supabase.co/functions/v1',
+          comment: 'Supabase Edge (empfohlen), ohne Slash am Ende – oder Legacy https://<admin>/api',
         },
       ]),
     [licenseApiBase, supabaseUrlDisplay]
@@ -118,7 +131,10 @@ const TenantDeploymentPanel = ({
         comment: 'gleiches Projekt wie Haupt-App',
       },
       { key: 'VITE_SUPABASE_ANON_KEY', value: '<ANON-KEY>', comment: 'anon public' },
-      { key: 'VITE_LICENSE_API_URL', value: licenseApiBase || 'https://<admin-site>/api' },
+      {
+        key: 'VITE_LICENSE_API_URL',
+        value: licenseApiBase || 'https://<lizenzportal-ref>.supabase.co/functions/v1',
+      },
     ]
     if (includeLicenseNumberInExport) {
       base.push({
@@ -136,15 +152,17 @@ const TenantDeploymentPanel = ({
   const checklist = useMemo(
     () =>
       [
-        `App-Domain (${appDomain || '…'}) in Netlify der Haupt-App und DNS`,
-        portalDomain ? `Kundenportal: ${portalDomain} → Netlify portal-Site + DNS` : 'Kundenportal-Domain eintragen',
+        `Cloudflare Pages: drei Projekte (Haupt-App, portal, arbeitszeit-portal) mit Root wie in docs/Cloudflare-Umzug-Roadmap.md`,
+        `App-Domain (${appDomain || '…'}) / pages.dev-Hosts in allowed_domains (ohne https://) für Host-Lookup`,
+        portalDomain ? `Kundenportal: ${portalDomain} (oder *.pages.dev) + DNS bei Cloudflare` : 'Kundenportal-Domain eintragen',
         arbeitszeitDomain
-          ? `Arbeitszeitenportal: ${arbeitszeitDomain} → Netlify arbeitszeit-Site + DNS`
+          ? `Arbeitszeitenportal: ${arbeitszeitDomain} → Pages-Projekt + DNS`
           : 'Arbeitszeitenportal-Domain eintragen (falls genutzt)',
-        'Unter „Domain-Bindung“ / allowed_domains: Hosts der Haupt-App und Portale (eine Zeile pro Host, ohne https://)',
-        'Nach Env-Änderungen: Netlify „Clear cache and deploy“',
-        'Test: GET {Lizenz-API}/license?licenseNumber=… → 200; optional ohne Nummer im Browser (Host-Lookup)',
-        'Automatisierung: docs/Netlify-Mandanten-Env-Skript.md + npm run netlify:apply-env',
+        'VITE_LICENSE_API_URL = https://<lizenzportal>.supabase.co/functions/v1 (Edge deployt)',
+        'Nach Env-Änderungen: Pages Production-Deploy neu auslösen',
+        'Test: GET …/functions/v1/license?licenseNumber=… → 200',
+        'Automatisierung CF: docs/Cloudflare-Mandanten-Env-Skript.md + npm run cf:apply-env',
+        'Legacy Netlify: docs/Netlify-Mandanten-Env-Skript.md + npm run netlify:apply-env',
       ].join('\n• '),
     [appDomain, portalDomain, arbeitszeitDomain]
   )
@@ -156,9 +174,9 @@ const TenantDeploymentPanel = ({
         tenantName: tenantName.trim() || 'Mandant',
         exportedAt: new Date().toISOString(),
         readme:
-          'Trage NETLIFY_SITE_IDs ein (Site settings → Site details). Dann: npm run netlify:apply-env -- diese-datei.json',
+          'Trage NETLIFY_SITE_IDs ein. Dann: npm run netlify:apply-env -- diese-datei.json (Legacy)',
       },
-      licenseApiUrl: licenseApiBase || 'https://<admin-site>/api',
+      licenseApiUrl: netlifyExportLicenseUrl,
       supabase: {
         url: supabaseUrl.trim() || 'https://<MANDANTEN-PROJEKT-REF>.supabase.co',
         anonKey: '<ANON-KEY>',
@@ -182,11 +200,47 @@ const TenantDeploymentPanel = ({
     return JSON.stringify(base, null, 2)
   }, [
     tenantName,
-    licenseApiBase,
+    netlifyExportLicenseUrl,
     supabaseUrl,
     includeLicenseNumberInExport,
     selectedLicense,
   ])
+
+  const deploymentCfJsonExport = useMemo(() => {
+    const base = {
+      version: 2,
+      provider: 'cloudflare_pages',
+      meta: {
+        tenantName: tenantName.trim() || 'Mandant',
+        exportedAt: new Date().toISOString(),
+        readme:
+          'Trage projects.*.projectName ein (exakter Pages-Projektname). CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID setzen. npm run cf:apply-env -- diese-datei.json',
+      },
+      licenseApiUrl: licenseApiBase || 'https://<lizenzportal-ref>.supabase.co/functions/v1',
+      licenseApiKey: '',
+      supabase: {
+        url: supabaseUrl.trim() || 'https://<MANDANTEN-PROJEKT-REF>.supabase.co',
+        anonKey: '<ANON-KEY>',
+      },
+      projects: {
+        main: { projectName: '' },
+        portal: { projectName: '' },
+        arbeitszeit: { projectName: '' },
+      },
+      portalEnv: {
+        includeLicenseNumber: includeLicenseNumberInExport,
+        ...(includeLicenseNumberInExport && selectedLicense
+          ? { licenseNumber: selectedLicense }
+          : {}),
+      },
+      options: {
+        dryRun: false,
+        markAnonKeyAsSecret: true,
+        markLicenseApiKeyAsSecret: true,
+      },
+    }
+    return JSON.stringify(base, null, 2)
+  }, [tenantName, licenseApiBase, supabaseUrl, includeLicenseNumberInExport, selectedLicense])
 
   const envBundleText = useMemo(
     () =>
@@ -234,6 +288,11 @@ const TenantDeploymentPanel = ({
     triggerDownload(name, deploymentJsonExport, 'application/json;charset=utf-8')
   }
 
+  const handleDownloadCfJson = () => {
+    const name = `vico-cloudflare-deployment-${slugifyFile(tenantName)}-${new Date().toISOString().slice(0, 10)}.json`
+    triggerDownload(name, deploymentCfJsonExport, 'application/json;charset=utf-8')
+  }
+
   const handleDownloadEnvBundle = () => {
     const name = `vico-mandant-env-${slugifyFile(tenantName)}-${new Date().toISOString().slice(0, 10)}.txt`
     triggerDownload(name, envBundleText, 'text/plain;charset=utf-8')
@@ -242,7 +301,7 @@ const TenantDeploymentPanel = ({
   if (licenses.length === 0) {
     return (
       <section className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900">
-        <h3 className="font-semibold text-amber-950">Deployment / Netlify</h3>
+        <h3 className="font-semibold text-amber-950">Deployment / Hosting</h3>
         <p className="mt-1">
           Lege mindestens eine Lizenz an – dann erscheinen hier Copy-Paste-Blöcke für die Mandanten-Apps.
         </p>
@@ -253,11 +312,11 @@ const TenantDeploymentPanel = ({
   return (
     <section className="rounded-xl border border-slate-200 bg-slate-50/90 p-3 sm:p-4 space-y-4 w-full min-w-0 overflow-hidden">
       <div className="min-w-0">
-        <h3 className="text-base font-semibold text-slate-800">Deployment / Netlify</h3>
+        <h3 className="text-base font-semibold text-slate-800">Deployment / Hosting</h3>
         <p className="text-sm text-slate-600 mt-1 break-words">
-          Vorgefüllte <strong>Umgebungsvariablen</strong> für Netlify (Build). Platzhalter{' '}
-          <code className="text-xs bg-white px-1 rounded border">&lt;…&gt;</code> durch Werte aus dem Mandanten-Supabase
-          ersetzen. Lizenz-API-URL bezieht sich auf diese Admin-Seite:{' '}
+          Vorgefüllte <strong>Build-Variablen</strong> für <strong>Cloudflare Pages</strong> (empfohlen) bzw. Legacy-Netlify.
+          Platzhalter <code className="text-xs bg-white px-1 rounded border">&lt;…&gt;</code> ersetzen. Aktuelle
+          Lizenz-API-Basis (Edge oder <code className="text-xs">/api</code>):{' '}
           <code className="text-xs bg-white px-1 rounded border break-all">{licenseApiBase || '…'}</code>
         </p>
       </div>
@@ -291,6 +350,13 @@ const TenantDeploymentPanel = ({
                   Erhöht die Konfigurations-Version – Haupt-App und Portale pollen die Lizenz-API und laden Features/Design
                   neu, ohne auf das tägliche/wöchentliche Intervall zu warten.
                 </p>
+                {licenses.length > 1 && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 mt-2">
+                    <strong>Mehrere Lizenzen:</strong> Nur die hier gewählte Zeile wird erhöht. Die Haupt-App nutzt die in
+                    der Mandanten-DB / Umgebung hinterlegte Lizenznummer – bei Abweichung sieht die App keinen Push. Host-Lookup
+                    ohne Nummer liefert immer die zuletzt angelegte Lizenz des Mandanten.
+                  </p>
+                )}
                 {selectedLicenseRow && (
                   <p className="text-xs text-slate-500 mt-1 font-mono">
                     Aktuelle Version: {selectedLicenseRow.client_config_version}
@@ -334,11 +400,19 @@ const TenantDeploymentPanel = ({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
+          onClick={handleDownloadCfJson}
+          className="flex-1 min-w-[8rem] sm:flex-none px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-800 hover:bg-slate-50 min-h-[44px] sm:min-h-0 sm:py-1.5"
+          aria-label="Deployment-Konfiguration als JSON für Cloudflare-Skript herunterladen"
+        >
+          JSON (Cloudflare)
+        </button>
+        <button
+          type="button"
           onClick={handleDownloadJson}
           className="flex-1 min-w-[8rem] sm:flex-none px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-800 hover:bg-slate-50 min-h-[44px] sm:min-h-0 sm:py-1.5"
-          aria-label="Deployment-Konfiguration als JSON für Netlify-Skript herunterladen"
+          aria-label="Deployment-Konfiguration als JSON für Netlify-Skript herunterladen (Legacy)"
         >
-          JSON für Skript
+          JSON (Netlify)
         </button>
         <button
           type="button"
@@ -349,7 +423,10 @@ const TenantDeploymentPanel = ({
           .env-Paket (Text)
         </button>
         <p className="text-xs text-slate-500 w-full break-words">
-          Skript: <code className="bg-white px-1 rounded border break-all">npm run netlify:apply-env -- datei.json</code> · Doku:{' '}
+          CF: <code className="bg-white px-1 rounded border break-all">npm run cf:apply-env -- datei.json</code> ·{' '}
+          <span className="break-words">docs/Cloudflare-Mandanten-Env-Skript.md</span>
+          <br />
+          Netlify: <code className="bg-white px-1 rounded border break-all">npm run netlify:apply-env -- datei.json</code> ·{' '}
           <span className="break-words">docs/Netlify-Mandanten-Env-Skript.md</span>
         </p>
       </div>

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { supabase, setRememberMe, warmUpConnection } from './supabase'
 import { getSupabaseErrorMessage } from './supabaseErrors'
-import type { User } from '@supabase/supabase-js'
+import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 
 type UserRole = 'admin' | 'teamleiter' | 'mitarbeiter' | 'operator' | 'leser' | 'demo' | 'kunde'
 
@@ -50,7 +50,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [loginError, setLoginError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const authInFlight = useRef(false)
+  /** Nach Logout zurücksetzen; verhindert „keine Rolle“ wenn erstes Event `TOKEN_REFRESHED` ist */
+  const roleHydratedForUserId = useRef<string | null>(null)
 
   const userEmail = user?.email ?? null
   const isAuthenticated = !!user
@@ -88,6 +89,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUser(data.user)
         const profile = await fetchProfileSupabase(data.user.id)
         setUserRole(profile?.role ?? 'mitarbeiter')
+        roleHydratedForUserId.current = data.user.id
 
         const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
         if (aalData?.nextLevel === 'aal2' && aalData?.currentLevel !== aalData.nextLevel) {
@@ -121,6 +123,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (data.user && data.session) {
       const profile = await fetchProfileSupabase(data.user.id)
       setUserRole(profile?.role ?? 'mitarbeiter')
+      roleHydratedForUserId.current = data.user.id
       setUser(data.user)
       return { success: true, message: 'Konto erstellt. Sie sind eingeloggt.', sessionCreated: true }
     }
@@ -184,8 +187,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { success: false, message: getSupabaseErrorMessage(verifyError) }
       }
 
-      const profile = await fetchProfileSupabase((await supabase.auth.getUser()).data.user!.id)
+      const {
+        data: { user: u },
+      } = await supabase.auth.getUser()
+      if (!u) return { success: false, message: 'Sitzung ungültig.' }
+      const profile = await fetchProfileSupabase(u.id)
       setUserRole(profile?.role ?? 'mitarbeiter')
+      roleHydratedForUserId.current = u.id
       return { success: true }
     } catch (err) {
       return { success: false, message: err instanceof Error ? err.message : '2FA-Verifizierung fehlgeschlagen.' }
@@ -194,6 +202,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = useCallback(async () => {
     setLoginError(null)
+    roleHydratedForUserId.current = null
     await supabase.auth.signOut()
     setUser(null)
     setUserRole(null)
@@ -216,68 +225,99 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return
     }
 
+    let cancelled = false
+
     const safetyTimeoutId = setTimeout(() => {
-      setIsLoading(false)
+      if (!cancelled) setIsLoading(false)
     }, 30_000)
 
-    const loadSession = async (retryCount = 0) => {
-      if (authInFlight.current) return
-      authInFlight.current = true
+    const hydrateRoleFromSession = async (session: Session | null) => {
+      if (!session?.user) return
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.user) {
-          if (retryCount < 2) {
-            authInFlight.current = false
-            await new Promise((r) => setTimeout(r, 500))
-            return loadSession(retryCount + 1)
-          }
-          setUser(null)
-          setUserRole(null)
-          return
-        }
-        setUser(session.user)
-        try {
-          const profile = await fetchProfileSupabase(session.user.id)
+        const profile = await fetchProfileSupabase(session.user.id)
+        if (!cancelled) {
           setUserRole(profile?.role ?? 'mitarbeiter')
-        } catch {
-          setUserRole('mitarbeiter')
+          roleHydratedForUserId.current = session.user.id
         }
       } catch {
-        if (retryCount < 2) {
-          authInFlight.current = false
-          await new Promise((r) => setTimeout(r, 500))
-          return loadSession(retryCount + 1)
+        if (!cancelled) {
+          setUserRole('mitarbeiter')
+          roleHydratedForUserId.current = session.user.id
         }
-        setUser(null)
-        setUserRole(null)
-      } finally {
-        authInFlight.current = false
       }
     }
 
-    loadSession()
-      .catch(() => {
-        setUser(null)
-        setUserRole(null)
-      })
-      .finally(() => {
-        setIsLoading(false)
-        clearTimeout(safetyTimeoutId)
-      })
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      (event: AuthChangeEvent, session: Session | null) => {
+        if (cancelled) return
         if (event === 'SIGNED_OUT') {
+          roleHydratedForUserId.current = null
           setUser(null)
           setUserRole(null)
           setIsLoading(false)
           return
         }
-        if (session?.user) setUser(session.user)
+        if (session?.user) {
+          setUser(session.user)
+          const uid = session.user.id
+          /** Nach erstem Hydrate: bei reinem Token-Refresh keine erneute Profil-RPC */
+          if (event !== 'TOKEN_REFRESHED' || roleHydratedForUserId.current !== uid) {
+            void hydrateRoleFromSession(session)
+          }
+          setIsLoading(false)
+        }
       }
     )
 
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+    const restoreSessionFromStorage = async () => {
+      const maxAttempts = 6
+      for (let i = 0; i < maxAttempts; i++) {
+        if (cancelled) return
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+          if (session?.user) {
+            setUser(session.user)
+            await hydrateRoleFromSession(session)
+            if (!cancelled) setIsLoading(false)
+            return
+          }
+        } catch {
+          /* nächster Versuch */
+        }
+        await sleep(280 + i * 120)
+      }
+      if (cancelled) return
+      /** Letzte Chance: Storage-Hydration kann noch nach dem letzten getSession kommen */
+      await sleep(900)
+      if (cancelled) return
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (session?.user) {
+          setUser(session.user)
+          await hydrateRoleFromSession(session)
+        } else {
+          setUser(null)
+          setUserRole(null)
+        }
+      } catch {
+        setUser(null)
+        setUserRole(null)
+      }
+      if (!cancelled) setIsLoading(false)
+    }
+
+    void restoreSessionFromStorage().finally(() => {
+      clearTimeout(safetyTimeoutId)
+    })
+
     return () => {
+      cancelled = true
       clearTimeout(safetyTimeoutId)
       subscription.unsubscribe()
     }

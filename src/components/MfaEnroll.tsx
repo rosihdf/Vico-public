@@ -5,6 +5,8 @@ import { getSupabaseErrorMessage } from '../supabaseErrors'
 type MfaEnrollProps = {
   onEnrolled: () => void
   onCancelled: () => void
+  /** Anzeigename in der Authenticator-App (z. B. Firmen-App-Name) */
+  friendlyName?: string
 }
 
 type EnrollData = {
@@ -13,7 +15,7 @@ type EnrollData = {
   secret: string
 } | null
 
-const MfaEnroll = ({ onEnrolled, onCancelled }: MfaEnrollProps) => {
+const MfaEnroll = ({ onEnrolled, onCancelled, friendlyName = 'Vico' }: MfaEnrollProps) => {
   const [enrollData, setEnrollData] = useState<EnrollData>(null)
   const [verifyCode, setVerifyCode] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -25,7 +27,7 @@ const MfaEnroll = ({ onEnrolled, onCancelled }: MfaEnrollProps) => {
     setError(null)
     const { data, error: enrollError } = await supabase.auth.mfa.enroll({
       factorType: 'totp',
-      friendlyName: 'AMRtech Authenticator',
+      friendlyName: `${friendlyName} (2FA)`,
     })
     setIsLoading(false)
     if (enrollError) {
@@ -39,7 +41,7 @@ const MfaEnroll = ({ onEnrolled, onCancelled }: MfaEnrollProps) => {
         secret: data.totp.secret,
       })
     }
-  }, [])
+  }, [friendlyName])
 
   useEffect(() => {
     startEnroll()

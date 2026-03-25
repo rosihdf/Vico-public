@@ -110,6 +110,39 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 
 - Stammdaten, Art, Technik, Schließmittel, Feststellanlage, Rauchmelder
 - Fotos, QR-Code (Druck via Bluetooth)
+- **Duplikat/Kopie (Kundenansicht):** Eine Tür/Tor kann innerhalb desselben Kunden dupliziert werden (**neue Datensatz-ID**). Stammdaten werden übernommen; die **Bezeichnung** erhält den Zusatz **` (Duplikat)`** (war der Name leer: **`Duplikat`**), die **interne ID** einen eindeutigen Suffix **`…-Duplikat-<Kurz-UUID>`**. Im Dialog wählt der Nutzer getrennt: **Profilfoto** (Standard: an), **Galerie-Fotos** (Standard: aus), **Dokumente** (Zeichnungen, Zertifikate, …; Standard: aus). Was angehakt ist, wird als **eigene Datei** im jeweiligen Bucket kopiert (keine gemeinsame Storage-Referenz). Details und offene Punkte: **Tür/Tor: Duplikat – Verhalten & Rückfragen** unten.
+- **Profilfoto:** Optional pro Tür/Tor; in der **Kundenübersicht** nur das Bild, wenn gesetzt (kein Platzhalter). Im **Tür/Tor-Formular** oben rechts neben der Internen ID: immer **Vorschaubild oder Platzhalter** (Kamera-Symbol); **Klick** öffnet das Eingabepanel (Datei/Kamera/Entfernen). Aufnahme oder Datei, Komprimierung wie bei Objekt-Fotos. Schema: `objects.profile_photo_path` (Bucket `object-photos`).
+
+#### Tür/Tor: Duplikat – Verhalten & Rückfragen
+
+**In der App umgesetzt**
+
+- **Stammdaten** der Quell-Tür werden auf den neuen Datensatz übertragen (wie Neuanlage, aber mit angepasster Bezeichnung und interner ID wie oben).
+- **Drei Checkboxen** im Bestätigungsdialog:
+  - **Profilfoto übernehmen** – wenn an der Quelle `profile_photo_path` gesetzt ist und die Option aktiv ist: Datei im Bucket **`object-photos`** unter der neuen Objekt-ID kopieren und zuordnen (Standard: **aktiviert**).
+  - **Galerie-Fotos übernehmen** – Einträge in **`object_photos`** inkl. neuer Dateien im Foto-Bucket (Standard: **aus**).
+  - **Dokumente übernehmen** – Einträge in **`object_documents`** inkl. Dateien im Bucket **`object-documents`** (Typ, Titel, Dateiname; Standard: **aus**).
+- **Offline:** Duplikat inkl. Storage-Kopien nur **online** (wie bisher; Hinweis in der UI).
+
+**Weitere Rückfragen / Klärung mit Auftraggeber oder Rollout**
+
+- Soll das Profilfoto zusätzlich in **anderen Oberflächen** erscheinen (z. B. Suche, Auftrag, PDF, Kundenportal)?
+- **Rollen:** Wer darf duplizieren bzw. Profilfotos pflegen (nur Admin/Mitarbeiter wie heute, oder auch Operator)?
+- **Offline:** Reicht der aktuelle UI-Hinweis, oder ist ein **gesonderter Hilfetext** zum Duplizieren gewünscht?
+
+### Aufträge & Monteursbericht
+
+- **Tür/Tor-Auswahl:** Wenn zum Kunden (bzw. Objekt/BV) Türen existieren, ist **mindestens eine** Auswahl erforderlich; die **Zuweisung** („Zugewiesen an“) erscheint erst danach (bzw. sofort, wenn es keine Türen zur Auswahl gibt).
+- **Tür/Tor aus Aufträge:** Link **„Tür/Tor“** öffnet **`/objekt/:id/bearbeiten?returnTo=/auftrag`** (volles Modal wie in Kunden, ohne die Kundenliste als Zwischenziel). Ohne Tür-ID am Auftrag Fallback weiterhin Deep-Link **`/kunden?…`**.
+- **Auftrag abschließen:** Bestätigungsdialog; wenn Firmen-Einstellung **Kundenportal + Benachrichtigung** und das Objekt **portal-fähig** ist, erscheint eine **Checkbox**, ob der Bericht **diesmal** im Portal bereitgestellt werden soll (Standard: an).
+- **Aktionen Monteursbericht:** Speichern, Parken, Abschließen, ggf. E-Mail/PDF in **einer horizontalen Zeile** (scrollbar auf schmalen Viewports).
+
+#### Auftrag / Monteursbericht – Rückfragen (Produkt)
+
+- **Auftrag ohne Tür:** Aktuell nicht möglich, sobald mindestens eine Tür existiert. Soll es weiterhin Sonderfälle geben (z. B. reine „Kunden-Aufträge“ ohne Objekt)?
+- **Portal-Checkbox beim Abschließen:** Sie gilt nur, wenn Einstellung `portal_notify` **und** Objekt portal-berechtigt ist. Soll bei anderen Einstellungen (`email_auto` / `none`) zusätzlich ein **einmaliger** E-Mail- oder Portal-Override angeboten werden?
+- **Zuweisung:** Weiterhin nur **Admin** im Anlage-Formular – sollen **Teamleiter** oder **Mitarbeiter** sich selbst oder andere zuweisen dürfen?
+- **Objekt bearbeiten:** Route nutzt Komponentenschutz **„Kunden“** – soll der Eintrag auch mit nur **„Auftrag“**-Modul sichtbar sein (reine Lizenzfrage)?
 
 ### Wartungsprotokolle
 
@@ -152,21 +185,25 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 
 `supabase-complete.sql` im Supabase SQL Editor ausführen (idempotent). Enthält Rollen, RLS, RPCs, Audit-Trigger, Kundenportal-Tabellen.
 
+**Pflege & Mandanten-Rollouts:** Modularer Aufbau, Delta-Workflow und gleichzeitiges Update aller Mandanten-DBs: **§9.19**; operativ **`docs/sql/Mandanten-DB-Workflow.md`** und `scripts/apply-mandanten-sql.mjs`.
+
 ---
 
-## 5. Deployment (Netlify)
+## 5. Deployment (Ziel: Cloudflare Pages)
 
-1. **Git:** Repo mit GitHub verbinden
-2. **Netlify:** Add site → Deploy with GitHub
-3. **Build:** `npm run build`, Publish: `dist`
-4. **Env:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-5. **Supabase:** Site URL + Redirect URLs (`/reset-password`)
+**Ziel-Hosting:** **Cloudflare Pages** – vier Projekte aus **einem** GitHub-Repo (Root `""`, `admin`, `portal`, `arbeitszeit-portal`), Build `npm run build` → `dist`, SPA-Fallback über **`public/_redirects`**. Schrittfolge: **`docs/Cloudflare-Umzug-Roadmap.md`** (Teil B Go-Live).
 
-**Lizenz-Admin** (`admin/`): Separates Netlify-Site, Root: `admin/`, Subdomain z.B. `admin.vico-tueren.de`.
+1. **Git:** Pro Pages-Projekt mit GitHub verbinden (Monorepo, jeweiliger **Root directory**).
+2. **Build:** `npm ci && npm run build`, Output **`dist`**; **Node 20** (Build-Umgebungsvariable).
+3. **Env:** `VITE_SUPABASE_*`, **`VITE_LICENSE_API_URL`** = `https://<lizenzportal-ref>.supabase.co/functions/v1` (ohne Slash am Ende), optional `VITE_LICENSE_API_KEY`, Portale optional `VITE_LICENSE_NUMBER`.
+4. **Supabase (Mandanten-DB):** Site URL + Redirect URLs für die **Pages**-Hosts (`*.pages.dev` oder Custom Domains).
+5. **Mandanten-Env automatisieren:** **`docs/Cloudflare-Mandanten-Env-Skript.md`** (`npm run cf:apply-env`).
 
-**Alle vier Apps (Haupt-App, Admin, Kundenportal, Arbeitszeitenportal):** Kurzüberblick **`docs/Netlify-README.md`** (inkl. **Staging**), Details **`docs/Netlify-Vier-Apps.md`** (inkl. **§9.5 Staging**, **§11 Fehlerbehebung**, **§12 TS-Build Monorepo**). **Lizenz-API:** Empfohlen **`VITE_LICENSE_API_URL = https://<Admin-Subdomain>/api`**. Portale: **`VITE_LICENSE_NUMBER`** optional (Host-Lookup) – **`docs/Netlify-README.md`**. **Netlify-Env automatisieren:** **`docs/Netlify-Mandanten-Env-Skript.md`**. Setup/Fehler: **`docs/Lizenzportal-Setup.md`**.
+**Lizenz-API:** **Supabase Edge Functions** (Variante B) – **`docs/Lizenzportal-Setup.md`**. **Host-Lookup mit `*.pages.dev`:** **`docs/Mandanten-Hostlookup-CF-Pages.md`**.
 
-**Geplanter Wechsel zu Cloudflare:** Roadmap **CF1** (**§7.2**), detaillierte Planung inkl. **Supabase-Auslagerung** der Lizenz-API-Optionen: **`docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md`**.
+**Legacy / Rollback:** Netlify-Stand über Git-Tag **`last-stand-netlify`**; Doku **`docs/Netlify-README.md`**, **`docs/Netlify-Vier-Apps.md`**, **`docs/Netlify-Mandanten-Env-Skript.md`** (nur noch für eingefrorene Sites bis Abbau).
+
+**Planung CF1:** **`docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md`**.
 
 ### Supabase Keep-Alive (Free-Tier)
 
@@ -290,8 +327,8 @@ Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** =
 |----|--------|--------|--------|---------|--------|
 | **J6** | Fachlich | **Umbau Wartung (MVP):** Freigabe-Workflow, Portal-Anbindung, ggf. DIN/ASR (Monteursbericht vorhanden) | ⚠️ | 15–20 T | **§7.5** |
 | **J7** | Fachlich | Paket: **Mängel-Follow-up**, **iCal**, **Bulk-Operationen**, **Portal-Push** (Reihenfolge **§7.6.4**) | 🔲 | je 2–3 T | **§7.4** #9–11, #15 |
-| **T1** | Technik / DB | **Supabase CLI-Migrations** (zeitlich geordnet) statt nur Monolith `supabase-complete.sql`; Baseline + künftige Deltas; **Lizenzportal** eigenes `supabase/`. Kein App-Runtime-Gewinn, aber klarere Reviews & Rollouts. Pragmatischer Einstieg (Inventar, Changelog, Multi-`psql`): **`docs/sql/Mandanten-DB-Workflow.md`**. | 🔲 | 0,5–2 T | **`docs/sql/Supabase-Migrations-Strategie.md`** |
-| **CF1** | Infrastruktur | **Cloudflare-Umzug** (Netlify → **Pages**, vier Projekte / ein Account): detaillierte **Migrationsplanung**, SPA-Builds, Env, DNS; **Entscheid** Lizenz-API: **Pages Functions** (Port `admin/netlify/functions`) **oder** **Supabase Edge** (rein statische Sites). Ersetzung Mandanten-Env-Automatisierung (`netlify-apply-tenant-env`). | 🔲 | 2–5 T (Planung+Staging); Umsetzung extra | **`docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md`** · Issue-Body **`docs/github-issues/CF1.body.md`** |
+| **T1** | Technik / DB | **Supabase CLI-Migrations** (zeitlich geordnet) statt nur Monolith `supabase-complete.sql`; Baseline + künftige Deltas; **Lizenzportal** eigenes `supabase/`. Kein App-Runtime-Gewinn, aber klarere Reviews & Rollouts. Pragmatischer Einstieg (Inventar, Changelog, Multi-`psql`): **`docs/sql/Mandanten-DB-Workflow.md`**. Konzept Modularisierung & Massen-Rollout: **§9.19**. | 🔲 | 0,5–2 T | **`docs/sql/Supabase-Migrations-Strategie.md`** · **§9.19** |
+| **CF1** | Infrastruktur | **Cloudflare-Umzug** (Netlify → **Pages**, vier Projekte / ein Account): **Lizenz-API = Supabase Edge**; Git-Build auf CF; Env-Skript wie Netlify; Netlify Reserve dann Abbau. **Umsetzung:** **`docs/Cloudflare-Umzug-Roadmap.md`** (Teil A Umprogrammierung, Teil B Go-Live). | 🔲 | Planung ✅; Umsetzung nach Roadmap | **`docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md`** · **`docs/Cloudflare-Umzug-Roadmap.md`** · **`docs/github-issues/CF1.body.md`** |
 
 **Hinweis:** **J2, J3, J4, J10** (MVP), **2FA**, **Arbeitszeiterfassung** (Modul), **Capacitor/APK** (**I1**) und die früheren Phasen **A–H** sind umgesetzt → **§7.3**. **Abarbeitungs-Vorschlag** Phasen 0–7: **§7.6.2**.
 
@@ -363,7 +400,7 @@ Langfristige Feature-Liste mit **Priorität** und **Aufwand** – nicht alles is
 | 16 | Ladezeiten-Monitoring | – | – | ✅ **J9** |
 | 17 | Bug-Erfassungsmodul | Niedrig | 1–2 T | ✅ **J10** (MVP) |
 | 18 | DB-Schema: Supabase-Migrations statt Monolith | Mittel | 0,5–2 T | 🔲 **T1** – **docs/sql/Supabase-Migrations-Strategie.md** |
-| 19 | Hosting: Netlify → Cloudflare + API-Strategie (Supabase Edge?) | Mittel | 2–5 T Planung/Staging; Umsetzung danach | 🔲 **CF1** – **docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md** |
+| 19 | Hosting: Netlify → Cloudflare + Supabase Edge (Lizenz-API) | Mittel | Umsetzung nach **docs/Cloudflare-Umzug-Roadmap.md** | 🔲 **CF1** – **docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md**, **docs/Cloudflare-Umzug-Roadmap.md** |
 
 ---
 
@@ -435,7 +472,7 @@ Ehemals verteilt auf `docs/Roadmap-Abarbeitung-Vorschlag.md`, `docs/Roadmap-Weit
 | **I2** | ⚠️ UI | Preset/Maße **Einstellungen**; Hardware/Plugin – **§11.4**, **§7.2.1**. |
 | **L4** | ✅ | Logo-Upload Lizenzportal – **§9.4a**, Bucket `tenant_logos`. |
 | **T1** | 🔲 | Supabase CLI-Migrations (Baseline + Deltas) – **docs/sql/Supabase-Migrations-Strategie.md**. |
-| **CF1** | 🔲 | Cloudflare-Umzug planen, Lizenz-API CF vs. Supabase – **docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md**. |
+| **CF1** | 🔲 | Cloudflare-Umzug umsetzen – **docs/Cloudflare-Umzug-Roadmap.md**; Entscheidungen **docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md**. |
 
 #### 7.6.2 Empfohlene Abarbeitungsreihenfolge (Phasen 0–7)
 
@@ -450,7 +487,7 @@ Ehemals verteilt auf `docs/Roadmap-Abarbeitung-Vorschlag.md`, `docs/Roadmap-Weit
 | **4** | **J7** ohne iCal: Mängel-Follow-up → Bulk → Portal-Push | 🔲 |
 | **5** | **J6** Umbau Wartung (15–20 T) | 🔲 |
 | **6** | GPS-Debug nach Live, Standortabfrage-Checkliste, **I2**-Abstraktion (Preset ✅), A4-QR-Batch/Etikettendesign | teilweise |
-| **7** | **CF1:** Cloudflare-Umzug (Planung **docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md**); ggf. IONOS/Deploy parallel klären; `Optimierungsplan.md`, AZK-Optionen (Teamleiter-Extras) | 🔲 / später |
+| **7** | **CF1:** Umsetzung **docs/Cloudflare-Umzug-Roadmap.md**; ggf. IONOS/Deploy parallel klären; `Optimierungsplan.md`, AZK-Optionen (Teamleiter-Extras) | 🔲 / später |
 
 **Bewusst zurückgestellt:** iCal vor stabilem J1–J4; **SevDesk** nach J3-Basis; **J6** nicht parallel zu unstabilem J1–J4.
 
@@ -508,7 +545,9 @@ Vico/
 ├── public/           # Favicon, Logo, Checkliste-PDF, Vico-Dokumentation.pdf (via generate-vico-pdf)
 ├── scripts/          # generate-checklist-webapp-pdf.mjs, generate-vico-pdf.mjs
 ├── supabase/         # Edge Functions
-├── supabase-complete.sql
+├── supabase-complete.sql   # Referenz-Schema Mandanten-App (§9.19: künftig ggf. aus Modulen gebaut)
+├── supabase-license-portal.sql
+├── docs/sql/         # Delta-Migrationen Mandanten-DB, Changelog, Strategie (§9.19)
 ├── Vico.md           # Diese Dokumentation
 ├── BENUTZERANLEITUNG.md
 ├── docs/             # Setup, Betrieb, Vertiefung (siehe Vico.md §10.11, §11.12)
@@ -1003,6 +1042,114 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 - **Build vor Portal:** Client ist neuer als die Portal-Anzeige → Mandantenpflege im Lizenzportal nachziehen.
 
 **Policy:** Kein automatischer Vergleich, sobald eine der Versionen **nicht** dem Muster `x.y.z` entspricht (z. B. reine Texte, „v1.2“ ohne Patch) – dann nur Anzeige der Texte, kein SemVer-Banner.
+
+---
+
+### 9.19 Mandanten-DB: `supabase-complete.sql` modular pflegen & alle Mandanten gleichzeitig aktualisieren
+
+**Ausgangslage:** `supabase-complete.sql` ist ein **Monolith** (ca. 3000 Zeilen): für Leser gut als **Inventar** und für **neue** Supabase-Projekte (einmaliger SQL-Editor-Lauf), aber unhandlich für **Reviews**, **Merge-Konflikte** und die Frage „was gehört zu welchem Release?“. Zusätzlich existieren **viele Mandanten-Projekte** mit **gleichem** Zielschema – Schemaänderungen sollen **einheitlich** und **nachvollziehbar** ausgerollt werden.
+
+**Ziele**
+
+1. **Wartung:** Änderungen in **kleinen, benannten Dateien** (Domains: Profile, Stammdaten, RPC, Storage, …) statt dauerndem Editieren einer Riesendatei.
+2. **Reproduzierbarkeit:** Die Datei `supabase-complete.sql` im Repo soll **generiert** oder **zusammengebaut** werden können („Single Artifact“ für Greenfield), nicht als manuell zusammenkopierter Drift-Endpunkt.
+3. **Rollout:** Dieselbe SQL-Änderung soll **sequentiell oder gebündelt** gegen **alle** Mandanten-Datenbanken laufen können – mit Trockenlauf, Abbruch bei Fehler und Audit-Spur.
+
+Die folgenden Abschnitte sind ein **Umsetzungsvorschlag**; er schließt an **Roadmap T1** und **`docs/sql/Mandanten-DB-Workflow.md`** an.
+
+---
+
+#### 9.19.1 Sinnvolle Aufteilung (Module entlang der bestehenden Gliederung)
+
+Die **logische Reihenfolge** ist bereits im Kopf von `supabase-complete.sql` dokumentiert (Abhängigkeiten: Tabellen/Spalten vor RPCs, Storage nach Tabellen, Indizes/Realtime am Ende). Daraus lässt sich eine **Modulstruktur** ableiten, z. B. unter einem neuen Verzeichnis:
+
+```text
+docs/sql/schema-mandant/          # oder: supabase/mandant/schema/
+  _header.sql                     # Kurzkommentar + ggf. SET search_path / Hinweise
+  01_profiles_rls.sql             # §1 Profiles & Rollen, Helper-Funktionen, erste Policies
+  02_stammdaten.sql               # §2 customers, bvs, objects, Fotos, Dokumente, Verträge
+  03_wartungsprotokolle.sql       # §3
+  04_auftraege_zeit_urlaub.sql    # §4 orders, time_*, leave_*, component_settings, audit, …
+  05_rpcs.sql                     # §5 RPCs (ggf. in 05a–05c splitten: allgemein / Lizenz / Standort)
+  05b_lizenz.sql                  # §5b license, get_license_status, …
+  05c_standortabfrage.sql         # §5c
+  06_kundenportal.sql             # §6
+  07_storage.sql                  # §7 Buckets + Policies
+  07b_urlaub_phase3.sql           # §7b
+  08_indizes_realtime.sql         # §8
+```
+
+**Regeln**
+
+- **Keine zyklischen Abhängigkeiten:** Reihenfolge der `\\i`- oder Concat-Liste ist fest; bei Unsicherheit im Team ein **`manifest.json`** (oder `order.txt`) mit sortierter Dateiliste versionieren.
+- **Idempotenz beibehalten:** Weiterhin `IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP POLICY IF EXISTS` + neu anlegen – wie heute, damit Greenfield- und Notfall-Läufe robust bleiben.
+- **Lizenzportal getrennt:** `supabase-license-portal.sql` **eigenes** Modulset (weniger Zeilen), gleiches Prinzip: Fragmente + Build → eine Referenzdatei.
+
+**Build-Schritt (Vorschlag)**
+
+- Kleines Node-Skript z. B. `scripts/build-supabase-complete.mjs`: liest `manifest.json`, konkateniert mit klarer Trennkommentar-Zeile, schreibt **`supabase-complete.sql`** (überschreibend).
+- **Workflow:** Schema nur in den Fragmenten ändern → Build ausführen → Diff im PR zeigt nur das betroffene Modul (wenn Git die Fragmente trackt) und die **generierte** Datei (optional im PR pflichtig oder nur in Release-Branches).
+- **Alternative:** Statt Generator nur **`\i`-Bootstrap**: eine schlanke `supabase-complete.sql`, die per `\\include`/`\\i` andere Dateien lädt – **funktioniert im psql-CLI**, im **Supabase SQL Editor** oft **ohne** Include-Support; deshalb ist **Konkatenation zu einer Datei** für „Copy-Paste ins Dashboard“ meist praktischer.
+
+---
+
+#### 9.19.2 Bestehende Mandanten: Deltas statt komplettes Replay
+
+Für **laufende** Produktiv-DBs gilt weiterhin (siehe **`docs/sql/Mandanten-DB-Workflow.md`**):
+
+- **`supabase-complete.sql`** = Referenz für **neue** Projekte und für „was ist Soll-Zustand“.
+- **Jede Schemaänderung** zusätzlich als **eigene Delta-Datei** unter `docs/sql/` (z. B. `mandanten-db-<thema>-<kurz>.sql`), Eintrag in **`docs/sql/CHANGELOG-Mandanten-DB.md`**.
+- Produktiv **nur das Delta** ausführen, nicht die komplette Monolith-Datei erneut (Risiko: lange Laufzeit, unbeabsichtigte Nebenwirkungen bei historischen Abweichungen).
+
+Nach Einführung der Module können **Deltas** auch **aus dem Diff zweier generierter Stände** abgeleitet werden (operativ trotzdem als kleine Migration pflegen).
+
+---
+
+#### 9.19.3 Alle Mandanten gleichzeitig aktualisieren (Skripte & Betrieb)
+
+**Bereits vorhanden:** `scripts/apply-mandanten-sql.mjs`
+
+- Nimmt **eine SQL-Datei** und eine **URL-Liste** (`configs/mandanten-db-urls.local.txt`, nicht im Repo; Vorlage `configs/mandanten-db-urls.example.txt`).
+- Führt **`psql`** mit **`-v ON_ERROR_STOP=1`** **nacheinander** aus; bricht beim **ersten** Fehler ab (sicher für konsistenten Stand).
+- **Trockenlauf:** `--dry-run` listet nur URLs (maskiert).
+
+**Empfohlener Ablauf pro Änderung**
+
+1. Delta-SQL schreiben + Changelog.
+2. **Staging-Mandant** (falls vorhanden) manuell oder per Skript testen.
+3. `apply-mandanten-sql.mjs … --dry-run` gegen Produktionsliste prüfen.
+4. Echtlauf ohne `--dry-run`; bei Abbruch: Liste der **noch nicht** bearbeiteten Mandanten notieren und nach Fix **fortsetzen** (Skript startet von vorn – daher Reihenfolge in der Datei stabil halten oder bereits erfolgreiche Mandanten auskommentieren).
+
+**Erweiterungen (optional, später)**
+
+| Idee | Nutzen |
+|------|--------|
+| Flag **`--continue-on-error`** | Alle Mandanten anfahren, am Ende Report wer fehlgeschlagen ist (Achtung: dann ist der Bestand **heterogen**). |
+| **Parallelität** (z. B. 2–3 Worker) | Kürzere Gesamtdauer; Risiko: Connection-Limits bei Supabase, schwerer zu debuggen. |
+| **Protokoll** `logs/mandanten-sql-<datum>.log` | Audit: wer wann welche Datei gegen welche URL (ohne Passwort im Klartext). |
+| **Inventar aus Lizenzportal** | Export `project_ref` / Metadaten → generiert **keine** Secrets, aber erinnert an **alle** Mandanten; URLs weiterhin lokal/secrets. |
+| **Supabase CLI** `db execute` | Statt `psql`, wenn ihr einheitlich CLI nutzt; Voraussetzung: DB-URL oder verlinktes Projekt pro Mandant. |
+| **GitHub Actions** | Secrets pro Staging/Prod oder eine **verschlüsselte** URL-Liste im Vault; Matrix-Job **sequentiell** für Prod. |
+
+**Wichtig:** Vor dem Massen-Rollout prüfen, ob alle Mandanten **dieselbe Ausgangsbasis** haben (oder Deltas **defensiv** schreiben: `IF NOT EXISTS`, fehlende Objekte überspringen). Bei stark driftenden Alt-Mandanten ggf. **einmaliger** Abgleich mit generiertem Complete in Wartungsfenster oder manuelle Analyse.
+
+---
+
+#### 9.19.4 Langfristig: Migrations-Tabelle (optional)
+
+Für höhere Sicherheit kann pro Mandanten-DB eine Tabelle **`public.schema_migrations`** (oder Nutzung der **Supabase-Migrations-Historie** bei CLI-gesteuerten Projekten) geführt werden: **Name/Hash der Migration**, **angewendet am**. Dann kann ein Skript **nur fehlende** Dateien anwenden. Das ist der Übergang zu **T1** „Supabase CLI-Migrations zeitlich geordnet“ (`docs/sql/Supabase-Migrations-Strategie.md`). Bis dahin reichen **CHANGELOG + Delta-Dateien + sequentielles psql**.
+
+---
+
+#### 9.19.5 Kurz-Entscheid: Einstellungen vs. „alles in eine Datei“
+
+| Vorgehen | Wann sinnvoll |
+|----------|----------------|
+| **Modulare Fragmente + Build → `supabase-complete.sql`** | Hauptpfad für Entwicklung; eine generierte Datei fürs Dashboard und für Doku-Links. |
+| **Nur Deltas in `docs/sql/` + `apply-mandanten-sql.mjs`** | Täglicher Betrieb für **bestehende** Mandanten (bereits etabliert). |
+| **Vollständiges Replay von `supabase-complete.sql` auf Prod** | Nur für **neue** Projekte oder nach expliziter Freigabe / Notfall mit Backup. |
+
+**Verweise:** `docs/sql/Mandanten-DB-Workflow.md`, `docs/sql/CHANGELOG-Mandanten-DB.md`, `docs/sql/Supabase-Migrations-Strategie.md`, `scripts/apply-mandanten-sql.mjs`, `configs/mandanten-db-urls.example.txt`, `configs/mandanten-registry.example.json`.
 
 ---
 

@@ -4,9 +4,8 @@ Detailliert planen: **Umzug der vier Frontends von Netlify zu Cloudflare Pages**
 
 ## Vollständige Ausarbeitung
 
-**`docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md`**
-
-Dort enthalten: Ist-Stand (`admin/netlify/functions`), **Entscheidungsbaum** (CF Functions vs. Supabase Edge), **Phasenplan** (Inventar → vier Pages-Projekte → SPA-Routing → API → Mandanten-Env → Cutover), Risiken/Limits, Doku-Checkliste.
+- **Entscheidungen & Kontext:** `docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md`
+- **Arbeits-Roadmap (Umprogrammierung → Go-Live):** `docs/Cloudflare-Umzug-Roadmap.md`
 
 ## Akzeptanz (Planungsphase)
 

@@ -1,3 +1,5 @@
+# Legacy Netlify (Rollback: Git-Tag last-stand-netlify). Ziel-Hosting: Cloudflare Pages + Lizenz-API Supabase Edge.
+# Siehe docs/Cloudflare-Umzug-Roadmap.md
 [build]
   command = "npm run build"
   publish = "dist"

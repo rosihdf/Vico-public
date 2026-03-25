@@ -1,22 +1,47 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useToast } from '../ToastContext'
 import ConfirmDialog from './ConfirmDialog'
+import CameraCaptureModal from './CameraCaptureModal'
 import { getSupabaseErrorMessage } from '../supabaseErrors'
+import { isOnline } from '../../shared/networkUtils'
 import {
   createObject,
   updateObject,
+  archiveObject,
   fetchObjectPhotos,
   uploadObjectPhoto,
   deleteObjectPhoto,
   getObjectPhotoDisplayUrl,
+  getObjectPhotoUrl,
+  setObjectProfilePhoto,
+  removeObjectProfilePhoto,
   fetchObjectDocuments,
   uploadObjectDocument,
   deleteObjectDocument,
   getObjectDocumentUrl,
 } from '../lib/dataService'
-import type { Object as Obj, ObjectFormData, ObjectPhoto, ObjectDocumentType } from '../types'
-import type { ObjectDocumentDisplay } from '../lib/dataService'
+import type { Object as Obj, ObjectFormData, ObjectDocumentType } from '../types'
+import { accessoriesFormLinesToPayload, objectAccessoriesToFormLines } from '../lib/objectUtils'
+import type { ObjectDocumentDisplay, ObjectPhotoDisplay } from '../lib/dataService'
+
+/** Lokale Galerie-Fotos vor dem ersten Speichern der Tür (Upload erst nach createObject) */
+type PendingGalleryPhoto = {
+  id: string
+  file: File
+  previewUrl: string
+}
+
+const PENDING_GALLERY_PREFIX = 'pending-gallery-'
+
+const toPendingPhotoDisplay = (p: PendingGalleryPhoto): ObjectPhotoDisplay => ({
+  id: p.id,
+  object_id: '',
+  storage_path: '',
+  caption: null,
+  created_at: new Date().toISOString(),
+  localDataUrl: p.previewUrl,
+})
 
 const INITIAL_FORM: ObjectFormData = {
   name: '',
@@ -42,7 +67,7 @@ const INITIAL_FORM: ObjectFormData = {
   smoke_detector_count: '0',
   smoke_detector_build_years: [],
   panic_function: '',
-  accessories: '',
+  accessories_lines: [''],
   maintenance_by_manufacturer: false,
   hold_open_maintenance: false,
   defects: '',
@@ -82,7 +107,7 @@ const objToFormData = (obj: Obj): ObjectFormData => ({
     return Array.from({ length: count }, (_, i) => arr[i] ?? '')
   })(),
   panic_function: obj.panic_function ?? '',
-  accessories: obj.accessories ?? '',
+  accessories_lines: objectAccessoriesToFormLines(obj),
   maintenance_by_manufacturer: obj.maintenance_by_manufacturer ?? false,
   hold_open_maintenance: obj.hold_open_maintenance ?? false,
   defects: obj.defects ?? '',
@@ -135,34 +160,106 @@ const ObjectFormModal = ({
   const [formData, setFormData] = useState<ObjectFormData>(
     object ? objToFormData(object) : { ...INITIAL_FORM, internal_id: `OBJ-${Date.now().toString(36).toUpperCase()}` }
   )
+  const [profilePhotoPathState, setProfilePhotoPathState] = useState<string | null>(
+    object?.profile_photo_path?.trim() ?? null
+  )
+  const [pendingProfileFile, setPendingProfileFile] = useState<File | null>(null)
+  const [pendingProfilePreviewUrl, setPendingProfilePreviewUrl] = useState<string | null>(null)
+  const [isUploadingProfile, setIsUploadingProfile] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  const [objectPhotos, setObjectPhotos] = useState<ObjectPhoto[]>([])
+  const [objectPhotos, setObjectPhotos] = useState<ObjectPhotoDisplay[]>([])
+  const [pendingGalleryPhotos, setPendingGalleryPhotos] = useState<PendingGalleryPhoto[]>([])
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
-  const [expandedPhoto, setExpandedPhoto] = useState<ObjectPhoto | null>(null)
+  const [expandedPhoto, setExpandedPhoto] = useState<ObjectPhotoDisplay | null>(null)
   const [objectDocuments, setObjectDocuments] = useState<ObjectDocumentDisplay[]>([])
   const [isUploadingDocument, setIsUploadingDocument] = useState(false)
   const [documentUploadType, setDocumentUploadType] = useState<ObjectDocumentType>('zeichnung')
   const [documentUploadTitle, setDocumentUploadTitle] = useState('')
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
-    photo: ObjectPhoto | null
+    photo: ObjectPhotoDisplay | null
   }>({ open: false, photo: null })
   const [confirmDocumentDialog, setConfirmDocumentDialog] = useState<{
     open: boolean
     document: ObjectDocumentDisplay | null
   }>({ open: false, document: null })
+  const [cameraTarget, setCameraTarget] = useState<'photo' | 'document' | 'profile' | null>(null)
+  const [confirmProfileRemoveOpen, setConfirmProfileRemoveOpen] = useState(false)
+  const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false)
+  const [isArchiving, setIsArchiving] = useState(false)
+  /** Profil-Steuerung: öffnet per Klick auf Foto/Platzhalter im Kopfbereich */
+  const [profilePanelOpen, setProfilePanelOpen] = useState(false)
+  const pendingPreviewCleanupRef = useRef<string | null>(null)
   const editingId = object?.id ?? null
+  pendingPreviewCleanupRef.current = pendingProfilePreviewUrl
+
+  const pendingGalleryCleanupRef = useRef<PendingGalleryPhoto[]>([])
+  useEffect(() => {
+    pendingGalleryCleanupRef.current = pendingGalleryPhotos
+  }, [pendingGalleryPhotos])
 
   useEffect(() => {
-    if (!object) return
-    fetchObjectPhotos(object.id).then(setObjectPhotos)
-  }, [object])
+    return () => {
+      pendingGalleryCleanupRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl))
+    }
+  }, [])
+
+  const revokePendingGallery = (items: PendingGalleryPhoto[]) => {
+    items.forEach((p) => URL.revokeObjectURL(p.previewUrl))
+  }
 
   useEffect(() => {
-    if (!object) return
+    if (object) {
+      setFormData(objToFormData(object))
+      setProfilePhotoPathState(object.profile_photo_path?.trim() ?? null)
+      setPendingProfileFile(null)
+      setPendingProfilePreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
+      setPendingGalleryPhotos((prev) => {
+        revokePendingGallery(prev)
+        return []
+      })
+    } else {
+      setFormData({ ...INITIAL_FORM, internal_id: `OBJ-${Date.now().toString(36).toUpperCase()}` })
+      setProfilePhotoPathState(null)
+      setPendingProfileFile(null)
+      setPendingProfilePreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
+      setPendingGalleryPhotos((prev) => {
+        revokePendingGallery(prev)
+        return []
+      })
+    }
+    setProfilePanelOpen(false)
+  }, [object?.id])
+
+  useEffect(() => {
+    return () => {
+      const u = pendingPreviewCleanupRef.current
+      if (u) URL.revokeObjectURL(u)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!object?.id) {
+      setObjectPhotos([])
+      return
+    }
+    fetchObjectPhotos(object.id).then((rows) => setObjectPhotos(rows))
+  }, [object?.id])
+
+  useEffect(() => {
+    if (!object?.id) {
+      setObjectDocuments([])
+      return
+    }
     fetchObjectDocuments(object.id).then(setObjectDocuments)
-  }, [object])
+  }, [object?.id])
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -193,6 +290,68 @@ const ObjectFormModal = ({
       next[index] = value
       return { ...prev, smoke_detector_build_years: next }
     })
+  }
+
+  const handleAccessoryLineChange = (index: number, value: string) => {
+    setFormData((prev) => {
+      const next = [...prev.accessories_lines]
+      next[index] = value
+      return { ...prev, accessories_lines: next }
+    })
+  }
+
+  const handleAddAccessoryLine = () => {
+    setFormData((prev) => ({ ...prev, accessories_lines: [...prev.accessories_lines, ''] }))
+  }
+
+  const handleRemoveAccessoryLine = (index: number) => {
+    setFormData((prev) => {
+      if (prev.accessories_lines.length <= 1) return { ...prev, accessories_lines: [''] }
+      return {
+        ...prev,
+        accessories_lines: prev.accessories_lines.filter((_, i) => i !== index),
+      }
+    })
+  }
+
+  const handleClearPendingProfile = () => {
+    setPendingProfileFile(null)
+    setPendingProfilePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return null
+    })
+  }
+
+  const applyProfileFile = async (file: File): Promise<boolean> => {
+    if (!file.type.startsWith('image/')) return false
+    if (!isOnline()) {
+      showError('Profilfoto ist nur online speicherbar.')
+      return false
+    }
+    if (editingId) {
+      setIsUploadingProfile(true)
+      const { path, error } = await setObjectProfilePhoto(editingId, file)
+      setIsUploadingProfile(false)
+      if (error) {
+        showError(getSupabaseErrorMessage(error))
+        return false
+      }
+      if (path) setProfilePhotoPathState(path)
+      return true
+    }
+    setPendingProfilePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev)
+      return URL.createObjectURL(file)
+    })
+    setPendingProfileFile(file)
+    return true
+  }
+
+  const handleProfileFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    await applyProfileFile(file)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -229,7 +388,7 @@ const ObjectFormModal = ({
       smoke_detector_count: parseInt(formData.smoke_detector_count, 10) || 0,
       smoke_detector_build_years: formData.smoke_detector_build_years,
       panic_function: formData.panic_function.trim() || null,
-      accessories: formData.accessories.trim() || null,
+      ...accessoriesFormLinesToPayload(formData.accessories_lines),
       maintenance_by_manufacturer: formData.maintenance_by_manufacturer,
       hold_open_maintenance: formData.hold_open_maintenance,
       defects: formData.defects.trim() || null,
@@ -248,11 +407,38 @@ const ObjectFormModal = ({
         onSuccess()
       }
     } else {
-      const { error } = await createObject(payload)
+      if (pendingProfileFile && !isOnline()) {
+        const msg =
+          'Profilfoto ist nur online speicherbar. Bitte Verbindung herstellen oder die Foto-Auswahl aufheben.'
+        setFormError(msg)
+        showError(msg)
+        setIsSaving(false)
+        return
+      }
+      const { data: newRow, error } = await createObject(payload)
       if (error) {
         setFormError(getSupabaseErrorMessage(error))
         showError(getSupabaseErrorMessage(error))
       } else {
+        if (pendingProfileFile && newRow?.id) {
+          const { error: photoErr } = await setObjectProfilePhoto(newRow.id, pendingProfileFile)
+          if (photoErr) {
+            showError(`Tür/Tor wurde angelegt. Profilfoto: ${getSupabaseErrorMessage(photoErr)}`)
+          }
+          handleClearPendingProfile()
+        }
+        if (newRow?.id && pendingGalleryPhotos.length > 0) {
+          let firstPhotoErr: string | null = null
+          for (const pg of pendingGalleryPhotos) {
+            const { error: upErr } = await uploadObjectPhoto(newRow.id, pg.file)
+            URL.revokeObjectURL(pg.previewUrl)
+            if (upErr && !firstPhotoErr) firstPhotoErr = upErr.message
+          }
+          setPendingGalleryPhotos([])
+          if (firstPhotoErr) {
+            showError(`Tür/Tor wurde angelegt. Galerie-Fotos: ${firstPhotoErr}`)
+          }
+        }
         onClose()
         onSuccess()
       }
@@ -260,18 +446,53 @@ const ObjectFormModal = ({
     setIsSaving(false)
   }
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!editingId || !e.target.files?.length) return
+  const runPhotoUploadForFiles = async (files: File[]): Promise<boolean> => {
+    if (files.length === 0) return false
+    if (!editingId) {
+      setIsUploadingPhoto(true)
+      const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+      if (imageFiles.length < files.length) {
+        showError('Nur Bilddateien sind erlaubt.')
+      }
+      for (const file of imageFiles) {
+        const previewUrl = URL.createObjectURL(file)
+        const id = `${PENDING_GALLERY_PREFIX}${crypto.randomUUID()}`
+        setPendingGalleryPhotos((prev) => [...prev, { id, file, previewUrl }])
+      }
+      setIsUploadingPhoto(false)
+      return imageFiles.length > 0
+    }
     setIsUploadingPhoto(true)
-    for (const file of Array.from(e.target.files)) {
-      const { data } = await uploadObjectPhoto(editingId, file)
+    let allOk = true
+    for (const file of files) {
+      const { data, error } = await uploadObjectPhoto(editingId, file)
+      if (error) {
+        showError(getSupabaseErrorMessage(error))
+        allOk = false
+        break
+      }
       if (data) setObjectPhotos((prev) => [data, ...prev])
     }
     setIsUploadingPhoto(false)
+    return allOk
+  }
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.length) return
+    await runPhotoUploadForFiles(Array.from(e.target.files))
     e.target.value = ''
   }
 
-  const handlePhotoDelete = async (photo: ObjectPhoto) => {
+  const handlePhotoDelete = async (photo: ObjectPhotoDisplay) => {
+    if (photo.id.startsWith(PENDING_GALLERY_PREFIX)) {
+      setPendingGalleryPhotos((prev) => {
+        const found = prev.find((p) => p.id === photo.id)
+        if (found) URL.revokeObjectURL(found.previewUrl)
+        return prev.filter((p) => p.id !== photo.id)
+      })
+      setExpandedPhoto((ex) => (ex?.id === photo.id ? null : ex))
+      return
+    }
     const { error } = await deleteObjectPhoto(photo.id, photo.storage_path)
     if (error) {
       showError(getSupabaseErrorMessage(error))
@@ -280,16 +501,45 @@ const ObjectFormModal = ({
     }
   }
 
+  const runDocumentUploadForFile = async (file: File): Promise<boolean> => {
+    if (!editingId) return false
+    setIsUploadingDocument(true)
+    const { data, error } = await uploadObjectDocument(
+      editingId,
+      file,
+      documentUploadType,
+      documentUploadTitle || undefined
+    )
+    setIsUploadingDocument(false)
+    if (error) {
+      showError(getSupabaseErrorMessage(error))
+      return false
+    }
+    if (data) setObjectDocuments((prev) => [data, ...prev])
+    return true
+  }
+
   const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editingId || !e.target.files?.length) return
-    setIsUploadingDocument(true)
     for (const file of Array.from(e.target.files)) {
-      const { data } = await uploadObjectDocument(editingId, file, documentUploadType, documentUploadTitle || undefined)
-      if (data) setObjectDocuments((prev) => [data, ...prev])
+      const ok = await runDocumentUploadForFile(file)
+      if (!ok) break
     }
-    setIsUploadingDocument(false)
     setDocumentUploadTitle('')
     e.target.value = ''
+  }
+
+  const handleCameraCapture = async (file: File): Promise<boolean> => {
+    if (cameraTarget === 'profile') {
+      return applyProfileFile(file)
+    }
+    if (cameraTarget === 'photo') return runPhotoUploadForFiles([file])
+    if (cameraTarget === 'document') {
+      const ok = await runDocumentUploadForFile(file)
+      if (ok) setDocumentUploadTitle('')
+      return ok
+    }
+    return false
   }
 
   const handleDocumentDelete = async (doc: ObjectDocumentDisplay) => {
@@ -310,6 +560,85 @@ const ObjectFormModal = ({
     sonstiges: 'Sonstiges',
   }
 
+  const galleryDisplayItems: ObjectPhotoDisplay[] = useMemo(
+    () => [...pendingGalleryPhotos.map(toPendingPhotoDisplay), ...objectPhotos],
+    [pendingGalleryPhotos, objectPhotos]
+  )
+
+  const profileThumbSrc = profilePhotoPathState?.trim()
+    ? getObjectPhotoUrl(profilePhotoPathState.trim())
+    : pendingProfilePreviewUrl
+  const hasProfileThumb = Boolean(profileThumbSrc)
+
+  const handleProfileHeaderKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      setProfilePanelOpen((v) => !v)
+    }
+  }
+
+  const profileEditorBody = (
+    <>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Optional. Erscheint in der Kundenübersicht neben dieser Tür, sofern hinterlegt.
+      </p>
+      {(profilePhotoPathState || pendingProfilePreviewUrl) && canEdit ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {profilePhotoPathState && editingId ? (
+            <button
+              type="button"
+              onClick={() => setConfirmProfileRemoveOpen(true)}
+              disabled={isUploadingProfile}
+              className="px-3 py-2 text-sm min-h-[40px] rounded-lg border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
+              aria-label="Profilfoto entfernen"
+            >
+              Profilfoto entfernen
+            </button>
+          ) : null}
+          {pendingProfilePreviewUrl && !editingId ? (
+            <button
+              type="button"
+              onClick={handleClearPendingProfile}
+              className="px-3 py-2 text-sm min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50"
+              aria-label="Profilfoto-Auswahl aufheben"
+            >
+              Auswahl aufheben
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {canEdit ? (
+        <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleProfileFileInputChange}
+            disabled={isUploadingProfile || (!!editingId && !isOnline())}
+            className="flex-1 min-w-0 text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50"
+            aria-label="Profilfoto aus Datei wählen"
+          />
+          <button
+            type="button"
+            onClick={() => setCameraTarget('profile')}
+            disabled={isUploadingProfile || (!!editingId && !isOnline())}
+            className="shrink-0 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+            aria-label="Profilfoto mit Kamera aufnehmen"
+          >
+            Foto aufnehmen
+          </button>
+        </div>
+      ) : null}
+      {isUploadingProfile ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">Profilfoto wird verarbeitet…</p>
+      ) : null}
+      {editingId && !isOnline() ? (
+        <p className="text-xs text-amber-700 dark:text-amber-300/90">
+          Profilfoto ändern ist nur mit Internetverbindung möglich.
+        </p>
+      ) : null}
+    </>
+  )
+
   return (
     <>
       <div
@@ -328,16 +657,96 @@ const ObjectFormModal = ({
           onClick={(e) => e.stopPropagation()}
           aria-labelledby="object-form-title"
         >
-          <div className="p-4 sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-600">
+          <div className="p-4 sticky top-0 z-10 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-600">
             <h3 id="object-form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
               {isEdit ? 'Tür/Tor bearbeiten' : 'Tür/Tor anlegen'}
             </h3>
-            {formData.internal_id && (
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                Interne ID: <span className="font-mono">{formData.internal_id}</span>
-              </p>
-            )}
+            <div className="mt-2 flex flex-row items-center justify-between gap-3 min-w-0">
+              <div className="min-w-0 flex-1">
+                {formData.internal_id ? (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    Interne ID:{' '}
+                    <span className="font-mono break-all">{formData.internal_id}</span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Interne ID wird beim ersten Speichern vergeben.</p>
+                )}
+              </div>
+              {canEdit ? (
+                <button
+                  type="button"
+                  onClick={() => setProfilePanelOpen((v) => !v)}
+                  onKeyDown={handleProfileHeaderKeyDown}
+                  className={`shrink-0 rounded-lg border overflow-hidden focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900 ${
+                    profilePanelOpen
+                      ? 'border-vico-primary ring-2 ring-vico-primary/30'
+                      : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
+                  }`}
+                  aria-expanded={profilePanelOpen}
+                  aria-controls="object-profile-panel"
+                  aria-label={hasProfileThumb ? 'Profilfoto ändern, Panel ein- oder ausblenden' : 'Profilfoto hinterlegen, Panel ein- oder ausblenden'}
+                >
+                  {hasProfileThumb && profileThumbSrc ? (
+                    <img
+                      src={profileThumbSrc}
+                      alt=""
+                      className="w-14 h-14 sm:w-16 sm:h-16 object-cover block"
+                    />
+                  ) : (
+                    <div
+                      className="w-14 h-14 sm:w-16 sm:h-16 bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400"
+                      aria-hidden
+                    >
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+                        />
+                      </svg>
+                    </div>
+                  )}
+                </button>
+              ) : (
+                <div className="shrink-0 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden" aria-hidden={!hasProfileThumb}>
+                  {hasProfileThumb && profileThumbSrc ? (
+                    <img src={profileThumbSrc} alt="Profilfoto" className="w-14 h-14 sm:w-16 sm:h-16 object-cover block" />
+                  ) : (
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400">
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
+          {profilePanelOpen && canEdit ? (
+            <div
+              id="object-profile-panel"
+              role="region"
+              aria-label="Profilfoto bearbeiten"
+              className="px-4 py-3 border-b border-slate-200 dark:border-slate-600 bg-slate-50/90 dark:bg-slate-800/80 space-y-2"
+            >
+              {profileEditorBody}
+              <button
+                type="button"
+                onClick={() => setProfilePanelOpen(false)}
+                className="mt-1 px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50"
+              >
+                Fertig
+              </button>
+            </div>
+          ) : null}
           <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
             {isEdit && effectiveCustomerId != null && customerBvs !== undefined && (
               <div>
@@ -375,7 +784,7 @@ const ObjectFormModal = ({
                 onChange={(e) => handleFormChange('name', e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                 placeholder="z. B. Haupteingang, Kellerzugang"
-                aria-label="Objektname"
+                aria-label="Bezeichnung Tür oder Tor"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -578,32 +987,73 @@ const ObjectFormModal = ({
                 placeholder="Panikfunktion"
                 className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg mb-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
               />
-              <input
-                type="text"
-                value={formData.accessories}
-                onChange={(e) => handleFormChange('accessories', e.target.value)}
-                placeholder="Weiteres Zubehör"
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-              />
+              <div className="space-y-2" role="group" aria-label="Weiteres Zubehör">
+                {formData.accessories_lines.map((line, index) => (
+                  <div key={index} className="flex gap-2 items-center min-w-0">
+                    <input
+                      type="text"
+                      value={line}
+                      onChange={(e) => handleAccessoryLineChange(index, e.target.value)}
+                      placeholder={`Zubehör ${index + 1}`}
+                      className="flex-1 min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                      aria-label={`Weiteres Zubehör, Zeile ${index + 1}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAccessoryLine(index)}
+                      disabled={formData.accessories_lines.length <= 1}
+                      className="shrink-0 px-2 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                      aria-label={`Zubehörzeile ${index + 1} entfernen`}
+                    >
+                      Entfernen
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleAddAccessoryLine}
+                  className="text-sm text-vico-primary hover:underline font-medium"
+                  aria-label="Weitere Zubehörzeile hinzufügen"
+                >
+                  + Weiteres Zubehör
+                </button>
+              </div>
             </div>
-            {editingId && (
+            {(editingId || !isEdit) && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Fotos</label>
+                {!isEdit ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                    Bilder können schon jetzt ausgewählt werden; sie werden direkt nach dem Speichern der Tür/Tor
+                    hochgeladen (offline: werden mit synchronisiert).
+                  </p>
+                ) : null}
                 {canEdit && (
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handlePhotoUpload}
-                    disabled={isUploadingPhoto}
-                    className="w-full text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50 mb-2"
-                    aria-label="Objekt-Fotos hochladen"
-                  />
+                  <div className="flex flex-col sm:flex-row flex-wrap gap-2 mb-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePhotoUpload}
+                      disabled={isUploadingPhoto}
+                      className="flex-1 min-w-0 text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50"
+                      aria-label="Objekt-Fotos aus Dateien wählen"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setCameraTarget('photo')}
+                      disabled={isUploadingPhoto}
+                      className="shrink-0 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                      aria-label="Foto mit Kamera aufnehmen"
+                    >
+                      Foto aufnehmen
+                    </button>
+                  </div>
                 )}
-                {isUploadingPhoto && <p className="text-xs text-slate-500 mb-2">Wird hochgeladen…</p>}
-                {objectPhotos.length > 0 ? (
+                {isUploadingPhoto && <p className="text-xs text-slate-500 mb-2">Wird verarbeitet…</p>}
+                {galleryDisplayItems.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
-                    {objectPhotos.map((p) => (
+                    {galleryDisplayItems.map((p) => (
                       <div key={p.id} className="relative group">
                         <button
                           type="button"
@@ -641,7 +1091,7 @@ const ObjectFormModal = ({
             {editingId && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">
-                  Dokumente (Zeichnungen, Zertifikate)
+                  Dokumente zur Tür / zum Tor (Zeichnungen, Zertifikate)
                 </label>
                 {canEdit && (
                   <div className="flex flex-wrap gap-2 mb-2">
@@ -669,9 +1119,18 @@ const ObjectFormModal = ({
                       multiple
                       onChange={handleDocumentUpload}
                       disabled={isUploadingDocument}
-                      className="text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50"
-                      aria-label="Dokument hochladen"
+                      className="flex-1 min-w-[140px] text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50"
+                      aria-label="Dokument aus Datei hochladen"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setCameraTarget('document')}
+                      disabled={isUploadingDocument}
+                      className="shrink-0 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                      aria-label="Dokument als Foto mit Kamera aufnehmen"
+                    >
+                      Foto aufnehmen
+                    </button>
                   </div>
                 )}
                 {isUploadingDocument && <p className="text-xs text-slate-500 mb-2">Wird hochgeladen…</p>}
@@ -720,17 +1179,92 @@ const ObjectFormModal = ({
                 )}
               </div>
             )}
-            <div className="flex gap-2 pt-2">
-              <button type="submit" disabled={isSaving} className="flex-1 py-2 bg-vico-button dark:bg-vico-primary text-slate-800 dark:text-white rounded-lg hover:bg-vico-button-hover dark:hover:opacity-90 disabled:opacity-50 border border-slate-300 dark:border-slate-600">
-                {isSaving ? 'Speichern...' : 'Speichern'}
-              </button>
-              <button type="button" onClick={onClose} className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800">
-                Abbrechen
-              </button>
+            <div className="flex flex-col gap-2 pt-2">
+              <div className="flex flex-nowrap gap-2 items-center">
+                <button type="submit" disabled={isSaving || isArchiving} className="flex-1 min-w-0 py-2 bg-vico-button dark:bg-vico-primary text-slate-800 dark:text-white rounded-lg hover:bg-vico-button-hover dark:hover:opacity-90 disabled:opacity-50 border border-slate-300 dark:border-slate-600">
+                  {isSaving ? 'Speichern...' : 'Speichern'}
+                </button>
+                <button type="button" onClick={onClose} disabled={isArchiving} className="shrink-0 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
+                  Abbrechen
+                </button>
+              </div>
+              {isEdit && canDelete && (
+                <button
+                  type="button"
+                  disabled={isSaving || isArchiving}
+                  onClick={() => setConfirmArchiveOpen(true)}
+                  className="w-full py-2 text-sm text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/40 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-amber-400/60 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                  aria-label="Tür oder Tor archivieren"
+                >
+                  Archivieren (aus Listen ausblenden, Historie bleibt)
+                </button>
+              )}
             </div>
           </form>
         </div>
       </div>
+
+      <CameraCaptureModal
+        open={cameraTarget !== null}
+        onClose={() => setCameraTarget(null)}
+        onCapture={handleCameraCapture}
+        title={
+          cameraTarget === 'document'
+            ? 'Dokument fotografieren (JPEG)'
+            : cameraTarget === 'profile'
+              ? 'Profilfoto aufnehmen'
+              : 'Foto für Tür/Tor aufnehmen'
+        }
+      />
+
+      <ConfirmDialog
+        open={confirmArchiveOpen}
+        title="Tür/Tor archivieren"
+        message="Dieses Tür/Tor aus den Stammdaten ausblenden? Wartungsprotokolle und Aufträge bleiben erhalten. Wiederherstellen ist aktuell nur über die Datenbank möglich."
+        confirmLabel="Archivieren"
+        variant="danger"
+        onConfirm={async () => {
+          if (!editingId) {
+            setConfirmArchiveOpen(false)
+            return
+          }
+          setIsArchiving(true)
+          const { error } = await archiveObject(editingId)
+          setIsArchiving(false)
+          setConfirmArchiveOpen(false)
+          if (error) {
+            showError(getSupabaseErrorMessage(error))
+            return
+          }
+          onSuccess()
+          onClose()
+        }}
+        onCancel={() => setConfirmArchiveOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={confirmProfileRemoveOpen}
+        title="Profilfoto entfernen"
+        message="Profilfoto wirklich entfernen?"
+        confirmLabel="Entfernen"
+        variant="danger"
+        onConfirm={async () => {
+          if (!editingId || !profilePhotoPathState) {
+            setConfirmProfileRemoveOpen(false)
+            return
+          }
+          setIsUploadingProfile(true)
+          const { error } = await removeObjectProfilePhoto(editingId, profilePhotoPathState)
+          setIsUploadingProfile(false)
+          setConfirmProfileRemoveOpen(false)
+          if (error) {
+            showError(getSupabaseErrorMessage(error))
+            return
+          }
+          setProfilePhotoPathState(null)
+        }}
+        onCancel={() => setConfirmProfileRemoveOpen(false)}
+      />
 
       <ConfirmDialog
         open={confirmDialog.open}
@@ -773,7 +1307,7 @@ const ObjectFormModal = ({
         >
           <img
             src={getObjectPhotoDisplayUrl(expandedPhoto)}
-            alt={expandedPhoto.caption || 'Objekt-Foto vergrößert'}
+            alt={expandedPhoto.caption || 'Tür/Tor-Foto vergrößert'}
             className="max-w-full max-h-full object-contain rounded-lg shadow-xl"
           />
         </div>

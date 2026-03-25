@@ -14,6 +14,9 @@ import { parseAppVersionsFromDb } from '../../shared/appVersions'
  * Wenn nicht gesetzt: Legacy-Modus (Lizenz aus Mandanten-Supabase via get_license_status).
  */
 
+/** Wird nach Änderung der gespeicherten Lizenznummer ausgelöst (gleicher Tab; für LicenseGate / LicenseContext). */
+export const LICENSE_NUMBER_STORAGE_EVENT = 'vico:license-number-storage-changed'
+
 const STORAGE_KEY = 'vico-license-number'
 const STORAGE_LAST_CHECK_PREFIX = 'vico-license-last-check-'
 const STORAGE_CHECK_INTERVAL_PREFIX = 'vico-license-check-interval-'
@@ -103,15 +106,23 @@ export const formatLicenseNumberInput = (raw: string): string => {
 export const normalizeLicenseNumber = (input: string): string =>
   input.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 11)
 
+const dispatchLicenseStorageChanged = (): void => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(LICENSE_NUMBER_STORAGE_EVENT))
+  }
+}
+
 export const setStoredLicenseNumber = (licenseNumber: string): void => {
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, licenseNumber.trim())
+    dispatchLicenseStorageChanged()
   }
 }
 
 export const clearStoredLicenseNumber = (): void => {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(STORAGE_KEY)
+    dispatchLicenseStorageChanged()
   }
 }
 
@@ -219,6 +230,8 @@ export const fetchLicenseFromApiByHost = async (timeoutMs = 10_000): Promise<Lic
       method: 'GET',
       headers,
       signal: controller.signal,
+      /** Mandanten-CDNs/Browser sollen keine alte `client_config_version` liefern */
+      cache: 'no-store',
     })
     clearTimeout(timeoutId)
     if (!res.ok) return null
@@ -230,10 +243,18 @@ export const fetchLicenseFromApiByHost = async (timeoutMs = 10_000): Promise<Lic
   }
 }
 
+export type FetchLicenseFromApiOptions = {
+  /**
+   * Gegen HTTP-/Proxy-Caches: einmaliger Query-Parameter (nur für leichte Abfragen wie `client_config_version`).
+   */
+  bustCache?: boolean
+}
+
 /** Timeout in ms (Standard 10s für schnellere Fehlerbehandlung). */
 export const fetchLicenseFromApi = async (
   licenseNumber: string,
-  timeoutMs = 10_000
+  timeoutMs = 10_000,
+  options?: FetchLicenseFromApiOptions
 ): Promise<LicenseApiResponse | null> => {
   const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
   if (!apiUrl) return null
@@ -241,6 +262,9 @@ export const fetchLicenseFromApi = async (
   const base = apiUrl.replace(/\/$/, '')
   const url = new URL(`${base}/license`)
   url.searchParams.set('licenseNumber', licenseNumber.trim())
+  if (options?.bustCache) {
+    url.searchParams.set('_ccv', String(Date.now()))
+  }
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
@@ -254,6 +278,7 @@ export const fetchLicenseFromApi = async (
       method: 'GET',
       headers,
       signal: controller.signal,
+      cache: 'no-store',
     })
     clearTimeout(timeoutId)
     if (!res.ok) return null

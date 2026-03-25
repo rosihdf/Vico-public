@@ -26,8 +26,18 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    const portalUrl = Deno.env.get('PORTAL_URL') ?? supabaseUrl.replace('.supabase.co', '.netlify.app')
+    const portalUrl = (Deno.env.get('PORTAL_URL') ?? '').trim()
     const fromEmail = Deno.env.get('RESEND_FROM') || 'Vico Türen & Tore <onboarding@resend.dev>'
+
+    if (!portalUrl) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'PORTAL_URL ist nicht gesetzt. In Supabase → Edge Functions → Secrets die öffentliche Kundenportal-Basis-URL eintragen (z. B. https://….pages.dev oder Custom Domain, ohne trailing slash).',
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey)
 

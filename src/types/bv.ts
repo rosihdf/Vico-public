@@ -13,6 +13,7 @@ export type BV = {
   contact_phone: string | null
   maintenance_report_email: boolean
   maintenance_report_email_address: string | null
+  archived_at?: string | null
   created_at: string
   updated_at: string
 }

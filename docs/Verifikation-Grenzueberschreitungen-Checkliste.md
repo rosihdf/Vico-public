@@ -2,7 +2,7 @@
 
 **Zweck (Roadmap Phase 0.2):** Sicherstellen, dass Limit-Überschreitungen von der **Haupt-App** (und ggf. Kundenportal) **im Lizenzportal** ankommen – **einmal** in Produktion oder Staging durchgehen.
 
-**Technische Basis:** `Vico.md` §9 (Lizenzportal), `docs/Lizenzportal-Setup.md`, Netlify Function `admin/netlify/functions/limit-exceeded.ts`.
+**Technische Basis:** `Vico.md` §9 (Lizenzportal), `docs/Lizenzportal-Setup.md`. **Standard:** Supabase Edge `limit-exceeded`; Legacy: Netlify `admin/netlify/functions/limit-exceeded.ts`.
 
 ---
 
@@ -15,7 +15,7 @@ Die Haupt-App hängt **`/limit-exceeded`** an die Basis-URL an (`src/lib/license
 | **A – Netlify (Admin/Lizenz-Site)** | `https://<deine-lizenz-domain>/api` | `https://<deine-lizenz-domain>/api/limit-exceeded` → Redirect zu **`/.netlify/functions/limit-exceeded`** (`admin/netlify.toml`) |
 | **B – Supabase Edge (Lizenzportal)** | `https://<projekt-ref>.supabase.co/functions/v1` | `https://<projekt-ref>.supabase.co/functions/v1/limit-exceeded` → **`supabase-license-portal/supabase/functions/limit-exceeded/`** |
 
-**Beides ist im Repo vorgesehen** – welches bei euch aktiv ist, steht nur in der **Build-Env** (Netlify/Vercel `.env` der Haupt-App), nicht in Git. In `.env.example` stehen beide Beispiele.
+**Beides ist im Repo vorgesehen** – in Produktion typischerweise **Variante B** (Cloudflare Pages + Edge). Die **Build-Env** der Haupt-App entscheidet. `.env.example` nennt Edge zuerst.
 
 Zusätzlich versucht die App immer, **`report_limit_exceeded`** per RPC in der **Mandanten-Haupt-Supabase** aufzurufen; die **Lizenzportal-Log-Tabelle** füllt primär der Aufruf über **`VITE_LICENSE_API_URL`**.
 

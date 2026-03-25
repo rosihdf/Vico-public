@@ -3,6 +3,7 @@ import { fetchLicenseFull, getDefaultAppName } from '../../shared/fetchDesignFro
 import { applyVicoPrimaryCssVars, clearVicoPrimaryCssVars } from '../../shared/vicoCssPrimary'
 import { TIER_DEFAULT_FEATURES } from '../../shared/licenseFeatures'
 import type { AppVersionEntry } from '../../shared/appVersions'
+import { useLicenseClientConfigVersionPoll } from '../../shared/useLicenseClientConfigVersionPoll'
 
 type DesignContextType = {
   appName: string
@@ -71,6 +72,25 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
     }
     setIsLoading(false)
   }, [])
+
+  const fetchClientConfigVersion = useCallback(async (): Promise<number | null> => {
+    const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
+    const licenseNumber = (import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()
+    if (!apiUrl) return null
+    const apiKey = (import.meta.env.VITE_LICENSE_API_KEY ?? '').trim()
+    const full = await fetchLicenseFull(apiUrl, licenseNumber, {
+      apiKey: apiKey || undefined,
+      resolveByHost: !licenseNumber,
+    })
+    if (!full?.license) return null
+    return Math.max(0, Math.floor(Number(full.license.client_config_version) || 0))
+  }, [])
+
+  useLicenseClientConfigVersionPoll({
+    enabled: Boolean((import.meta.env.VITE_LICENSE_API_URL ?? '').trim()),
+    fetchVersion: fetchClientConfigVersion,
+    onVersionChanged: load,
+  })
 
   useEffect(() => {
     void load()

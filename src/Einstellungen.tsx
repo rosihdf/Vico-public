@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useSync } from './SyncContext'
+import { useToast } from './ToastContext'
 import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
 import { useComponentSettings } from './ComponentSettingsContext'
@@ -51,6 +52,12 @@ import {
   type EtikettPresetId,
 } from './lib/etikettPreset'
 import { isEtikettendruckerAvailable } from './lib/etikettendrucker'
+import {
+  fetchMonteurReportSettings,
+  updateMonteurReportSettings,
+  type MonteurReportCustomerDeliveryMode,
+} from './lib/dataService'
+import MfaSettings from './components/MfaSettings'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   offline: '🔴 Offline',
@@ -59,6 +66,7 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
 }
 
 const Einstellungen = () => {
+  const { showToast } = useToast()
   const { syncStatus, isOffline, setSyncStatus, syncNow, pendingCount, lastSyncError, clearSyncError } = useSync()
   const { userRole, user } = useAuth()
   const { design, license, refresh: refreshLicense } = useLicense()
@@ -94,6 +102,11 @@ const Einstellungen = () => {
   const [etikettPreset, setEtikettPresetState] = useState<EtikettPresetId>(() =>
     typeof window !== 'undefined' ? getEtikettPresetId() : 'mini_50x25'
   )
+  const [monteurDeliveryMode, setMonteurDeliveryMode] =
+    useState<MonteurReportCustomerDeliveryMode>('none')
+  const [monteurDeliveryLoaded, setMonteurDeliveryLoaded] = useState(false)
+  const [monteurDeliverySaving, setMonteurDeliverySaving] = useState(false)
+  const [monteurDeliveryError, setMonteurDeliveryError] = useState<string | null>(null)
   const [stammdatenForm, setStammdatenForm] = useState({
     company_name: '',
     address: '',
@@ -157,6 +170,25 @@ const Einstellungen = () => {
     Boolean(license && hasFeature(license, 'wartungsprotokolle')) &&
     userRole !== 'kunde' &&
     Boolean(user?.id)
+
+  const showMonteurBerichtZustellung =
+    userRole === 'admin' && Boolean(license && hasFeature(license, 'wartungsprotokolle'))
+  const showMonteurPortalOption = Boolean(license && hasFeature(license, 'kundenportal'))
+
+  useEffect(() => {
+    if (!showMonteurBerichtZustellung) return
+    let cancelled = false
+    const load = async () => {
+      const row = await fetchMonteurReportSettings()
+      if (cancelled) return
+      setMonteurDeliveryMode(row?.customer_delivery_mode ?? 'none')
+      setMonteurDeliveryLoaded(true)
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [showMonteurBerichtZustellung])
 
   const refreshBriefbogenPreview = useCallback(async () => {
     if (!showBriefbogenSettings) return
@@ -348,6 +380,27 @@ const Einstellungen = () => {
     setEtikettPresetState(id)
   }
 
+  const handleSaveMonteurDelivery = async () => {
+    if (!showMonteurBerichtZustellung || monteurDeliverySaving) return
+    if (!isOnline()) {
+      setMonteurDeliveryError('Nur online speicherbar; bitte Verbindung herstellen.')
+      return
+    }
+    if (monteurDeliveryMode === 'portal_notify' && !showMonteurPortalOption) {
+      setMonteurDeliveryError('Kundenportal ist in der Lizenz nicht aktiv.')
+      return
+    }
+    setMonteurDeliverySaving(true)
+    setMonteurDeliveryError(null)
+    const { error } = await updateMonteurReportSettings(monteurDeliveryMode)
+    setMonteurDeliverySaving(false)
+    if (error) {
+      setMonteurDeliveryError(error.message)
+      return
+    }
+    showToast('Zustellung Monteursbericht gespeichert.', 'success')
+  }
+
   return (
     <div className="p-4 max-w-xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">Einstellungen</h2>
@@ -458,6 +511,116 @@ const Einstellungen = () => {
               )
             })}
           </ul>
+        </section>
+      )}
+
+      {/* Sicherheit: 2FA optional (Standard aus), pro Nutzer — nicht in der Benutzerverwaltung zentral erzwungen */}
+      {user?.id && userRole !== 'kunde' && (
+        <section
+          id="sicherheit-2fa"
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm scroll-mt-4"
+          aria-labelledby="security-2fa-heading"
+        >
+          <h3 id="security-2fa-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+            Sicherheit
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            Zwei-Faktor-Authentifizierung richten Sie für <strong className="font-medium text-slate-700 dark:text-slate-300">Ihr eigenes Konto</strong> ein
+            (optional). Admins können 2FA nicht für andere Nutzer erzwingen; Hinweis dazu steht in der Benutzerverwaltung.
+          </p>
+          <MfaSettings enrollFriendlyName={design?.app_name?.trim() || 'Vico'} />
+        </section>
+      )}
+
+      {showMonteurBerichtZustellung && (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+          aria-labelledby="monteur-zustellung-heading"
+        >
+          <h3
+            id="monteur-zustellung-heading"
+            className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2"
+          >
+            Monteursbericht an Kunden (nach Auftrags-Abschluss)
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            Gilt firmenweit für den Abschluss aus dem Auftrags-Monteursbericht (Tür/Tor-QR). Die Option „Kundenportal“
+            steht nur zur Verfügung, wenn das Kundenportal lizenziert ist und am jeweiligen Objekt mindestens ein
+            Portal-Zugang mit Sichtbarkeit für Firma/BV existiert; sonst wird beim Abschließen eine Hinweismeldung
+            angezeigt und kein Portal-Eintrag erzeugt.
+          </p>
+          {!monteurDeliveryLoaded ? (
+            <p className="text-sm text-slate-500">Lade Einstellung…</p>
+          ) : (
+            <div className="space-y-3 mb-4">
+              {(
+                [
+                  {
+                    value: 'none' as const,
+                    label: 'Keine automatische Zustellung',
+                    hint: 'Nur PDF-Download und Speicherung in Vico; der Kunde erhält nichts automatisch.',
+                  },
+                  {
+                    value: 'email_auto' as const,
+                    label: 'Sofort per E-Mail (PDF im Anhang)',
+                    hint: 'Nach „Auftrag abschließen“ wird automatisch an die unter Kunde oder BV hinterlegte Wartungsprotokoll-Adresse gesendet (BV hat Vorrang).',
+                  },
+                  {
+                    value: 'email_manual' as const,
+                    label: 'Manuell per E-Mail (PDF im Anhang)',
+                    hint: 'Nach dem Abschluss erscheint ein Button „An Kunde senden“ mit gleicher Adresslogik.',
+                  },
+                  ...(showMonteurPortalOption
+                    ? [
+                        {
+                          value: 'portal_notify' as const,
+                          label: 'Kundenportal + Benachrichtigung',
+                          hint: 'PDF als Wartungsbericht im Portal; Portal-Nutzer werden per E-Mail informiert (wie bei Wartungsprotokollen).',
+                        },
+                      ]
+                    : []),
+                ] as const
+              ).map((opt) => (
+                <label
+                  key={opt.value}
+                  className="flex items-start gap-3 cursor-pointer rounded-lg border border-slate-200 dark:border-slate-600 p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                >
+                  <input
+                    type="radio"
+                    name="monteur-delivery-mode"
+                    value={opt.value}
+                    checked={monteurDeliveryMode === opt.value}
+                    onChange={() => setMonteurDeliveryMode(opt.value)}
+                    className="mt-1 w-4 h-4 border-slate-300 text-vico-primary focus:ring-vico-primary"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-slate-800 dark:text-slate-100">{opt.label}</span>
+                    <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">{opt.hint}</span>
+                  </span>
+                </label>
+              ))}
+              {!showMonteurPortalOption &&
+              monteurDeliveryMode === 'portal_notify' ? (
+                <p className="text-sm text-amber-700 dark:text-amber-300" role="status">
+                  In der Datenbank ist „Kundenportal“ gewählt, die Lizenz enthält das Kundenportal derzeit nicht. Bitte
+                  wählen Sie eine andere Option und speichern Sie.
+                </p>
+              ) : null}
+            </div>
+          )}
+          {monteurDeliveryError ? (
+            <p className="text-sm text-red-600 dark:text-red-400 mb-2" role="alert">
+              {monteurDeliveryError}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleSaveMonteurDelivery}
+            disabled={monteurDeliverySaving || !monteurDeliveryLoaded}
+            className="inline-flex px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
+          >
+            {monteurDeliverySaving ? 'Speichern…' : 'Monteursbericht-Zustellung speichern'}
+          </button>
         </section>
       )}
 

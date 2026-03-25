@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "provider": "cloudflare_pages",
+  "meta": {
+    "tenantName": "Beispiel-Mandant",
+    "exportedAt": "",
+    "readme": "projectName = exakter Name des Cloudflare-Pages-Projekts (Workers & Pages → Projekt). Dann: npm run cf:apply-env -- diese-datei.json"
+  },
+  "licenseApiUrl": "https://<lizenzportal-ref>.supabase.co/functions/v1",
+  "licenseApiKey": "",
+  "supabase": {
+    "url": "https://<mandanten-ref>.supabase.co",
+    "anonKey": "<ANON-KEY Mandanten-Projekt>"
+  },
+  "projects": {
+    "main": { "projectName": "" },
+    "portal": { "projectName": "" },
+    "arbeitszeit": { "projectName": "" }
+  },
+  "portalEnv": {
+    "includeLicenseNumber": true,
+    "licenseNumber": "VIC-XXXX-XXXX"
+  },
+  "options": {
+    "dryRun": false,
+    "markAnonKeyAsSecret": true,
+    "markLicenseApiKeyAsSecret": true
+  }
+}

@@ -87,7 +87,7 @@ const Scan = () => {
         const row = data[0] as { customer_id: string; bv_id: string | null; object_id: string }
         const params = new URLSearchParams({ customerId: row.customer_id, objectId: row.object_id })
         if (row.bv_id) params.set('bvId', row.bv_id)
-        navigate(`/kunden?${params.toString()}`)
+        navigate(`/auftrag/neu-aus-qr?${params.toString()}`)
       } else {
         setMessage('Objekt nicht gefunden.')
       }
@@ -99,7 +99,7 @@ const Scan = () => {
     params.set('customerId', customerId)
     if (bvId) params.set('bvId', bvId)
     if (objectId) params.set('objectId', objectId)
-    navigate(`/kunden?${params.toString()}`)
+    navigate(`/auftrag/neu-aus-qr?${params.toString()}`)
   }
 
   const handleStartScan = async () => {
@@ -168,8 +168,9 @@ const Scan = () => {
   return (
     <div className="p-4 min-w-0">
       <h2 className="text-xl font-bold text-slate-800">QR-Scan</h2>
-      <p className="mt-1 text-sm text-slate-600">
-        Scanne einen Objekt-QR-Code, um direkt zum Objekt zu gelangen.
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+        Scanne einen Tür/Tor-QR-Code: Es öffnet sich die Übersicht mit Stammdaten – dort können Sie einen Wartungs- oder
+        Reparaturauftrag anlegen und direkt zur Abarbeitung wechseln.
       </p>
 
       {status === 'idle' && (

@@ -364,7 +364,8 @@ const Startseite = () => {
     [customers]
   )
   const getBvName = useCallback(
-    (id: string) => allBvs.find((b) => b.id === id)?.name ?? '-',
+    (id: string | null | undefined) =>
+      !id ? '—' : (allBvs.find((b) => b.id === id)?.name ?? '-'),
     [allBvs]
   )
 

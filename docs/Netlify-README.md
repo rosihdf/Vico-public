@@ -1,5 +1,7 @@
 # Netlify – Kurzüberblick (Vico)
 
+**Hinweis:** Produktionsziel ist **Cloudflare Pages** – **`docs/Cloudflare-Umzug-Roadmap.md`**. Die folgenden Abschnitte gelten für **Legacy-Netlify** (Rollback / Übergang).
+
 Einmalige Orientierung: **vier getrennte Netlify-Sites** aus einem Repo, jeweils mit **Base directory** und eigenen **Environment variables**.
 
 | App | Base directory | Publish | Wichtigste `VITE_*` |
@@ -55,6 +57,8 @@ VITE_LICENSE_API_URL=https://<deine-admin-netlify-site>/api
 ```
 
 **Ohne** Slash am Ende. Die Admin-Site leitet `/api/license` auf die Netlify Function weiter.
+
+**Neu (Standard):** `VITE_LICENSE_API_URL=https://<lizenzportal-ref>.supabase.co/functions/v1` – siehe **`docs/Lizenzportal-Setup.md`** (Variante B) und **`docs/Cloudflare-Mandanten-Env-Skript.md`**.
 
 ---
 

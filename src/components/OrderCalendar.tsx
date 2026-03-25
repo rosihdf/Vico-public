@@ -82,7 +82,7 @@ type OrderCalendarProps = {
   currentMonth: Date
   onMonthChange: (date: Date) => void
   getCustomerName: (id: string) => string
-  getBvName: (id: string) => string
+  getBvName: (id: string | null | undefined) => string
   onOrderDateChange?: (order: Order, newDate: string) => void
 }
 

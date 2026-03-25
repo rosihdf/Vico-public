@@ -6,6 +6,7 @@ import { getSupabaseErrorMessage } from './supabaseErrors'
 import {
   fetchOrders,
   createOrder,
+  updateOrder,
   updateOrderStatus,
   updateOrderAssignedTo,
   updateOrderDate,
@@ -14,11 +15,14 @@ import {
   fetchAllBvs,
   fetchBvs,
   fetchObjects,
+  fetchObjectsDirectUnderCustomer,
+  fetchAllObjects,
 } from './lib/dataService'
 import { subscribeToOrderChanges } from './lib/orderRealtime'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { fetchProfiles, getProfileDisplayName } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
+import { getOrderObjectIds } from './lib/orderUtils'
 import { OrderCalendar } from './components/OrderCalendar'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import ConfirmDialog from './components/ConfirmDialog'
@@ -40,16 +44,56 @@ const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   storniert: 'Storniert',
 }
 
-const INITIAL_FORM = {
+type OrderFormState = {
+  customer_id: string
+  bv_id: string
+  selectedObjectIds: string[]
+  order_date: string
+  order_time: string
+  order_type: OrderType
+  status: OrderStatus
+  description: string
+  assigned_to: string
+}
+
+const INITIAL_FORM: OrderFormState = {
   customer_id: '',
   bv_id: '',
-  object_id: '',
+  selectedObjectIds: [],
   order_date: new Date().toISOString().slice(0, 10),
   order_time: '',
-  order_type: 'wartung' as OrderType,
-  status: 'offen' as OrderStatus,
+  order_type: 'wartung',
+  status: 'offen',
   description: '',
   assigned_to: '',
+}
+
+const orderToFormState = (o: Order): OrderFormState => ({
+  customer_id: o.customer_id,
+  bv_id: o.bv_id ?? '',
+  selectedObjectIds: getOrderObjectIds(o),
+  order_date: o.order_date,
+  order_time: o.order_time ?? '',
+  order_type: o.order_type,
+  status: o.status,
+  description: o.description ?? '',
+  assigned_to: o.assigned_to ?? '',
+})
+
+/** Direkt Tür/Tor-Modal ohne Kundenliste; nach Schließen zurück zu Aufträgen (oder returnTo). */
+const buildObjektBearbeitenUrl = (o: Order): string => {
+  const ids = getOrderObjectIds(o)
+  const firstId = ids[0] ?? o.object_id
+  if (!firstId) {
+    const params = new URLSearchParams()
+    params.set('customerId', o.customer_id)
+    params.set('returnTo', '/auftrag')
+    if (o.bv_id) params.set('bvId', o.bv_id)
+    return `/kunden?${params.toString()}`
+  }
+  const params = new URLSearchParams()
+  params.set('returnTo', '/auftrag')
+  return `/objekt/${firstId}/bearbeiten?${params.toString()}`
 }
 
 const AuftragAnlegen = () => {
@@ -63,15 +107,19 @@ const AuftragAnlegen = () => {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [allBvs, setAllBvs] = useState<BV[]>([])
+  const [allObjects, setAllObjects] = useState<Obj[]>([])
   const [bvs, setBvs] = useState<BV[]>([])
-  const [objects, setObjects] = useState<Obj[]>([])
+  const [objectsUnderBv, setObjectsUnderBv] = useState<Obj[]>([])
+  const [directObjects, setDirectObjects] = useState<Obj[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create')
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
   const [archiveMode, setArchiveMode] = useState<'active' | 'archive'>('active')
   const [calendarMonth, setCalendarMonth] = useState(() => new Date())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [formData, setFormData] = useState(INITIAL_FORM)
+  const [formData, setFormData] = useState<OrderFormState>(INITIAL_FORM)
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -83,37 +131,46 @@ const AuftragAnlegen = () => {
 
   const loadData = useCallback(async () => {
     setIsLoading(true)
-    const [orderData, customerData, bvData, profileData] = await Promise.all([
+    const [orderData, customerData, bvData, profileData, objectData] = await Promise.all([
       fetchOrders(),
       fetchCustomers(),
       fetchAllBvs(),
       fetchProfiles(),
+      fetchAllObjects(),
     ])
     setOrders(orderData ?? [])
     setCustomers(customerData ?? [])
     setAllBvs(bvData ?? [])
     setProfiles(profileData ?? [])
+    setAllObjects(objectData ?? [])
     setIsLoading(false)
   }, [])
 
   const loadBvsForCustomer = useCallback(async (customerId: string) => {
     if (!customerId) {
       setBvs([])
-      setObjects([])
+      setObjectsUnderBv([])
+      setDirectObjects([])
       return
     }
     const bvData = await fetchBvs(customerId)
     setBvs(bvData ?? [])
-    setObjects([])
+    setObjectsUnderBv([])
+    if (!bvData?.length) {
+      const direct = await fetchObjectsDirectUnderCustomer(customerId)
+      setDirectObjects(direct ?? [])
+    } else {
+      setDirectObjects([])
+    }
   }, [])
 
   const loadObjectsForBv = useCallback(async (bvId: string) => {
     if (!bvId) {
-      setObjects([])
+      setObjectsUnderBv([])
       return
     }
     const objData = await fetchObjects(bvId)
-    setObjects(objData ?? [])
+    setObjectsUnderBv(objData ?? [])
   }, [])
 
   useEffect(() => {
@@ -141,11 +198,13 @@ const AuftragAnlegen = () => {
 
   useEffect(() => {
     if (bvs.length === 1 && formData.customer_id) {
-      setFormData((prev) => (prev.bv_id === bvs[0].id ? prev : { ...prev, bv_id: bvs[0].id, object_id: '' }))
+      setFormData((prev) =>
+        prev.bv_id === bvs[0].id ? prev : { ...prev, bv_id: bvs[0].id, selectedObjectIds: [] }
+      )
     }
     if (bvs.length !== 1 && formData.bv_id) {
       const stillValid = bvs.some((b) => b.id === formData.bv_id)
-      if (!stillValid) setFormData((prev) => ({ ...prev, bv_id: '', object_id: '' }))
+      if (!stillValid) setFormData((prev) => ({ ...prev, bv_id: '', selectedObjectIds: [] }))
     }
   }, [bvs, formData.customer_id, formData.bv_id])
 
@@ -154,7 +213,15 @@ const AuftragAnlegen = () => {
   }, [formData.bv_id, loadObjectsForBv])
 
   const getCustomerName = (id: string) => customers.find((c) => c.id === id)?.name ?? '-'
-  const getBvName = (id: string) => allBvs.find((b) => b.id === id)?.name ?? '-'
+  const getBvName = (id: string | null | undefined) => {
+    if (!id) return '—'
+    return allBvs.find((b) => b.id === id)?.name ?? '-'
+  }
+  const getObjectLabel = (id: string) => {
+    const obj = allObjects.find((o) => o.id === id)
+    return obj ? getObjectDisplayName(obj) : id.slice(0, 8)
+  }
+
   const profilesAssignable = profiles.filter((p) => p.role !== 'demo' && p.role !== 'kunde')
   const getProfileLabel = (id: string | null) => {
     if (!id) return '-'
@@ -166,7 +233,17 @@ const AuftragAnlegen = () => {
   }
 
   const handleOpenCreate = () => {
+    setFormMode('create')
+    setEditingOrderId(null)
     setFormData(INITIAL_FORM)
+    setFormError(null)
+    setShowForm(true)
+  }
+
+  const handleOpenEdit = (o: Order) => {
+    setFormMode('edit')
+    setEditingOrderId(o.id)
+    setFormData(orderToFormState(o))
     setFormError(null)
     setShowForm(true)
   }
@@ -174,41 +251,105 @@ const AuftragAnlegen = () => {
   const handleCloseForm = () => {
     setShowForm(false)
     setFormError(null)
+    setFormMode('create')
+    setEditingOrderId(null)
   }
 
-  const handleFormChange = (field: keyof typeof formData, value: string | OrderType | OrderStatus) => {
+  const handleFormChange = (field: keyof OrderFormState, value: string | OrderType | OrderStatus) => {
     setFormData((prev) => {
       const next = { ...prev, [field]: value }
       if (field === 'customer_id') {
         next.bv_id = ''
-        next.object_id = ''
+        next.selectedObjectIds = []
       }
-      if (field === 'bv_id') next.object_id = ''
+      if (field === 'bv_id') next.selectedObjectIds = []
       return next
+    })
+  }
+
+  const handleToggleObject = (objectId: string) => {
+    setFormData((prev) => {
+      const has = prev.selectedObjectIds.includes(objectId)
+      const selectedObjectIds = has
+        ? prev.selectedObjectIds.filter((id) => id !== objectId)
+        : [...prev.selectedObjectIds, objectId]
+      return { ...prev, selectedObjectIds }
     })
   }
 
   const showBvSelect = bvs.length > 1
   const singleBv = bvs.length === 1 ? bvs[0] : null
-  const canSubmitOrder = formData.customer_id && (formData.bv_id || singleBv?.id)
+  const effectiveBvId = bvs.length === 0 ? null : formData.bv_id || singleBv?.id || null
+  const pickerObjects = bvs.length > 0 ? objectsUnderBv : directObjects
+  const hasDoorsToPick = pickerObjects.length > 0
+
+  const showTuerTorSection =
+    !!formData.customer_id &&
+    (bvs.length === 0 || !!effectiveBvId)
+
+  /** Zuweisung erst, wenn Tür/Tor gewählt – oder wenn es keine Türen zur Auswahl gibt. */
+  const showZuweisungSection =
+    showTuerTorSection && (!hasDoorsToPick || formData.selectedObjectIds.length > 0)
+
+  const doorsRequirementMet = !hasDoorsToPick || formData.selectedObjectIds.length > 0
+
+  const canSubmitOrder =
+    !!formData.customer_id &&
+    (bvs.length === 0 || !!effectiveBvId) &&
+    doorsRequirementMet
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
-    const effectiveBvId = formData.bv_id || singleBv?.id
-    if (!formData.customer_id || !effectiveBvId) {
-      setFormError(bvs.length === 0 ? 'Bitte zuerst ein Objekt/BV unter dem Kunden anlegen.' : 'Kunde und Objekt/BV sind erforderlich.')
+    if (!formData.customer_id || (bvs.length > 0 && !effectiveBvId)) {
+      setFormError(
+        bvs.length === 0
+          ? 'Kunde ist erforderlich.'
+          : 'Kunde und Objekt/BV sind erforderlich.'
+      )
       return
     }
     if (!formData.order_date) {
       setFormError('Datum ist erforderlich.')
       return
     }
+    if (pickerObjects.length > 0 && formData.selectedObjectIds.length === 0) {
+      setFormError('Bitte mindestens eine Tür/Tor auswählen.')
+      return
+    }
     setIsSaving(true)
+    const object_ids = formData.selectedObjectIds
+    const object_id = object_ids[0] ?? null
+
+    if (formMode === 'edit' && editingOrderId) {
+      const { error } = await updateOrder(editingOrderId, {
+        customer_id: formData.customer_id,
+        bv_id: effectiveBvId,
+        object_ids,
+        order_date: formData.order_date,
+        order_time: formData.order_time.trim() || null,
+        order_type: formData.order_type,
+        status: formData.status,
+        description: formData.description.trim() || null,
+        assigned_to: formData.assigned_to.trim() || null,
+      })
+      setIsSaving(false)
+      if (error) {
+        const msg = getSupabaseErrorMessage(error)
+        setFormError(msg)
+        showError(msg)
+        return
+      }
+      handleCloseForm()
+      loadData()
+      return
+    }
+
     const payload = {
       customer_id: formData.customer_id,
       bv_id: effectiveBvId,
-      object_id: formData.object_id.trim() || null,
+      object_id,
+      object_ids: object_ids.length > 0 ? object_ids : null,
       order_date: formData.order_date,
       order_time: formData.order_time.trim() || null,
       order_type: formData.order_type,
@@ -280,6 +421,16 @@ const AuftragAnlegen = () => {
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
   }, [showForm])
+
+  const orderObjectSummary = useCallback(
+    (o: Order) => {
+      const ids = getOrderObjectIds(o)
+      if (ids.length === 0) return null
+      if (ids.length === 1) return ` · ${getObjectLabel(ids[0])}`
+      return ` · ${ids.length} Türen/Tore`
+    },
+    [allObjects]
+  )
 
   return (
     <div className="p-4 min-w-0">
@@ -383,7 +534,7 @@ const AuftragAnlegen = () => {
           {ordersWithNames.map((o) => (
             <li
               key={o.id}
-              className={`rounded-lg border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+              className={`rounded-lg border p-4 flex flex-col gap-3 ${
                 !o.assigned_to
                   ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 border-l-4 border-l-amber-500'
                   : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600'
@@ -398,6 +549,7 @@ const AuftragAnlegen = () => {
                 </p>
                 <p className="text-sm text-slate-600 dark:text-slate-300">
                   {o.order_date}{o.order_time ? ` ${o.order_time.slice(0, 5)}` : ''} · {ORDER_TYPE_LABELS[o.order_type]} · {ORDER_STATUS_LABELS[o.status]}
+                  {orderObjectSummary(o)}
                   {o.assigned_to && (
                     <span className="ml-2 text-slate-500 dark:text-slate-400">→ {getProfileLabel(o.assigned_to)}</span>
                   )}
@@ -406,12 +558,12 @@ const AuftragAnlegen = () => {
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 truncate max-w-md">{o.description}</p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 w-full items-center justify-end">
                 {canAssign && archiveMode === 'active' && (
                   <select
                     value={profilesAssignable.some((p) => p.id === o.assigned_to) ? o.assigned_to ?? '' : ''}
                     onChange={(e) => handleAssignmentChange(o, e.target.value)}
-                    className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg min-w-[140px] bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                    className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg min-w-[140px] shrink-0 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                     title="Nutzer zuweisen"
                     aria-label="Nutzer zuweisen"
                   >
@@ -430,14 +582,15 @@ const AuftragAnlegen = () => {
                       type="date"
                       value={o.order_date}
                       onChange={(e) => handleDateChange(o, e.target.value)}
-                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg max-w-[140px] bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg max-w-[140px] shrink-0 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
                       title="Termin ändern"
                       aria-label="Termin ändern"
                     />
                     <select
                       value={o.status}
                       onChange={(e) => handleStatusChange(o, e.target.value as OrderStatus)}
-                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg shrink-0 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                      aria-label="Auftragsstatus"
                     >
                       {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
                         <option key={s} value={s}>
@@ -447,37 +600,46 @@ const AuftragAnlegen = () => {
                     </select>
                   </>
                 )}
-                {canEdit && (
+                {canEdit && archiveMode === 'active' && (
                   <button
-                      type="button"
-                      onClick={() =>
-                        setConfirmDialog({
-                          open: true,
-                          title: 'Auftrag löschen',
-                          message: `Auftrag am ${o.order_date} wirklich löschen?`,
-                          onConfirm: () => {
-                            setConfirmDialog((c) => ({ ...c, open: false }))
-                            handleDelete(o)
-                          },
-                        })
-                      }
-                      className="px-3 py-1.5 text-sm text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40"
-                    >
-                      Löschen
-                    </button>
+                    type="button"
+                    onClick={() => handleOpenEdit(o)}
+                    className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  >
+                    Bearbeiten
+                  </button>
                 )}
                 <Link
                   to={`/auftrag/${o.id}`}
-                  className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-block text-center"
                 >
                   Abarbeiten
                 </Link>
                 <Link
-                  to={o.object_id ? `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}&objectId=${o.object_id}` : `/kunden?customerId=${o.customer_id}&bvId=${o.bv_id}`}
-                  className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  to={buildObjektBearbeitenUrl(o)}
+                  className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-block text-center"
                 >
-                  Objekte
+                  Tür/Tor
                 </Link>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setConfirmDialog({
+                        open: true,
+                        title: 'Auftrag löschen',
+                        message: `Auftrag am ${o.order_date} wirklich löschen?`,
+                        onConfirm: () => {
+                          setConfirmDialog((c) => ({ ...c, open: false }))
+                          handleDelete(o)
+                        },
+                      })
+                    }
+                    className="px-3 py-1.5 text-sm shrink-0 ml-auto text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40"
+                  >
+                    Löschen
+                  </button>
+                )}
               </div>
             </li>
           ))}
@@ -509,7 +671,7 @@ const AuftragAnlegen = () => {
           onClick={(e) => e.stopPropagation()}
         >
             <h3 id="auftrag-form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">
-              Neuer Auftrag
+              {formMode === 'edit' ? 'Auftrag bearbeiten' : 'Neuer Auftrag'}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -535,10 +697,10 @@ const AuftragAnlegen = () => {
                 <>
                   {bvs.length === 0 && (
                     <p
-                      className="text-sm text-amber-800 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2"
+                      className="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2"
                       role="status"
                     >
-                      Kein Objekt/BV vorhanden. Bitte zuerst unter Kunden anlegen.
+                      Kein Objekt/BV – Türen/Tore direkt unter dem Kunden (falls vorhanden) können gewählt werden.
                     </p>
                   )}
                   {showBvSelect && (
@@ -570,26 +732,45 @@ const AuftragAnlegen = () => {
                   )}
                 </>
               )}
-              <div>
-                <label htmlFor="order-object" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                  Tür/Tor (optional)
-                </label>
-                <select
-                  id="order-object"
-                  value={formData.object_id}
-                  onChange={(e) => handleFormChange('object_id', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                  disabled={!formData.bv_id}
-                >
-                  <option value="">— Keins —</option>
-                  {objects.map((obj) => (
-                    <option key={obj.id} value={obj.id}>
-                      {getObjectDisplayName(obj)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {canAssign && (
+              {showTuerTorSection && (
+                <fieldset className="space-y-2 min-w-0 border-0 p-0 m-0">
+                  <legend className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
+                    Tür/Tor (Mehrfachauswahl)
+                  </legend>
+                  {hasDoorsToPick ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                      Mindestens eine Tür/Tor wählen, damit die Zuweisung und das Speichern möglich sind.
+                    </p>
+                  ) : null}
+                  {pickerObjects.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Keine Türen/Tore für diese Auswahl.</p>
+                  ) : (
+                    <ul
+                      className="max-h-44 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-600 divide-y divide-slate-200 dark:divide-slate-600"
+                      aria-label="Türen und Tore auswählen"
+                    >
+                      {pickerObjects.map((obj) => {
+                        const checked = formData.selectedObjectIds.includes(obj.id)
+                        return (
+                          <li key={obj.id}>
+                            <label className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => handleToggleObject(obj.id)}
+                                className="rounded border-slate-300 dark:border-slate-600"
+                                aria-checked={checked}
+                              />
+                              <span className="text-sm text-slate-800 dark:text-slate-100">{getObjectDisplayName(obj)}</span>
+                            </label>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </fieldset>
+              )}
+              {showZuweisungSection && canAssign && (
                 <div>
                   <label htmlFor="order-assign" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                     Zugewiesen an
@@ -654,6 +835,25 @@ const AuftragAnlegen = () => {
                   ))}
                 </select>
               </div>
+              {formMode === 'edit' && (
+                <div>
+                  <label htmlFor="order-status" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
+                    Status
+                  </label>
+                  <select
+                    id="order-status"
+                    value={formData.status}
+                    onChange={(e) => handleFormChange('status', e.target.value as OrderStatus)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                  >
+                    {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
+                      <option key={s} value={s}>
+                        {ORDER_STATUS_LABELS[s]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label htmlFor="order-desc" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
                   Beschreibung
@@ -672,18 +872,18 @@ const AuftragAnlegen = () => {
                   {formError}
                 </p>
               )}
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-nowrap gap-2 pt-2">
                 <button
                   type="submit"
                   disabled={!canSubmitOrder || isSaving}
-                  className="flex-1 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 disabled:opacity-50 font-medium border border-slate-300 dark:border-slate-600"
+                  className="flex-1 min-w-0 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 disabled:opacity-50 font-medium border border-slate-300 dark:border-slate-600 shrink"
                 >
-                  {isSaving ? 'Wird gespeichert…' : 'Anlegen'}
+                  {isSaving ? 'Wird gespeichert…' : formMode === 'edit' ? 'Speichern' : 'Anlegen'}
                 </button>
                 <button
                   type="button"
                   onClick={handleCloseForm}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  className="px-4 py-2 shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                 >
                   Abbrechen
                 </button>

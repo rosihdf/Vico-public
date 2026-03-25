@@ -71,10 +71,10 @@ Die Haupt-App und die **Portale** rufen die Lizenz per HTTP ab: `GET …/license
 
 | Variante | `VITE_LICENSE_API_URL` (Beispiel) | Server-Geheimnis |
 |----------|-----------------------------------|------------------|
-| **A) Netlify Functions** (Admin-Site) | `https://<admin-site>/api` | `SUPABASE_LICENSE_PORTAL_*` nur in **Netlify Env der Admin-Site** (Service Role) |
+| **A) Netlify Functions** (Admin-Site, Legacy) | `https://<admin-site>/api` | `SUPABASE_LICENSE_PORTAL_*` nur in **Netlify Env der Admin-Site** (Service Role) |
 | **B) Supabase Edge Functions** | `https://<ref>.supabase.co/functions/v1` | Von Supabase für die Functions gesetzt |
 
-**Empfehlung im Repo:** Variante **A** – siehe `admin/netlify.toml` (Redirects `/api/license` → Function) und **`docs/Netlify-Vier-Apps.md`** (§9, §11). **Env per API/Skript:** **`docs/Netlify-Mandanten-Env-Skript.md`**.
+**Standard im Repo (CF1):** Variante **B** – Mandanten-Frontends nur statisch (Cloudflare Pages); **`docs/Cloudflare-Umzug-Roadmap.md`**. **Env-Skript:** **`docs/Cloudflare-Mandanten-Env-Skript.md`**. Variante **A** bleibt im Tag **`last-stand-netlify`** und unter `admin/netlify.toml` nachvollziehbar.
 
 ### Edge Functions deployen (Variante B)
 

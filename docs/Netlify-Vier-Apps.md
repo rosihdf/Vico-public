@@ -1,5 +1,7 @@
 # Vier Apps auf Netlify – Schrittfolge
 
+> **Hinweis (März 2026):** Ziel-Hosting ist **Cloudflare Pages** – siehe **`docs/Cloudflare-Umzug-Roadmap.md`**. Diese Datei beschreibt weiterhin das **Netlify-Modell** (Legacy / Rollback-Tag `last-stand-netlify`).
+
 > **Kurzfassung (1 Seite):** [`Netlify-README.md`](./Netlify-README.md) – inkl. **Alternativen zu `VITE_LICENSE_NUMBER`**.
 
 Diese Anleitung bezieht sich auf das Monorepo **Vico** mit vier deploybaren Frontends:

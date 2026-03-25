@@ -117,24 +117,27 @@ describe('dataService', () => {
       })
     })
 
-    it('fetchCustomers gibt Cache zurück wenn offline', async () => {
-      const cached = [{ id: 'c1', name: 'Kunde A' }] as never[]
+    it('fetchCustomers gibt aktive Kunden aus Cache wenn offline (ohne archivierte)', async () => {
+      const cached = [
+        { id: 'c1', name: 'Kunde A', archived_at: null },
+        { id: 'c2', name: 'Alt', archived_at: '2020-01-01T00:00:00.000Z' },
+      ] as never[]
       vi.mocked(offlineStorage.getCachedCustomers).mockReturnValue(cached)
 
       const result = await fetchCustomers()
 
-      expect(result).toEqual(cached)
+      expect(result).toEqual([{ id: 'c1', name: 'Kunde A', archived_at: null }])
     })
 
     it('fetchCustomer gibt Eintrag aus Cache oder null wenn offline', async () => {
       const cached = [
-        { id: 'c1', name: 'Kunde A' },
-        { id: 'c2', name: 'Kunde B' },
+        { id: 'c1', name: 'Kunde A', archived_at: null },
+        { id: 'c2', name: 'Kunde B', archived_at: null },
       ] as never[]
       vi.mocked(offlineStorage.getCachedCustomers).mockReturnValue(cached)
 
-      expect(await fetchCustomer('c1')).toEqual({ id: 'c1', name: 'Kunde A' })
-      expect(await fetchCustomer('c2')).toEqual({ id: 'c2', name: 'Kunde B' })
+      expect(await fetchCustomer('c1')).toEqual({ id: 'c1', name: 'Kunde A', archived_at: null })
+      expect(await fetchCustomer('c2')).toEqual({ id: 'c2', name: 'Kunde B', archived_at: null })
       expect(await fetchCustomer('c99')).toBeNull()
     })
 

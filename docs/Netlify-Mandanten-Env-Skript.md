@@ -1,5 +1,7 @@
 # Netlify: Mandanten-Env per Skript (Phase C)
 
+**Hinweis:** Ziel-Hosting ist **Cloudflare Pages** – Mandanten-Env für CF: **`docs/Cloudflare-Mandanten-Env-Skript.md`** (`npm run cf:apply-env`). Diese Datei bleibt für **Legacy-Netlify** und Rollback (`last-stand-netlify`).
+
 Ziel: **Weniger Copy-Paste** – dieselben Variablen wie im Admin unter „Deployment / Netlify“, aber als **JSON-Datei** für ein **lokales oder CI-Skript**, das die [Netlify API](https://open-api.netlify.com/) (`createEnvVars` / `PATCH …/env/{key}`) nutzt.
 
 ## Voraussetzungen

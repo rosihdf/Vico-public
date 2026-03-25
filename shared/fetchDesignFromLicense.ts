@@ -75,6 +75,8 @@ export type LicenseApiPayload = {
     expired?: boolean
     read_only?: boolean
     is_trial?: boolean
+    /** Admin „signalisieren“ im Lizenzportal – Mandanten-Apps pollen und laden neu */
+    client_config_version?: number
   }
   design: DesignFromLicense
   /** Optional: mandantenweise gepflegte Versionen/Release Notes pro App (Lizenzportal). */
@@ -118,6 +120,7 @@ export const fetchLicenseFull = async (
     const appVersions =
       parseAppVersionsFromDb(data.appVersions) ??
       parseAppVersionsFromDb((data as { app_versions?: unknown }).app_versions)
+    const ccv = Math.max(0, Math.floor(Number((data.license as { client_config_version?: unknown }).client_config_version) || 0))
     return {
       license: {
         tier: data.license.tier,
@@ -130,6 +133,7 @@ export const fetchLicenseFull = async (
         expired: data.license.expired,
         read_only: data.license.read_only,
         is_trial: data.license.is_trial,
+        client_config_version: ccv,
       },
       design: {
         app_name: data.design.app_name,

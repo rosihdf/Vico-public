@@ -1,4 +1,6 @@
 import type { Order, Customer, BV, OrderCompletion, OrderType, OrderStatus } from '../types'
+import { getOrderObjectIds } from './orderUtils'
+import { parseOrderCompletionExtra, materialLinesToText } from '../types/orderCompletionExtra'
 import type { Profile } from './userService'
 import { getProfileDisplayName } from './userService'
 import { escapeCsvCell, prependUtf8Bom } from '../../shared/csvUtils'
@@ -77,14 +79,21 @@ export const buildAccountingOrdersCsv = (
     'Ausgefuehrte_Arbeiten_Auszug',
     'Material_Auszug',
     'Bericht_erstellt_am',
+    'Monteur_Berichtsdatum',
+    'Monteur_Material_Zeilen',
+    'Monteur_Arbeitszeit_Min_Berechnet',
   ]
 
   const lines = [headers.join(';')]
 
   for (const o of orders) {
     const cust = customerById.get(o.customer_id)
-    const bv = bvById.get(o.bv_id)
+    const bv = o.bv_id ? bvById.get(o.bv_id) : undefined
     const completion = completionByOrderId.get(o.id)
+    const ex = completion
+      ? parseOrderCompletionExtra(completion.completion_extra, '')
+      : null
+    const matLines = ex ? materialLinesToText(ex.material_lines) : ''
     lines.push(
       [
         escapeCsvCell(o.id),
@@ -96,7 +105,7 @@ export const buildAccountingOrdersCsv = (
         escapeCsvCell(cust?.name ?? ''),
         escapeCsvCell(o.bv_id),
         escapeCsvCell(bv?.name ?? ''),
-        escapeCsvCell(o.object_id),
+        escapeCsvCell(getOrderObjectIds(o).join(', ')),
         escapeCsvCell(truncateField(o.description, 500)),
         escapeCsvCell(assigneeLabel(o.assigned_to)),
         escapeCsvCell(o.assigned_to),
@@ -106,6 +115,9 @@ export const buildAccountingOrdersCsv = (
         escapeCsvCell(truncateField(completion?.ausgeführte_arbeiten ?? null, 400)),
         escapeCsvCell(truncateField(completion?.material ?? null, 400)),
         escapeCsvCell(completion?.created_at ?? ''),
+        escapeCsvCell(ex?.bericht_datum ?? ''),
+        escapeCsvCell(truncateField(matLines || null, 500)),
+        escapeCsvCell(completion?.arbeitszeit_minuten ?? ''),
       ].join(';')
     )
   }

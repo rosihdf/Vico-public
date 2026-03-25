@@ -116,6 +116,8 @@ const Import = () => {
             contact_phone: null,
             maintenance_report_email: true,
             maintenance_report_email_address: null,
+            monteur_report_internal_only: false,
+            monteur_report_portal: true,
           }
           const { data: newCustomer, error } = await createCustomer(payload)
           if (error) {

@@ -67,8 +67,15 @@ const Info = () => {
     setIsSavingLicense(true)
     setLicenseNumberMessage(null)
     try {
+      const { error: dbErr } = await setLicenseNumberInDb(formatted)
+      if (dbErr) {
+        setLicenseNumberMessage({
+          type: 'error',
+          text: `Mandanten-DB: ${dbErr}. Lizenz wurde nicht übernommen.`,
+        })
+        return
+      }
       setStoredLicenseNumber(formatted)
-      await setLicenseNumberInDb(formatted)
       await refreshLicense({ force: true })
       setLicenseNumberMessage({ type: 'success', text: 'Lizenznummer gespeichert. Lizenz neu geladen.' })
     } catch {

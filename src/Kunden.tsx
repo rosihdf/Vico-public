@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useToast } from './ToastContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
@@ -7,14 +7,16 @@ import {
   fetchCustomers,
   createCustomer,
   updateCustomer,
-  deleteCustomer,
+  archiveCustomer,
   fetchBvs,
   fetchAllBvs,
   createBv,
   updateBv,
-  deleteBv,
+  archiveBv,
   fetchObjects,
   fetchObjectsDirectUnderCustomer,
+  duplicateObjectFromSource,
+  getObjectPhotoUrl,
   fetchMaintenanceReminders,
   fetchMaintenanceContractsByCustomer,
   fetchMaintenanceContractsByBv,
@@ -47,6 +49,19 @@ import type { Object as Obj } from './types'
 const makeQrBatchKey = (customerId: string, bvId: string | null, objectId: string) =>
   `${customerId}|${bvId ?? ''}|${objectId}`
 
+const ObjectProfileThumbInline = ({ path }: { path?: string | null }) => {
+  const p = path?.trim()
+  if (!p) return null
+  return (
+    <img
+      src={getObjectPhotoUrl(p)}
+      alt=""
+      className="w-10 h-10 rounded-md object-cover shrink-0 border border-slate-200 dark:border-slate-600"
+      loading="lazy"
+    />
+  )
+}
+
 const INITIAL_CUSTOMER_FORM: CustomerFormData = {
   name: '',
   street: '',
@@ -60,6 +75,8 @@ const INITIAL_CUSTOMER_FORM: CustomerFormData = {
   contact_phone: '',
   maintenance_report_email: true,
   maintenance_report_email_address: '',
+  monteur_report_internal_only: false,
+  monteur_report_portal: true,
 }
 
 const INITIAL_BV_FORM: BVFormData = {
@@ -79,9 +96,10 @@ const INITIAL_BV_FORM: BVFormData = {
 }
 
 const Kunden = () => {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { userRole } = useAuth()
-  const { showError } = useToast()
+  const { showError, showToast } = useToast()
   const { isEnabled } = useComponentSettings()
   const { license, design } = useLicense()
   const canEdit = userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'demo'
@@ -95,6 +113,9 @@ const Kunden = () => {
       userRole === 'mitarbeiter' ||
       userRole === 'operator' ||
       userRole === 'demo')
+
+  const showMonteurCustomerZustellung =
+    Boolean(license && hasFeature(license, 'wartungsprotokolle'))
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [allBvs, setAllBvs] = useState<BV[]>([])
@@ -151,6 +172,18 @@ const Kunden = () => {
     message: string
     onConfirm: () => void
   }>({ open: false, title: '', message: '', onConfirm: () => {} })
+
+  const [duplicateObjectDialog, setDuplicateObjectDialog] = useState<{
+    open: boolean
+    source: Obj | null
+    copyPhotos: boolean
+    copyProfilePhoto: boolean
+    copyDocuments: boolean
+    busy: boolean
+  }>({ open: false, source: null, copyPhotos: false, copyProfilePhoto: true, copyDocuments: false, busy: false })
+
+  /** Nach Deep-Link (z. B. aus Aufträge) hierhin nach Schließen des Tür/Tor-Modals navigieren */
+  const [objectModalReturnTo, setObjectModalReturnTo] = useState<string | null>(null)
 
   const remindersByObjectId = useMemo(() => {
     const map = new Map<string, MaintenanceReminder>()
@@ -209,11 +242,28 @@ const Kunden = () => {
   const urlCustomerId = searchParams.get('customerId')
   const urlBvId = searchParams.get('bvId')
   const urlObjectId = searchParams.get('objectId')
+  const urlReturnTo = searchParams.get('returnTo')
+
+  const handleObjectModalFinished = () => {
+    setEditingObject(null)
+    setEditingObjectBvId(null)
+    setEditingObjectCustomerId(null)
+    const go = objectModalReturnTo
+    setObjectModalReturnTo(null)
+    if (go) navigate(go)
+  }
 
   useEffect(() => {
     if (!urlCustomerId || !customers.length) return
     let cancelled = false
     const expandAndOpen = async () => {
+      if (urlReturnTo) {
+        const raw = decodeURIComponent(urlReturnTo.trim())
+        const path = raw.startsWith('/') ? raw : `/${raw}`
+        setObjectModalReturnTo(path)
+      } else {
+        setObjectModalReturnTo(null)
+      }
       setExpandedCustomerId(urlCustomerId)
       setExpandedBvId(null)
       setExpandedObjects([])
@@ -241,6 +291,7 @@ const Kunden = () => {
             next.delete('customerId')
             next.delete('bvId')
             next.delete('objectId')
+            next.delete('returnTo')
             return next
           }, { replace: true })
         }
@@ -271,6 +322,7 @@ const Kunden = () => {
             next.delete('customerId')
             next.delete('bvId')
             next.delete('objectId')
+            next.delete('returnTo')
             return next
           }, { replace: true })
         }
@@ -278,7 +330,7 @@ const Kunden = () => {
     }
     expandAndOpen()
     return () => { cancelled = true }
-  }, [urlCustomerId, urlBvId, urlObjectId, customers.length, setSearchParams])
+  }, [urlCustomerId, urlBvId, urlObjectId, urlReturnTo, customers.length, setSearchParams])
 
   useEffect(() => {
     if (!showNeuDropdown) return
@@ -430,6 +482,8 @@ const Kunden = () => {
       maintenance_report_email: customer.maintenance_report_email ?? true,
       maintenance_report_email_address:
         customer.maintenance_report_email_address ?? '',
+      monteur_report_internal_only: customer.monteur_report_internal_only ?? false,
+      monteur_report_portal: customer.monteur_report_portal !== false,
     })
     setEditingId(customer.id)
     setFormError(null)
@@ -443,7 +497,13 @@ const Kunden = () => {
   }
 
   const handleFormChange = (field: keyof CustomerFormData, value: string | boolean) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value }
+      if (field === 'monteur_report_internal_only' && value === true) {
+        next.monteur_report_portal = false
+      }
+      return next
+    })
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -469,6 +529,8 @@ const Kunden = () => {
       maintenance_report_email: formData.maintenance_report_email,
       maintenance_report_email_address:
         formData.maintenance_report_email_address.trim() || null,
+      monteur_report_internal_only: formData.monteur_report_internal_only,
+      monteur_report_portal: formData.monteur_report_internal_only ? false : formData.monteur_report_portal,
     }
 
     if (editingId) {
@@ -495,8 +557,8 @@ const Kunden = () => {
     setIsSaving(false)
   }
 
-  const handleDelete = async (id: string) => {
-    const { error } = await deleteCustomer(id)
+  const handleArchiveCustomer = async (id: string) => {
+    const { error } = await archiveCustomer(id)
     if (error) {
       showError(getSupabaseErrorMessage(error))
     } else {
@@ -675,8 +737,8 @@ const Kunden = () => {
     setIsBvSaving(false)
   }
 
-  const handleBvDelete = async (id: string) => {
-    const { error } = await deleteBv(id)
+  const handleArchiveBv = async (id: string) => {
+    const { error } = await archiveBv(id)
     if (error) {
       showError(getSupabaseErrorMessage(error))
     } else {
@@ -712,6 +774,64 @@ const Kunden = () => {
     if (!expandedBvId) return
     const data = await fetchObjects(expandedBvId)
     setExpandedObjects(data ?? [])
+  }
+
+  const handleOpenDuplicateObjectDialog = (obj: Obj) => {
+    setDuplicateObjectDialog({
+      open: true,
+      source: obj,
+      copyPhotos: false,
+      copyProfilePhoto: true,
+      copyDocuments: false,
+      busy: false,
+    })
+  }
+
+  const handleDuplicateObjectDialogClose = () => {
+    if (duplicateObjectDialog.busy) return
+    setDuplicateObjectDialog({
+      open: false,
+      source: null,
+      copyPhotos: false,
+      copyProfilePhoto: true,
+      copyDocuments: false,
+      busy: false,
+    })
+  }
+
+  const handleDuplicateObjectConfirm = async () => {
+    const src = duplicateObjectDialog.source
+    const copyGallery = duplicateObjectDialog.copyPhotos
+    const copyProfile = duplicateObjectDialog.copyProfilePhoto
+    const copyDocs = duplicateObjectDialog.copyDocuments
+    if (!src || duplicateObjectDialog.busy) return
+    setDuplicateObjectDialog((d) => ({ ...d, busy: true }))
+    const { data, error } = await duplicateObjectFromSource(src.id, {
+      copyGalleryPhotos: copyGallery,
+      copyProfilePhoto: copyProfile,
+      copyDocuments: copyDocs,
+    })
+    setDuplicateObjectDialog({
+      open: false,
+      source: null,
+      copyPhotos: false,
+      copyProfilePhoto: true,
+      copyDocuments: false,
+      busy: false,
+    })
+    if (error) {
+      showError(error.message)
+      return
+    }
+    if (data) {
+      showToast('Kopie angelegt.', 'success')
+    }
+    if (!expandedCustomerId) return
+    if (src.bv_id && expandedBvId === src.bv_id) {
+      await reloadExpandedObjects()
+    }
+    const direct = await fetchObjectsDirectUnderCustomer(expandedCustomerId)
+    setDirectObjectsUnderCustomer(direct ?? [])
   }
 
   const toggleQrBatchItem = useCallback((item: QrBatchPdfItem) => {
@@ -1038,11 +1158,12 @@ const Kunden = () => {
                             e.stopPropagation()
                             setConfirmDialog({
                               open: true,
-                              title: 'Kunde löschen',
-                              message: 'Kunden wirklich löschen?',
+                              title: 'Kunde archivieren',
+                              message:
+                                'Kunden inkl. aller Objekte/BV und Türen/Tore archivieren? Stammdaten verschwinden aus den Listen; Aufträge und Wartungsprotokolle bleiben erhalten. Nur online möglich.',
                               onConfirm: () => {
                                 setConfirmDialog((c) => ({ ...c, open: false }))
-                                handleDelete(customer.id)
+                                handleArchiveCustomer(customer.id)
                               },
                             })
                           }}
@@ -1052,19 +1173,20 @@ const Kunden = () => {
                               e.preventDefault()
                               setConfirmDialog({
                                 open: true,
-                                title: 'Kunde löschen',
-                                message: 'Kunden wirklich löschen?',
+                                title: 'Kunde archivieren',
+                                message:
+                                  'Kunden inkl. aller Objekte/BV und Türen/Tore archivieren? Stammdaten verschwinden aus den Listen; Aufträge und Wartungsprotokolle bleiben erhalten. Nur online möglich.',
                                 onConfirm: () => {
                                   setConfirmDialog((c) => ({ ...c, open: false }))
-                                  handleDelete(customer.id)
+                                  handleArchiveCustomer(customer.id)
                                 },
                               })
                             }
                           }}
                           className="px-3 py-2 text-sm min-h-[36px] inline-flex items-center text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
-                          aria-label={`${customer.name} löschen`}
+                          aria-label={`${customer.name} archivieren`}
                         >
-                          Löschen
+                          Archivieren
                         </span>
                     )}
                   </div>
@@ -1125,6 +1247,7 @@ const Kunden = () => {
                                         />
                                       </label>
                                     )}
+                                    <ObjectProfileThumbInline path={obj.profile_photo_path} />
                                     {(() => {
                                       const reminder = remindersByObjectId.get(obj.id)
                                       const status = reminder?.status
@@ -1156,12 +1279,30 @@ const Kunden = () => {
                                         Bearbeiten
                                       </button>
                                     )}
+                                    {canEdit && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenDuplicateObjectDialog(obj)}
+                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                        aria-label={`${getObjectDisplayName(obj)} kopieren`}
+                                      >
+                                        Kopie
+                                      </button>
+                                    )}
+                                    {isEnabled('auftrag') && (
+                                      <Link
+                                        to={`/auftrag/neu-aus-qr?customerId=${customer.id}&objectId=${obj.id}`}
+                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                      >
+                                        Wartung / Reparatur
+                                      </Link>
+                                    )}
                                     {isEnabled('wartungsprotokolle') && (
                                       <Link
                                         to={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
                                         className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                       >
-                                        Wartung
+                                        Protokoll
                                       </Link>
                                     )}
                                     <button
@@ -1295,6 +1436,7 @@ const Kunden = () => {
                                           />
                                         </label>
                                       )}
+                                      <ObjectProfileThumbInline path={obj.profile_photo_path} />
                                       {(() => {
                                         const reminder = remindersByObjectId.get(obj.id)
                                         const status = reminder?.status
@@ -1326,12 +1468,30 @@ const Kunden = () => {
                                           Bearbeiten (Objekt/BV zuordnen)
                                         </button>
                                       )}
+                                      {canEdit && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenDuplicateObjectDialog(obj)}
+                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                          aria-label={`${getObjectDisplayName(obj)} kopieren`}
+                                        >
+                                          Kopie
+                                        </button>
+                                      )}
+                                      {isEnabled('auftrag') && (
+                                        <Link
+                                          to={`/auftrag/neu-aus-qr?customerId=${customer.id}&objectId=${obj.id}`}
+                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                        >
+                                          Wartung / Reparatur
+                                        </Link>
+                                      )}
                                       {isEnabled('wartungsprotokolle') && (
                                         <Link
                                           to={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
                                           className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                         >
-                                          Wartung
+                                          Protokoll
                                         </Link>
                                       )}
                                       <button
@@ -1408,11 +1568,12 @@ const Kunden = () => {
                                             e.stopPropagation()
                                             setConfirmDialog({
                                               open: true,
-                                              title: 'BV löschen',
-                                              message: 'BV wirklich löschen?',
+                                              title: 'Objekt/BV archivieren',
+                                              message:
+                                                'Objekt/BV und alle zugehörigen Türen/Tore archivieren? Listen werden bereinigt; Historie bleibt. Nur online möglich.',
                                               onConfirm: () => {
                                                 setConfirmDialog((c) => ({ ...c, open: false }))
-                                                handleBvDelete(bv.id)
+                                                handleArchiveBv(bv.id)
                                               },
                                             })
                                           }}
@@ -1422,19 +1583,20 @@ const Kunden = () => {
                                               e.preventDefault()
                                               setConfirmDialog({
                                                 open: true,
-                                                title: 'BV löschen',
-                                                message: 'BV wirklich löschen?',
+                                                title: 'Objekt/BV archivieren',
+                                                message:
+                                                  'Objekt/BV und alle zugehörigen Türen/Tore archivieren? Listen werden bereinigt; Historie bleibt. Nur online möglich.',
                                                 onConfirm: () => {
                                                   setConfirmDialog((c) => ({ ...c, open: false }))
-                                                  handleBvDelete(bv.id)
+                                                  handleArchiveBv(bv.id)
                                                 },
                                               })
                                             }
                                           }}
                                           className="px-3 py-1.5 text-sm min-h-[32px] inline-flex items-center text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
-                                          aria-label={`${bv.name} löschen`}
+                                          aria-label={`${bv.name} archivieren`}
                                         >
-                                          Löschen
+                                          Archivieren
                                         </span>
                                     )}
                                   </div>
@@ -1489,6 +1651,7 @@ const Kunden = () => {
                                                     />
                                                   </label>
                                                 )}
+                                                <ObjectProfileThumbInline path={obj.profile_photo_path} />
                                                 {(() => {
                                                   const reminder = remindersByObjectId.get(obj.id)
                                                   const status = reminder?.status
@@ -1537,12 +1700,33 @@ const Kunden = () => {
                                                     Bearbeiten
                                                   </button>
                                                 )}
+                                                {canEdit && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation()
+                                                      handleOpenDuplicateObjectDialog(obj)
+                                                    }}
+                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                                    aria-label={`${getObjectDisplayName(obj)} kopieren`}
+                                                  >
+                                                    Kopie
+                                                  </button>
+                                                )}
+                                                {isEnabled('auftrag') && (
+                                                  <Link
+                                                    to={`/auftrag/neu-aus-qr?customerId=${customer.id}&bvId=${bv.id}&objectId=${obj.id}`}
+                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                                  >
+                                                    Wartung / Reparatur
+                                                  </Link>
+                                                )}
                                                 {isEnabled('wartungsprotokolle') && (
                                                   <Link
                                                     to={`/kunden/${customer.id}/bvs/${bv.id}/objekte/${obj.id}/wartung`}
                                                     className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                                   >
-                                                    Wartung
+                                                    Protokoll
                                                   </Link>
                                                 )}
                                                 <button
@@ -1671,6 +1855,119 @@ const Kunden = () => {
         </ul>
       )}
 
+      {duplicateObjectDialog.open && duplicateObjectDialog.source ? (
+        <div
+          className="fixed inset-0 z-[55] flex items-center justify-center bg-black/50 p-4"
+          role="button"
+          tabIndex={0}
+          onClick={() => handleDuplicateObjectDialogClose()}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              handleDuplicateObjectDialogClose()
+            }
+          }}
+          aria-label="Dialog schließen"
+        >
+          <div
+            role="dialog"
+            aria-modal
+            aria-labelledby="dup-object-title"
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full min-w-0 p-4 border border-slate-200 dark:border-slate-600"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="dup-object-title" className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+              Tür/Tor kopieren
+            </h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              Es wird eine neue Tür/Tor mit eigener ID angelegt; die Stammdaten werden übernommen. Die Bezeichnung
+              erhält den Zusatz „(Duplikat)“, die interne ID einen eindeutigen Suffix. Wählen Sie unten, was zusätzlich
+              kopiert werden soll (jeweils eigene Dateien im Speicher).
+            </p>
+            <div className="mt-4 space-y-3">
+              <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
+                  checked={duplicateObjectDialog.copyProfilePhoto}
+                  disabled={duplicateObjectDialog.busy}
+                  onChange={(e) =>
+                    setDuplicateObjectDialog((d) =>
+                      d.source ? { ...d, copyProfilePhoto: e.target.checked } : d
+                    )
+                  }
+                  aria-describedby="dup-profile-hint"
+                />
+                <span>
+                  Profilfoto übernehmen
+                  <span id="dup-profile-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Nur sinnvoll, wenn an der Quelle ein Profilbild hinterlegt ist.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
+                  checked={duplicateObjectDialog.copyPhotos}
+                  disabled={duplicateObjectDialog.busy}
+                  onChange={(e) =>
+                    setDuplicateObjectDialog((d) =>
+                      d.source ? { ...d, copyPhotos: e.target.checked } : d
+                    )
+                  }
+                  aria-describedby="dup-gallery-hint"
+                />
+                <span>
+                  Galerie-Fotos übernehmen
+                  <span id="dup-gallery-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Normale Objekt-Fotos (Galerie), nicht Profilfoto und nicht Dokumente.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
+                  checked={duplicateObjectDialog.copyDocuments}
+                  disabled={duplicateObjectDialog.busy}
+                  onChange={(e) =>
+                    setDuplicateObjectDialog((d) =>
+                      d.source ? { ...d, copyDocuments: e.target.checked } : d
+                    )
+                  }
+                  aria-describedby="dup-docs-hint"
+                />
+                <span>
+                  Dokumente übernehmen (Zeichnungen, Zertifikate, …)
+                  <span id="dup-docs-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Einträge unter „Dokumente zur Tür“ inkl. Datei im Dokumenten-Speicher.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="mt-6 flex flex-wrap gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => handleDuplicateObjectDialogClose()}
+                disabled={duplicateObjectDialog.busy}
+                className="px-4 py-2 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDuplicateObjectConfirm()}
+                disabled={duplicateObjectDialog.busy}
+                className="px-4 py-2 min-h-[40px] rounded-lg bg-vico-button dark:bg-vico-primary text-slate-800 dark:text-white font-medium border border-slate-300 dark:border-slate-600 hover:bg-vico-button-hover dark:hover:opacity-90 disabled:opacity-50"
+              >
+                {duplicateObjectDialog.busy ? 'Wird angelegt…' : 'Kopie anlegen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ConfirmDialog
         open={confirmDialog.open}
         title={confirmDialog.title}
@@ -1719,16 +2016,14 @@ const Kunden = () => {
           object={editingObject}
           canEdit={canEdit}
           canDelete={canDelete}
-          onClose={() => { setEditingObject(null); setEditingObjectBvId(null); setEditingObjectCustomerId(null) }}
+          onClose={handleObjectModalFinished}
           onSuccess={async () => {
             if (expandedCustomerId) {
               reloadExpandedObjects()
               const direct = await fetchObjectsDirectUnderCustomer(expandedCustomerId)
               setDirectObjectsUnderCustomer(direct ?? [])
             }
-            setEditingObject(null)
-            setEditingObjectBvId(null)
-            setEditingObjectCustomerId(null)
+            handleObjectModalFinished()
           }}
         />
       )}
@@ -1856,6 +2151,48 @@ const Kunden = () => {
                   />
                 )}
               </div>
+              {showMonteurCustomerZustellung && (
+                <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-3">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Monteursbericht (Auftrag)</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Steuert die Zustellung zusätzlich zu den Firmen-Einstellungen (E-Mail automatisch/manuell,
+                    Kundenportal). Das PDF wird am Auftrag immer gespeichert.
+                  </p>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.monteur_report_internal_only}
+                      onChange={(e) => handleFormChange('monteur_report_internal_only', e.target.checked)}
+                      className="mt-0.5 rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800"
+                      aria-describedby="monteur-internal-hint"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">
+                      Nur intern ablegen (PDF am Auftrag/Tür-Tor)
+                      <span id="monteur-internal-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Kein automatischer oder manueller E-Mail-Versand des Monteursberichts an den Kunden, kein
+                        Kundenportal.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.monteur_report_portal}
+                      disabled={formData.monteur_report_internal_only}
+                      onChange={(e) => handleFormChange('monteur_report_portal', e.target.checked)}
+                      className="mt-0.5 rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800 disabled:opacity-50"
+                      aria-describedby="monteur-portal-hint"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">
+                      Im Kundenportal bereitstellen (wenn in den Firmen-Einstellungen vorgesehen)
+                      <span id="monteur-portal-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Wenn die Firma „Kundenportal + Benachrichtigung“ nutzt und das Objekt portal-fähig ist, kann der
+                        Bericht ins Portal übernommen werden. Deaktiviert: nie Portal für diesen Kunden.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
               {formError && (
                 <div className="text-sm text-red-600 dark:text-red-400" role="alert">
                   <p>{formError}</p>

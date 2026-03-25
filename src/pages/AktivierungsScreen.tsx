@@ -6,6 +6,7 @@ import {
   fetchLicenseFromApi,
   formatLicenseNumberInput,
   normalizeLicenseNumber,
+  setCachedLicenseResponse,
 } from '../lib/licensePortalApi'
 import { setLicenseNumberInDb } from '../lib/licenseService'
 
@@ -35,11 +36,18 @@ const AktivierungsScreen = () => {
         setError(data.license?.expired ? 'Lizenz ist abgelaufen.' : 'Lizenz ungültig.')
         return
       }
-      setStoredLicenseNumber(formatted)
       const { error: dbError } = await setLicenseNumberInDb(formatted)
       if (dbError) {
         console.warn('[Aktivierung] Lizenz in DB speichern fehlgeschlagen:', dbError)
+        setError(
+          `Lizenz gültig, aber Speichern in der Mandanten-Datenbank fehlgeschlagen: ${dbError}. ` +
+            'Ohne DB-Eintrag müssen Sie die Lizenz auf jedem neuen Gerät erneut eingeben. ' +
+            'Bitte als Administrator prüfen oder erneut versuchen.'
+        )
+        return
       }
+      setCachedLicenseResponse(data, formatted)
+      setStoredLicenseNumber(formatted)
       navigate('/', { replace: true })
     } catch {
       setError('Verbindungsfehler. Bitte erneut versuchen.')

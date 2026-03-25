@@ -1,7 +1,23 @@
 # Cloudflare-Umzug planen & Supabase-Auslagerung (Lizenz-API)
 
 **Roadmap-ID:** **CF1** (siehe `Vico.md` §7.2, §7.4, §7.6.1).  
-**Status:** Planung – kein verbindlicher Technik-Entscheid; dient der Vorbereitung eines Wechsels von **Netlify** zu **Cloudflare Pages** und der Klärung, welche Teile **bei Supabase** (Edge Functions) verbleiben bzw. dorthin **verlagert** werden.
+**Status:** **Architektur- und Betriebsentscheidungen festgelegt** (siehe unten); Umsetzung (Edge-Parität, vier CF-Projekte, Env-Skript) folgt schrittweise.
+
+**Schritt-für-Schritt (Umprogrammierung → Go-Live):** [**`Cloudflare-Umzug-Roadmap.md`**](./Cloudflare-Umzug-Roadmap.md)
+
+---
+
+## Festgelegte Entscheidungen (Abstimmung März 2026)
+
+| # | Thema | Festlegung |
+|---|--------|------------|
+| 1 | **DNS** | **Bei Cloudflare** (Nameserver/Zonenführung dort). |
+| 2 | **Öffentliche URLs (Start)** | **1:1 gleiche App-Aufteilung** wie heute, vorerst die **von Pages vergebenen Projekt-Domains** (`*.pages.dev` o. Ä.); Custom Domains später an dieselben Projekte hängbar. |
+| 3 | **Lizenz-API** | **Variante B:** **Supabase Edge Functions** (Lizenzportal-Projekt); **keine** Pages Functions für `/api/license` etc. `VITE_LICENSE_API_URL` → `https://<ref>.supabase.co/functions/v1` (Details siehe `docs/Lizenzportal-Setup.md`). |
+| 4 | **Umgebung** | **Direkt produktiv auf CF** (kein separates CF-Staging vorab). |
+| 5 | **Build/Deploy** | **Variante A:** **Git-Anbindung** je Pages-Projekt, **ein Repo**, **vier Projekte** mit Root `""`, `admin`, `portal`, `arbeitszeit-portal` (wie Netlify). |
+| 6 | **Env pro Mandant** | **Variante B:** **Automatisierung** (neues Skript analog `netlify-apply-tenant-env`), nicht nur manuelles Dashboard; Admin-UI-Export anpassen. |
+| 7 | **Netlify nach Cutover** | **Zuerst B, dann A:** Sites **vorerst behalten**, eingefroren (Git getrennt, keine Hooks) als **Rollback-Reserve** (1–4 Wochen); danach **konsequent abbauen/löschen** (`last-stand-netlify` bleibt im Git). |
 
 ---
 
@@ -11,8 +27,8 @@
 |------|----------------|
 | **Ein Account** | Vier Frontends (Haupt-App, Admin, Kundenportal, Arbeitszeitenportal) wie bei Netlify als **getrennte Deployments** unter **einem** Cloudflare-Account (**vier Pages-Projekte**). |
 | **Parität** | Gleiche Build-Artefakte (`npm run build` → `dist`), gleiche **SPA-Fallbacks**, gleiche **Umgebungsvariablen** (`VITE_*`) soweit möglich. |
-| **Lizenz-API** | Entweder **Pages Functions** (Port der bestehenden Netlify Functions) **oder** vollständig **Supabase Edge Functions** im **Lizenzportal-Projekt** – siehe **§3**. |
-| **Mandanten** | `VITE_LICENSE_API_URL` und ggf. `VITE_LICENSE_NUMBER` pro Mandant weiterhin konsistent; Deploy-/Env-Automatisierung ersetzt oder ergänzt **`scripts/netlify-apply-tenant-env.mjs`**. |
+| **Lizenz-API** | **Gewählt: Supabase Edge** im Lizenzportal – siehe **§3 Variante B** und **§ Festgelegte Entscheidungen**. |
+| **Mandanten** | `VITE_LICENSE_API_URL` auf **Supabase-Functions-Basis**; `VITE_LICENSE_NUMBER` nach Bedarf; **CF-Env-Skript** ersetzt langfristig **`scripts/netlify-apply-tenant-env.mjs`**. |
 
 ---
 
@@ -45,10 +61,9 @@
 - **Aufwand:** Sicherstellen, dass **alle** Endpunkte (`license`, `limit-exceeded`, `update-impressum`) **paritätisch** zu Netlify implementiert sind (CORS, Methoden, Fehlercodes); **CORS-Origins** bei Bedarf pflegen.
 - **Konsequenz:** `VITE_LICENSE_API_URL = https://<lizenzportal-ref>.supabase.co/functions/v1` (ohne trailing Slash je nach Client-Code) für **alle** Mandanten-Frontends, die heute die Admin-URL nutzen.
 
-### Empfehlung für die Planung
+### Historische Einordnung (vor Festlegung)
 
-- **Technisch konservativ:** Zuerst **Variante B** evaluieren (bereits im Projekt angelegt), Last und Kosten im Supabase-Dashboard beobachten; danach entscheiden, ob **Variante A** für „alles unter Admin-Domain“ nötig ist.
-- **Produkt/Marketing:** Wenn die öffentliche API-URL bewusst **ohne** `supabase.co` sichtbar sein soll, tendenziell **Variante A** auf CF.
+Variante **B** wurde für bessere Entkopplung „Static-Host vs. API“ gewählt. **Variante A** bliebe eine Option, falls die sichtbare API-URL **ohne** `supabase.co` verlangt wird.
 
 ---
 
@@ -121,25 +136,26 @@ Pro App ein Projekt:
 
 ### Phase 5 – Mandanten & Lizenz-URL
 
-- [ ] Für jeden Mandanten: `VITE_LICENSE_API_URL` auf neue Basis-URL (**Admin `/api`** oder **Supabase `…/functions/v1`**).
-- [ ] Im Lizenzportal **Host-Lookup** (`allowed_domains`, `app_domain`, …) prüfen – bei Domain-Wechsel **CORS/Origin** und **Lizenz-API-Zugriff** testen.
-- [ ] **Neues Automatisierungsskript** (CF API für Env pro Pages-Projekt) spezifizieren oder **Wrangler**/Terraform evaluieren – Ersetzung für `netlify-apply-tenant-env.mjs`.
+- [ ] Für jeden Mandanten: `VITE_LICENSE_API_URL` auf **Supabase**-Basis-URL **`…/functions/v1`** (ohne Slash am Ende wie bisher üblich – Client-Code prüfen).
+- [ ] Im Lizenzportal **Host-Lookup** (`allowed_domains`, …): **alle vier `*.pages.dev`-Hosts** eintragen, soweit Browser-`Origin`-Checks greifen; sonst **`VITE_LICENSE_NUMBER`** nutzen.
+- [ ] **Neues Automatisierungsskript** (CF API für Env pro Pages-Projekt) – Ersetzung für `netlify-apply-tenant-env.mjs`; Admin-Panel „Deployment“ umbenennen/erweitern.
 
-### Phase 6 – Tests (Staging)
+### Phase 6 – Tests (vor / bei Go-Live, ohne separates CF-Staging)
 
 - [ ] Login Haupt-App, Offline-Kurztest.
 - [ ] Admin: Mandanten, Lizenzen, Logo-Upload.
 - [ ] Portale: Login, Lizenz-Check, Host-Lookup.
-- [ ] Lasttest: viele parallele `GET /license` (optional k6/Locust).
+- [ ] Lasttest: viele parallele Lizenz-Requests gegen **Edge** (optional k6/Locust).
 
 ### Phase 7 – Cutover Produktion
 
-- [ ] Wartungsfenster oder **blau-grün**: DNS TTL senken, auf CF umstellen.
-- [ ] **Netlify** Sites auf „paused“ oder löschen nach Beobachtungszeit.
-- [ ] Doku aktualisieren: `Vico.md` §5, `docs/Netlify-*.md` → Hinweis CF **oder** neue `docs/Cloudflare-*.md`.
+- [ ] DNS (bei CF): auf **Pages**-Produktion zeigen bzw. Custom Hostnames anbinden, wenn ihr von `*.pages.dev` wechselt.
+- [ ] **Netlify:** gemäß Festlegung **vorerst nicht löschen** – Sites **eingefroren** (kein Git, keine Build Hooks), als **Rollback** nutzbar.
+- [ ] Doku aktualisieren: `Vico.md` §5, `docs/Netlify-*.md` + neue **`docs/Cloudflare-*.md`**.
 
 ### Phase 8 – Aufräumen
 
+- [ ] Nach Stabilität (ca. 1–4 Wochen): **Netlify-Sites löschen/archivieren** (Festlegung: dann **A**).
 - [ ] `netlify.toml` optional deprecaten oder als Referenz markieren.
 - [ ] CI/CD nur noch ein Pfad (keine doppelten Deploys).
 
@@ -160,16 +176,17 @@ Pro App ein Projekt:
 
 - [ ] Neues oder aktualisiertes **`wrangler.toml` / Pages-Konfiguration** (falls genutzt).
 - [ ] `docs/Netlify-Vier-Apps.md` – Ergänzung **CF-Äquivalent** oder Schwesterdokument.
-- [ ] `docs/Lizenzportal-Setup.md` – gewählte Variante A/B als **Standard** für neue Mandanten markieren.
+- [ ] `docs/Lizenzportal-Setup.md` – **Variante B (Supabase Edge)** als **Standard** für neue Mandanten / CF-Betrieb markieren.
 - [ ] `package.json` – optionales Script `deploy:cf` o. ä. nur bei Bedarf.
 
 ---
 
 ## 8. Referenzen
 
+- **Arbeits-Roadmap:** [`Cloudflare-Umzug-Roadmap.md`](./Cloudflare-Umzug-Roadmap.md)
 - Cloudflare Pages Limits: https://developers.cloudflare.com/pages/platform/limits/
 - Workers Pricing: https://developers.cloudflare.com/workers/platform/pricing/
-- Intern: `admin/netlify.toml`, `admin/netlify/functions/*.ts`, `docs/Lizenzportal-Setup.md`, `supabase-license-portal/`
+- Intern: `admin/netlify.toml`, `admin/netlify/functions/*.ts`, `docs/Lizenzportal-Setup.md`, `supabase-license-portal/`, `src/lib/licensePortalApi.ts`
 
 ---
 

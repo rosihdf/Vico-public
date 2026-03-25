@@ -25,12 +25,17 @@ export type Object = {
   smoke_detector_count: number
   smoke_detector_build_years: string[] | null
   panic_function: string | null
+  /** Mehrzeiliges Zubehör (Liste); `accessories` bleibt als zusammengefügter Text für Export/Legacy */
+  accessories_items?: string[] | null
   accessories: string | null
   maintenance_by_manufacturer: boolean
   hold_open_maintenance: boolean
   defects: string | null
   remarks: string | null
   maintenance_interval_months?: number | null
+  /** Pfad im Bucket object-photos (öffentliche URL), nur Anzeige Profilbild */
+  profile_photo_path?: string | null
+  archived_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -59,7 +64,8 @@ export type ObjectFormData = {
   smoke_detector_count: string
   smoke_detector_build_years: string[]
   panic_function: string
-  accessories: string
+  /** Eine Zeile pro Eintrag; leere Zeilen werden beim Speichern verworfen */
+  accessories_lines: string[]
   maintenance_by_manufacturer: boolean
   hold_open_maintenance: boolean
   defects: string
