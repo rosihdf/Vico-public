@@ -122,7 +122,8 @@ const REMINDER_FILTER_STORAGE_KEY = 'vico_maintenance_reminder_filter_v1'
 
 const Startseite = () => {
   const { user, userRole } = useAuth()
-  const { license } = useLicense()
+  const { license, design } = useLicense()
+  const welcomeAppName = (design?.app_name ?? '').trim() || 'AMRtech Türen & Tore'
   const { isEnabled } = useComponentSettings()
   const { showError, showToast } = useToast()
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -440,8 +441,8 @@ const Startseite = () => {
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Dashboard</h2>
       <p className="mt-2 text-slate-600 dark:text-slate-400">
         {profile
-          ? `Hallo, ${getProfileDisplayName(profile)}! Willkommen bei AMRtech Türen & Tore.`
-          : 'Willkommen bei AMRtech Türen & Tore.'}
+          ? `Hallo, ${getProfileDisplayName(profile)}! Willkommen bei ${welcomeAppName}.`
+          : `Willkommen bei ${welcomeAppName}.`}
       </p>
 
       {getResolvedWidgetOrder(dashboardLayout).map((wid) => {
