@@ -9,3 +9,6 @@ verify_jwt = false
 
 [functions.limit-exceeded]
 verify_jwt = false
+
+[functions.trigger-mandanten-db-rollout]
+verify_jwt = false

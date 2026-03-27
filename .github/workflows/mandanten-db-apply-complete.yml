@@ -1,0 +1,48 @@
+# Wird vom Lizenzportal (Edge Function trigger-mandanten-db-rollout) oder manuell gestartet.
+# Secret MANDANTEN_DB_URLS: eine PostgreSQL-URI pro Zeile (wie configs/mandanten-db-urls.local.txt).
+name: Mandanten-DB – supabase-complete
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry_run = nur URLs listen; apply = SQL ausführen'
+        type: choice
+        required: true
+        default: dry_run
+        options:
+          - dry_run
+          - apply
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: PostgreSQL-Client (psql)
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: URL-Liste aus Secret schreiben
+        env:
+          MANDANTEN_DB_URLS: ${{ secrets.MANDANTEN_DB_URLS }}
+        run: |
+          if [ -z "${MANDANTEN_DB_URLS}" ]; then
+            echo "::error::Repository-Secret MANDANTEN_DB_URLS ist nicht gesetzt (eine URI pro Zeile)."
+            exit 1
+          fi
+          echo "$MANDANTEN_DB_URLS" > mandanten-db-urls.txt
+
+      - name: Trockenlauf
+        if: github.event.inputs.mode == 'dry_run'
+        run: node scripts/apply-mandanten-sql.mjs supabase-complete.sql --urls-file mandanten-db-urls.txt --dry-run
+
+      - name: Echtlauf
+        if: github.event.inputs.mode == 'apply'
+        run: node scripts/apply-mandanten-sql.mjs supabase-complete.sql --urls-file mandanten-db-urls.txt
