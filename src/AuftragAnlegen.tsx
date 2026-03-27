@@ -44,6 +44,13 @@ const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   storniert: 'Storniert',
 }
 
+const ORDER_STATUS_BADGE_CLASS: Record<OrderStatus, string> = {
+  offen: 'bg-blue-100 text-blue-900 dark:bg-blue-950/80 dark:text-blue-100',
+  in_bearbeitung: 'bg-amber-100 text-amber-950 dark:bg-amber-950/60 dark:text-amber-100',
+  erledigt: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/70 dark:text-emerald-100',
+  storniert: 'bg-slate-200 text-slate-700 dark:bg-slate-600 dark:text-slate-100',
+}
+
 type OrderFormState = {
   customer_id: string
   bv_id: string
@@ -434,8 +441,8 @@ const AuftragAnlegen = () => {
 
   return (
     <div className="p-4 min-w-0">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-        <div>
+      <div className="flex flex-col gap-4 mb-4 min-w-0">
+        <div className="min-w-0">
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Aufträge</h2>
           {canBuchhaltungExport && (
             <Link
@@ -446,12 +453,12 @@ const AuftragAnlegen = () => {
             </Link>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center w-full min-w-0">
+          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setArchiveMode('active')}
-              className={`px-3 py-2 text-sm font-medium ${
+              className={`flex-1 min-w-0 px-3 py-2.5 sm:py-2 text-sm font-medium ${
                 archiveMode === 'active'
                   ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
                   : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
@@ -462,7 +469,7 @@ const AuftragAnlegen = () => {
             <button
               type="button"
               onClick={() => setArchiveMode('archive')}
-              className={`px-3 py-2 text-sm font-medium ${
+              className={`flex-1 min-w-0 px-3 py-2.5 sm:py-2 text-sm font-medium ${
                 archiveMode === 'archive'
                   ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
                   : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
@@ -471,11 +478,11 @@ const AuftragAnlegen = () => {
               Archiv
             </button>
           </div>
-          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden">
+          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`px-3 py-2 text-sm font-medium ${
+              className={`flex-1 min-w-0 px-3 py-2.5 sm:py-2 text-sm font-medium ${
                 viewMode === 'list'
                   ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
                   : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
@@ -486,7 +493,7 @@ const AuftragAnlegen = () => {
             <button
               type="button"
               onClick={() => setViewMode('calendar')}
-              className={`px-3 py-2 text-sm font-medium ${
+              className={`flex-1 min-w-0 px-3 py-2.5 sm:py-2 text-sm font-medium ${
                 viewMode === 'calendar'
                   ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
                   : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
@@ -499,7 +506,7 @@ const AuftragAnlegen = () => {
             <button
               type="button"
               onClick={handleOpenCreate}
-              className="px-4 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
+              className="w-full sm:w-auto px-4 py-2.5 sm:py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600 min-h-[44px] sm:min-h-0"
             >
               + Auftrag anlegen
             </button>
@@ -530,40 +537,69 @@ const AuftragAnlegen = () => {
           className="py-8"
         />
       ) : (
-        <ul className="space-y-2">
-          {ordersWithNames.map((o) => (
+        <ul className="space-y-3 sm:space-y-2">
+          {ordersWithNames.map((o) => {
+            const objectSummary = orderObjectSummary(o)
+            const objectSummaryText = objectSummary?.replace(/^\s*·\s*/, '').trim() ?? ''
+            return (
             <li
               key={o.id}
-              className={`rounded-lg border p-4 flex flex-col gap-3 ${
+              className={`rounded-xl border p-3 sm:p-4 flex flex-col gap-3 min-w-0 ${
                 !o.assigned_to
                   ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 border-l-4 border-l-amber-500'
                   : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600'
               }`}
             >
-              <div>
-                <p className="font-medium text-slate-800 dark:text-slate-100">
-                  {o.customerName} → {o.bvName}
+              <div className="min-w-0 space-y-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-800 dark:text-slate-100 text-base leading-snug break-words">
+                    {o.customerName}
+                  </p>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5 break-words">
+                    <span className="text-slate-400 dark:text-slate-500" aria-hidden>
+                      →{' '}
+                    </span>
+                    {o.bvName}
+                  </p>
                   {!o.assigned_to && (
-                    <span className="ml-2 text-sm font-normal text-amber-700 dark:text-amber-300">(nicht zugewiesen)</span>
+                    <p className="text-xs font-medium text-amber-800 dark:text-amber-200 mt-1">Nicht zugewiesen</p>
                   )}
-                </p>
-                <p className="text-sm text-slate-600 dark:text-slate-300">
-                  {o.order_date}{o.order_time ? ` ${o.order_time.slice(0, 5)}` : ''} · {ORDER_TYPE_LABELS[o.order_type]} · {ORDER_STATUS_LABELS[o.status]}
-                  {orderObjectSummary(o)}
-                  {o.assigned_to && (
-                    <span className="ml-2 text-slate-500 dark:text-slate-400">→ {getProfileLabel(o.assigned_to)}</span>
-                  )}
-                </p>
+                </div>
+                <div className="flex flex-wrap gap-1.5 items-center">
+                  <span className="inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-700/80 px-2 py-0.5 text-xs font-medium text-slate-800 dark:text-slate-100 tabular-nums">
+                    {o.order_date}
+                    {o.order_time ? ` · ${o.order_time.slice(0, 5)}` : ''}
+                  </span>
+                  <span className="inline-flex items-center rounded-md bg-slate-200/90 dark:bg-slate-600/80 px-2 py-0.5 text-xs font-medium text-slate-800 dark:text-slate-100">
+                    {ORDER_TYPE_LABELS[o.order_type]}
+                  </span>
+                  <span
+                    className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${ORDER_STATUS_BADGE_CLASS[o.status]}`}
+                  >
+                    {ORDER_STATUS_LABELS[o.status]}
+                  </span>
+                </div>
+                {objectSummaryText ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 break-words">{objectSummaryText}</p>
+                ) : null}
+                {o.assigned_to && (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    <span className="text-slate-500 dark:text-slate-400">Zugewiesen: </span>
+                    {getProfileLabel(o.assigned_to)}
+                  </p>
+                )}
                 {o.description && (
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 truncate max-w-md">{o.description}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-3 sm:line-clamp-2 break-words">
+                    {o.description}
+                  </p>
                 )}
               </div>
-              <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 w-full items-center justify-end">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end pt-1 border-t border-slate-100 dark:border-slate-600/80 sm:border-0 sm:pt-0">
                 {canAssign && archiveMode === 'active' && (
                   <select
                     value={profilesAssignable.some((p) => p.id === o.assigned_to) ? o.assigned_to ?? '' : ''}
                     onChange={(e) => handleAssignmentChange(o, e.target.value)}
-                    className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg min-w-[140px] shrink-0 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                    className="w-full sm:w-auto sm:min-w-[160px] px-3 py-2.5 sm:py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-[44px] sm:min-h-0"
                     title="Nutzer zuweisen"
                     aria-label="Nutzer zuweisen"
                   >
@@ -582,14 +618,14 @@ const AuftragAnlegen = () => {
                       type="date"
                       value={o.order_date}
                       onChange={(e) => handleDateChange(o, e.target.value)}
-                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg max-w-[140px] shrink-0 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                      className="w-full sm:w-auto sm:max-w-[160px] px-3 py-2.5 sm:py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-[44px] sm:min-h-0"
                       title="Termin ändern"
                       aria-label="Termin ändern"
                     />
                     <select
                       value={o.status}
                       onChange={(e) => handleStatusChange(o, e.target.value as OrderStatus)}
-                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg shrink-0 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+                      className="w-full sm:w-auto sm:min-w-[11rem] px-3 py-2.5 sm:py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-[44px] sm:min-h-0"
                       aria-label="Auftragsstatus"
                     >
                       {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
@@ -600,49 +636,52 @@ const AuftragAnlegen = () => {
                     </select>
                   </>
                 )}
-                {canEdit && archiveMode === 'active' && (
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEdit(o)}
-                    className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:justify-end sm:gap-2 sm:w-auto">
+                  <Link
+                    to={`/auftrag/${o.id}`}
+                    className="px-3 py-2.5 sm:py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-flex items-center justify-center min-h-[44px] sm:min-h-0 text-center font-medium"
                   >
-                    Bearbeiten
-                  </button>
-                )}
-                <Link
-                  to={`/auftrag/${o.id}`}
-                  className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-block text-center"
-                >
-                  Abarbeiten
-                </Link>
-                <Link
-                  to={buildObjektBearbeitenUrl(o)}
-                  className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-block text-center"
-                >
-                  Tür/Tor
-                </Link>
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setConfirmDialog({
-                        open: true,
-                        title: 'Auftrag löschen',
-                        message: `Auftrag am ${o.order_date} wirklich löschen?`,
-                        onConfirm: () => {
-                          setConfirmDialog((c) => ({ ...c, open: false }))
-                          handleDelete(o)
-                        },
-                      })
-                    }
-                    className="px-3 py-1.5 text-sm shrink-0 ml-auto text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40"
+                    Abarbeiten
+                  </Link>
+                  <Link
+                    to={buildObjektBearbeitenUrl(o)}
+                    className="px-3 py-2.5 sm:py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-flex items-center justify-center min-h-[44px] sm:min-h-0 text-center"
                   >
-                    Löschen
-                  </button>
-                )}
+                    Tür/Tor
+                  </Link>
+                  {canEdit && archiveMode === 'active' && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(o)}
+                      className="col-span-2 sm:col-span-1 px-3 py-2.5 sm:py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 min-h-[44px] sm:min-h-0"
+                    >
+                      Bearbeiten
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Auftrag löschen',
+                          message: `Auftrag am ${o.order_date} wirklich löschen?`,
+                          onConfirm: () => {
+                            setConfirmDialog((c) => ({ ...c, open: false }))
+                            handleDelete(o)
+                          },
+                        })
+                      }
+                      className="col-span-2 sm:col-span-1 px-3 py-2.5 sm:py-1.5 text-sm text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 min-h-[44px] sm:min-h-0"
+                    >
+                      Löschen
+                    </button>
+                  )}
+                </div>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       ))}
 
