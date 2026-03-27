@@ -643,7 +643,7 @@ const Einstellungen = () => {
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
               Wenn aktiviert, erhalten Sie eine E-Mail mit Objekten, deren Wartung überfällig ist oder in den nächsten 30
               Tagen fällig wird – sofern Ihr Administrator die Edge Function &quot;send-maintenance-reminder-digest&quot;
-              (z. B. per Cron) und Resend konfiguriert hat.
+              (z. B. per Cron) und Resend konfiguriert hat.
             </p>
             <label className="flex items-start gap-3 cursor-pointer mb-3">
               <input
