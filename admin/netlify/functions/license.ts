@@ -105,6 +105,7 @@ type LicenseResponse = {
   }
   design: {
     app_name: string
+    tenant_name?: string | null
     logo_url: string | null
     primary_color: string
     secondary_color?: string | null
@@ -217,6 +218,8 @@ const buildLicenseJson = (licenseRow: Record<string, unknown>, globalAppCfg: { v
     },
     design: {
       app_name: (tenant?.app_name as string) ?? 'AMRtech',
+      tenant_name:
+        tenant?.name != null && String(tenant.name).trim() ? String(tenant.name).trim() : null,
       logo_url: (tenant?.logo_url as string) ?? null,
       primary_color: (tenant?.primary_color as string) ?? '#5b7895',
       secondary_color: (tenant?.secondary_color as string) ?? null,

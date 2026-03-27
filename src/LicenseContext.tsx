@@ -24,6 +24,8 @@ import type { AppVersionsMap } from '../shared/appVersions'
 
 export type DesignConfig = {
   app_name: string
+  /** Mandanten-Name aus Lizenzportal (`tenants.name`) */
+  tenant_name?: string | null
   logo_url: string | null
   primary_color: string
   secondary_color?: string | null

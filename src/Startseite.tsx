@@ -123,7 +123,11 @@ const REMINDER_FILTER_STORAGE_KEY = 'vico_maintenance_reminder_filter_v1'
 const Startseite = () => {
   const { user, userRole } = useAuth()
   const { license, design } = useLicense()
-  const welcomeAppName = (design?.app_name ?? '').trim() || 'AMRtech Türen & Tore'
+  /** Bevorzugt Mandanten-„Name“ (Lizenzportal), sonst App-Name */
+  const welcomeAppName =
+    (design?.tenant_name ?? '').trim() ||
+    (design?.app_name ?? '').trim() ||
+    'AMRtech Türen & Tore'
   const { isEnabled } = useComponentSettings()
   const { showError, showToast } = useToast()
   const [profile, setProfile] = useState<Profile | null>(null)

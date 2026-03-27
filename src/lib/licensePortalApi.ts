@@ -147,6 +147,8 @@ export type LicenseApiResponse = {
   }
   design: {
     app_name: string
+    /** Mandanten-„Name“ im Lizenzportal (Tabellenfeld `tenants.name`), vollständiger Anzeigetext */
+    tenant_name?: string | null
     logo_url: string | null
     primary_color: string
     secondary_color?: string | null
