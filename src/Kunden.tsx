@@ -3,11 +3,14 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useToast } from './ToastContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
+import { isOnline } from '../shared/networkUtils'
 import {
   fetchCustomers,
+  fetchArchivedCustomers,
   createCustomer,
   updateCustomer,
   archiveCustomer,
+  unarchiveCustomer,
   fetchBvs,
   fetchAllBvs,
   createBv,
@@ -125,6 +128,9 @@ const Kunden = () => {
   const [filterBvMin, setFilterBvMin] = useState<string>('')
   const [filterBvMax, setFilterBvMax] = useState<string>('')
   const [showFilters, setShowFilters] = useState(false)
+  const [showArchivedSection, setShowArchivedSection] = useState(false)
+  const [archivedCustomers, setArchivedCustomers] = useState<Customer[]>([])
+  const [isArchivedLoading, setIsArchivedLoading] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -238,6 +244,29 @@ const Kunden = () => {
   useEffect(() => {
     return subscribeToDataChange(loadCustomers)
   }, [loadCustomers])
+
+  const loadArchivedCustomers = useCallback(async () => {
+    setIsArchivedLoading(true)
+    const rows = await fetchArchivedCustomers()
+    setArchivedCustomers(rows ?? [])
+    setIsArchivedLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (!showArchivedSection || !canDelete) return
+    void loadArchivedCustomers()
+  }, [showArchivedSection, canDelete, loadArchivedCustomers])
+
+  const handleUnarchiveCustomer = async (id: string) => {
+    const { error } = await unarchiveCustomer(id)
+    if (error) {
+      showError(getSupabaseErrorMessage(error))
+      return
+    }
+    showToast('Kunde wurde wiederhergestellt.')
+    await loadArchivedCustomers()
+    await loadCustomers()
+  }
 
   const urlCustomerId = searchParams.get('customerId')
   const urlBvId = searchParams.get('bvId')
@@ -984,6 +1013,21 @@ const Kunden = () => {
               )}
             </div>
           )}
+          {canDelete && (
+            <button
+              type="button"
+              onClick={() => setShowArchivedSection((v) => !v)}
+              className={`px-3 py-2 rounded-lg border text-sm font-medium ${
+                showArchivedSection
+                  ? 'bg-slate-200 dark:bg-slate-700 border-slate-400 dark:border-slate-500 text-slate-900 dark:text-slate-100'
+                  : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200'
+              }`}
+              aria-expanded={showArchivedSection}
+              aria-label="Archivierte Kunden ein- oder ausblenden"
+            >
+              Archiv
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
@@ -1071,6 +1115,67 @@ const Kunden = () => {
             )}
           </div>
         </div>
+      )}
+
+      {canDelete && showArchivedSection && (
+        <section
+          className="mb-4 p-4 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-100/80 dark:bg-slate-800/60"
+          aria-labelledby="kunden-archiv-heading"
+        >
+          <h3 id="kunden-archiv-heading" className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
+            Archivierte Kunden
+          </h3>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+            Diese Kunden sind in den normalen Listen ausgeblendet. Wiederherstellen setzt Kunde, alle Objekte/BV und
+            Türen/Tore auf aktiv (nur online).
+          </p>
+          {isArchivedLoading ? (
+            <LoadingSpinner message="Lade Archiv…" size="sm" className="py-4" />
+          ) : archivedCustomers.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400 py-2">Keine archivierten Kunden.</p>
+          ) : (
+            <ul className="space-y-2">
+              {archivedCustomers.map((c) => (
+                <li
+                  key={c.id}
+                  className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Archiviert:{' '}
+                      {c.archived_at
+                        ? new Date(c.archived_at).toLocaleString('de-DE', {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })
+                        : '—'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!isOnline()}
+                    onClick={() =>
+                      setConfirmDialog({
+                        open: true,
+                        title: 'Kunde wiederherstellen',
+                        message: `„${c.name}“ und alle zugehörigen Objekte/BV und Türen/Tore wieder in den Stammdaten anzeigen?`,
+                        onConfirm: () => {
+                          setConfirmDialog((prev) => ({ ...prev, open: false }))
+                          void handleUnarchiveCustomer(c.id)
+                        },
+                      })
+                    }
+                    className="shrink-0 px-3 py-2 text-sm font-medium rounded-lg border border-emerald-600 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                    aria-label={`Kunde ${c.name} wiederherstellen`}
+                  >
+                    Wiederherstellen
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
       {isLoading ? (

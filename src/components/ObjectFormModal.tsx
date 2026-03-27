@@ -1220,7 +1220,7 @@ const ObjectFormModal = ({
       <ConfirmDialog
         open={confirmArchiveOpen}
         title="Tür/Tor archivieren"
-        message="Dieses Tür/Tor aus den Stammdaten ausblenden? Wartungsprotokolle und Aufträge bleiben erhalten. Wiederherstellen ist aktuell nur über die Datenbank möglich."
+        message="Dieses Tür/Tor aus den Stammdaten ausblenden? Wartungsprotokolle und Aufträge bleiben erhalten. Wiederherstellen eines ganzen Kunden: Kunden → Archiv. Einzelne Tür: in der Datenbank archived_at leeren (wenn der Kunde nicht archiviert ist)."
         confirmLabel="Archivieren"
         variant="danger"
         onConfirm={async () => {

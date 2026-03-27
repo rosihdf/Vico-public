@@ -80,6 +80,26 @@ export const fetchCustomers = async (): Promise<Customer[]> => {
   return (getCachedCustomers() as Customer[]).filter(isActiveCustomer)
 }
 
+/** Nur archivierte Kunden (für Archiv-Ansicht). Online: lädt und merged in den Cache. */
+export const fetchArchivedCustomers = async (): Promise<Customer[]> => {
+  if (isOnline()) {
+    const { data, error } = await supabase
+      .from('customers')
+      .select(CUSTOMER_COLUMNS)
+      .not('archived_at', 'is', null)
+      .order('name')
+    if (!error && data) {
+      const rows = data as unknown as Customer[]
+      const all = getCachedCustomers() as Customer[]
+      const ids = new Set(rows.map((c) => c.id))
+      const kept = all.filter((c) => !ids.has(c.id))
+      setCachedCustomers([...kept, ...rows])
+      return rows
+    }
+  }
+  return (getCachedCustomers() as Customer[]).filter((c) => Boolean(c.archived_at))
+}
+
 export const fetchCustomerCount = async (): Promise<number> => {
   if (isOnline()) {
     const { count, error } = await supabase
@@ -855,6 +875,47 @@ export const archiveCustomer = async (id: string): Promise<{ error: { message: s
     (getCachedObjects() as Obj[]).map((o) => {
       if (o.customer_id === id && o.bv_id == null) return { ...o, archived_at: t, updated_at: t }
       if (o.bv_id && bvIds.includes(o.bv_id)) return { ...o, archived_at: t, updated_at: t }
+      return o
+    })
+  )
+  notifyDataChange()
+  return { error: null }
+}
+
+/** Archivierten Kunden inkl. aller BV und Türen/Tore wiederherstellen. Nur online. */
+export const unarchiveCustomer = async (id: string): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) {
+    return { error: { message: 'Wiederherstellen ist nur online möglich.' } }
+  }
+  const t = new Date().toISOString()
+  const { data: bvRows, error: bvFetchErr } = await supabase.from('bvs').select('id').eq('customer_id', id)
+  if (bvFetchErr) return { error: { message: bvFetchErr.message } }
+  const bvIds = (bvRows ?? []).map((r) => r.id as string)
+  if (bvIds.length > 0) {
+    const { error: eObjBv } = await supabase
+      .from('objects')
+      .update({ archived_at: null, updated_at: t })
+      .in('bv_id', bvIds)
+    if (eObjBv) return { error: { message: eObjBv.message } }
+  }
+  const { error: eObjDirect } = await supabase
+    .from('objects')
+    .update({ archived_at: null, updated_at: t })
+    .eq('customer_id', id)
+    .is('bv_id', null)
+  if (eObjDirect) return { error: { message: eObjDirect.message } }
+  const { error: eBvs } = await supabase.from('bvs').update({ archived_at: null, updated_at: t }).eq('customer_id', id)
+  if (eBvs) return { error: { message: eBvs.message } }
+  const { error: eCust } = await supabase.from('customers').update({ archived_at: null, updated_at: t }).eq('id', id)
+  if (eCust) return { error: { message: eCust.message } }
+  setCachedCustomers(
+    (getCachedCustomers() as Customer[]).map((c) => (c.id === id ? { ...c, archived_at: null, updated_at: t } : c))
+  )
+  setCachedBvs((getCachedBvs() as BV[]).map((b) => (b.customer_id === id ? { ...b, archived_at: null, updated_at: t } : b)))
+  setCachedObjects(
+    (getCachedObjects() as Obj[]).map((o) => {
+      if (o.customer_id === id && o.bv_id == null) return { ...o, archived_at: null, updated_at: t }
+      if (o.bv_id && bvIds.includes(o.bv_id)) return { ...o, archived_at: null, updated_at: t }
       return o
     })
   )
