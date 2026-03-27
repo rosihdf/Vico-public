@@ -330,6 +330,8 @@ Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** =
 | **T1** | Technik / DB | **Supabase CLI-Migrations** (zeitlich geordnet) statt nur Monolith `supabase-complete.sql`; Baseline + künftige Deltas; **Lizenzportal** eigenes `supabase/`. Kein App-Runtime-Gewinn, aber klarere Reviews & Rollouts. Pragmatischer Einstieg (Inventar, Changelog, Multi-`psql`): **`docs/sql/Mandanten-DB-Workflow.md`**. Konzept Modularisierung & Massen-Rollout: **§9.19**. | 🔲 | 0,5–2 T | **`docs/sql/Supabase-Migrations-Strategie.md`** · **§9.19** |
 | **CF1** | Infrastruktur | **Cloudflare-Umzug** (Netlify → **Pages**, vier Projekte / ein Account): **Lizenz-API = Supabase Edge**; Git-Build auf CF; Env-Skript wie Netlify; Netlify Reserve dann Abbau. **Umsetzung:** **`docs/Cloudflare-Umzug-Roadmap.md`** (Teil A Umprogrammierung, Teil B Go-Live). | 🔲 | Planung ✅; Umsetzung nach Roadmap | **`docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md`** · **`docs/Cloudflare-Umzug-Roadmap.md`** · **`docs/github-issues/CF1.body.md`** |
 
+**Explizit offen:** **Übertragung der Berichte ins Kundenportal** (Monteurs-/Wartungsberichte inkl. PDF/Metadaten, Anbindung an Portal-API und UI-Flow; eng mit **J6** Portal-Phase und Checkbox am Auftrag verzahnt).
+
 **Hinweis:** **J2, J3, J4, J10** (MVP), **2FA**, **Arbeitszeiterfassung** (Modul), **Capacitor/APK** (**I1**) und die früheren Phasen **A–H** sind umgesetzt → **§7.3**. **Abarbeitungs-Vorschlag** Phasen 0–7: **§7.6.2**.
 
 #### 7.2.1 Offene Entscheidungen (Betrieb / Feinschliff)
@@ -401,6 +403,7 @@ Langfristige Feature-Liste mit **Priorität** und **Aufwand** – nicht alles is
 | 17 | Bug-Erfassungsmodul | Niedrig | 1–2 T | ✅ **J10** (MVP) |
 | 18 | DB-Schema: Supabase-Migrations statt Monolith | Mittel | 0,5–2 T | 🔲 **T1** – **docs/sql/Supabase-Migrations-Strategie.md** |
 | 19 | Hosting: Netlify → Cloudflare + Supabase Edge (Lizenz-API) | Mittel | Umsetzung nach **docs/Cloudflare-Umzug-Roadmap.md** | 🔲 **CF1** – **docs/Cloudflare-Umzug-und-Supabase-Auslagerung.md**, **docs/Cloudflare-Umzug-Roadmap.md** |
+| 20 | **Berichte → Kundenportal** | Hoch | Teil von **J6** | 🔲 Monteurs-/Wartungsberichte zuverlässig ins Portal übertragen (Speicherung, `get_portal_maintenance_reports`, Sichtbarkeit, UX nach Auftrags-Abschluss / Checkbox) |
 
 ---
 
@@ -414,7 +417,7 @@ Langfristige Feature-Liste mit **Priorität** und **Aufwand** – nicht alles is
 
 **Phasen:** (1) Aufträge erweitern → (2) Monteursbericht → (3) Freigabe-Workflow → (4) Kundenportal → (5) Wartungsprotokoll DIN/ASR → (6) Buchhaltungs-Export → (7) Offline, Material-Stammdaten → (8) Erweiterungen.
 
-**Stand:** Monteursbericht / Completions / Auftragsdetail vorhanden; **Freigabe**, **Portal-Flow** und weitere Phasen offen (**J6**).
+**Stand:** Monteursbericht / Completions / Auftragsdetail vorhanden; **Freigabe**, **Portal-Flow** und weitere Phasen offen (**J6**). **Explizit noch zu erledigen:** **Übertragung der Berichte ins Kundenportal** (End-to-End vom Auftrag bis zur Portal-Ansicht inkl. PDF-Pfade und RLS).
 
 #### Arbeitszeiterfassung (Modul)
 
@@ -466,7 +469,7 @@ Ehemals verteilt auf `docs/Roadmap-Abarbeitung-Vorschlag.md`, `docs/Roadmap-Weit
 | **J3** | ✅ MVP | `/buchhaltung-export`, `accountingExportService.ts`; **SevDesk/API** später. |
 | **J4** | ✅ MVP A | `Startseite`, `profiles.dashboard_layout`; **J4-B** ✅ Favoriten/nur meine. |
 | **J5** | ✅ | Erweiterte Filter `Kunden.tsx`. |
-| **J6** | ⚠️ | Monteursbericht vorhanden; Freigabe/Portal/DIN großes Paket. |
+| **J6** | ⚠️ | Monteursbericht vorhanden; Freigabe/Portal/DIN großes Paket. **Offen:** **Übertragung der Berichte ins Kundenportal** (vollständiger Übermittlungs- und Anzeige-Flow). |
 | **J7** | 🔲 | Priorität: (1) Mängel-Follow-up → (2) Bulk → (3) Portal-Push; **iCal** nicht in dieser Runde. |
 | **J10** | ✅ MVP | `Fehlerberichte`, `app_errors`, `errorReportService`. |
 | **I2** | ⚠️ UI | Preset/Maße **Einstellungen**; Hardware/Plugin – **§11.4**, **§7.2.1**. |
