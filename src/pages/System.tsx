@@ -11,6 +11,9 @@ const System = () => {
     ...(license && hasFeature(license, 'historie') ? [{ to: '/system/historie', label: 'Historie' }] : []),
     ...(license && hasFeature(license, 'fehlerberichte') ? [{ to: '/system/fehlerberichte', label: 'Fehlerberichte' }] : []),
     ...(license && hasFeature(license, 'ladezeiten') ? [{ to: '/system/ladezeiten', label: 'Ladezeiten' }] : []),
+    ...(license && hasFeature(license, 'wartungsprotokolle')
+      ? [{ to: '/system/maengel', label: 'Offene Mängel' }]
+      : []),
   ]
 
   return (

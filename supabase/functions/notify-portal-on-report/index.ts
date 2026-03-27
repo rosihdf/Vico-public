@@ -66,7 +66,7 @@ serve(async (req) => {
 
     const { data: object, error: objError } = await supabase
       .from('objects')
-      .select('id, name, internal_id, bv_id')
+      .select('id, name, internal_id, bv_id, customer_id')
       .eq('id', report.object_id)
       .single()
 
@@ -77,15 +77,68 @@ serve(async (req) => {
       )
     }
 
-    const { data: bv, error: bvError } = await supabase
-      .from('bvs')
-      .select('id, name, customer_id')
-      .eq('id', object.bv_id)
-      .single()
+    let customerId: string | null = null
+    let bvName = ''
+    let bvDeliveryRow: {
+      uses_customer_report_delivery?: boolean | null
+      maintenance_report_portal?: boolean | null
+    } | null = null
 
-    if (bvError || !bv) {
+    if (object.bv_id) {
+      const { data: bv, error: bvError } = await supabase
+        .from('bvs')
+        .select('id, name, customer_id, uses_customer_report_delivery, maintenance_report_portal')
+        .eq('id', object.bv_id)
+        .single()
+      if (bvError || !bv) {
+        return new Response(
+          JSON.stringify({ success: true, notified: 0, message: 'BV nicht gefunden.' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      customerId = bv.customer_id
+      bvName = bv.name ?? ''
+      bvDeliveryRow = bv as typeof bvDeliveryRow
+    } else {
+      customerId = object.customer_id
+      bvName = '—'
+    }
+
+    if (!customerId) {
       return new Response(
-        JSON.stringify({ success: true, notified: 0, message: 'BV nicht gefunden.' }),
+        JSON.stringify({ success: true, notified: 0, message: 'Kein Kunde am Objekt.' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const { data: customerRow, error: custError } = await supabase
+      .from('customers')
+      .select('maintenance_report_portal')
+      .eq('id', customerId)
+      .maybeSingle()
+
+    if (custError) {
+      return new Response(
+        JSON.stringify({ success: true, notified: 0, message: 'Kunde nicht lesbar.' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const custPortal = (customerRow as { maintenance_report_portal?: boolean } | null)?.maintenance_report_portal !==
+      false
+    const useBvPortal =
+      bvDeliveryRow != null && bvDeliveryRow.uses_customer_report_delivery === false
+    const maintenancePortalAllowed = useBvPortal
+      ? bvDeliveryRow!.maintenance_report_portal !== false
+      : custPortal
+
+    if (!maintenancePortalAllowed) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          notified: 0,
+          message: 'Wartungsbericht ins Portal für diesen Kunden deaktiviert.',
+        }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -93,7 +146,7 @@ serve(async (req) => {
     const { data: portalUsers, error: puError } = await supabase
       .from('customer_portal_users')
       .select('email')
-      .eq('customer_id', bv.customer_id)
+      .eq('customer_id', customerId)
       .not('email', 'is', null)
 
     if (puError || !portalUsers || portalUsers.length === 0) {
@@ -113,7 +166,7 @@ serve(async (req) => {
       <p>für Ihren Kunden wurde ein neuer Wartungsbericht erstellt:</p>
       <ul>
         <li><strong>Objekt:</strong> ${objectLabel}</li>
-        <li><strong>BV:</strong> ${bv.name}</li>
+        <li><strong>BV:</strong> ${bvName}</li>
         <li><strong>Datum:</strong> ${dateStr}</li>
       </ul>
       <p>Sie können den Bericht im Kundenportal einsehen und das PDF herunterladen:</p>

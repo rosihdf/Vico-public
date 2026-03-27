@@ -1044,6 +1044,78 @@ export const updateMonteurReportSettings = async (
   return { error: error ? { message: error.message } : null }
 }
 
+export type MonteurReportOrgDigestSettings = {
+  maintenance_digest_local_time: string
+  maintenance_digest_timezone: string
+  app_public_url: string | null
+}
+
+export const fetchMonteurReportOrgDigestSettings = async (): Promise<MonteurReportOrgDigestSettings | null> => {
+  if (!isOnline()) return null
+  const { data, error } = await supabase
+    .from('monteur_report_settings')
+    .select('maintenance_digest_local_time, maintenance_digest_timezone, app_public_url')
+    .eq('id', 1)
+    .maybeSingle()
+  if (error || !data) return null
+  const row = data as Record<string, unknown>
+  return {
+    maintenance_digest_local_time: String(row.maintenance_digest_local_time ?? '07:00'),
+    maintenance_digest_timezone: String(row.maintenance_digest_timezone ?? 'Europe/Berlin'),
+    app_public_url: row.app_public_url != null ? String(row.app_public_url) : null,
+  }
+}
+
+export const updateMonteurReportOrgDigestSettings = async (
+  patch: Partial<MonteurReportOrgDigestSettings>
+): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) return { error: { message: 'Nur online speicherbar.' } }
+  const { error } = await supabase
+    .from('monteur_report_settings')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', 1)
+  return { error: error ? { message: error.message } : null }
+}
+
+export type OpenDeficiencyReportRow = {
+  id: string
+  object_id: string
+  maintenance_date: string
+  deficiency_description: string | null
+  object_name: string | null
+  object_internal_id: string | null
+  object_customer_id: string | null
+  object_bv_id: string | null
+}
+
+export const fetchOpenDeficiencyReports = async (): Promise<OpenDeficiencyReportRow[]> => {
+  if (!isOnline()) return []
+  const { data, error } = await supabase
+    .from('maintenance_reports')
+    .select(
+      'id, object_id, maintenance_date, deficiency_description, objects ( name, internal_id, customer_id, bv_id )'
+    )
+    .eq('deficiencies_found', true)
+    .eq('fixed_immediately', false)
+    .order('maintenance_date', { ascending: false })
+    .limit(400)
+  if (error || !data) return []
+  return (data as Record<string, unknown>[]).map((row) => {
+    const o = row.objects as Record<string, unknown> | null | undefined
+    return {
+      id: String(row.id),
+      object_id: String(row.object_id),
+      maintenance_date: String(row.maintenance_date),
+      deficiency_description:
+        row.deficiency_description != null ? String(row.deficiency_description) : null,
+      object_name: o?.name != null ? String(o.name) : null,
+      object_internal_id: o?.internal_id != null ? String(o.internal_id) : null,
+      object_customer_id: o?.customer_id != null ? String(o.customer_id) : null,
+      object_bv_id: o?.bv_id != null ? String(o.bv_id) : null,
+    }
+  })
+}
+
 export const fetchMonteurPortalDeliveryEligible = async (objectId: string): Promise<boolean> => {
   if (!isOnline() || !objectId) return false
   const { data, error } = await supabase.rpc('monteur_portal_delivery_eligible', {

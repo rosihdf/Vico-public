@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import { supabase } from './supabase'
 import { fetchProfiles, updateProfileRole, updateProfileName, getProfileDisplayName, updateProfileRoleByEmail, fetchTeams, updateProfileTeam, createTeam, deleteTeam } from './lib/userService'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalBadge from './components/PortalBadge'
+import MfaSettingsHint from './components/MfaSettingsHint'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { useLicense } from './LicenseContext'
 import { useSync } from './SyncContext'
@@ -373,17 +374,7 @@ const Benutzerverwaltung = () => {
         Benutzer anlegen und Rollen verwalten (nur Admin).
       </p>
 
-      <div
-        className="mt-3 p-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 text-sm text-slate-600 dark:text-slate-300"
-        role="note"
-      >
-        <strong className="font-medium text-slate-800 dark:text-slate-100">2FA (Zwei-Faktor-Authentifizierung):</strong>{' '}
-        optional, standardmäßig aus. Jeder interne Nutzer kann TOTP in den{' '}
-        <Link to="/einstellungen#sicherheit-2fa" className="text-vico-primary hover:underline font-medium">
-          eigenen Einstellungen unter „Sicherheit“
-        </Link>{' '}
-        aktivieren. Hier in der Benutzerverwaltung kann 2FA nicht zentral erzwungen oder für andere konfiguriert werden.
-      </div>
+      <MfaSettingsHint variant="benutzerverwaltung" />
 
       {license && (
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">

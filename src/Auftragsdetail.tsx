@@ -42,6 +42,7 @@ import { getObjectDisplayName } from './lib/objectUtils'
 import type { Order, OrderCompletion, Customer, BV, OrderType, OrderStatus } from './types'
 import type { Profile } from './lib/userService'
 import type { MaintenanceReason } from './types/maintenance'
+import { resolveReportDeliverySettings } from './lib/reportDeliverySettings'
 
 const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   wartung: 'Wartung',
@@ -66,11 +67,9 @@ const orderTypeToMaintenanceReason = (t: OrderType): MaintenanceReason => {
 }
 
 const getMonteurReportRecipientEmail = (customer: Customer | undefined, bv: BV | undefined): string | null => {
-  if (!customer) return null
-  if (customer.monteur_report_internal_only === true) return null
-  const bvEmail = bv?.maintenance_report_email !== false ? bv?.maintenance_report_email_address : null
-  const custEmail = customer.maintenance_report_email !== false ? customer.maintenance_report_email_address : null
-  return (bvEmail || custEmail || '').trim() || null
+  const r = resolveReportDeliverySettings(customer, bv)
+  if (!r.maintenance_report_email) return null
+  return (r.maintenance_report_email_address || '').trim() || null
 }
 
 const Auftragsdetail = () => {
@@ -177,8 +176,16 @@ const Auftragsdetail = () => {
     () => (order ? customers.find((c) => c.id === order.customer_id) : undefined),
     [order, customers]
   )
-  const monteurInternalOnly = orderCustomer?.monteur_report_internal_only === true
-  const monteurPortalForCustomer = orderCustomer?.monteur_report_portal !== false
+  const orderBv = useMemo(
+    () => (order?.bv_id ? allBvs.find((b) => b.id === order.bv_id) : undefined),
+    [order, allBvs]
+  )
+  const monteurReportDelivery = useMemo(
+    () => resolveReportDeliverySettings(orderCustomer, orderBv),
+    [orderCustomer, orderBv]
+  )
+  const monteurInternalOnly = !monteurReportDelivery.monteur_report_portal
+  const monteurPortalForCustomer = monteurReportDelivery.monteur_report_portal
 
   const setExtraField = <K extends keyof OrderCompletionExtraV1>(key: K, value: OrderCompletionExtraV1[K]) => {
     setExtra((prev) => ({ ...prev, [key]: value }))
@@ -478,7 +485,7 @@ const Auftragsdetail = () => {
       if (monteurPath) {
         setCompletion((prev) => (prev ? { ...prev, monteur_pdf_path: monteurPath } : prev))
       }
-      if (!monteurInternalOnly && monteurDeliveryMode === 'email_auto' && monteurPath && isOnline()) {
+      if (monteurDeliveryMode === 'email_auto' && monteurPath && isOnline()) {
         const cust = customers.find((c) => c.id === order.customer_id)
         const bv = order.bv_id ? allBvs.find((b) => b.id === order.bv_id) : undefined
         const recipient = getMonteurReportRecipientEmail(cust, bv)
@@ -527,10 +534,6 @@ const Auftragsdetail = () => {
       return
     }
     const cust = customers.find((c) => c.id === order.customer_id)
-    if (cust?.monteur_report_internal_only === true) {
-      showError('Für diesen Kunden ist kein E-Mail-Versand des Monteursberichts vorgesehen (nur intern ablegen).')
-      return
-    }
     const bv = order.bv_id ? allBvs.find((b) => b.id === order.bv_id) : undefined
     const recipient = getMonteurReportRecipientEmail(cust, bv)
     if (!recipient) {
@@ -615,7 +618,7 @@ const Auftragsdetail = () => {
     portalEligible
 
   const monteurZustellungHinweis = monteurInternalOnly
-    ? 'Für diesen Kunden ist „Nur intern ablegen“ aktiv: PDF wird am Auftrag gespeichert (Tür/Tor), kein E-Mail- und kein Portal-Versand – unabhängig von den Firmen-Einstellungen.'
+    ? 'Für diesen Kunden ist der Monteursbericht ins Kundenportal in den Stammdaten aus; das PDF wird am Auftrag gespeichert. E-Mail-Versand richtet sich nach den Firmen-Einstellungen und der Adresse für Wartungsprotokoll (Kunde/BV).'
     : monteurDeliveryMode === 'email_auto'
       ? 'Nach dem Abschließen wird der Monteursbericht automatisch per E-Mail mit PDF-Anhang versendet (Adresse aus Kunde/BV „Wartungsprotokoll“, BV hat Vorrang), sofern online und eine Adresse hinterlegt ist.'
       : monteurDeliveryMode === 'email_manual'
@@ -882,11 +885,11 @@ const Auftragsdetail = () => {
           </p>
         )}
 
-        <div className="flex flex-nowrap gap-2 pt-2 overflow-x-auto pb-1 items-center">
+        <div className="flex flex-wrap gap-2 pt-2 pb-1 items-center">
           <button
             type="submit"
             disabled={isSaving}
-            className="px-4 py-2 shrink-0 rounded-lg font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
+            className="px-4 py-2 min-h-[40px] shrink-0 rounded-lg font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
           >
             {isSaving ? 'Speichern…' : 'Bericht speichern'}
           </button>
@@ -895,7 +898,7 @@ const Auftragsdetail = () => {
             disabled={isSaving}
             onClick={handlePark}
             title="Bericht zwischenspeichern, Auftrag bleibt in Bearbeitung"
-            className="px-4 py-2 shrink-0 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+            className="px-4 py-2 min-h-[40px] shrink-0 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
           >
             Parken
           </button>
@@ -904,7 +907,7 @@ const Auftragsdetail = () => {
               type="button"
               disabled={isSaving}
               onClick={handleOpenCompleteDialog}
-              className="px-4 py-2 shrink-0 rounded-lg font-medium border border-emerald-600 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50"
+              className="px-4 py-2 min-h-[40px] shrink-0 rounded-lg font-medium border border-emerald-600 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50"
             >
               Auftrag abschließen
             </button>
@@ -916,7 +919,7 @@ const Auftragsdetail = () => {
                 type="button"
                 disabled={monteurEmailSending}
                 onClick={handleSendMonteurReportEmail}
-                className="px-4 py-2 shrink-0 rounded-lg font-medium bg-slate-700 text-white hover:bg-slate-600 dark:bg-slate-600 dark:hover:bg-slate-500 disabled:opacity-50"
+                className="px-4 py-2 min-h-[40px] shrink-0 rounded-lg font-medium bg-slate-700 text-white hover:bg-slate-600 dark:bg-slate-600 dark:hover:bg-slate-500 disabled:opacity-50"
                 aria-label="Monteursbericht per E-Mail an den Kunden senden"
               >
                 {monteurEmailSending ? 'Senden…' : 'E-Mail an Kunden'}
@@ -926,7 +929,7 @@ const Auftragsdetail = () => {
             <button
               type="button"
               onClick={handlePdfOnly}
-              className="px-4 py-2 shrink-0 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+              className="px-4 py-2 min-h-[40px] shrink-0 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
             >
               PDF erzeugen
             </button>

@@ -13,6 +13,7 @@ export const CUSTOMER_COLUMNS =
     'contact_phone',
     'maintenance_report_email',
     'maintenance_report_email_address',
+    'maintenance_report_portal',
     'monteur_report_internal_only',
     'monteur_report_portal',
     'demo_user_id',
@@ -37,6 +38,10 @@ export const BV_COLUMNS =
     'contact_phone',
     'maintenance_report_email',
     'maintenance_report_email_address',
+    'uses_customer_report_delivery',
+    'maintenance_report_portal',
+    'monteur_report_portal',
+    'monteur_report_internal_only',
     'created_at',
     'updated_at',
   ].join(', ')

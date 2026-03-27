@@ -706,6 +706,9 @@ const Wartungsprotokolle = () => {
                   />
                   Wartung nach Herstellerangaben durchgeführt
                 </label>
+                <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 -mt-1">
+                  Hinweis (J6): Orientierung an gängiger Praxis; keine zugesicherte DIN-/Norm-Konformität durch die App.
+                </p>
                 {object?.has_hold_open && (
                   <label className="flex items-center gap-2">
                     <input

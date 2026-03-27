@@ -25,6 +25,7 @@ import {
   fetchMaintenanceContractsByBv,
   deleteMaintenanceContract,
   subscribeToDataChange,
+  fetchPortalUsers,
 } from './lib/dataService'
 import { useComponentSettings } from './ComponentSettingsContext'
 import { useLicense } from './LicenseContext'
@@ -78,8 +79,9 @@ const INITIAL_CUSTOMER_FORM: CustomerFormData = {
   contact_phone: '',
   maintenance_report_email: true,
   maintenance_report_email_address: '',
-  monteur_report_internal_only: false,
-  monteur_report_portal: true,
+  maintenance_report_portal: false,
+  monteur_report_internal_only: true,
+  monteur_report_portal: false,
 }
 
 const INITIAL_BV_FORM: BVFormData = {
@@ -95,6 +97,10 @@ const INITIAL_BV_FORM: BVFormData = {
   contact_phone: '',
   maintenance_report_email: true,
   maintenance_report_email_address: '',
+  uses_customer_report_delivery: true,
+  maintenance_report_portal: false,
+  monteur_report_portal: false,
+  monteur_report_internal_only: true,
   copy_from_customer: false,
 }
 
@@ -137,6 +143,17 @@ const Kunden = () => {
   const [formData, setFormData] = useState<CustomerFormData>(INITIAL_CUSTOMER_FORM)
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [portalUserCountForForm, setPortalUserCountForForm] = useState(0)
+  const showPortalDeliveryToggles =
+    Boolean(license && hasFeature(license, 'kundenportal')) &&
+    portalUserCountForForm > 0 &&
+    showMonteurCustomerZustellung
+
+  const [portalUserCountForBvForm, setPortalUserCountForBvForm] = useState(0)
+  const showBvPortalDeliveryToggles =
+    Boolean(license && hasFeature(license, 'kundenportal')) &&
+    portalUserCountForBvForm > 0 &&
+    showMonteurCustomerZustellung
 
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null)
   const [expandedBvs, setExpandedBvs] = useState<BV[]>([])
@@ -176,8 +193,17 @@ const Kunden = () => {
     open: boolean
     title: string
     message: string
+    confirmLabel: string
+    variant: 'danger' | 'default'
     onConfirm: () => void
-  }>({ open: false, title: '', message: '', onConfirm: () => {} })
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    confirmLabel: 'Bestätigen',
+    variant: 'default',
+    onConfirm: () => {},
+  })
 
   const [duplicateObjectDialog, setDuplicateObjectDialog] = useState<{
     open: boolean
@@ -240,6 +266,38 @@ const Kunden = () => {
   useEffect(() => {
     loadCustomers()
   }, [loadCustomers])
+
+  useEffect(() => {
+    if (!showForm) {
+      setPortalUserCountForForm(0)
+      return
+    }
+    if (!editingId) {
+      setPortalUserCountForForm(0)
+      return
+    }
+    let cancelled = false
+    void fetchPortalUsers(editingId).then((users) => {
+      if (!cancelled) setPortalUserCountForForm(users.length)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showForm, editingId])
+
+  useEffect(() => {
+    if (!showBvForm || !expandedCustomerId) {
+      setPortalUserCountForBvForm(0)
+      return
+    }
+    let cancelled = false
+    void fetchPortalUsers(expandedCustomerId).then((users) => {
+      if (!cancelled) setPortalUserCountForBvForm(users.length)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [showBvForm, expandedCustomerId])
 
   useEffect(() => {
     return subscribeToDataChange(loadCustomers)
@@ -511,8 +569,15 @@ const Kunden = () => {
       maintenance_report_email: customer.maintenance_report_email ?? true,
       maintenance_report_email_address:
         customer.maintenance_report_email_address ?? '',
-      monteur_report_internal_only: customer.monteur_report_internal_only ?? false,
-      monteur_report_portal: customer.monteur_report_portal !== false,
+      maintenance_report_portal: customer.maintenance_report_portal !== false,
+      ...(() => {
+        const monteurPortal =
+          customer.monteur_report_internal_only !== true && customer.monteur_report_portal !== false
+        return {
+          monteur_report_portal: monteurPortal,
+          monteur_report_internal_only: !monteurPortal,
+        }
+      })(),
     })
     setEditingId(customer.id)
     setFormError(null)
@@ -526,13 +591,19 @@ const Kunden = () => {
   }
 
   const handleFormChange = (field: keyof CustomerFormData, value: string | boolean) => {
-    setFormData((prev) => {
-      const next = { ...prev, [field]: value }
-      if (field === 'monteur_report_internal_only' && value === true) {
-        next.monteur_report_portal = false
-      }
-      return next
-    })
+    setFormData((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleMonteurPortalToggle = (allowPortal: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      monteur_report_internal_only: !allowPortal,
+      monteur_report_portal: allowPortal,
+    }))
+  }
+
+  const handleMaintenanceReportPortalToggle = (allowPortal: boolean) => {
+    setFormData((prev) => ({ ...prev, maintenance_report_portal: allowPortal }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -558,8 +629,9 @@ const Kunden = () => {
       maintenance_report_email: formData.maintenance_report_email,
       maintenance_report_email_address:
         formData.maintenance_report_email_address.trim() || null,
-      monteur_report_internal_only: formData.monteur_report_internal_only,
-      monteur_report_portal: formData.monteur_report_internal_only ? false : formData.monteur_report_portal,
+      maintenance_report_portal: formData.maintenance_report_portal,
+      monteur_report_internal_only: !formData.monteur_report_portal,
+      monteur_report_portal: formData.monteur_report_portal,
     }
 
     if (editingId) {
@@ -647,6 +719,8 @@ const Kunden = () => {
   }
 
   const handleOpenBvEdit = (bv: BV) => {
+    const monteurPortal =
+      bv.monteur_report_internal_only !== true && bv.monteur_report_portal !== false
     setBvFormData({
       name: bv.name,
       street: bv.street ?? '',
@@ -661,6 +735,10 @@ const Kunden = () => {
       maintenance_report_email: bv.maintenance_report_email ?? true,
       maintenance_report_email_address:
         bv.maintenance_report_email_address ?? '',
+      uses_customer_report_delivery: bv.uses_customer_report_delivery !== false,
+      maintenance_report_portal: bv.maintenance_report_portal !== false,
+      monteur_report_portal: monteurPortal,
+      monteur_report_internal_only: !monteurPortal,
       copy_from_customer: false,
     })
     setBvEditingId(bv.id)
@@ -681,6 +759,8 @@ const Kunden = () => {
   const handleCopyFromCustomer = () => {
     const customer = customers.find((c) => c.id === expandedCustomerId)
     if (!customer) return
+    const monteurPortal =
+      customer.monteur_report_internal_only !== true && customer.monteur_report_portal !== false
     setBvFormData((prev) => ({
       ...prev,
       street: customer.street ?? '',
@@ -695,7 +775,27 @@ const Kunden = () => {
       maintenance_report_email: customer.maintenance_report_email ?? true,
       maintenance_report_email_address:
         customer.maintenance_report_email_address ?? '',
+      uses_customer_report_delivery: true,
+      maintenance_report_portal: customer.maintenance_report_portal !== false,
+      monteur_report_portal: monteurPortal,
+      monteur_report_internal_only: !monteurPortal,
     }))
+  }
+
+  const handleBvUsesCustomerDeliveryToggle = (likeCustomer: boolean) => {
+    setBvFormData((prev) => ({ ...prev, uses_customer_report_delivery: likeCustomer }))
+  }
+
+  const handleBvMonteurPortalToggle = (allowPortal: boolean) => {
+    setBvFormData((prev) => ({
+      ...prev,
+      monteur_report_internal_only: !allowPortal,
+      monteur_report_portal: allowPortal,
+    }))
+  }
+
+  const handleBvMaintenanceReportPortalToggle = (allowPortal: boolean) => {
+    setBvFormData((prev) => ({ ...prev, maintenance_report_portal: allowPortal }))
   }
 
   const handleBvSubmit = async (e: React.FormEvent) => {
@@ -740,6 +840,10 @@ const Kunden = () => {
       maintenance_report_email: data.maintenance_report_email,
       maintenance_report_email_address:
         data.maintenance_report_email_address.trim() || null,
+      uses_customer_report_delivery: data.uses_customer_report_delivery,
+      maintenance_report_portal: data.maintenance_report_portal,
+      monteur_report_internal_only: !data.monteur_report_portal,
+      monteur_report_portal: data.monteur_report_portal,
     }
 
     if (bvEditingId) {
@@ -806,6 +910,10 @@ const Kunden = () => {
   }
 
   const handleOpenDuplicateObjectDialog = (obj: Obj) => {
+    if (!isOnline()) {
+      showError('Objektkopie ist nur bei Internetverbindung möglich.')
+      return
+    }
     setDuplicateObjectDialog({
       open: true,
       source: obj,
@@ -1160,6 +1268,8 @@ const Kunden = () => {
                         open: true,
                         title: 'Kunde wiederherstellen',
                         message: `„${c.name}“ und alle zugehörigen Objekte/BV und Türen/Tore wieder in den Stammdaten anzeigen?`,
+                        confirmLabel: 'Wiederherstellen',
+                        variant: 'default',
                         onConfirm: () => {
                           setConfirmDialog((prev) => ({ ...prev, open: false }))
                           void handleUnarchiveCustomer(c.id)
@@ -1207,16 +1317,16 @@ const Kunden = () => {
                 key={customer.id}
                 className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden"
               >
-                <button
-                  type="button"
-                  onClick={() => handleToggleBvs(customer.id)}
-                  className="w-full p-4 flex items-center justify-between gap-2 text-left text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
-                  aria-expanded={isExpanded}
-                  aria-label={`Objekt/BV für ${customer.name} ${isExpanded ? 'einklappen' : 'ausklappen'}`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
+                <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleBvs(customer.id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left text-slate-800 transition-colors hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-700/50"
+                    aria-expanded={isExpanded}
+                    aria-label={`Objekt/BV für ${customer.name} ${isExpanded ? 'einklappen' : 'ausklappen'}`}
+                  >
                     <svg
-                      className={`w-5 h-5 text-slate-400 shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                      className={`h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -1226,7 +1336,7 @@ const Kunden = () => {
                     <div className="min-w-0">
                       <p className="font-medium text-slate-800 dark:text-slate-100">
                         {customer.name}
-                        <span className="ml-2 text-slate-400 dark:text-slate-500 font-normal text-sm">
+                        <span className="ml-2 text-sm font-normal text-slate-400 dark:text-slate-500">
                           ({bvCountByCustomerId.get(customer.id) ?? 0} BV{bvCountByCustomerId.get(customer.id) !== 1 ? 's' : ''})
                         </span>
                       </p>
@@ -1241,61 +1351,49 @@ const Kunden = () => {
                         </p>
                       )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-{canEdit && (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => { e.stopPropagation(); handleOpenEdit(customer) }}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); handleOpenEdit(customer) } }}
-                          className="px-3 py-2 text-sm min-h-[36px] inline-flex items-center text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/40"
-                          aria-label={`${customer.name} bearbeiten`}
-                        >
-                          Bearbeiten
-                        </span>
+                  </button>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEdit(customer)}
+                        className="inline-flex min-h-[36px] items-center rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/40"
+                        aria-label={`${customer.name} bearbeiten`}
+                      >
+                        Bearbeiten
+                      </button>
                     )}
                     {canDelete && (
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setConfirmDialog({
-                              open: true,
-                              title: 'Kunde archivieren',
-                              message:
-                                'Kunden inkl. aller Objekte/BV und Türen/Tore archivieren? Stammdaten verschwinden aus den Listen; Aufträge und Wartungsprotokolle bleiben erhalten. Nur online möglich.',
-                              onConfirm: () => {
-                                setConfirmDialog((c) => ({ ...c, open: false }))
-                                handleArchiveCustomer(customer.id)
-                              },
-                            })
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.stopPropagation()
-                              e.preventDefault()
-                              setConfirmDialog({
-                                open: true,
-                                title: 'Kunde archivieren',
-                                message:
-                                  'Kunden inkl. aller Objekte/BV und Türen/Tore archivieren? Stammdaten verschwinden aus den Listen; Aufträge und Wartungsprotokolle bleiben erhalten. Nur online möglich.',
-                                onConfirm: () => {
-                                  setConfirmDialog((c) => ({ ...c, open: false }))
-                                  handleArchiveCustomer(customer.id)
-                                },
-                              })
-                            }
-                          }}
-                          className="px-3 py-2 text-sm min-h-[36px] inline-flex items-center text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
-                          aria-label={`${customer.name} archivieren`}
-                        >
-                          Archivieren
-                        </span>
+                      <button
+                        type="button"
+                        disabled={!isOnline()}
+                        title={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
+                        onClick={() => {
+                          if (!isOnline()) {
+                            showError('Archivieren ist nur bei Internetverbindung möglich.')
+                            return
+                          }
+                          setConfirmDialog({
+                            open: true,
+                            title: 'Kunde archivieren',
+                            message:
+                              'Kunden inkl. aller Objekte/BV und Türen/Tore archivieren? Stammdaten verschwinden aus den Listen; Aufträge und Wartungsprotokolle bleiben erhalten.',
+                            confirmLabel: 'Archivieren',
+                            variant: 'default',
+                            onConfirm: () => {
+                              setConfirmDialog((c) => ({ ...c, open: false }))
+                              handleArchiveCustomer(customer.id)
+                            },
+                          })
+                        }}
+                        className="inline-flex min-h-[36px] items-center rounded-lg border border-amber-200 px-3 py-2 text-sm text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/30 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`${customer.name} archivieren`}
+                      >
+                        Archiv
+                      </button>
                     )}
                   </div>
-                </button>
+                </div>
 
                 {isExpanded && (
                   <div className="border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 px-4 py-3">
@@ -1388,7 +1486,9 @@ const Kunden = () => {
                                       <button
                                         type="button"
                                         onClick={() => handleOpenDuplicateObjectDialog(obj)}
-                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                        disabled={!isOnline()}
+                                        title={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
+                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                                         aria-label={`${getObjectDisplayName(obj)} kopieren`}
                                       >
                                         Kopie
@@ -1471,6 +1571,8 @@ const Kunden = () => {
                                             open: true,
                                             title: 'Wartungsvertrag löschen',
                                             message: `Vertrag ${c.contract_number} wirklich löschen?`,
+                                            confirmLabel: 'Löschen',
+                                            variant: 'danger',
                                             onConfirm: async () => {
                                               setConfirmDialog((d) => ({ ...d, open: false }))
                                               await deleteMaintenanceContract(c.id)
@@ -1577,7 +1679,9 @@ const Kunden = () => {
                                         <button
                                           type="button"
                                           onClick={() => handleOpenDuplicateObjectDialog(obj)}
-                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                          disabled={!isOnline()}
+                                          title={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
+                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                                           aria-label={`${getObjectDisplayName(obj)} kopieren`}
                                         >
                                           Kopie
@@ -1622,16 +1726,16 @@ const Kunden = () => {
                                 key={bv.id}
                                 className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden"
                               >
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleObjects(bv.id)}
-                                  className="w-full p-3 flex items-center justify-between gap-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer"
-                                  aria-expanded={isBvExpanded}
-                                  aria-label={`Türen/Tore für ${bv.name} ${isBvExpanded ? 'einklappen' : 'ausklappen'}`}
-                                >
-                                  <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleObjects(bv.id)}
+                                    className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                    aria-expanded={isBvExpanded}
+                                    aria-label={`Türen/Tore für ${bv.name} ${isBvExpanded ? 'einklappen' : 'ausklappen'}`}
+                                  >
                                     <svg
-                                      className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-200 ${isBvExpanded ? 'rotate-180' : ''}`}
+                                      className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${isBvExpanded ? 'rotate-180' : ''}`}
                                       fill="none"
                                       stroke="currentColor"
                                       viewBox="0 0 24 24"
@@ -1639,7 +1743,7 @@ const Kunden = () => {
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                     </svg>
                                     <div className="min-w-0">
-                                      <p className="font-medium text-slate-700 dark:text-slate-200 text-sm">{bv.name}</p>
+                                      <p className="text-sm font-medium text-slate-700 dark:text-slate-200">{bv.name}</p>
                                       {(bv.street || bv.house_number || bv.postal_code || bv.city) && (
                                         <p className="text-xs text-slate-500">
                                           {[
@@ -1651,61 +1755,49 @@ const Kunden = () => {
                                         </p>
                                       )}
                                     </div>
-                                  </div>
-                                  <div className="flex items-center gap-1.5 shrink-0">
+                                  </button>
+                                  <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                                     {canEdit && (
-                                        <span
-                                          role="button"
-                                          tabIndex={0}
-                                          onClick={(e) => { e.stopPropagation(); handleOpenBvEdit(bv) }}
-                                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); handleOpenBvEdit(bv) } }}
-                                          className="px-3 py-1.5 text-sm min-h-[32px] inline-flex items-center text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/40"
-                                          aria-label={`${bv.name} bearbeiten`}
-                                        >
-                                          Bearbeiten
-                                        </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenBvEdit(bv)}
+                                        className="inline-flex min-h-[32px] items-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/40"
+                                        aria-label={`${bv.name} bearbeiten`}
+                                      >
+                                        Bearbeiten
+                                      </button>
                                     )}
                                     {canDelete && (
-                                        <span
-                                          role="button"
-                                          tabIndex={0}
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            setConfirmDialog({
-                                              open: true,
-                                              title: 'Objekt/BV archivieren',
-                                              message:
-                                                'Objekt/BV und alle zugehörigen Türen/Tore archivieren? Listen werden bereinigt; Historie bleibt. Nur online möglich.',
-                                              onConfirm: () => {
-                                                setConfirmDialog((c) => ({ ...c, open: false }))
-                                                handleArchiveBv(bv.id)
-                                              },
-                                            })
-                                          }}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === ' ') {
-                                              e.stopPropagation()
-                                              e.preventDefault()
-                                              setConfirmDialog({
-                                                open: true,
-                                                title: 'Objekt/BV archivieren',
-                                                message:
-                                                  'Objekt/BV und alle zugehörigen Türen/Tore archivieren? Listen werden bereinigt; Historie bleibt. Nur online möglich.',
-                                                onConfirm: () => {
-                                                  setConfirmDialog((c) => ({ ...c, open: false }))
-                                                  handleArchiveBv(bv.id)
-                                                },
-                                              })
-                                            }
-                                          }}
-                                          className="px-3 py-1.5 text-sm min-h-[32px] inline-flex items-center text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30"
-                                          aria-label={`${bv.name} archivieren`}
-                                        >
-                                          Archivieren
-                                        </span>
+                                      <button
+                                        type="button"
+                                        disabled={!isOnline()}
+                                        title={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
+                                        onClick={() => {
+                                          if (!isOnline()) {
+                                            showError('Archivieren ist nur bei Internetverbindung möglich.')
+                                            return
+                                          }
+                                          setConfirmDialog({
+                                            open: true,
+                                            title: 'Objekt/BV archivieren',
+                                            message:
+                                              'Objekt/BV und alle zugehörigen Türen/Tore archivieren? Listen werden bereinigt; Historie bleibt.',
+                                            confirmLabel: 'Archivieren',
+                                            variant: 'default',
+                                            onConfirm: () => {
+                                              setConfirmDialog((c) => ({ ...c, open: false }))
+                                              handleArchiveBv(bv.id)
+                                            },
+                                          })
+                                        }}
+                                        className="inline-flex min-h-[32px] items-center rounded-lg border border-amber-200 px-3 py-1.5 text-sm text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/30 disabled:cursor-not-allowed disabled:opacity-50"
+                                        aria-label={`${bv.name} archivieren`}
+                                      >
+                                        Archiv
+                                      </button>
                                     )}
                                   </div>
-                                </button>
+                                </div>
 
                                 {isBvExpanded && (
                                   <div className="border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 px-3 py-2">
@@ -1812,7 +1904,9 @@ const Kunden = () => {
                                                       e.stopPropagation()
                                                       handleOpenDuplicateObjectDialog(obj)
                                                     }}
-                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                                    disabled={!isOnline()}
+                                                    title={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
+                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     aria-label={`${getObjectDisplayName(obj)} kopieren`}
                                                   >
                                                     Kopie
@@ -1903,6 +1997,8 @@ const Kunden = () => {
                                                         open: true,
                                                         title: 'Wartungsvertrag löschen',
                                                         message: `Vertrag ${c.contract_number} wirklich löschen?`,
+                                                        confirmLabel: 'Löschen',
+                                                        variant: 'danger',
                                                         onConfirm: async () => {
                                                           setConfirmDialog((d) => ({ ...d, open: false }))
                                                           await deleteMaintenanceContract(c.id)
@@ -2077,8 +2173,8 @@ const Kunden = () => {
         open={confirmDialog.open}
         title={confirmDialog.title}
         message={confirmDialog.message}
-        confirmLabel="Löschen"
-        variant="danger"
+        confirmLabel={confirmDialog.confirmLabel}
+        variant={confirmDialog.variant}
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog((c) => ({ ...c, open: false }))}
       />
@@ -2234,18 +2330,42 @@ const Kunden = () => {
                   </div>
                 </div>
               </div>
-              <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.maintenance_report_email}
-                    onChange={(e) => handleFormChange('maintenance_report_email', e.target.checked)}
-                    className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800"
-                  />
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Wartungsbericht per E-Mail
-                  </span>
-                </label>
+              <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p
+                    id="wartungs-email-kunde-label"
+                    className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
+                  >
+                    Wartungsbericht · E-Mail
+                  </p>
+                  <button
+                    type="button"
+                    role="switch"
+                    tabIndex={0}
+                    aria-checked={formData.maintenance_report_email}
+                    aria-labelledby="wartungs-email-kunde-label"
+                    onClick={() => handleFormChange('maintenance_report_email', !formData.maintenance_report_email)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        handleFormChange('maintenance_report_email', !formData.maintenance_report_email)
+                      }
+                    }}
+                    className={[
+                      'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
+                      formData.maintenance_report_email ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
+                    ].join(' ')}
+                  >
+                    <span
+                      className={[
+                        'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
+                        formData.maintenance_report_email ? 'translate-x-5' : 'translate-x-0.5',
+                      ].join(' ')}
+                      aria-hidden
+                    />
+                  </button>
+                </div>
                 {formData.maintenance_report_email && (
                   <input
                     type="email"
@@ -2256,46 +2376,84 @@ const Kunden = () => {
                   />
                 )}
               </div>
-              {showMonteurCustomerZustellung && (
-                <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-3">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Monteursbericht (Auftrag)</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Steuert die Zustellung zusätzlich zu den Firmen-Einstellungen (E-Mail automatisch/manuell,
-                    Kundenportal). Das PDF wird am Auftrag immer gespeichert.
+              {showPortalDeliveryToggles && (
+                <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-4">
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                    Für diesen Kunden bestehen Portal-Zugänge. Die Schalter unten steuern, ob Wartungs- und
+                    Monteursberichte zusätzlich im Kundenportal sichtbar werden.
                   </p>
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.monteur_report_internal_only}
-                      onChange={(e) => handleFormChange('monteur_report_internal_only', e.target.checked)}
-                      className="mt-0.5 rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800"
-                      aria-describedby="monteur-internal-hint"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">
-                      Nur intern ablegen (PDF am Auftrag/Tür-Tor)
-                      <span id="monteur-internal-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Kein automatischer oder manueller E-Mail-Versand des Monteursberichts an den Kunden, kein
-                        Kundenportal.
-                      </span>
-                    </span>
-                  </label>
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.monteur_report_portal}
-                      disabled={formData.monteur_report_internal_only}
-                      onChange={(e) => handleFormChange('monteur_report_portal', e.target.checked)}
-                      className="mt-0.5 rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800 disabled:opacity-50"
-                      aria-describedby="monteur-portal-hint"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">
-                      Im Kundenportal bereitstellen (wenn in den Firmen-Einstellungen vorgesehen)
-                      <span id="monteur-portal-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        Wenn die Firma „Kundenportal + Benachrichtigung“ nutzt und das Objekt portal-fähig ist, kann der
-                        Bericht ins Portal übernommen werden. Deaktiviert: nie Portal für diesen Kunden.
-                      </span>
-                    </span>
-                  </label>
+                  <div className="flex items-center justify-between gap-3">
+                    <p
+                      id="monteur-portal-kunde-label"
+                      className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
+                    >
+                      Monteursbericht · Portal
+                    </p>
+                    <button
+                      type="button"
+                      role="switch"
+                      tabIndex={0}
+                      aria-checked={formData.monteur_report_portal}
+                      aria-labelledby="monteur-portal-kunde-label"
+                      onClick={() => handleMonteurPortalToggle(!formData.monteur_report_portal)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          handleMonteurPortalToggle(!formData.monteur_report_portal)
+                        }
+                      }}
+                      className={[
+                        'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
+                        formData.monteur_report_portal ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
+                      ].join(' ')}
+                    >
+                      <span
+                        className={[
+                          'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
+                          formData.monteur_report_portal ? 'translate-x-5' : 'translate-x-0.5',
+                        ].join(' ')}
+                        aria-hidden
+                      />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <p
+                      id="wartungs-portal-kunde-label"
+                      className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
+                    >
+                      Wartungsbericht · Portal
+                    </p>
+                    <button
+                      type="button"
+                      role="switch"
+                      tabIndex={0}
+                      aria-checked={formData.monteur_report_portal}
+                      aria-labelledby="wartungs-portal-kunde-label"
+                      onClick={() =>
+                        handleMaintenanceReportPortalToggle(!formData.maintenance_report_portal)
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          handleMaintenanceReportPortalToggle(!formData.maintenance_report_portal)
+                        }
+                      }}
+                      className={[
+                        'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
+                        formData.maintenance_report_portal ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
+                      ].join(' ')}
+                    >
+                      <span
+                        className={[
+                          'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
+                          formData.maintenance_report_portal ? 'translate-x-5' : 'translate-x-0.5',
+                        ].join(' ')}
+                        aria-hidden
+                      />
+                    </button>
+                  </div>
                 </div>
               )}
               {formError && (
@@ -2471,6 +2629,127 @@ const Kunden = () => {
                   />
                 )}
               </div>
+              {showMonteurCustomerZustellung && (
+                <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p
+                      id="bv-zustellung-wie-kunde-label"
+                      className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
+                    >
+                      Zustellung wie Kundenstamm
+                    </p>
+                    <button
+                      type="button"
+                      role="switch"
+                      tabIndex={0}
+                      aria-checked={bvFormData.uses_customer_report_delivery}
+                      aria-labelledby="bv-zustellung-wie-kunde-label"
+                      onClick={() =>
+                        handleBvUsesCustomerDeliveryToggle(!bvFormData.uses_customer_report_delivery)
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          handleBvUsesCustomerDeliveryToggle(!bvFormData.uses_customer_report_delivery)
+                        }
+                      }}
+                      className={[
+                        'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
+                        bvFormData.uses_customer_report_delivery ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
+                      ].join(' ')}
+                    >
+                      <span
+                        className={[
+                          'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
+                          bvFormData.uses_customer_report_delivery ? 'translate-x-5' : 'translate-x-0.5',
+                        ].join(' ')}
+                        aria-hidden
+                      />
+                    </button>
+                  </div>
+                  {!bvFormData.uses_customer_report_delivery && showBvPortalDeliveryToggles && (
+                    <>
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                        Eigene Portal-Freigaben für dieses Objekt/BV (Kundenportal-Zugänge sind am Kunden
+                        hinterlegt).
+                      </p>
+                      <div className="flex items-center justify-between gap-3">
+                        <p
+                          id="bv-monteur-portal-label"
+                          className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
+                        >
+                          Monteursbericht · Portal
+                        </p>
+                        <button
+                          type="button"
+                          role="switch"
+                          tabIndex={0}
+                          aria-checked={bvFormData.monteur_report_portal}
+                          aria-labelledby="bv-monteur-portal-label"
+                          onClick={() => handleBvMonteurPortalToggle(!bvFormData.monteur_report_portal)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              handleBvMonteurPortalToggle(!bvFormData.monteur_report_portal)
+                            }
+                          }}
+                          className={[
+                            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+                            'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
+                            bvFormData.monteur_report_portal ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
+                          ].join(' ')}
+                        >
+                          <span
+                            className={[
+                              'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
+                              bvFormData.monteur_report_portal ? 'translate-x-5' : 'translate-x-0.5',
+                            ].join(' ')}
+                            aria-hidden
+                          />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <p
+                          id="bv-wartung-portal-label"
+                          className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
+                        >
+                          Wartungsbericht · Portal
+                        </p>
+                        <button
+                          type="button"
+                          role="switch"
+                          tabIndex={0}
+                          aria-checked={bvFormData.maintenance_report_portal}
+                          aria-labelledby="bv-wartung-portal-label"
+                          onClick={() =>
+                            handleBvMaintenanceReportPortalToggle(!bvFormData.maintenance_report_portal)
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              handleBvMaintenanceReportPortalToggle(!bvFormData.maintenance_report_portal)
+                            }
+                          }}
+                          className={[
+                            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+                            'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
+                            bvFormData.maintenance_report_portal ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
+                          ].join(' ')}
+                        >
+                          <span
+                            className={[
+                              'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
+                              bvFormData.maintenance_report_portal ? 'translate-x-5' : 'translate-x-0.5',
+                            ].join(' ')}
+                            aria-hidden
+                          />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
               {bvFormError && (
                 <div className="text-sm text-red-600 dark:text-red-400" role="alert">
                   <p>{bvFormError}</p>

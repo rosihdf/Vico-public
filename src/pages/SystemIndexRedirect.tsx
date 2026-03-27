@@ -14,6 +14,9 @@ const SystemIndexRedirect = () => {
   if (license && hasFeature(license, 'ladezeiten')) {
     return <Navigate to="/system/ladezeiten" replace />
   }
+  if (license && hasFeature(license, 'wartungsprotokolle')) {
+    return <Navigate to="/system/maengel" replace />
+  }
   return <Navigate to="/" replace />
 }
 

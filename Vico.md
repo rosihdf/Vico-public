@@ -338,11 +338,11 @@ Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** =
 
 | Thema | Stand |
 |-------|--------|
-| **J1 – Cron** | Edge Function `send-maintenance-reminder-digest` regelmässig aufrufen (z. B. Supabase Scheduler, täglich 07:00). Auth: `Authorization: Bearer <SERVICE_ROLE_KEY>` oder Header `x-cron-secret` = Secret `MAINTENANCE_DIGEST_CRON_SECRET`. |
-| **J1 – Secrets** | `RESEND_API_KEY`, `RESEND_FROM`, `APP_URL` (Link „Zur App“ in der E-Mail), optional `MAINTENANCE_DIGEST_CRON_SECRET`. |
+| **J1 – Cron** | Edge Function `send-maintenance-reminder-digest` mindestens **stündlich** aufrufen; Versand nur in der in `monteur_report_settings` konfigurierten **lokalen Stunde** (Zeitzone siehe Einstellungen Admin). Auth: `Authorization: Bearer <SERVICE_ROLE_KEY>` oder Header `x-cron-secret` = `MAINTENANCE_DIGEST_CRON_SECRET`. |
+| **J1 – Secrets** | `RESEND_API_KEY`, `RESEND_FROM`, `APP_URL` (Fallback-Link in der E-Mail; optional überschreibbar durch `app_public_url` in der DB), optional `MAINTENANCE_DIGEST_CRON_SECRET`. |
 | **J1 – DSGVO** | Checkbox in **Einstellungen** = Einwilligung; Verantwortlicher/Kontakt über bestehende Stammdaten/Lizenz-API; Text bei Bedarf im Kunden-Onboarding ergänzen. |
 | **I2 – Hardware** | QR-Etikett: Preset + Maße in **Einstellungen** (`etikettPreset.ts`); Bluetooth-Druck weiterhin **natives Capacitor-Plugin** – Pairing/MAC bei konkretem Drucker (v. a. **Bixolon**, **§7.6.4**). |
-| **L4 – Pixel-Limit** | **§9.4a** nennt 512 px Breite; **Implementierung** `uploadTenantLogo.ts`: max. **Kante 2048 px** (WebP). Bei Bedarf angleichen oder Tabelle in §9.4a aktualisieren. |
+| **L4 – Pixel-Limit** | **§9.4a** und **Implementierung** `uploadTenantLogo.ts`: max. **Kante 2048 px** (WebP), konsistent dokumentiert. |
 
 **GitHub:** Issues aus dieser Liste anlegen: **`docs/GitHub-Roadmap-7.2.md`** (inkl. **T1** · `docs/github-issues/T1.body.md`, **CF1** · `docs/github-issues/CF1.body.md`) · Skript **`scripts/gh-roadmap-issues.sh`** (nach `gh auth login`).
 
@@ -682,7 +682,7 @@ Vico/
 | – | **Auslieferungsformat** | **WebP** nach Optimierung (siehe unten); Konvertierung im Browser vor Upload. |
 | – | **Roh-Upload max.** | **2 MB** |
 | – | **Zielgröße nach Optimierung** | **150–300 KB** |
-| – | **Max. Breite (Pixel)** | **512 px** (Höhe proportional, `object-contain`) |
+| – | **Max. Kante (Pixel)** | **2048 px** (Höhe/Breite proportional, `object-contain`) |
 | – | **Live-Vorschau** im Lizenzportal | **Ja** (z. B. Header- und Login-ähnliche Rahmen) |
 | – | **Logo entfernen** | **Ja** – zurück zu Platzhalter, Storage-Objekt löschen |
 | – | **Rechtstext / Nutzungshinweis** | **Nein** – kein zusätzlicher Pflicht-Hinweis im UI |
@@ -704,7 +704,7 @@ Vico/
 |-------|------------|
 | **Speicherort** | **Supabase Storage** im **Lizenzportal-Projekt**, Bucket **`tenant_logos`**, Pfad **`{tenant_id}/logo.webp`** (überschreiben bei neuem Upload). |
 | **Metadaten** | `tenants.logo_url` = öffentliche URL; manuelle URL-Eingabe optional **parallel** oder nach Upload nur noch Anzeige (UI-Entscheidung bei Implementierung). |
-| **Upload** | Client: max. **2 MB** Roh, **PNG/JPEG** → Skalierung max. **512 px** Breite → Kompression auf **150–300 KB** Ziel → **WebP** → Upload. |
+| **Upload** | Client: max. **2 MB** Roh, **PNG/JPEG** → Skalierung max. **2048 px** lange Kante → Kompression auf **150–300 KB** Ziel → **WebP** → Upload. |
 | **Server** | Optional: Storage-Policy + MIME-Check; Roh-Upload nur `image/png`, `image/jpeg`. |
 
 #### Platzhalter

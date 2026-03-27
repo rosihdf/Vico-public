@@ -116,8 +116,9 @@ const Import = () => {
             contact_phone: null,
             maintenance_report_email: true,
             maintenance_report_email_address: null,
-            monteur_report_internal_only: false,
-            monteur_report_portal: true,
+            maintenance_report_portal: false,
+            monteur_report_internal_only: true,
+            monteur_report_portal: false,
           }
           const { data: newCustomer, error } = await createCustomer(payload)
           if (error) {
@@ -156,6 +157,10 @@ const Import = () => {
               contact_phone: null,
               maintenance_report_email: true,
               maintenance_report_email_address: null,
+              uses_customer_report_delivery: true,
+              maintenance_report_portal: false,
+              monteur_report_portal: false,
+              monteur_report_internal_only: true,
             })
             if (error) {
               errors.push({ row: rowNum, message: getSupabaseErrorMessage(error) })

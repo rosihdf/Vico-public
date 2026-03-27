@@ -72,6 +72,7 @@ alter table public.profiles add constraint profiles_theme_preference_check
 alter table public.profiles add column if not exists maintenance_reminder_email_enabled boolean default false not null;
 alter table public.profiles add column if not exists maintenance_reminder_email_frequency text default 'weekly' not null;
 alter table public.profiles add column if not exists maintenance_reminder_email_last_sent_at timestamptz default null;
+alter table public.profiles add column if not exists maintenance_reminder_email_consent_at timestamptz default null;
 do $$
 begin
   alter table public.profiles drop constraint if exists profiles_maint_email_freq_check;
@@ -211,6 +212,7 @@ create table if not exists public.customers (
 );
 alter table public.customers add column if not exists monteur_report_internal_only boolean not null default false;
 alter table public.customers add column if not exists monteur_report_portal boolean not null default true;
+alter table public.customers add column if not exists maintenance_report_portal boolean not null default true;
 alter table public.customers add column if not exists archived_at timestamptz;
 alter table public.customers add column if not exists house_number text;
 alter table public.customers add column if not exists demo_user_id uuid references auth.users(id) on delete cascade;
@@ -332,6 +334,10 @@ create table if not exists public.bvs (
 );
 alter table public.bvs add column if not exists house_number text;
 alter table public.bvs add column if not exists archived_at timestamptz;
+alter table public.bvs add column if not exists uses_customer_report_delivery boolean not null default true;
+alter table public.bvs add column if not exists maintenance_report_portal boolean not null default true;
+alter table public.bvs add column if not exists monteur_report_portal boolean not null default true;
+alter table public.bvs add column if not exists monteur_report_internal_only boolean not null default false;
 alter table public.bvs enable row level security;
 
 do $$ declare r record; begin
@@ -1185,9 +1191,12 @@ create policy "Authenticated users can manage component_settings" on public.comp
 create table if not exists public.monteur_report_settings (
   id int primary key default 1 check (id = 1),
   customer_delivery_mode text not null default 'none'
-    check (customer_delivery_mode in ('none', 'email_auto', 'email_manual', 'portal_notify')),
+  check (customer_delivery_mode in ('none', 'email_auto', 'email_manual', 'portal_notify')),
   updated_at timestamptz default now()
 );
+alter table public.monteur_report_settings add column if not exists maintenance_digest_local_time text default '07:00';
+alter table public.monteur_report_settings add column if not exists maintenance_digest_timezone text default 'Europe/Berlin';
+alter table public.monteur_report_settings add column if not exists app_public_url text default null;
 insert into public.monteur_report_settings (id, customer_delivery_mode)
 values (1, 'none')
 on conflict (id) do nothing;
@@ -1215,12 +1224,19 @@ as $$
     from public.objects o
     left join public.bvs b on b.id = o.bv_id
     cross join lateral (select coalesce(b.customer_id, o.customer_id) as cid) x
+    join public.customers c on c.id = x.cid
     join public.customer_portal_users cpu
       on cpu.customer_id = x.cid and cpu.user_id is not null
     where o.id = p_object_id
       and o.archived_at is null
       and x.cid is not null
       and public.portal_object_visible_to_user(cpu.user_id, x.cid, o.bv_id)
+      and case
+        when b.id is not null and coalesce(b.uses_customer_report_delivery, true) = false then
+          (coalesce(b.monteur_report_portal, true) = true and coalesce(b.monteur_report_internal_only, false) = false)
+        else
+          (coalesce(c.monteur_report_portal, true) = true and coalesce(c.monteur_report_internal_only, false) = false)
+      end
   );
 $$;
 grant execute on function public.monteur_portal_delivery_eligible(uuid) to authenticated;

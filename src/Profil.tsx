@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useTheme } from './ThemeContext'
 import type { Theme } from './ThemeContext'
 import { LoadingSpinner } from './components/LoadingSpinner'
+import MfaSettingsHint from './components/MfaSettingsHint'
 import { fetchMyProfile, updateProfileName, getProfileDisplayName, updateThemePreference } from './lib/userService'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import type { Profile } from './lib/userService'
@@ -188,20 +189,8 @@ const Profil = () => {
 
           {userRole !== 'kunde' ? (
             <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600">
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
-                Zwei-Faktor-Authentifizierung
-              </h3>
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                2FA ist <strong className="font-medium text-slate-700 dark:text-slate-300">optional</strong> und
-                standardmäßig deaktiviert. Einrichtung und Verwaltung erfolgen unter{' '}
-                <Link
-                  to="/einstellungen#sicherheit-2fa"
-                  className="text-vico-primary hover:underline font-medium"
-                >
-                  Einstellungen → Sicherheit
-                </Link>
-                .
-              </p>
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Sicherheit</h3>
+              <MfaSettingsHint variant="profil" />
             </div>
           ) : null}
 

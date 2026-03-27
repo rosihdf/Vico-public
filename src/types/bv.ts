@@ -13,6 +13,11 @@ export type BV = {
   contact_phone: string | null
   maintenance_report_email: boolean
   maintenance_report_email_address: string | null
+  /** true: Zustell-Flags wie beim Kunden; false: BV-Felder unten */
+  uses_customer_report_delivery: boolean
+  maintenance_report_portal: boolean
+  monteur_report_portal: boolean
+  monteur_report_internal_only: boolean
   archived_at?: string | null
   created_at: string
   updated_at: string
@@ -31,5 +36,9 @@ export type BVFormData = {
   contact_phone: string
   maintenance_report_email: boolean
   maintenance_report_email_address: string
+  uses_customer_report_delivery: boolean
+  maintenance_report_portal: boolean
+  monteur_report_portal: boolean
+  monteur_report_internal_only: boolean
   copy_from_customer: boolean
 }

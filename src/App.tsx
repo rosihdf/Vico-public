@@ -30,6 +30,7 @@ const Fehlerberichte = lazy(() => import('./Fehlerberichte'))
 const Ladezeiten = lazy(() => import('./pages/Ladezeiten'))
 const System = lazy(() => import('./pages/System'))
 const SystemIndexRedirect = lazy(() => import('./pages/SystemIndexRedirect'))
+const OffeneMaengel = lazy(() => import('./pages/OffeneMaengel'))
 const Scan = lazy(() => import('./Scan'))
 const AuftragAnlegen = lazy(() => import('./AuftragAnlegen'))
 const Auftragsdetail = lazy(() => import('./Auftragsdetail'))
@@ -115,6 +116,16 @@ const App = () => {
                   <Route path="historie" element={<Suspense fallback={<PageFallback />}><LicenseFeatureGuard feature="historie"><Historie /></LicenseFeatureGuard></Suspense>} />
                   <Route path="fehlerberichte" element={<Suspense fallback={<PageFallback />}><LicenseFeatureGuard feature="fehlerberichte"><Fehlerberichte /></LicenseFeatureGuard></Suspense>} />
                   <Route path="ladezeiten" element={<Suspense fallback={<PageFallback />}><LicenseFeatureGuard feature="ladezeiten"><Ladezeiten /></LicenseFeatureGuard></Suspense>} />
+                  <Route
+                    path="maengel"
+                    element={
+                      <Suspense fallback={<PageFallback />}>
+                        <LicenseFeatureGuard feature="wartungsprotokolle">
+                          <OffeneMaengel />
+                        </LicenseFeatureGuard>
+                      </Suspense>
+                    }
+                  />
                 </Route>
                 <Route path="historie" element={<Navigate to="/system/historie" replace />} />
                 <Route path="fehlerberichte" element={<Navigate to="/system/fehlerberichte" replace />} />

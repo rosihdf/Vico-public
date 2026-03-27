@@ -55,6 +55,8 @@ import { isEtikettendruckerAvailable } from './lib/etikettendrucker'
 import {
   fetchMonteurReportSettings,
   updateMonteurReportSettings,
+  fetchMonteurReportOrgDigestSettings,
+  updateMonteurReportOrgDigestSettings,
   type MonteurReportCustomerDeliveryMode,
 } from './lib/dataService'
 import MfaSettings from './components/MfaSettings'
@@ -64,6 +66,14 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
   ready: '🟢 Bereit',
   synced: '🔵 Synchronisiert',
 }
+
+const DIGEST_TIMEZONE_OPTIONS = [
+  'Europe/Berlin',
+  'Europe/Vienna',
+  'Europe/Zurich',
+  'Europe/Amsterdam',
+  'UTC',
+] as const
 
 const Einstellungen = () => {
   const { showToast } = useToast()
@@ -99,6 +109,13 @@ const Einstellungen = () => {
   const [maintEmailFrequency, setMaintEmailFrequency] = useState<'daily' | 'weekly'>('weekly')
   const [maintEmailSaving, setMaintEmailSaving] = useState(false)
   const [maintEmailError, setMaintEmailError] = useState<string | null>(null)
+  const [maintDigestConsentChecked, setMaintDigestConsentChecked] = useState(false)
+  const [digestLocalTime, setDigestLocalTime] = useState('07:00')
+  const [digestTimezone, setDigestTimezone] = useState('Europe/Berlin')
+  const [digestAppPublicUrl, setDigestAppPublicUrl] = useState('')
+  const [digestSettingsLoaded, setDigestSettingsLoaded] = useState(false)
+  const [digestSaving, setDigestSaving] = useState(false)
+  const [digestError, setDigestError] = useState<string | null>(null)
   const [etikettPreset, setEtikettPresetState] = useState<EtikettPresetId>(() =>
     typeof window !== 'undefined' ? getEtikettPresetId() : 'mini_50x25'
   )
@@ -220,7 +237,27 @@ const Einstellungen = () => {
     if (!myProfile) return
     setMaintEmailEnabled(Boolean(myProfile.maintenance_reminder_email_enabled))
     setMaintEmailFrequency(myProfile.maintenance_reminder_email_frequency === 'daily' ? 'daily' : 'weekly')
+    setMaintDigestConsentChecked(Boolean(myProfile.maintenance_reminder_email_consent_at))
   }, [myProfile])
+
+  useEffect(() => {
+    if (userRole !== 'admin' || !showWartungExtrasSettings) return
+    let cancelled = false
+    void fetchMonteurReportOrgDigestSettings().then((row) => {
+      if (cancelled || !row) {
+        if (!cancelled) setDigestSettingsLoaded(true)
+        return
+      }
+      const t = row.maintenance_digest_local_time.trim()
+      setDigestLocalTime(t.length >= 5 ? t.slice(0, 5) : '07:00')
+      setDigestTimezone(row.maintenance_digest_timezone || 'Europe/Berlin')
+      setDigestAppPublicUrl(row.app_public_url?.trim() ?? '')
+      setDigestSettingsLoaded(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [userRole, showWartungExtrasSettings])
 
   useEffect(() => {
     if (!showStandortabfrageSettings) return
@@ -361,11 +398,20 @@ const Einstellungen = () => {
       setMaintEmailError('Nur online speicherbar; bitte Verbindung herstellen.')
       return
     }
+    if (maintEmailEnabled) {
+      const hasConsent = Boolean(myProfile?.maintenance_reminder_email_consent_at)
+      if (!hasConsent && !maintDigestConsentChecked) {
+        setMaintEmailError('Bitte die Einwilligung zum E-Mail-Versand bestätigen.')
+        return
+      }
+    }
     setMaintEmailSaving(true)
     setMaintEmailError(null)
+    const needsNewConsent = maintEmailEnabled && !myProfile?.maintenance_reminder_email_consent_at
     const { error } = await updateMaintenanceReminderEmailSettings(user.id, {
       maintenance_reminder_email_enabled: maintEmailEnabled,
       maintenance_reminder_email_frequency: maintEmailFrequency,
+      grant_digest_email_consent: needsNewConsent,
     })
     setMaintEmailSaving(false)
     if (error) {
@@ -373,6 +419,29 @@ const Einstellungen = () => {
       return
     }
     await loadProfile()
+  }
+
+  const handleSaveOrgDigestSettings = async () => {
+    if (userRole !== 'admin' || digestSaving) return
+    if (!isOnline()) {
+      setDigestError('Nur online speicherbar; bitte Verbindung herstellen.')
+      return
+    }
+    setDigestSaving(true)
+    setDigestError(null)
+    const timeNorm =
+      digestLocalTime.trim().length >= 4 ? digestLocalTime.trim().slice(0, 5) : '07:00'
+    const { error } = await updateMonteurReportOrgDigestSettings({
+      maintenance_digest_local_time: timeNorm,
+      maintenance_digest_timezone: digestTimezone.trim() || 'Europe/Berlin',
+      app_public_url: digestAppPublicUrl.trim() || null,
+    })
+    setDigestSaving(false)
+    if (error) {
+      setDigestError(error.message)
+      return
+    }
+    showToast('Digest-Einstellungen gespeichert.', 'success')
   }
 
   const handleEtikettPresetChange = (id: EtikettPresetId) => {
@@ -649,13 +718,38 @@ const Einstellungen = () => {
               <input
                 type="checkbox"
                 checked={maintEmailEnabled}
-                onChange={(e) => setMaintEmailEnabled(e.target.checked)}
+                onChange={(e) => {
+                  const on = e.target.checked
+                  setMaintEmailEnabled(on)
+                  if (!on) setMaintDigestConsentChecked(false)
+                }}
                 className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
               />
               <span className="text-sm text-slate-800 dark:text-slate-100">
                 E-Mail-Benachrichtigung zu fälligen Wartungen
               </span>
             </label>
+            {maintEmailEnabled && !myProfile?.maintenance_reminder_email_consent_at ? (
+              <label className="flex items-start gap-3 cursor-pointer mb-3">
+                <input
+                  type="checkbox"
+                  checked={maintDigestConsentChecked}
+                  onChange={(e) => setMaintDigestConsentChecked(e.target.checked)}
+                  className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                />
+                <span className="text-sm text-slate-700 dark:text-slate-200">
+                  Ich willige ein, dass mir Vico zum genannten Zweck Erinnerungs-E-Mails an meine hinterlegte Adresse
+                  sendet (betriebliche Verarbeitung; Widerruf durch Deaktivieren der Option).
+                </span>
+              </label>
+            ) : null}
+            {maintEmailEnabled && myProfile?.maintenance_reminder_email_consent_at ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                Einwilligung erteilt am{' '}
+                {new Date(myProfile.maintenance_reminder_email_consent_at).toLocaleString('de-DE')}. Widerruf: Option
+                deaktivieren und speichern.
+              </p>
+            ) : null}
             <div className="mb-3">
               <label htmlFor="maint-email-freq" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
                 Häufigkeit (nach Versand wird bis zum nächsten Zyklus gewartet)
@@ -692,6 +786,86 @@ const Einstellungen = () => {
               </p>
             ) : null}
           </div>
+
+          {userRole === 'admin' && (
+            <div className="border-b border-slate-200 dark:border-slate-600 pb-4 mb-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                Digest-Versand (Admin)
+              </h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                Lokale Uhrzeit und Zeitzone für die Edge Function &quot;send-maintenance-reminder-digest&quot;. Die
+                Funktion versendet nur in der konfigurierten Stunde – Cron mindestens stündlich ausführen (z. B. zur
+                vollen Stunde). Öffentliche App-URL für den Link in der E-Mail (Fallback: Umgebungsvariable der
+                Function).
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2 mb-3">
+                <div>
+                  <label
+                    htmlFor="digest-local-time"
+                    className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Lokale Uhrzeit (Stunde)
+                  </label>
+                  <input
+                    id="digest-local-time"
+                    type="time"
+                    value={digestLocalTime}
+                    onChange={(e) => setDigestLocalTime(e.target.value)}
+                    className="w-full max-w-xs px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="digest-tz"
+                    className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                  >
+                    Zeitzone
+                  </label>
+                  <select
+                    id="digest-tz"
+                    value={digestTimezone}
+                    onChange={(e) => setDigestTimezone(e.target.value)}
+                    className="w-full max-w-xs px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm"
+                  >
+                    {DIGEST_TIMEZONE_OPTIONS.map((z) => (
+                      <option key={z} value={z}>
+                        {z}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="mb-3">
+                <label
+                  htmlFor="digest-app-url"
+                  className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1"
+                >
+                  Öffentliche App-URL (optional)
+                </label>
+                <input
+                  id="digest-app-url"
+                  type="url"
+                  placeholder="https://app.example.com"
+                  value={digestAppPublicUrl}
+                  onChange={(e) => setDigestAppPublicUrl(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-sm"
+                />
+              </div>
+              {digestError ? (
+                <p className="text-sm text-red-600 dark:text-red-400 mb-2" role="alert">
+                  {digestError}
+                </p>
+              ) : null}
+              <button
+                type="button"
+                onClick={handleSaveOrgDigestSettings}
+                disabled={digestSaving || !digestSettingsLoaded}
+                className="inline-flex px-4 py-2 rounded-lg text-sm font-medium bg-slate-700 dark:bg-slate-600 text-white hover:bg-slate-800 dark:hover:bg-slate-500 disabled:opacity-50"
+              >
+                {digestSaving ? 'Speichern…' : 'Digest-Einstellungen speichern'}
+              </button>
+            </div>
+          )}
 
           <div>
             <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
@@ -733,6 +907,16 @@ const Einstellungen = () => {
               ) : (
                 <span>Nicht aktiv (Web/PWA – Druck nur in der Capacitor-App mit Plugin).</span>
               )}
+            </p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              <a
+                href="/BENUTZERANLEITUNG.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-vico-primary hover:underline font-medium"
+              >
+                Anleitung: QR-Code und A4-Etiketten (Abschnitt in der Benutzeranleitung)
+              </a>
             </p>
           </div>
         </section>

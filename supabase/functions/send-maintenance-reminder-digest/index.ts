@@ -76,16 +76,48 @@ serve(async (req) => {
     }
     const supabase = createClient(supabaseUrl, serviceRoleKey)
     const fromEmail = Deno.env.get('RESEND_FROM') || 'Vico Türen & Tore <onboarding@resend.dev>'
-    const appUrl = Deno.env.get('APP_URL') ?? 'https://app.example.com'
+
+    const { data: orgRow } = await supabase
+      .from('monteur_report_settings')
+      .select('maintenance_digest_local_time, maintenance_digest_timezone, app_public_url')
+      .eq('id', 1)
+      .maybeSingle()
+
+    const tz = String(orgRow?.maintenance_digest_timezone ?? 'Europe/Berlin')
+    const timeStr = String(orgRow?.maintenance_digest_local_time ?? '07:00')
+    const tp = timeStr.split(':')
+    const wantHour = Math.min(23, Math.max(0, parseInt(tp[0] ?? '7', 10) || 7))
+
+    const now = new Date()
+    const hourFmt = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      hour12: false,
+      timeZone: tz,
+    })
+    const curHour = parseInt(hourFmt.format(now), 10)
+    if (curHour !== wantHour) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          skipped: true,
+          reason: `Außerhalb des Versandfensters (lokal ${tz}: Stunde ${curHour}, konfiguriert ${wantHour}).`,
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const configuredAppUrl = (orgRow?.app_public_url as string | null)?.trim()
+    const appUrl = configuredAppUrl || Deno.env.get('APP_URL') || 'https://app.example.com'
     const base = appUrl.endsWith('/') ? appUrl.slice(0, -1) : appUrl
 
     const { data: profiles, error: profErr } = await supabase
       .from('profiles')
       .select(
-        'id, email, maintenance_reminder_email_enabled, maintenance_reminder_email_frequency, maintenance_reminder_email_last_sent_at'
+        'id, email, maintenance_reminder_email_enabled, maintenance_reminder_email_frequency, maintenance_reminder_email_last_sent_at, maintenance_reminder_email_consent_at'
       )
       .eq('maintenance_reminder_email_enabled', true)
       .not('email', 'is', null)
+      .not('maintenance_reminder_email_consent_at', 'is', null)
       .in('role', ['admin', 'teamleiter', 'mitarbeiter', 'operator', 'leser'])
 
     if (profErr || !profiles) {
@@ -95,7 +127,6 @@ serve(async (req) => {
       })
     }
 
-    const now = new Date()
     let emailsSent = 0
     let usersProcessed = 0
 

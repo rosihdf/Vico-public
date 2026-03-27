@@ -41,6 +41,8 @@ export type Profile = {
   maintenance_reminder_email_enabled?: boolean
   maintenance_reminder_email_frequency?: 'daily' | 'weekly'
   maintenance_reminder_email_last_sent_at?: string | null
+  /** Zeitpunkt der Einwilligung zum Versand von Wartungs-Digest-Mails (DSGVO) */
+  maintenance_reminder_email_consent_at?: string | null
 }
 
 export type Team = {
@@ -60,7 +62,7 @@ export const fetchMyProfile = async (userId: string): Promise<Profile | null> =>
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, email, first_name, last_name, role, created_at, updated_at, hours_per_day, employment_start_date, employment_end_date, vacation_days_per_year, team_id, gps_consent_at, gps_consent_revoked_at, standortabfrage_consent_at, standortabfrage_consent_revoked_at, dashboard_layout, theme_preference, maintenance_reminder_email_enabled, maintenance_reminder_email_frequency, maintenance_reminder_email_last_sent_at'
+      'id, email, first_name, last_name, role, created_at, updated_at, hours_per_day, employment_start_date, employment_end_date, vacation_days_per_year, team_id, gps_consent_at, gps_consent_revoked_at, standortabfrage_consent_at, standortabfrage_consent_revoked_at, dashboard_layout, theme_preference, maintenance_reminder_email_enabled, maintenance_reminder_email_frequency, maintenance_reminder_email_last_sent_at, maintenance_reminder_email_consent_at'
     )
     .eq('id', userId)
     .single()
@@ -97,12 +99,19 @@ export const updateMaintenanceReminderEmailSettings = async (
   opts: {
     maintenance_reminder_email_enabled: boolean
     maintenance_reminder_email_frequency: 'daily' | 'weekly'
+    /** Erteilt die Einwilligung zum Versand (nur nötig, wenn noch kein consent_at gesetzt ist). */
+    grant_digest_email_consent?: boolean
   }
 ): Promise<{ error: { message: string } | null }> => {
-  const payload = {
+  const payload: Record<string, unknown> = {
     maintenance_reminder_email_enabled: opts.maintenance_reminder_email_enabled,
     maintenance_reminder_email_frequency: opts.maintenance_reminder_email_frequency,
     updated_at: new Date().toISOString(),
+  }
+  if (!opts.maintenance_reminder_email_enabled) {
+    payload.maintenance_reminder_email_consent_at = null
+  } else if (opts.grant_digest_email_consent) {
+    payload.maintenance_reminder_email_consent_at = new Date().toISOString()
   }
   if (!isOnline()) {
     addToOutbox({ table: 'profiles', action: 'update', payload: { id: userId, ...payload } })

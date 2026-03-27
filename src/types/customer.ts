@@ -12,6 +12,8 @@ export type Customer = {
   contact_phone: string | null
   maintenance_report_email: boolean
   maintenance_report_email_address: string | null
+  /** Wartungsprotokoll ins Kundenportal übernehmen (wenn Portal genutzt wird) */
+  maintenance_report_portal: boolean
   /** true: Monteursbericht nur intern (PDF am Auftrag/Tür-Tor), kein E-Mail- und kein Portal-Versand */
   monteur_report_internal_only: boolean
   /** false: nie Kundenportal für Monteursberichte dieses Kunden (auch wenn Firmen-Einstellung Portal) */
@@ -36,6 +38,7 @@ export type CustomerFormData = {
   contact_phone: string
   maintenance_report_email: boolean
   maintenance_report_email_address: string
+  maintenance_report_portal: boolean
   monteur_report_internal_only: boolean
   monteur_report_portal: boolean
 }
