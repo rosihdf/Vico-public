@@ -5,6 +5,7 @@
 | Datum | SQL-Datei | Kurzbeschreibung | Bemerkung |
 |-------|-----------|------------------|-----------|
 | 2026-03-24 | mandanten-db-stammdaten-archived-at.sql | `archived_at` auf customers/bvs/objects; RPCs Wartungserinnerung, Suche, Portal-Zustellung | Nach App-Deploy ausführen |
+| 2026-03-24 | mandanten-db-set-license-number-safe-update.sql | `set_license_number`: UPDATE mit `WHERE id = …` (Fix „UPDATE requires a WHERE clause“ / Supabase safe_update) | Sofort auf betroffene Mandanten |
 
 **Konvention:** Pro fachlicher Änderung idealerweise **eine** neue `mandanten-db-*.sql` (oder klar benannte Datei), Review im PR, dann Rollout pro Projekt.
 
