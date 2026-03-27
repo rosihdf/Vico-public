@@ -316,12 +316,6 @@ returns boolean language sql security definer set search_path = public stable as
 $$;
 grant execute on function public.customer_visible_to_user(uuid) to authenticated;
 
-create or replace function public.bv_customer_visible(bid uuid)
-returns boolean language sql security definer set search_path = public stable as $$
-  select public.customer_visible_to_user((select customer_id from public.bvs where id = bid));
-$$;
-grant execute on function public.bv_customer_visible(uuid) to authenticated;
-
 -- 2.2 BVs
 create table if not exists public.bvs (
   id uuid default gen_random_uuid() primary key,
@@ -339,6 +333,13 @@ alter table public.bvs add column if not exists maintenance_report_portal boolea
 alter table public.bvs add column if not exists monteur_report_portal boolean not null default true;
 alter table public.bvs add column if not exists monteur_report_internal_only boolean not null default false;
 alter table public.bvs enable row level security;
+
+-- Nach create table bvs (Funktion referenziert public.bvs)
+create or replace function public.bv_customer_visible(bid uuid)
+returns boolean language sql security definer set search_path = public stable as $$
+  select public.customer_visible_to_user((select customer_id from public.bvs where id = bid));
+$$;
+grant execute on function public.bv_customer_visible(uuid) to authenticated;
 
 do $$ declare r record; begin
   for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'bvs' loop
@@ -1210,36 +1211,6 @@ create policy "Authenticated read monteur_report_settings" on public.monteur_rep
   for select using (auth.uid() is not null);
 create policy "Admin manage monteur_report_settings" on public.monteur_report_settings
   for all using (public.is_admin());
-
--- true, wenn mindestens ein aktiver Portal-User den Kunden nutzt und dieses Objekt (Firma/BV) ihm zugeordnet ist
-create or replace function public.monteur_portal_delivery_eligible(p_object_id uuid)
-returns boolean
-language sql
-security definer
-set search_path = public
-stable
-as $$
-  select exists (
-    select 1
-    from public.objects o
-    left join public.bvs b on b.id = o.bv_id
-    cross join lateral (select coalesce(b.customer_id, o.customer_id) as cid) x
-    join public.customers c on c.id = x.cid
-    join public.customer_portal_users cpu
-      on cpu.customer_id = x.cid and cpu.user_id is not null
-    where o.id = p_object_id
-      and o.archived_at is null
-      and x.cid is not null
-      and public.portal_object_visible_to_user(cpu.user_id, x.cid, o.bv_id)
-      and case
-        when b.id is not null and coalesce(b.uses_customer_report_delivery, true) = false then
-          (coalesce(b.monteur_report_portal, true) = true and coalesce(b.monteur_report_internal_only, false) = false)
-        else
-          (coalesce(c.monteur_report_portal, true) = true and coalesce(c.monteur_report_internal_only, false) = false)
-      end
-  );
-$$;
-grant execute on function public.monteur_portal_delivery_eligible(uuid) to authenticated;
 
 create table if not exists public.audit_log (
   id uuid default gen_random_uuid() primary key,
@@ -2576,6 +2547,36 @@ returns boolean language sql security definer set search_path = public stable as
 $$;
 grant execute on function public.portal_user_sees_all_for_customer(uuid, uuid) to authenticated;
 grant execute on function public.portal_object_visible_to_user(uuid, uuid, uuid) to authenticated;
+
+-- true, wenn mindestens ein aktiver Portal-User den Kunden nutzt und dieses Objekt (Firma/BV) ihm zugeordnet ist
+create or replace function public.monteur_portal_delivery_eligible(p_object_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.objects o
+    left join public.bvs b on b.id = o.bv_id
+    cross join lateral (select coalesce(b.customer_id, o.customer_id) as cid) x
+    join public.customers c on c.id = x.cid
+    join public.customer_portal_users cpu
+      on cpu.customer_id = x.cid and cpu.user_id is not null
+    where o.id = p_object_id
+      and o.archived_at is null
+      and x.cid is not null
+      and public.portal_object_visible_to_user(cpu.user_id, x.cid, o.bv_id)
+      and case
+        when b.id is not null and coalesce(b.uses_customer_report_delivery, true) = false then
+          (coalesce(b.monteur_report_portal, true) = true and coalesce(b.monteur_report_internal_only, false) = false)
+        else
+          (coalesce(c.monteur_report_portal, true) = true and coalesce(c.monteur_report_internal_only, false) = false)
+      end
+  );
+$$;
+grant execute on function public.monteur_portal_delivery_eligible(uuid) to authenticated;
 
 drop function if exists public.get_portal_maintenance_reports(uuid);
 create or replace function public.get_portal_maintenance_reports(p_user_id uuid)

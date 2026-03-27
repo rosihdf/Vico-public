@@ -26,7 +26,19 @@ Vorlage: [`configs/mandanten-registry.example.json`](../../configs/mandanten-reg
   `mandanten-db-<thema>-<kurz>.sql`
 - Eintrag im **[CHANGELOG-Mandanten-DB.md](./CHANGELOG-Mandanten-DB.md)** (Datum, Datei, Kurzbeschreibung, optional „angewendet auf: …“).
 
-`supabase-complete.sql` bleibt der **Gesamt-Snapshot** für **neue** Mandanten-Projekte; laufende Kunden erhalten **Deltas** per einzelnen Dateien + Ausführung pro Projekt.
+`supabase-complete.sql` ist der **einzige** Gesamt-Stand, den du pflegst: **neue** Mandanten bekommen ihn im SQL Editor; **bestehende** Mandanten bringst du mit **§3b** (`npm run db:apply-mandanten-complete`) auf denselben Stand. **Deltas** unter `docs/sql/` sind optional (z. B. Hotfix nur für ein Projekt oder CHANGELOG-Eintrag).
+
+### 3b. Gleiche Datei auf alle bestehenden Mandanten (praktikabel)
+
+Die Datei ist als **idempotent** gedacht (`IF NOT EXISTS`, `add column if not exists`, Policies/Funktionen neu anlegen). Wenn du **`supabase-complete.sql`** erweitert hast und **alle** Mandanten-DBs auf denselben Stand bringen willst:
+
+1. **`configs/mandanten-db-urls.local.txt`** mit allen Connection-URIs (eine Zeile pro Mandant, wie in §4).
+2. Trockenlauf: `npm run db:apply-mandanten-complete:dry`
+3. Echtlauf: `npm run db:apply-mandanten-complete`
+
+Entspricht: `node scripts/apply-mandanten-sql.mjs supabase-complete.sql --urls-file configs/mandanten-db-urls.local.txt`.
+
+**Empfehlung:** Zuerst **ein** Staging-Mandant oder eine Kopie testen. **`supabase-license-portal.sql`** ist **eine andere** Datenbank – separat ausführen, nicht über die Mandanten-URL-Liste mischen.
 
 ## 4. SQL auf allen Mandanten-DBs ausführen
 

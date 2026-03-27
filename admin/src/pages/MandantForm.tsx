@@ -91,11 +91,13 @@ const MandantForm = () => {
     datenschutz_responsible: '',
     datenschutz_contact_email: '',
     allowed_domains: '',
+    /** Kurzref aus Dashboard-URL (neues Mandanten-Supabase-Projekt) */
+    supabase_project_ref: '',
+    /** https://<ref>.supabase.co – für Deployment-Export / VITE_SUPABASE_URL */
+    supabase_url: '',
   })
 
   const [appVersionRows, setAppVersionRows] = useState<AppVersionRowsState>(initialAppVersionRows)
-  /** Aus DB (tenants.supabase_url) – für Deployment-JSON-Export */
-  const [loadedSupabaseUrl, setLoadedSupabaseUrl] = useState<string | null>(null)
   /** Lokale Datei → WebP-Upload nach Speichern (L4) */
   const [logoFilePending, setLogoFilePending] = useState<File | null>(null)
   const [logoPreviewObjectUrl, setLogoPreviewObjectUrl] = useState<string | null>(null)
@@ -138,7 +140,6 @@ const MandantForm = () => {
         ])
         if (t) {
           setLogoFilePending(null)
-          setLoadedSupabaseUrl(t.supabase_url ?? null)
           setForm({
             name: t.name ?? '',
             app_domain: t.app_domain ?? '',
@@ -155,6 +156,8 @@ const MandantForm = () => {
             allowed_domains: Array.isArray(t.allowed_domains)
               ? t.allowed_domains.join('\n')
               : (t.allowed_domains ? String(t.allowed_domains) : ''),
+            supabase_project_ref: t.supabase_project_ref ?? '',
+            supabase_url: t.supabase_url ?? '',
           })
           const av = t.app_versions as Record<string, unknown> | null | undefined
           setAppVersionRows(appVersionRowsFromJson(av))
@@ -164,7 +167,6 @@ const MandantForm = () => {
         console.info(`[Lizenzportal] MandantForm load: ${Math.round(performance.now() - loadStart)}ms`)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Laden fehlgeschlagen')
-        setLoadedSupabaseUrl(null)
         setTenantLicenses([])
       } finally {
         setIsLoading(false)
@@ -253,6 +255,8 @@ const MandantForm = () => {
           impressum_contact: form.impressum_contact || null,
           datenschutz_responsible: form.datenschutz_responsible || null,
           datenschutz_contact_email: form.datenschutz_contact_email || null,
+          supabase_project_ref: form.supabase_project_ref.trim() || null,
+          supabase_url: form.supabase_url.trim() || null,
           app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
         })
         if ('id' in result) {
@@ -305,6 +309,8 @@ const MandantForm = () => {
           impressum_contact: form.impressum_contact || null,
           datenschutz_responsible: form.datenschutz_responsible || null,
           datenschutz_contact_email: form.datenschutz_contact_email || null,
+          supabase_project_ref: form.supabase_project_ref.trim() || null,
+          supabase_url: form.supabase_url.trim() || null,
           app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
         })
         if (result.ok) {
@@ -985,6 +991,52 @@ const MandantForm = () => {
             Eine Domain pro Zeile. Leer = keine Prüfung. Wildcard: <code className="bg-slate-100 px-1 rounded">*.firma.de</code>
           </p>
         </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-slate-800">Mandanten-Supabase (Haupt-App-Datenbank)</h3>
+          <p className="text-xs text-slate-600">
+            Metadaten zum <strong>neuen</strong> Supabase-Projekt des Mandanten (nicht das Lizenzportal). Werden in{' '}
+            <code className="bg-white px-1 rounded border text-[11px]">tenants</code> gespeichert und für den Bereich{' '}
+            <strong>Deployment / Hosting</strong> genutzt (vorgefüllte <code className="bg-white px-1 rounded border text-[11px]">VITE_SUPABASE_URL</code>
+            ). Keine Secrets – nur Referenz und URL.
+          </p>
+          <div>
+            <label htmlFor="supabase_project_ref" className="block text-sm font-medium text-slate-700 mb-1">
+              Supabase-Projekt-Ref
+            </label>
+            <input
+              id="supabase_project_ref"
+              type="text"
+              value={form.supabase_project_ref}
+              onChange={(e) => setForm((f) => ({ ...f, supabase_project_ref: e.target.value }))}
+              placeholder="Kurzref (wie in der Dashboard-URL)"
+              autoComplete="off"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
+              aria-describedby="supabase_project_ref_hint"
+            />
+            <p id="supabase_project_ref_hint" className="mt-1 text-xs text-slate-500">
+              Aus der Adresszeile: <code className="bg-white px-1 rounded border">supabase.com/dashboard/project/&lt;ref&gt;</code>
+            </p>
+          </div>
+          <div>
+            <label htmlFor="supabase_url" className="block text-sm font-medium text-slate-700 mb-1">
+              Supabase-URL (Mandant)
+            </label>
+            <input
+              id="supabase_url"
+              type="url"
+              inputMode="url"
+              value={form.supabase_url}
+              onChange={(e) => setForm((f) => ({ ...f, supabase_url: e.target.value }))}
+              placeholder="https://xxxxxxxx.supabase.co"
+              autoComplete="off"
+              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
+              aria-describedby="supabase_url_hint"
+            />
+            <p id="supabase_url_hint" className="mt-1 text-xs text-slate-500">
+              Settings → API → Project URL (ohne Slash am Ende).
+            </p>
+          </div>
+        </div>
         <div>
           <label htmlFor="primary_color" className="block text-sm font-medium text-slate-700 mb-1">Primärfarbe</label>
           <div className="flex flex-wrap items-center gap-2">
@@ -1169,7 +1221,7 @@ const MandantForm = () => {
               client_config_version: l.client_config_version ?? 0,
             }))}
             tenantName={form.name}
-            supabaseUrl={loadedSupabaseUrl ?? ''}
+            supabaseUrl={form.supabase_url}
             appDomain={form.app_domain}
             portalDomain={form.portal_domain}
             arbeitszeitDomain={form.arbeitszeitenportal_domain}
