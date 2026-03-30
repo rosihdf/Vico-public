@@ -1,10 +1,24 @@
-# Wird vom Lizenzportal (Edge Function trigger-mandanten-db-rollout) oder manuell gestartet.
-# Secret MANDANTEN_DB_URLS: eine PostgreSQL-URI pro Zeile (wie configs/mandanten-db-urls.local.txt).
-name: Mandanten-DB – supabase-complete
+# Wird vom Lizenzportal (Edge trigger-mandanten-db-rollout) oder manuell gestartet.
+# Secrets: MANDANTEN_DB_URLS_STAGING / MANDANTEN_DB_URLS_PRODUCTION (je eine URI pro Zeile).
+# Fallback Produktion: wenn PRODUCTION leer, wird MANDANTEN_DB_URLS (Legacy) genutzt.
+name: Mandanten-DB – Rollout (psql)
 
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: 'staging = Secret STAGING; production = Secret PRODUCTION (oder Legacy)'
+        type: choice
+        required: true
+        default: staging
+        options:
+          - staging
+          - production
+      sql_file:
+        description: 'Relativer Pfad im Repo (z. B. supabase-complete.sql oder docs/sql/rollout/…)'
+        type: string
+        required: true
+        default: supabase-complete.sql
       mode:
         description: 'dry_run = nur URLs listen; apply = SQL ausführen'
         type: choice
@@ -21,6 +35,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: SQL-Datei prüfen
+        run: |
+          F="${{ github.event.inputs.sql_file }}"
+          if [ -z "$F" ]; then
+            echo "::error::sql_file ist leer."
+            exit 1
+          fi
+          if [[ "$F" == *".."* ]]; then
+            echo "::error::sql_file darf keine .. enthalten."
+            exit 1
+          fi
+          if [ ! -f "$F" ]; then
+            echo "::error::Datei nicht gefunden: $F"
+            exit 1
+          fi
+
       - name: Node
         uses: actions/setup-node@v4
         with:
@@ -31,18 +61,32 @@ jobs:
 
       - name: URL-Liste aus Secret schreiben
         env:
-          MANDANTEN_DB_URLS: ${{ secrets.MANDANTEN_DB_URLS }}
+          STAGING: ${{ secrets.MANDANTEN_DB_URLS_STAGING }}
+          PROD: ${{ secrets.MANDANTEN_DB_URLS_PRODUCTION }}
+          LEGACY: ${{ secrets.MANDANTEN_DB_URLS }}
         run: |
-          if [ -z "${MANDANTEN_DB_URLS}" ]; then
-            echo "::error::Repository-Secret MANDANTEN_DB_URLS ist nicht gesetzt (eine URI pro Zeile)."
+          TARGET="${{ github.event.inputs.target }}"
+          if [ "$TARGET" = "staging" ]; then
+            DATA="$STAGING"
+            NAME="MANDANTEN_DB_URLS_STAGING"
+          else
+            DATA="$PROD"
+            NAME="MANDANTEN_DB_URLS_PRODUCTION"
+            if [ -z "$DATA" ] && [ -n "$LEGACY" ]; then
+              DATA="$LEGACY"
+              NAME="MANDANTEN_DB_URLS (Legacy, bitte auf PRODUCTION umstellen)"
+            fi
+          fi
+          if [ -z "$DATA" ]; then
+            echo "::error::Secret $NAME ist nicht gesetzt (eine Postgres-URI pro Zeile)."
             exit 1
           fi
-          echo "$MANDANTEN_DB_URLS" > mandanten-db-urls.txt
+          echo "$DATA" > mandanten-db-urls.txt
 
       - name: Trockenlauf
         if: github.event.inputs.mode == 'dry_run'
-        run: node scripts/apply-mandanten-sql.mjs supabase-complete.sql --urls-file mandanten-db-urls.txt --dry-run
+        run: node scripts/apply-mandanten-sql.mjs "${{ github.event.inputs.sql_file }}" --urls-file mandanten-db-urls.txt --dry-run
 
       - name: Echtlauf
         if: github.event.inputs.mode == 'apply'
-        run: node scripts/apply-mandanten-sql.mjs supabase-complete.sql --urls-file mandanten-db-urls.txt
+        run: node scripts/apply-mandanten-sql.mjs "${{ github.event.inputs.sql_file }}" --urls-file mandanten-db-urls.txt

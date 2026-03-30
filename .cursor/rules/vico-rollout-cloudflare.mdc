@@ -5,11 +5,9 @@ alwaysApply: true
 
 # Vico – Rollout & Cloudflare (Merker)
 
-## Mandanten-DB Sammel-Update (noch nachziehen)
+## Mandanten-DB Sammel-Update
 
-Falls im Repo noch nicht committed: Git-Commit für **Mandanten-DB-Rollout** ausstehend – u. a. `.github/workflows/mandanten-db-apply-complete.yml`, Edge Function `supabase-license-portal/supabase/functions/trigger-mandanten-db-rollout`, Admin **Einstellungen**-UI, `docs/sql/Mandanten-DB-Workflow.md` §3c, `supabase-license-portal/README.md`.
-
-**Einrichtung (Betrieb):** GitHub-Secret `MANDANTEN_DB_URLS`; Supabase Lizenzportal Edge-Secrets `GITHUB_DISPATCH_TOKEN`, `GITHUB_REPO_OWNER`, `GITHUB_REPO_NAME`; Function `trigger-mandanten-db-rollout` deployen. Details §3c in `docs/sql/Mandanten-DB-Workflow.md`.
+Workflow **Mandanten-DB – Rollout (psql)** (`mandanten-db-apply-complete.yml`): Inputs **target** (staging/production), **sql_file**, **mode**. GitHub-Secrets **`MANDANTEN_DB_URLS_STAGING`**, **`MANDANTEN_DB_URLS_PRODUCTION`**; Fallback Prod: **`MANDANTEN_DB_URLS`** (Legacy). Edge `trigger-mandanten-db-rollout` deployen + `GITHUB_DISPATCH_TOKEN`, `GITHUB_REPO_OWNER`, `GITHUB_REPO_NAME`. Details: `docs/sql/Mandanten-DB-Workflow.md` §3c.
 
 ## Cloudflare Pages – Build-Befehl
 

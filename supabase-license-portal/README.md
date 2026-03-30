@@ -12,7 +12,7 @@ supabase functions deploy license
 
 ## Mandanten-DB-Sammelupdate (Button in Admin „Einstellungen“)
 
-Function: **`trigger-mandanten-db-rollout`** – startet den GitHub-Workflow `mandanten-db-apply-complete.yml` (Trockenlauf oder Echtlauf mit `supabase-complete.sql`).
+Function: **`trigger-mandanten-db-rollout`** – startet den GitHub-Workflow **`mandanten-db-apply-complete.yml`** (Anzeige: **Mandanten-DB – Rollout (psql)**) mit **target** (staging/production), **sql_file** und **mode** (dry_run/apply).
 
 ```bash
 supabase functions deploy trigger-mandanten-db-rollout
@@ -28,7 +28,7 @@ supabase functions deploy trigger-mandanten-db-rollout
 | `GITHUB_WORKFLOW_FILE` | optional, Default `mandanten-db-apply-complete.yml` |
 | `GITHUB_DEFAULT_BRANCH` | optional, Default `main` |
 
-Im **GitHub-Repo** zusätzlich Repository-Secret **`MANDANTEN_DB_URLS`** (mehrzeilig, eine DB-URI pro Zeile). Siehe `docs/sql/Mandanten-DB-Workflow.md` §3c.
+Im **GitHub-Repo** zusätzlich: **`MANDANTEN_DB_URLS_STAGING`** und **`MANDANTEN_DB_URLS_PRODUCTION`** (je eine DB-URI pro Zeile). Fallback: wenn PRODUCTION fehlt, nutzt der Workflow **`MANDANTEN_DB_URLS`** (Legacy). Siehe `docs/sql/Mandanten-DB-Workflow.md` §3c.
 
 ## Hinweise
 

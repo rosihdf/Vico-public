@@ -8,8 +8,16 @@ const getFunctionsBase = (): string => {
 
 export type MandantenRolloutMode = 'dry_run' | 'apply'
 
-export const triggerMandantenDbRollout = async (
+export type MandantenRolloutTarget = 'staging' | 'production'
+
+export type MandantenRolloutPayload = {
   mode: MandantenRolloutMode
+  target: MandantenRolloutTarget
+  sql_file: string
+}
+
+export const triggerMandantenDbRollout = async (
+  payload: MandantenRolloutPayload
 ): Promise<{ ok: true; message?: string } | { ok: false; error: string }> => {
   const { data: sessionData } = await supabase.auth.getSession()
   const token = sessionData.session?.access_token
@@ -23,7 +31,11 @@ export const triggerMandantenDbRollout = async (
       apikey: anon,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ mode }),
+    body: JSON.stringify({
+      mode: payload.mode,
+      target: payload.target,
+      sql_file: payload.sql_file.trim(),
+    }),
   })
 
   const text = await res.text()

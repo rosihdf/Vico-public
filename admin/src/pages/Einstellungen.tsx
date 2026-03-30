@@ -9,7 +9,13 @@ import {
   type AppVersionRowsState,
 } from '../lib/appVersionFormUtils'
 import { fetchDefaultAppVersionsJson, upsertDefaultAppVersions } from '../lib/portalConfigService'
-import { triggerMandantenDbRollout } from '../lib/mandantenRolloutService'
+import {
+  triggerMandantenDbRollout,
+  type MandantenRolloutMode,
+  type MandantenRolloutTarget,
+} from '../lib/mandantenRolloutService'
+
+const DEFAULT_ROLLOUT_SQL = 'supabase-complete.sql'
 
 const Einstellungen = () => {
   const [appVersionRows, setAppVersionRows] = useState<AppVersionRowsState>(initialAppVersionRows)
@@ -18,7 +24,9 @@ const Einstellungen = () => {
   const [appVersionsMessage, setAppVersionsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   )
-  const [rolloutLoading, setRolloutLoading] = useState<'dry_run' | 'apply' | null>(null)
+  const [rolloutSending, setRolloutSending] = useState(false)
+  const [rolloutTarget, setRolloutTarget] = useState<MandantenRolloutTarget>('staging')
+  const [rolloutSqlFile, setRolloutSqlFile] = useState(DEFAULT_ROLLOUT_SQL)
   const [rolloutMessage, setRolloutMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const loadGlobalAppVersions = useCallback(async () => {
@@ -42,17 +50,26 @@ const Einstellungen = () => {
     void loadGlobalAppVersions()
   }, [loadGlobalAppVersions])
 
-  const handleRollout = async (mode: 'dry_run' | 'apply') => {
+  const handleRollout = async (mode: MandantenRolloutMode) => {
+    const sql = rolloutSqlFile.trim() || DEFAULT_ROLLOUT_SQL
     if (mode === 'apply') {
+      const scope =
+        rolloutTarget === 'production'
+          ? 'PRODUKTION (Secret MANDANTEN_DB_URLS_PRODUCTION oder Legacy MANDANTEN_DB_URLS)'
+          : 'Staging (Secret MANDANTEN_DB_URLS_STAGING)'
       const ok = window.confirm(
-        'Echtlauf starten? Das führt supabase-complete.sql gegen alle in GitHub Secret MANDANTEN_DB_URLS hinterlegten Mandanten-DBs aus. Vorher Trockenlauf nutzen und Logs prüfen.'
+        `Echtlauf starten?\n\nZiel: ${scope}\nSQL-Datei (im Repo): ${sql}\n\nVorher Trockenlauf mit gleichen Einstellungen und GitHub Actions-Logs prüfen.`
       )
       if (!ok) return
     }
-    setRolloutLoading(mode)
+    setRolloutSending(true)
     setRolloutMessage(null)
     try {
-      const r = await triggerMandantenDbRollout(mode)
+      const r = await triggerMandantenDbRollout({
+        mode,
+        target: rolloutTarget,
+        sql_file: sql,
+      })
       if (r.ok) {
         setRolloutMessage({
           type: 'success',
@@ -67,7 +84,7 @@ const Einstellungen = () => {
         text: e instanceof Error ? e.message : 'Anfrage fehlgeschlagen.',
       })
     } finally {
-      setRolloutLoading(null)
+      setRolloutSending(false)
     }
   }
 
@@ -102,17 +119,59 @@ const Einstellungen = () => {
           Mandanten-Datenbanken – Sammel-Update
         </h3>
         <p className="text-xs text-slate-500 mb-3">
-          Startet im GitHub-Repository den Workflow{' '}
-          <strong className="font-mono text-[11px]">Mandanten-DB – supabase-complete</strong>. Die Connection-Strings
-          liegen nur im GitHub-Secret <code className="bg-slate-100 px-1 rounded">MANDANTEN_DB_URLS</code> (eine URI pro
-          Zeile). Voraussetzung: Edge Function <code className="bg-slate-100 px-1 rounded">trigger-mandanten-db-rollout</code>{' '}
-          deployen und GitHub-Variablen setzen (siehe{' '}
-          <code className="bg-slate-100 px-1 rounded text-[11px]">supabase-license-portal/README.md</code>,{' '}
-          <code className="bg-slate-100 px-1 rounded text-[11px]">docs/sql/Mandanten-DB-Workflow.md</code>).
+          Startet den GitHub-Workflow <strong className="font-mono text-[11px]">Mandanten-DB – Rollout (psql)</strong>.
+          Secrets: <code className="bg-slate-100 px-1 rounded">MANDANTEN_DB_URLS_STAGING</code> und{' '}
+          <code className="bg-slate-100 px-1 rounded">MANDANTEN_DB_URLS_PRODUCTION</code> (je eine Postgres-URI pro Zeile).
+          Wenn PRODUCTION fehlt, wird <code className="bg-slate-100 px-1 rounded">MANDANTEN_DB_URLS</code> (Legacy)
+          genutzt. Die SQL-Datei muss auf <code className="bg-slate-100 px-1 rounded">main</code> existieren. Siehe{' '}
+          <code className="text-[11px]">supabase-license-portal/README.md</code>,{' '}
+          <code className="text-[11px]">docs/sql/Mandanten-DB-Workflow.md</code>.
         </p>
+        <div className="space-y-3 mb-4">
+          <div>
+            <label htmlFor="rollout-target" className="block text-xs font-medium text-slate-600 mb-1">
+              Zielumgebung
+            </label>
+            <select
+              id="rollout-target"
+              value={rolloutTarget}
+              onChange={(e) => setRolloutTarget(e.target.value as MandantenRolloutTarget)}
+              disabled={rolloutSending}
+              className="w-full max-w-md px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 bg-white"
+            >
+              <option value="staging">Staging (Referenz-Mandant / Test)</option>
+              <option value="production">Produktion (alle Prod-DBs im Secret)</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="rollout-sql-file" className="block text-xs font-medium text-slate-600 mb-1">
+              SQL-Datei im Repo (relativer Pfad)
+            </label>
+            <input
+              id="rollout-sql-file"
+              type="text"
+              value={rolloutSqlFile}
+              onChange={(e) => setRolloutSqlFile(e.target.value)}
+              disabled={rolloutSending}
+              list="rollout-sql-presets"
+              autoComplete="off"
+              className="w-full max-w-full px-3 py-2 rounded-lg border border-slate-300 text-sm font-mono text-slate-800 bg-white"
+              placeholder={DEFAULT_ROLLOUT_SQL}
+              aria-describedby="rollout-sql-hint"
+            />
+            <datalist id="rollout-sql-presets">
+              <option value="supabase-complete.sql" />
+              <option value="docs/sql/mandanten-db-stammdaten-archived-at.sql" />
+            </datalist>
+            <p id="rollout-sql-hint" className="text-xs text-slate-500 mt-1">
+              Erlaubt: <code className="bg-slate-100 px-1 rounded">supabase-complete.sql</code> oder{' '}
+              <code className="bg-slate-100 px-1 rounded">docs/sql/…/name.sql</code> (nach Push auf main).
+            </p>
+          </div>
+        </div>
         {rolloutMessage && (
           <p
-            className={`mb-3 text-sm ${rolloutMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}
+            className={`mb-3 text-sm whitespace-pre-line ${rolloutMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}
             role="status"
           >
             {rolloutMessage.text}
@@ -122,20 +181,20 @@ const Einstellungen = () => {
           <button
             type="button"
             onClick={() => void handleRollout('dry_run')}
-            disabled={rolloutLoading !== null}
+            disabled={rolloutSending}
             className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-800 bg-white hover:bg-slate-50 disabled:opacity-50 min-h-[44px]"
-            aria-label="Trockenlauf für Mandanten-Datenbank-Workflow starten"
+            aria-label="Trockenlauf Mandanten-DB-Rollout starten"
           >
-            {rolloutLoading === 'dry_run' ? 'Sende…' : 'Trockenlauf (GitHub)'}
+            {rolloutSending ? 'Sende…' : 'Trockenlauf'}
           </button>
           <button
             type="button"
             onClick={() => void handleRollout('apply')}
-            disabled={rolloutLoading !== null}
+            disabled={rolloutSending}
             className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 min-h-[44px]"
-            aria-label="Echtlauf Mandanten-Datenbank-Workflow starten"
+            aria-label="Echtlauf Mandanten-DB-Rollout starten"
           >
-            {rolloutLoading === 'apply' ? 'Sende…' : 'Echtlauf (GitHub)'}
+            {rolloutSending ? 'Sende…' : 'Echtlauf'}
           </button>
         </div>
       </section>

@@ -1,11 +1,14 @@
 /**
  * POST /functions/v1/trigger-mandanten-db-rollout
- * Startet den GitHub-Actions-Workflow „Mandanten-DB – supabase-complete“ (nur für Lizenzportal-Admins).
+ * Startet den GitHub-Actions-Workflow „Mandanten-DB – Rollout (psql)“.
  *
- * Secrets (Lizenzportal-Projekt → Edge Function):
- *   GITHUB_DISPATCH_TOKEN – PAT mit scope „actions: write“ (repo)
- *   GITHUB_REPO_OWNER, GITHUB_REPO_NAME
- * Optional: GITHUB_WORKFLOW_FILE (default mandanten-db-apply-complete.yml), GITHUB_DEFAULT_BRANCH (default main)
+ * Body (JSON):
+ *   mode: "dry_run" | "apply"
+ *   target: "staging" | "production" (optional, Default production)
+ *   sql_file: relativer Repo-Pfad (optional, Default supabase-complete.sql)
+ *
+ * Secrets (Lizenzportal → Edge): GITHUB_DISPATCH_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME
+ * Optional: GITHUB_WORKFLOW_FILE, GITHUB_DEFAULT_BRANCH
  */
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -21,6 +24,16 @@ const json = (status: number, body: Record<string, unknown>) =>
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+
+/** Erlaubt: supabase-complete.sql oder docs/sql/…/*.sql (keine Pfad-Traversal). */
+const isValidSqlFile = (s: string): boolean => {
+  const t = s.trim()
+  if (!t || t.length > 220) return false
+  if (t.includes('..') || t.includes('\0') || t.startsWith('/')) return false
+  if (t === 'supabase-complete.sql') return true
+  if (!t.startsWith('docs/sql/') || !t.endsWith('.sql')) return false
+  return /^docs\/sql\/[a-zA-Z0-9/_-]+\.sql$/.test(t)
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -57,11 +70,32 @@ serve(async (req) => {
   }
 
   let mode: string
+  let target: string
+  let sqlFile: string
   try {
-    const body = (await req.json()) as { mode?: string }
+    const body = (await req.json()) as {
+      mode?: string
+      target?: string
+      sql_file?: string
+    }
     mode = body.mode === 'apply' ? 'apply' : 'dry_run'
+    target = body.target === 'staging' ? 'staging' : 'production'
+    const rawFile =
+      typeof body.sql_file === 'string' && body.sql_file.trim()
+        ? body.sql_file.trim()
+        : 'supabase-complete.sql'
+    sqlFile = rawFile
+    if (!isValidSqlFile(sqlFile)) {
+      return json(400, {
+        error:
+          'sql_file ungültig. Erlaubt: supabase-complete.sql oder docs/sql/…/name.sql (Buchstaben, Zahlen, /, _, -).',
+      })
+    }
   } catch {
-    return json(400, { error: 'Ungültiger JSON-Body (erwartet { "mode": "dry_run" | "apply" }).' })
+    return json(400, {
+      error:
+        'Ungültiger JSON-Body. Erwartet: { "mode": "dry_run"|"apply", "target"?: "staging"|"production", "sql_file"?: string }',
+    })
   }
 
   const admin = createClient(supabaseUrl, serviceKey)
@@ -94,18 +128,21 @@ serve(async (req) => {
     },
     body: JSON.stringify({
       ref: branch,
-      inputs: { mode },
+      inputs: {
+        mode,
+        target,
+        sql_file: sqlFile,
+      },
     }),
   })
 
   if (ghRes.status === 204) {
     return json(200, {
       ok: true,
-      message:
-        mode === 'dry_run'
-          ? 'Workflow gestartet (Trockenlauf). Ergebnis in GitHub unter Actions prüfen.'
-          : 'Workflow gestartet (Echtlauf). Ergebnis in GitHub unter Actions prüfen.',
+      message: `Workflow gestartet (${target}, ${mode}, ${sqlFile}). Logs in GitHub → Actions.`,
       mode,
+      target,
+      sql_file: sqlFile,
     })
   }
 

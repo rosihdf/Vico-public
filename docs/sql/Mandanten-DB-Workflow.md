@@ -42,16 +42,19 @@ Entspricht: `node scripts/apply-mandanten-sql.mjs supabase-complete.sql --urls-f
 
 ### 3c. Optional: Button im Lizenzportal (GitHub Actions)
 
-Statt nur lokal `npm run …` kann ein **Admin** unter **Einstellungen** einen GitHub-Workflow starten (Trockenlauf oder Echtlauf). Ablauf:
+Statt nur lokal `npm run …` kann ein **Admin** unter **Einstellungen** einen GitHub-Workflow starten: **Ziel** Staging oder Produktion, **SQL-Datei** (z. B. `supabase-complete.sql` oder `docs/sql/rollout/…`), **Trockenlauf** oder **Echtlauf**. Ablauf:
 
-1. **GitHub-Repository** (dieses Repo): Secret **`MANDANTEN_DB_URLS`** anlegen – gleicher Inhalt wie `configs/mandanten-db-urls.local.txt` (eine Postgres-URI pro Zeile, Session Pooler empfohlen).
-2. Workflow **`.github/workflows/mandanten-db-apply-complete.yml`** ist im Repo; bei Bedarf unter **Actions** einmal manuell erlauben.
-3. **Supabase Lizenzportal** → Edge Function **`trigger-mandanten-db-rollout`** deployen (`supabase-license-portal/`), dann unter **Project Settings → Edge Functions → Secrets** setzen:
-   - **`GITHUB_DISPATCH_TOKEN`** – klassischer PAT oder Fine-Grained Token mit **Actions: Write** auf dem Repo (kein Inhalt committen).
-   - **`GITHUB_REPO_OWNER`**, **`GITHUB_REPO_NAME`** – z. B. Organisation und `Vico-public`.
+1. **GitHub-Secrets** (Repository):
+   - **`MANDANTEN_DB_URLS_STAGING`** – URI-Liste für Referenz-/Test-Mandant(en), eine Zeile pro DB.
+   - **`MANDANTEN_DB_URLS_PRODUCTION`** – alle Produktions-Mandanten-DBs (eine URI pro Zeile).
+   - **Legacy:** Ist `MANDANTEN_DB_URLS_PRODUCTION` leer, nutzt der Workflow für **production** weiterhin **`MANDANTEN_DB_URLS`**.
+2. Workflow **`.github/workflows/mandanten-db-apply-complete.yml`** (Name in Actions: **Mandanten-DB – Rollout (psql)**). Manuelle Inputs: **`target`**, **`sql_file`**, **`mode`** (dry_run/apply).
+3. **Supabase Lizenzportal** → Edge Function **`trigger-mandanten-db-rollout`** deployen (`supabase-license-portal/`), Secrets:
+   - **`GITHUB_DISPATCH_TOKEN`** – PAT mit **Actions: Write** auf dem Repo.
+   - **`GITHUB_REPO_OWNER`**, **`GITHUB_REPO_NAME`**
    - Optional: **`GITHUB_WORKFLOW_FILE`** (Default `mandanten-db-apply-complete.yml`), **`GITHUB_DEFAULT_BRANCH`** (Default `main`).
 
-Die Function prüft die **Admin-Session** des Lizenzportals und ruft die GitHub-API `workflow_dispatch` auf. **Logs und Erfolg** siehst du in **GitHub → Actions**; die Admin-UI zeigt nur eine Kurzmeldung.
+Die Function prüft die **Admin-Session**, validiert **`sql_file`** (nur `supabase-complete.sql` oder `docs/sql/…/*.sql`, kein `..`) und ruft **`workflow_dispatch`** auf. **Logs** in **GitHub → Actions**. Rollout-Pakete optional unter **`docs/sql/rollout/`** (nach Commit auf `main` in der UI wählbar).
 
 ## 4. SQL auf allen Mandanten-DBs ausführen
 
