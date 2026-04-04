@@ -14,6 +14,9 @@ const Lizenzmodelle = lazy(() => import('./pages/Lizenzmodelle'))
 const LizenzmodellForm = lazy(() => import('./pages/LizenzmodellForm'))
 const Einstellungen = lazy(() => import('./pages/Einstellungen'))
 const AppInfo = lazy(() => import('./pages/AppInfo'))
+const GlobaleWartung = lazy(() => import('./pages/GlobaleWartung'))
+const AppReleases = lazy(() => import('./pages/AppReleases'))
+const AppReleaseEditor = lazy(() => import('./pages/AppReleaseEditor'))
 
 const PageFallback = () => (
   <div className="flex flex-col items-center justify-center py-12 gap-4">
@@ -257,6 +260,26 @@ const App = () => {
           <Route path="lizenzmodelle/:id" element={
             <Suspense fallback={<PageFallback />}>
               <LizenzmodellForm />
+            </Suspense>
+          } />
+          <Route path="globale-wartung" element={
+            <Suspense fallback={<PageFallback />}>
+              <GlobaleWartung />
+            </Suspense>
+          } />
+          <Route path="app-releases" element={
+            <Suspense fallback={<PageFallback />}>
+              <AppReleases />
+            </Suspense>
+          } />
+          <Route path="app-releases/neu" element={
+            <Suspense fallback={<PageFallback />}>
+              <AppReleaseEditor />
+            </Suspense>
+          } />
+          <Route path="app-releases/:releaseId" element={
+            <Suspense fallback={<PageFallback />}>
+              <AppReleaseEditor />
             </Suspense>
           } />
           <Route path="einstellungen" element={

@@ -14,4 +14,5 @@ export const supabase = createSupabaseClient({
   url: supabaseUrl,
   anonKey: supabaseAnonKey,
   storageKey: 'vico-license-portal-auth',
+  trackMandantDegraded: false,
 })

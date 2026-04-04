@@ -26,8 +26,23 @@ export type Tenant = {
   allowed_domains: string[] | null
   /** Optional: Version/Release Notes je App (Lizenz-API-Feld `appVersions`). */
   app_versions?: AppVersionsMap | null
+  maintenance_mode_enabled?: boolean
+  maintenance_mode_message?: string | null
+  maintenance_mode_duration_min?: number | null
+  maintenance_mode_started_at?: string | null
+  maintenance_mode_ends_at?: string | null
+  maintenance_mode_auto_end?: boolean
+  maintenance_mode_apply_main_app?: boolean
+  maintenance_mode_apply_arbeitszeit_portal?: boolean
+  maintenance_mode_apply_customer_portal?: boolean
+  maintenance_announcement_enabled?: boolean
+  maintenance_announcement_message?: string | null
+  maintenance_announcement_from?: string | null
+  maintenance_announcement_until?: string | null
   created_at: string
   updated_at: string
+  /** §11.20 #11: Kennzeichnung Testmandant (Pilot / Incoming) */
+  is_test_mandant?: boolean
 }
 
 export type TenantInsert = Omit<Tenant, 'id' | 'created_at' | 'updated_at' | 'app_versions'> &
@@ -81,6 +96,20 @@ export const createTenant = async (payload: Partial<Tenant>): Promise<{ id: stri
       supabase_url: payload.supabase_url ?? null,
       allowed_domains: Array.isArray(payload.allowed_domains) ? payload.allowed_domains : [],
       app_versions: payload.app_versions ?? {},
+      is_test_mandant: payload.is_test_mandant ?? false,
+      maintenance_mode_enabled: payload.maintenance_mode_enabled ?? false,
+      maintenance_mode_message: payload.maintenance_mode_message ?? null,
+      maintenance_mode_duration_min: payload.maintenance_mode_duration_min ?? null,
+      maintenance_mode_started_at: payload.maintenance_mode_started_at ?? null,
+      maintenance_mode_ends_at: payload.maintenance_mode_ends_at ?? null,
+      maintenance_mode_auto_end: payload.maintenance_mode_auto_end ?? false,
+      maintenance_mode_apply_main_app: payload.maintenance_mode_apply_main_app !== false,
+      maintenance_mode_apply_arbeitszeit_portal: payload.maintenance_mode_apply_arbeitszeit_portal !== false,
+      maintenance_mode_apply_customer_portal: payload.maintenance_mode_apply_customer_portal !== false,
+      maintenance_announcement_enabled: payload.maintenance_announcement_enabled ?? false,
+      maintenance_announcement_message: payload.maintenance_announcement_message ?? null,
+      maintenance_announcement_from: payload.maintenance_announcement_from ?? null,
+      maintenance_announcement_until: payload.maintenance_announcement_until ?? null,
     })
     .select('id')
     .single()

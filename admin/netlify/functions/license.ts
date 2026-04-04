@@ -1,5 +1,9 @@
+/**
+ * Referenz-Implementierung / Parität zur Supabase-Edge-Function `supabase-license-portal/supabase/functions/license`.
+ * Bei ausschließlich Cloudflare Pages ist der produktive Endpunkt die Edge Function (`VITE_LICENSE_API_URL` → …/functions/v1).
+ */
 import type { Handler, HandlerEvent } from '@netlify/functions'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
   extractHostnameFromOriginOrReferer,
   tenantMatchesRequestHost,
@@ -114,6 +118,47 @@ type LicenseResponse = {
   impressum?: Record<string, string | null>
   datenschutz?: Record<string, string | null>
   appVersions?: Record<string, AppVersionEntry>
+  /** §11.20: aktiver Release + Incoming-Liste pro erkanntem Kanal */
+  mandantenReleases?: {
+    channel: 'main' | 'kundenportal' | 'arbeitszeit_portal'
+    active: {
+      id: string
+      version: string
+      releaseType: string
+      title: string | null
+      notes: string | null
+      moduleTags: string[]
+      affectsLine: string | null
+      forceHardReload: boolean
+    } | null
+    incoming: Array<{
+      id: string
+      version: string
+      releaseType: string
+      title: string | null
+      notes: string | null
+      moduleTags: string[]
+      affectsLine: string | null
+      forceHardReload: boolean
+    }>
+    /** `tenant_release_assignments.updated_at` – Signal für Mandanten-Apps (Go-Live/Rollback) */
+    releaseAssignmentUpdatedAt: string | null
+  }
+  maintenance?: {
+    mode_enabled: boolean
+    mode_message: string | null
+    mode_starts_at: string | null
+    mode_ends_at: string | null
+    mode_duration_min: number | null
+    mode_auto_end: boolean
+    mode_apply_main_app: boolean
+    mode_apply_arbeitszeit_portal: boolean
+    mode_apply_customer_portal: boolean
+    announcement_enabled: boolean
+    announcement_message: string | null
+    announcement_from: string | null
+    announcement_until: string | null
+  }
 }
 
 const LICENSE_WITH_TENANT_SELECT = `
@@ -148,7 +193,23 @@ const LICENSE_WITH_TENANT_SELECT = `
     datenschutz_responsible,
     datenschutz_contact_email,
     datenschutz_dsb_email,
-    app_versions
+    app_domain,
+    portal_domain,
+    arbeitszeitenportal_domain,
+    app_versions,
+    maintenance_mode_enabled,
+    maintenance_mode_message,
+    maintenance_mode_started_at,
+    maintenance_mode_ends_at,
+    maintenance_mode_duration_min,
+    maintenance_mode_auto_end,
+    maintenance_mode_apply_main_app,
+    maintenance_mode_apply_arbeitszeit_portal,
+    maintenance_mode_apply_customer_portal,
+    maintenance_announcement_enabled,
+    maintenance_announcement_message,
+    maintenance_announcement_from,
+    maintenance_announcement_until
   )
 `
 
@@ -157,6 +218,148 @@ const getRequestHostFromEvent = (event: HandlerEvent): string => {
   const referer = event.headers?.referer ?? event.headers?.Referer ?? ''
   const headerForHost = origin.trim() || referer.trim()
   return extractHostnameFromOriginOrReferer(headerForHost)
+}
+
+const MANDANTEN_RELEASE_INCOMING_MAX = 3
+
+type ReleaseChannel = 'main' | 'kundenportal' | 'arbeitszeit_portal'
+
+const hostOnly = (urlish: string | null | undefined): string => {
+  if (urlish == null || !String(urlish).trim()) return ''
+  const s = String(urlish).trim()
+  try {
+    if (/^https?:\/\//i.test(s)) return new URL(s).host.toLowerCase()
+  } catch {
+    /* ignore */
+  }
+  return s.replace(/^https?:\/\//i, '').split('/')[0]?.toLowerCase().trim() ?? ''
+}
+
+/** Kanal aus Host vs. Mandanten-Domains (§11.20 Kanalzuordnung). */
+const detectReleaseChannel = (tenant: Record<string, unknown>, requestHost: string): ReleaseChannel => {
+  const h = requestHost.trim().toLowerCase()
+  if (!h) return 'main'
+  const pd = hostOnly(tenant.portal_domain as string)
+  const az = hostOnly(tenant.arbeitszeitenportal_domain as string)
+  const ad = hostOnly(tenant.app_domain as string)
+  if (pd && h === pd) return 'kundenportal'
+  if (az && h === az) return 'arbeitszeit_portal'
+  if (ad && h === ad) return 'main'
+  return 'main'
+}
+
+const splitNotesLines = (notes: string | null | undefined): string[] => {
+  if (!notes) return []
+  return notes
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+const mapAppReleaseRow = (r: Record<string, unknown>) => {
+  const tags = Array.isArray(r.module_tags) ? r.module_tags.map((x) => String(x)) : []
+  return {
+    id: String(r.id),
+    version: String(r.version_semver),
+    releaseType: String(r.release_type),
+    title: r.title != null ? String(r.title) : null,
+    notes: r.notes != null ? String(r.notes) : null,
+    moduleTags: tags,
+    affectsLine: tags.length > 0 ? `Betrifft: ${tags.join(', ')}` : null,
+    forceHardReload: Boolean(r.force_hard_reload),
+  }
+}
+
+const appVersionKeyForChannel = (ch: ReleaseChannel): (typeof APP_VERSION_KEYS)[number] =>
+  ch === 'kundenportal' ? 'kundenportal' : ch === 'arbeitszeit_portal' ? 'arbeitszeit_portal' : 'main'
+
+const mergeMandantenReleasesIntoResponse = async (
+  supabase: SupabaseClient,
+  tenantId: string,
+  channel: ReleaseChannel,
+  response: LicenseResponse
+): Promise<void> => {
+  const vKey = appVersionKeyForChannel(channel)
+
+  const { data: assign, error: assignErr } = await supabase
+    .from('tenant_release_assignments')
+    .select('active_release_id, previous_release_id, updated_at')
+    .eq('tenant_id', tenantId)
+    .eq('channel', channel)
+    .maybeSingle()
+
+  if (assignErr) {
+    console.warn('tenant_release_assignments', assignErr.message)
+  }
+
+  const releaseAssignmentUpdatedAt =
+    !assignErr && assign?.updated_at != null && String(assign.updated_at).trim()
+      ? String(assign.updated_at)
+      : null
+
+  let active: ReturnType<typeof mapAppReleaseRow> | null = null
+  const activeId =
+    !assignErr && assign?.active_release_id != null ? String(assign.active_release_id) : null
+  if (activeId) {
+    const { data: rel, error: relErr } = await supabase.from('app_releases').select('*').eq('id', activeId).maybeSingle()
+    if (!relErr && rel) {
+      active = mapAppReleaseRow(rel as Record<string, unknown>)
+      const lines = splitNotesLines(active.notes ?? undefined)
+      response.appVersions = {
+        ...(response.appVersions ?? {}),
+        [vKey]: {
+          version: active.version,
+          releaseLabel: active.title || active.version,
+          releaseNotes: lines.length > 0 ? lines : undefined,
+        },
+      }
+    }
+  }
+
+  const { data: incRows, error: incErr } = await supabase
+    .from('app_releases')
+    .select('*')
+    .eq('channel', channel)
+    .eq('incoming_enabled', true)
+    .order('created_at', { ascending: false })
+    .limit(40)
+
+  if (incErr) {
+    console.warn('app_releases incoming', incErr.message)
+    response.mandantenReleases = { channel, active, incoming: [], releaseAssignmentUpdatedAt }
+    return
+  }
+
+  const { data: ritRows, error: ritErr } = await supabase
+    .from('release_incoming_tenants')
+    .select('release_id')
+    .eq('tenant_id', tenantId)
+
+  if (ritErr) {
+    console.warn('release_incoming_tenants', ritErr.message)
+    response.mandantenReleases = { channel, active, incoming: [], releaseAssignmentUpdatedAt }
+    return
+  }
+
+  const explicit = new Set((ritRows ?? []).map((x) => String(x.release_id)))
+
+  const incoming: ReturnType<typeof mapAppReleaseRow>[] = []
+  for (const row of incRows ?? []) {
+    const r = row as Record<string, unknown>
+    const rid = String(r.id)
+    if (activeId && rid === activeId) continue
+    const allM = Boolean(r.incoming_all_mandanten)
+    if (!allM && !explicit.has(rid)) continue
+    incoming.push(mapAppReleaseRow(r))
+    if (incoming.length >= MANDANTEN_RELEASE_INCOMING_MAX) break
+  }
+
+  response.mandantenReleases = {
+    channel,
+    active,
+    incoming,
+    releaseAssignmentUpdatedAt,
+  }
 }
 
 const assertOriginAllowedForTenant = (event: HandlerEvent, tenant: Record<string, unknown> | null): boolean => {
@@ -249,6 +452,25 @@ const buildLicenseJson = (licenseRow: Record<string, unknown>, globalAppCfg: { v
   const appVersions = parseAppVersionsForResponse(mergedRaw)
   if (appVersions) {
     response.appVersions = appVersions
+  }
+
+  response.maintenance = {
+    mode_enabled: Boolean(tenant?.maintenance_mode_enabled),
+    mode_message: (tenant?.maintenance_mode_message as string | null) ?? null,
+    mode_starts_at: (tenant?.maintenance_mode_started_at as string | null) ?? null,
+    mode_ends_at: (tenant?.maintenance_mode_ends_at as string | null) ?? null,
+    mode_duration_min:
+      tenant?.maintenance_mode_duration_min != null
+        ? Math.max(1, Number(tenant.maintenance_mode_duration_min) || 0)
+        : null,
+    mode_auto_end: Boolean(tenant?.maintenance_mode_auto_end),
+    mode_apply_main_app: tenant?.maintenance_mode_apply_main_app !== false,
+    mode_apply_arbeitszeit_portal: tenant?.maintenance_mode_apply_arbeitszeit_portal !== false,
+    mode_apply_customer_portal: tenant?.maintenance_mode_apply_customer_portal !== false,
+    announcement_enabled: Boolean(tenant?.maintenance_announcement_enabled),
+    announcement_message: (tenant?.maintenance_announcement_message as string | null) ?? null,
+    announcement_from: (tenant?.maintenance_announcement_from as string | null) ?? null,
+    announcement_until: (tenant?.maintenance_announcement_until as string | null) ?? null,
   }
 
   return response
@@ -384,6 +606,17 @@ const handler: Handler = async (event: HandlerEvent): Promise<{ statusCode: numb
   }
 
   const body = buildLicenseJson(licenseRow, globalAppCfg)
+
+  const tenantForRelease = licenseRow.tenants as Record<string, unknown> | null
+  const tenantIdForRelease = tenantForRelease?.id != null ? String(tenantForRelease.id) : ''
+  if (tenantIdForRelease) {
+    try {
+      const ch = detectReleaseChannel(tenantForRelease, requestHost)
+      await mergeMandantenReleasesIntoResponse(supabase, tenantIdForRelease, ch, body)
+    } catch (e) {
+      console.warn('mandantenReleases skipped (Schema oder Fehler):', e)
+    }
+  }
 
   return {
     statusCode: 200,

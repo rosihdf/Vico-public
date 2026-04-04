@@ -212,6 +212,20 @@ export const bumpClientConfigVersion = async (
   return { ok: true, client_config_version: next }
 }
 
+/** Erhöht `client_config_version` für alle Lizenzen eines Mandanten (z. B. nach Release-Zuweisung / Rollback). */
+export const bumpClientConfigVersionsForTenantLicenses = async (
+  tenantId: string
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase.from('licenses').select('id').eq('tenant_id', tenantId)
+  if (error) return { ok: false, error: error.message }
+  for (const row of data ?? []) {
+    const id = String((row as { id: string }).id)
+    const r = await bumpClientConfigVersion(id)
+    if (!r.ok) return { ok: false, error: r.error }
+  }
+  return { ok: true }
+}
+
 export const updateLicense = async (id: string, payload: LicenseUpdate): Promise<{ ok: boolean; error?: string }> => {
   const { error } = await supabase
     .from('licenses')
