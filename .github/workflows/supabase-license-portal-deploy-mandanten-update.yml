@@ -1,0 +1,29 @@
+# Deployt nur die Edge Function **license** (Mandanten-Release-Payload, appVersions-Overlay, Lizenz/Design).
+# Nicht: limit-exceeded, update-impressum, trigger-mandanten-db-rollout.
+#
+# GitHub Secrets:
+#   SUPABASE_ACCESS_TOKEN              – Personal Access Token (Supabase Dashboard → Account → Access Tokens)
+#   SUPABASE_LICENSE_PORTAL_PROJECT_REF – Projekt-Ref des Lizenzportals (z. B. ojryoosqwfbzlmdeywzs)
+#
+# Manuell: Actions → „LP – Deploy Mandanten-Update (license)“ → Run workflow
+
+name: LP – Deploy Mandanten-Update (license)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.76.8
+
+      - name: Deploy Edge Function license
+        working-directory: supabase-license-portal
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy license --project-ref ${{ secrets.SUPABASE_LICENSE_PORTAL_PROJECT_REF }}
