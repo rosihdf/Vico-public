@@ -51,7 +51,10 @@ const AppReleaseEditor = () => {
   }, [])
 
   const load = useCallback(async () => {
-    if (!releaseId || isNew) return
+    if (!releaseId || isNew) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     try {

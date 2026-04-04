@@ -272,11 +272,7 @@ const App = () => {
               <AppReleases />
             </Suspense>
           } />
-          <Route path="app-releases/neu" element={
-            <Suspense fallback={<PageFallback />}>
-              <AppReleaseEditor />
-            </Suspense>
-          } />
+          {/* Nur :releaseId – „neu“ ist Wert des Params (kein separates path ohne Param, sonst releaseId undefined → endloses „Lade…“) */}
           <Route path="app-releases/:releaseId" element={
             <Suspense fallback={<PageFallback />}>
               <AppReleaseEditor />
