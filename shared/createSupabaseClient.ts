@@ -1,6 +1,7 @@
 /** Factory für Supabase-Client mit konfigurierbaren Auth-Optionen */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createMandantDegradedAwareFetch } from './mandantDegradedStore'
 
 export type CreateSupabaseClientOptions = {
   url: string
@@ -13,12 +14,17 @@ export type CreateSupabaseClientOptions = {
     removeItem: (key: string) => void
   }
   warnMessage?: string
+  /**
+   * §11.18 WP-NET-01: globaler fetch-Wrap für Mandanten-Degraded (nur Transport-Fehler).
+   * Admin/Lizenzportal: false, damit LP-Fehler den Mandanten-Modus nicht setzen.
+   */
+  trackMandantDegraded?: boolean
 }
 
 export const createSupabaseClient = (
   options: CreateSupabaseClientOptions
 ): SupabaseClient => {
-  const { url, anonKey, storageKey, customStorage, warnMessage } = options
+  const { url, anonKey, storageKey, customStorage, warnMessage, trackMandantDegraded } = options
   const supabaseUrl = (url ?? '').trim()
   const supabaseAnonKey = (anonKey ?? '').trim()
 
@@ -45,9 +51,14 @@ export const createSupabaseClient = (
     authOptions.storageKey = storageKey
   }
 
-  return createClient(
-    supabaseUrl || 'https://example.supabase.co',
-    supabaseAnonKey || 'placeholder',
-    { auth: authOptions }
-  )
+  const baseFetch = globalThis.fetch.bind(globalThis)
+  const fetchForClient =
+    trackMandantDegraded === true && supabaseUrl
+      ? createMandantDegradedAwareFetch(supabaseUrl, baseFetch)
+      : baseFetch
+
+  return createClient(supabaseUrl || 'https://example.supabase.co', supabaseAnonKey || 'placeholder', {
+    auth: authOptions,
+    global: { fetch: fetchForClient },
+  })
 }
