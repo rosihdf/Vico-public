@@ -17,6 +17,7 @@ const AppInfo = lazy(() => import('./pages/AppInfo'))
 const GlobaleWartung = lazy(() => import('./pages/GlobaleWartung'))
 const AppReleases = lazy(() => import('./pages/AppReleases'))
 const AppReleaseEditor = lazy(() => import('./pages/AppReleaseEditor'))
+const ReleaseRollout = lazy(() => import('./pages/ReleaseRollout'))
 
 const PageFallback = () => (
   <div className="flex flex-col items-center justify-center py-12 gap-4">
@@ -276,6 +277,11 @@ const App = () => {
           <Route path="app-releases/:releaseId" element={
             <Suspense fallback={<PageFallback />}>
               <AppReleaseEditor />
+            </Suspense>
+          } />
+          <Route path="release-rollout" element={
+            <Suspense fallback={<PageFallback />}>
+              <ReleaseRollout />
             </Suspense>
           } />
           <Route path="einstellungen" element={

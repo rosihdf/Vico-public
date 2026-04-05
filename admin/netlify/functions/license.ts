@@ -301,7 +301,12 @@ const mergeMandantenReleasesIntoResponse = async (
   const activeId =
     !assignErr && assign?.active_release_id != null ? String(assign.active_release_id) : null
   if (activeId) {
-    const { data: rel, error: relErr } = await supabase.from('app_releases').select('*').eq('id', activeId).maybeSingle()
+    const { data: rel, error: relErr } = await supabase
+      .from('app_releases')
+      .select('*')
+      .eq('id', activeId)
+      .eq('status', 'published')
+      .maybeSingle()
     if (!relErr && rel) {
       active = mapAppReleaseRow(rel as Record<string, unknown>)
       const lines = splitNotesLines(active.notes ?? undefined)
@@ -321,6 +326,7 @@ const mergeMandantenReleasesIntoResponse = async (
     .select('*')
     .eq('channel', channel)
     .eq('incoming_enabled', true)
+    .eq('status', 'published')
     .order('created_at', { ascending: false })
     .limit(40)
 

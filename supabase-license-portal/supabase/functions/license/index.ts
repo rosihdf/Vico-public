@@ -1,7 +1,7 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-/** Parität zu admin/netlify/functions/license.ts (Preflight + fetch-Header). */
+/** Parität zu admin/netlify/functions/license.ts (Preflight, fetch-Header, mandantenReleases). Mandanten-Apps: bevorzugt diese Edge-URL (Cloudflare Pages + Supabase). */
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -110,6 +110,178 @@ const hostMatchesAllowedRule = (requestHost: string, rule: string): boolean => {
   return h === domain
 }
 
+const MANDANTEN_RELEASE_INCOMING_MAX = 3
+
+type ReleaseChannel = 'main' | 'kundenportal' | 'arbeitszeit_portal'
+
+const splitNotesLines = (notes: string | null | undefined): string[] => {
+  if (!notes) return []
+  return notes
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+const detectReleaseChannel = (tenant: Record<string, unknown>, requestHost: string): ReleaseChannel => {
+  const h = requestHost.trim().toLowerCase()
+  if (!h) return 'main'
+  const pd = normalizeTenantDomainField(tenant.portal_domain as string)
+  const az = normalizeTenantDomainField(tenant.arbeitszeitenportal_domain as string)
+  const ad = normalizeTenantDomainField(tenant.app_domain as string)
+  if (pd && h === pd) return 'kundenportal'
+  if (az && h === az) return 'arbeitszeit_portal'
+  if (ad && h === ad) return 'main'
+  return 'main'
+}
+
+const mapAppReleaseRow = (r: Record<string, unknown>) => {
+  const tags = Array.isArray(r.module_tags) ? r.module_tags.map((x) => String(x)) : []
+  return {
+    id: String(r.id),
+    version: String(r.version_semver),
+    releaseType: String(r.release_type),
+    title: r.title != null ? String(r.title) : null,
+    notes: r.notes != null ? String(r.notes) : null,
+    moduleTags: tags,
+    affectsLine: tags.length > 0 ? `Betrifft: ${tags.join(', ')}` : null,
+    forceHardReload: Boolean(r.force_hard_reload),
+  }
+}
+
+const appVersionKeyForChannel = (ch: ReleaseChannel): (typeof APP_VERSION_KEYS)[number] =>
+  ch === 'kundenportal' ? 'kundenportal' : ch === 'arbeitszeit_portal' ? 'arbeitszeit_portal' : 'main'
+
+type LicenseResponse = {
+  license_number?: string
+  license: {
+    tier: string
+    valid_until: string | null
+    grace_period_days: number
+    max_users: number | null
+    max_customers: number | null
+    max_storage_mb: number | null
+    check_interval: 'on_start' | 'daily' | 'weekly'
+    features: Record<string, boolean>
+    valid: boolean
+    expired: boolean
+    read_only: boolean
+    is_trial: boolean
+    client_config_version: number
+  }
+  design: {
+    app_name: string
+    tenant_name?: string | null
+    logo_url: string | null
+    primary_color: string
+    secondary_color?: string | null
+    favicon_url?: string | null
+  }
+  impressum?: Record<string, string | null>
+  datenschutz?: Record<string, string | null>
+  appVersions?: Record<string, AppVersionEntry>
+  mandantenReleases?: {
+    channel: ReleaseChannel
+    active: ReturnType<typeof mapAppReleaseRow> | null
+    incoming: ReturnType<typeof mapAppReleaseRow>[]
+    releaseAssignmentUpdatedAt: string | null
+  }
+}
+
+const mergeMandantenReleasesIntoResponse = async (
+  supabase: SupabaseClient,
+  tenantId: string,
+  channel: ReleaseChannel,
+  response: LicenseResponse
+): Promise<void> => {
+  const vKey = appVersionKeyForChannel(channel)
+
+  const { data: assign, error: assignErr } = await supabase
+    .from('tenant_release_assignments')
+    .select('active_release_id, previous_release_id, updated_at')
+    .eq('tenant_id', tenantId)
+    .eq('channel', channel)
+    .maybeSingle()
+
+  if (assignErr) {
+    console.warn('tenant_release_assignments', assignErr.message)
+  }
+
+  const releaseAssignmentUpdatedAt =
+    !assignErr && assign?.updated_at != null && String(assign.updated_at).trim()
+      ? String(assign.updated_at)
+      : null
+
+  let active: ReturnType<typeof mapAppReleaseRow> | null = null
+  const activeId =
+    !assignErr && assign?.active_release_id != null ? String(assign.active_release_id) : null
+  if (activeId) {
+    const { data: rel, error: relErr } = await supabase
+      .from('app_releases')
+      .select('*')
+      .eq('id', activeId)
+      .eq('status', 'published')
+      .maybeSingle()
+    if (!relErr && rel) {
+      active = mapAppReleaseRow(rel as Record<string, unknown>)
+      const lines = splitNotesLines(active.notes ?? undefined)
+      response.appVersions = {
+        ...(response.appVersions ?? {}),
+        [vKey]: {
+          version: active.version,
+          releaseLabel: active.title || active.version,
+          releaseNotes: lines.length > 0 ? lines : undefined,
+        },
+      }
+    }
+  }
+
+  const { data: incRows, error: incErr } = await supabase
+    .from('app_releases')
+    .select('*')
+    .eq('channel', channel)
+    .eq('incoming_enabled', true)
+    .eq('status', 'published')
+    .order('created_at', { ascending: false })
+    .limit(40)
+
+  if (incErr) {
+    console.warn('app_releases incoming', incErr.message)
+    response.mandantenReleases = { channel, active, incoming: [], releaseAssignmentUpdatedAt }
+    return
+  }
+
+  const { data: ritRows, error: ritErr } = await supabase
+    .from('release_incoming_tenants')
+    .select('release_id')
+    .eq('tenant_id', tenantId)
+
+  if (ritErr) {
+    console.warn('release_incoming_tenants', ritErr.message)
+    response.mandantenReleases = { channel, active, incoming: [], releaseAssignmentUpdatedAt }
+    return
+  }
+
+  const explicit = new Set((ritRows ?? []).map((x) => String(x.release_id)))
+
+  const incoming: ReturnType<typeof mapAppReleaseRow>[] = []
+  for (const row of incRows ?? []) {
+    const r = row as Record<string, unknown>
+    const rid = String(r.id)
+    if (activeId && rid === activeId) continue
+    const allM = Boolean(r.incoming_all_mandanten)
+    if (!allM && !explicit.has(rid)) continue
+    incoming.push(mapAppReleaseRow(r))
+    if (incoming.length >= MANDANTEN_RELEASE_INCOMING_MAX) break
+  }
+
+  response.mandantenReleases = {
+    channel,
+    active,
+    incoming,
+    releaseAssignmentUpdatedAt,
+  }
+}
+
 const tenantMatchesRequestHost = (
   tenant: {
     portal_domain?: string | null
@@ -165,37 +337,6 @@ const jsonLicenseHeaders = () => ({
   'Cache-Control': 'private, no-store',
 })
 
-type LicenseResponse = {
-  license_number?: string
-  license: {
-    tier: string
-    valid_until: string | null
-    grace_period_days: number
-    max_users: number | null
-    max_customers: number | null
-    max_storage_mb: number | null
-    check_interval: 'on_start' | 'daily' | 'weekly'
-    features: Record<string, boolean>
-    valid: boolean
-    expired: boolean
-    read_only: boolean
-    is_trial: boolean
-    client_config_version: number
-  }
-  design: {
-    app_name: string
-    tenant_name?: string | null
-    logo_url: string | null
-    primary_color: string
-    secondary_color?: string | null
-    favicon_url?: string | null
-  }
-  impressum?: Record<string, string | null>
-  datenschutz?: Record<string, string | null>
-  /** Mandantenweise gepflegte Version/Release Notes pro Frontend (optional). */
-  appVersions?: Record<string, AppVersionEntry>
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -250,6 +391,9 @@ serve(async (req) => {
           secondary_color,
           favicon_url,
           allowed_domains,
+          app_domain,
+          portal_domain,
+          arbeitszeitenportal_domain,
           impressum_company_name,
           impressum_address,
           impressum_contact,
@@ -415,6 +559,17 @@ serve(async (req) => {
     const appVersions = parseAppVersionsForResponse(mergedRaw)
     if (appVersions) {
       response.appVersions = appVersions
+    }
+
+    const tenantForRelease = licenseRow.tenants as Record<string, unknown> | null
+    const tenantIdForRelease = tenantForRelease?.id != null ? String(tenantForRelease.id) : ''
+    if (tenantIdForRelease) {
+      try {
+        const ch = detectReleaseChannel(tenantForRelease, requestHost)
+        await mergeMandantenReleasesIntoResponse(supabase, tenantIdForRelease, ch, response)
+      } catch (e) {
+        console.warn('mandantenReleases skipped (Schema oder Fehler):', e)
+      }
     }
 
     return new Response(JSON.stringify(response), {

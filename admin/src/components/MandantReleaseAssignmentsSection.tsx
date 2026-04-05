@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  fetchAppReleasesByChannel,
+  fetchPublishedAppReleasesByChannel,
   fetchTenantReleaseAssignments,
   RELEASE_CHANNEL_LABELS,
   rollbackTenantChannelRelease,
@@ -47,9 +47,9 @@ const MandantReleaseAssignmentsSection = ({ tenantId }: MandantReleaseAssignment
     try {
       const [assRows, mainR, kpR, azR] = await Promise.all([
         fetchTenantReleaseAssignments(tenantId),
-        fetchAppReleasesByChannel('main'),
-        fetchAppReleasesByChannel('kundenportal'),
-        fetchAppReleasesByChannel('arbeitszeit_portal'),
+        fetchPublishedAppReleasesByChannel('main'),
+        fetchPublishedAppReleasesByChannel('kundenportal'),
+        fetchPublishedAppReleasesByChannel('arbeitszeit_portal'),
       ])
       const nextAss: Record<ReleaseChannel, string> = { main: '', kundenportal: '', arbeitszeit_portal: '' }
       const nextPrev: Record<ReleaseChannel, string | null> = { main: null, kundenportal: null, arbeitszeit_portal: null }

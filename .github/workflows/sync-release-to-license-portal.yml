@@ -1,0 +1,42 @@
+# MVP: GitHub Release → Lizenzportal app_releases (Entwurf), Freigabe im Admin.
+# Secrets: SUPABASE_LICENSE_PORTAL_URL, SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY
+# Tag-Konvention: main/1.2.0, kundenportal/1.0.0, arbeitszeit/0.9.0 (siehe scripts/sync-github-release-to-license-portal.mjs)
+
+name: Sync release to license portal
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag wie main/1.2.0 (Kanal/Version)'
+        required: true
+        type: string
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install root dependencies (Supabase client)
+        run: npm ci
+
+      - name: Sync app_release draft to license portal DB
+        env:
+          SUPABASE_LICENSE_PORTAL_URL: ${{ secrets.SUPABASE_LICENSE_PORTAL_URL }}
+          SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_LICENSE_PORTAL_SERVICE_ROLE_KEY }}
+          GITHUB_SYNC_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.tag }}
+          GITHUB_SYNC_RELEASE_BODY: ${{ github.event_name == 'release' && github.event.release.body || '' }}
+          GITHUB_SYNC_RELEASE_NAME: ${{ github.event_name == 'release' && github.event.release.name || '' }}
+          GITHUB_SYNC_HTML_URL: ${{ github.event_name == 'release' && github.event.release.html_url || '' }}
+          GITHUB_SYNC_TARGET_COMMITISH: ${{ github.event_name == 'release' && github.event.release.target_commitish || '' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/sync-github-release-to-license-portal.mjs

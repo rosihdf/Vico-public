@@ -134,6 +134,114 @@ begin
   end if;
 end $$;
 
+-- Wartungsmodus pro Mandant (LP-Schalter)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_enabled'
+  ) then
+    alter table public.tenants add column maintenance_mode_enabled boolean not null default false;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_message'
+  ) then
+    alter table public.tenants add column maintenance_mode_message text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_updated_at'
+  ) then
+    alter table public.tenants add column maintenance_mode_updated_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_updated_by'
+  ) then
+    alter table public.tenants add column maintenance_mode_updated_by uuid references public.profiles(id) on delete set null;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_duration_min'
+  ) then
+    alter table public.tenants add column maintenance_mode_duration_min int check (maintenance_mode_duration_min is null or maintenance_mode_duration_min >= 1);
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_started_at'
+  ) then
+    alter table public.tenants add column maintenance_mode_started_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_ends_at'
+  ) then
+    alter table public.tenants add column maintenance_mode_ends_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_auto_end'
+  ) then
+    alter table public.tenants add column maintenance_mode_auto_end boolean not null default false;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_announcement_enabled'
+  ) then
+    alter table public.tenants add column maintenance_announcement_enabled boolean not null default false;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_announcement_message'
+  ) then
+    alter table public.tenants add column maintenance_announcement_message text;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_announcement_from'
+  ) then
+    alter table public.tenants add column maintenance_announcement_from timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_announcement_until'
+  ) then
+    alter table public.tenants add column maintenance_announcement_until timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_announcement_updated_at'
+  ) then
+    alter table public.tenants add column maintenance_announcement_updated_at timestamptz;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_announcement_updated_by'
+  ) then
+    alter table public.tenants add column maintenance_announcement_updated_by uuid references public.profiles(id) on delete set null;
+  end if;
+  -- Wartungsmodus: je Ziel-App schaltbar (Lizenz-API maintenance.mode_apply_*)
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_apply_main_app'
+  ) then
+    alter table public.tenants add column maintenance_mode_apply_main_app boolean not null default true;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_apply_arbeitszeit_portal'
+  ) then
+    alter table public.tenants add column maintenance_mode_apply_arbeitszeit_portal boolean not null default true;
+  end if;
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'maintenance_mode_apply_customer_portal'
+  ) then
+    alter table public.tenants add column maintenance_mode_apply_customer_portal boolean not null default true;
+  end if;
+end $$;
+
 -- app_versions: optional pro Mandant (Version/Release Notes je Frontend-App)
 do $$
 begin
@@ -454,3 +562,141 @@ create index if not exists licenses_tenant_created_idx on public.licenses (tenan
 -- license_number: Unique-Constraint erzeugt bereits einen Index
 create index if not exists license_models_sort_name_idx on public.license_models (sort_order, name);
 create index if not exists limit_exceeded_log_tenant_created_idx on public.limit_exceeded_log (tenant_id, created_at desc);
+
+-- -----------------------------------------------------------------------------
+-- 7. MANDANTEN-APP-RELEASES (§11.20 / WP-REL) – Entwürfe, Incoming, Go-Live pro Kanal
+-- -----------------------------------------------------------------------------
+
+-- Release-Verwalter: Admins mit Flag (Standard an = bestehende Installationen unverändert)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'profiles' and column_name = 'can_manage_app_releases'
+  ) then
+    alter table public.profiles add column can_manage_app_releases boolean not null default true;
+  end if;
+end $$;
+
+-- Testmandant (Incoming / Pilot)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'is_test_mandant'
+  ) then
+    alter table public.tenants add column is_test_mandant boolean not null default false;
+  end if;
+end $$;
+
+create or replace function public.can_manage_app_releases()
+returns boolean language sql security definer set search_path = public stable as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid()
+      and p.role = 'admin'
+      and coalesce(p.can_manage_app_releases, true) = true
+  );
+$$;
+grant execute on function public.can_manage_app_releases() to authenticated;
+
+create table if not exists public.app_releases (
+  id uuid primary key default gen_random_uuid(),
+  channel text not null check (channel in ('main', 'kundenportal', 'arbeitszeit_portal')),
+  version_semver text not null,
+  release_type text not null check (release_type in ('bugfix', 'feature', 'major')),
+  title text,
+  notes text,
+  module_tags text[] not null default '{}',
+  incoming_enabled boolean not null default false,
+  incoming_all_mandanten boolean not null default false,
+  force_hard_reload boolean not null default false,
+  ci_metadata jsonb not null default '{}'::jsonb,
+  status text not null default 'published' check (status in ('draft', 'published')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  created_by uuid references public.profiles(id) on delete set null,
+  unique (channel, version_semver)
+);
+
+create index if not exists app_releases_channel_created_idx on public.app_releases (channel, created_at desc);
+
+create table if not exists public.release_incoming_tenants (
+  release_id uuid not null references public.app_releases(id) on delete cascade,
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  primary key (release_id, tenant_id)
+);
+
+create index if not exists release_incoming_tenants_tenant_idx on public.release_incoming_tenants (tenant_id);
+
+create table if not exists public.tenant_release_assignments (
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  channel text not null check (channel in ('main', 'kundenportal', 'arbeitszeit_portal')),
+  active_release_id uuid references public.app_releases(id) on delete set null,
+  previous_release_id uuid references public.app_releases(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, channel)
+);
+
+create index if not exists tenant_release_assignments_active_idx on public.tenant_release_assignments (active_release_id);
+
+create table if not exists public.release_audit_log (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  actor_id uuid references public.profiles(id) on delete set null,
+  action text not null,
+  release_id uuid references public.app_releases(id) on delete set null,
+  tenant_id uuid references public.tenants(id) on delete set null,
+  channel text,
+  metadata jsonb not null default '{}'::jsonb
+);
+
+create index if not exists release_audit_log_created_idx on public.release_audit_log (created_at desc);
+
+alter table public.app_releases enable row level security;
+alter table public.release_incoming_tenants enable row level security;
+alter table public.tenant_release_assignments enable row level security;
+alter table public.release_audit_log enable row level security;
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'app_releases' loop
+    execute format('drop policy if exists %I on public.app_releases', r.policyname);
+  end loop;
+end $$;
+create policy "Release managers manage app_releases" on public.app_releases for all using (public.can_manage_app_releases());
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'release_incoming_tenants' loop
+    execute format('drop policy if exists %I on public.release_incoming_tenants', r.policyname);
+  end loop;
+end $$;
+create policy "Release managers manage release_incoming_tenants" on public.release_incoming_tenants for all using (public.can_manage_app_releases());
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'tenant_release_assignments' loop
+    execute format('drop policy if exists %I on public.tenant_release_assignments', r.policyname);
+  end loop;
+end $$;
+create policy "Admins manage tenant_release_assignments" on public.tenant_release_assignments for all using (public.is_admin());
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'release_audit_log' loop
+    execute format('drop policy if exists %I on public.release_audit_log', r.policyname);
+  end loop;
+end $$;
+create policy "Release managers read release_audit_log" on public.release_audit_log for select using (public.can_manage_app_releases());
+create policy "Release managers insert release_audit_log" on public.release_audit_log for insert with check (public.can_manage_app_releases());
+
+-- ---------------------------------------------------------------------------
+-- app_releases.status – Nachziehen auf bestehenden Lizenzportal-DBs (GitHub → LP)
+-- ---------------------------------------------------------------------------
+alter table public.app_releases add column if not exists status text;
+update public.app_releases set status = 'published' where status is null;
+alter table public.app_releases alter column status set default 'published';
+alter table public.app_releases alter column status set not null;
+do $$ begin
+  alter table public.app_releases add constraint app_releases_status_check check (status in ('draft', 'published'));
+exception
+  when duplicate_object then null;
+end $$;
+create index if not exists app_releases_status_channel_idx on public.app_releases (status, channel, created_at desc);

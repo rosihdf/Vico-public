@@ -1,6 +1,6 @@
 # Vico – Türen & Tore
 
-Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2026.
+Wartungs- und Mängeldokumentation für Türen und Tore. Stand: April 2026.
 
 ---
 
@@ -30,7 +30,7 @@ Wartungs- und Mängeldokumentation für Türen und Tore. Stand: März 2026.
 |--------|-------------|
 | Web-App | Vite + React + TypeScript (TailwindCSS) |
 | Backend | Supabase (Auth, Database, Storage) |
-| Hosting | Netlify |
+| Hosting | Cloudflare Pages (vier Apps); Lizenz-API: Supabase Edge Function `license` im Lizenzportal-Projekt |
 
 ### Befehle
 
@@ -47,8 +47,8 @@ Alle Apps sind per IP erreichbar (`host: true` in Vite). Nach `npm run dev` in j
 | App | Port | Local | Netzwerk (IP) |
 |-----|------|-------|---------------|
 | **Haupt-App** | 5173 | http://localhost:5173/ | http://&lt;IP&gt;:5173/ |
-| **Kundenportal** | 5174 | http://localhost:5174/ | http://&lt;IP&gt;:5174/ |
-| **Admin (Lizenz)** | 5175 | http://localhost:5175/ | http://&lt;IP&gt;:5175/ |
+| **Kundenportal** | 5074 | http://localhost:5074/ | http://&lt;IP&gt;:5074/ |
+| **Admin (Lizenz)** | 5075 | http://localhost:5075/ | http://&lt;IP&gt;:5075/ |
 | **Arbeitszeit-Portal** | 5176 | http://localhost:5176/ | http://&lt;IP&gt;:5176/ |
 
 Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal && npm run dev`, `cd arbeitszeit-portal && npm run dev`. Die IP-Adresse zeigt Vite beim Start (z. B. `Network: http://192.168.0.186:5173/`).
@@ -108,7 +108,8 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 
 ### Objekte
 
-- Stammdaten, Art, Technik, Schließmittel, Feststellanlage, Rauchmelder
+- Stammdaten, Art, Technik, Schließmittel, Feststellanlage; **Rauchmelder** in der Tür/Tor-Maske nur, wenn **Feststellanlage vorhanden** (`has_hold_open`) aktiv ist (sonst ausgeblendet; beim Speichern ohne Feststellanlage keine Rauchmelder-Stammdaten).
+- **Mängel:** **Aktuell (Stammdaten):** Liste mit **offen / erledigt**, erledigte optional einblenden; **`defects_structured`** (JSON), **`defects`** = Freitext nur offener Mängel (Legacy). **Geplant:** Siehe **§11.17** – Anzeige und Zähler aus **Prüfprotokoll-Checkliste** (Status „Mangel“ nur); Stammdaten-Mängel entfallen nach Migration/Alt-Daten-Klärung.
 - Fotos, QR-Code (Druck via Bluetooth)
 - **Duplikat/Kopie (Kundenansicht):** Eine Tür/Tor kann innerhalb desselben Kunden dupliziert werden (**neue Datensatz-ID**). Stammdaten werden übernommen; die **Bezeichnung** erhält den Zusatz **` (Duplikat)`** (war der Name leer: **`Duplikat`**), die **interne ID** einen eindeutigen Suffix **`…-Duplikat-<Kurz-UUID>`**. Im Dialog wählt der Nutzer getrennt: **Profilfoto** (Standard: an), **Galerie-Fotos** (Standard: aus), **Dokumente** (Zeichnungen, Zertifikate, …; Standard: aus). Was angehakt ist, wird als **eigene Datei** im jeweiligen Bucket kopiert (keine gemeinsame Storage-Referenz). Details und offene Punkte: **Tür/Tor: Duplikat – Verhalten & Rückfragen** unten.
 - **Profilfoto:** Optional pro Tür/Tor; in der **Kundenübersicht** nur das Bild, wenn gesetzt (kein Platzhalter). Im **Tür/Tor-Formular** oben rechts neben der Internen ID: immer **Vorschaubild oder Platzhalter** (Kamera-Symbol); **Klick** öffnet das Eingabepanel (Datei/Kamera/Entfernen). Aufnahme oder Datei, Komprimierung wie bei Objekt-Fotos. Schema: `objects.profile_photo_path` (Bucket `object-photos`).
@@ -133,8 +134,16 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 ### Aufträge & Monteursbericht
 
 - **Tür/Tor-Auswahl:** Wenn zum Kunden (bzw. Objekt/BV) Türen existieren, ist **mindestens eine** Auswahl erforderlich; die **Zuweisung** („Zugewiesen an“) erscheint erst danach (bzw. sofort, wenn es keine Türen zur Auswahl gibt).
+- **Mehrere Türen am Auftrag (Hinweise bei Anlage, `AuftragAnlegen.tsx`):**
+  - **Nicht „Wartung“** und **mehr als eine** Tür gewählt: Es wird erklärt, dass die Mehrfachauswahl **einen gemeinsamen Termin / einen Monteurbericht** abbildet und **nicht** wie bei der Wartung automatisch türweise in getrennte Prüfprotokolle aufgeteilt wird.
+  - **„Wartung“** und **mehr als eine** Tür: Kurzhinweis, dass **pro Tür** eine Prüf-Checkliste erwartet wird und **Ausnahmen beim Abschluss** im erledigten Auftrag dokumentiert werden (siehe unten).
 - **Tür/Tor aus Aufträge:** Link **„Tür/Tor“** öffnet **`/objekt/:id/bearbeiten?returnTo=/auftrag`** (volles Modal wie in Kunden, ohne die Kundenliste als Zwischenziel). Ohne Tür-ID am Auftrag Fallback weiterhin Deep-Link **`/kunden?…`**.
 - **Auftrag abschließen:** Bestätigungsdialog; wenn Firmen-Einstellung **Kundenportal + Benachrichtigung** und das Objekt **portal-fähig** ist, erscheint eine **Checkbox**, ob der Bericht **diesmal** im Portal bereitgestellt werden soll (Standard: an).
+- **Wartung: Abschluss trotz unvollständiger Checkliste („Trotzdem abschließen“, `Auftragsdetail.tsx`):** Ist die Wartungs-Checkliste für alle am Auftrag hängenden Türen nicht vollständig, kann nach einer zweiten Dialogstufe dennoch abgeschlossen werden. Im Datensatz wird ein **Audit** in `order_completions.completion_extra` abgelegt (JSON, Version 1):
+  - Feld **`wartung_checkliste_abschluss_bypass`**: `at` (ISO-Zeitstempel), `profile_id` (Abschluss durch, oder `null`), `incomplete_object_ids` (Liste der Tür-IDs, die zum Zeitpunkt des Abschlusses noch nicht vollständig waren).
+  - **Normaler** Abschluss (alle Türen checklisten-fertig) **entfernt** dieses Feld wieder aus dem Payload, damit keine altersschwachen Einträge stehen bleiben.
+  - **UI:** Am **erledigten** Wartungsauftrag erscheint eine **Infobox** (Zeit, Nutzer, betroffene Türen). Typ/Parsing: `src/types/orderCompletionExtra.ts` (`WartungChecklisteAbschlussBypassV1`, `parseOrderCompletionExtra`).
+  - **Kein SQL-Migrationsschritt:** nur erweitertes JSON in bestehender Spalte `completion_extra`.
 - **Aktionen Monteursbericht:** Speichern, Parken, Abschließen, ggf. E-Mail/PDF in **einer horizontalen Zeile** (scrollbar auf schmalen Viewports).
 
 #### Auftrag / Monteursbericht – Rückfragen (Produkt)
@@ -154,6 +163,7 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 
 - Lokale Speicherung, Outbox
 - Sync-Status: Offline, Ready, Synchronisiert
+- **Geplant:** **Eingeschränkter Netzwerkmodus** bei schwacher Leitung (fehlgeschlagene Requests trotz `navigator.onLine`): Lesen mit kurzem Timeout → Cache, Schreiben Retries → Outbox, Banner; optional Erreichbarkeits-Ping (Einstellungen). Spec **§11.18**.
 
 #### Offline-fähige Funktionen
 
@@ -169,6 +179,11 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 | Historie | ✅ (Cache) | — |
 | PDF-Export | ✅ (Fotos aus Cache) | — |
 | E-Mail-Versand | — | ✅ (Outbox → Sync) |
+
+### Lizenzportal & Mandanten-Releases
+
+- **Lizenzmodul (Admin):** Mandanten, Lizenzen, **App-Releases** je Kanal (Haupt-App, Kundenportal, Arbeitszeitenportal), **Zuweisungen** / Incoming / Rollback; Edge-Function **`license`** liefert u. a. **`mandantenReleases`** an die Mandanten-Apps (Banner, Rollout-Hinweis, Hard-Reload). Technischer Stand und Konzept: **§11.20**.
+- **Planung Prozess:** GitHub (Tag/Release mit Beschreibung) → Entwurf/Freigabe im Lizenzportal → gestaffelter Rollout; Phasen, Datenmodell-Idee und Funktionsablauf (Mermaid): **`docs/Planung-Releases-GitHub-Lizenzportal.md`**.
 
 ---
 
@@ -228,7 +243,7 @@ Supabase erlaubt **kein Umstellen der Region** eines bestehenden Projekts. Optio
 2. **Daten migrieren**
    - Schema (z. B. `supabase-complete.sql`) im neuen Projekt ausführen.
    - Daten exportieren/importieren (pg_dump/pg_restore oder Supabase Backup).
-   - Anschließend in der App die neuen Werte für `VITE_SUPABASE_URL` und `VITE_SUPABASE_ANON_KEY` setzen (Netlify Env, lokale `.env`).
+   - Anschließend in der App die neuen Werte für `VITE_SUPABASE_URL` und `VITE_SUPABASE_ANON_KEY` setzen (Cloudflare Pages **Umgebungsvariablen**, lokale `.env`).
 
 **Ladezeiten messen (aktuell)**
 
@@ -305,7 +320,7 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 
 ## 7. Roadmap
 
-Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** = was noch offen ist, **§7.3** = erledigte Meilensteine (Archiv), **§7.4** = Backlog-Referenz mit Priorität/Aufwand, **§7.5** = Kontext (grosse Epics, Checklisten, Ist-Stand), **§7.6** = **konsolidierte Planung** (Phasen 0–7, Mandanten-Onboarding A–D, Entscheidungen Roadmap J, Etikett-Referenzmaße). Technische Detailentscheidungen: **§9** (Lizenzportal), **§10** (Hauptapp), **§11** (Konsolidiert).
+Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** = was noch offen ist, **§7.3** = erledigte Meilensteine (Archiv), **§7.4** = Backlog-Referenz mit Priorität/Aufwand, **§7.5** = Kontext (grosse Epics, Checklisten, Ist-Stand **sowie Abgleich P0–P8 Prüfprotokoll/Feststellanlage**), **§7.6** = **konsolidierte Planung** (Phasen 0–7, Mandanten-Onboarding A–D, Entscheidungen Roadmap J, Etikett-Referenzmaße). Technische Detailentscheidungen: **§9** (Lizenzportal), **§10** (Hauptapp), **§11** (Konsolidiert).
 
 ### 7.1 Legende
 
@@ -332,6 +347,8 @@ Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** =
 
 **Explizit offen:** **Übertragung der Berichte ins Kundenportal** (Monteurs-/Wartungsberichte inkl. PDF/Metadaten, Anbindung an Portal-API und UI-Flow; eng mit **J6** Portal-Phase und Checkbox am Auftrag verzahnt).
 
+**Prüfprotokoll / Feststellanlage:** Die Phasen **P0–P8** (Arbeitsstand Branch **`wip/salvage-20260401`**, dort ausführlich **§7.2.4**) sind **nicht** identisch mit der Kurz-Priorität „P0“ in manchen Roadmap-Tabellen (dort oft **Portal End-to-End**). **Abgleich salvage → aktueller Code auf `main`:** **§7.5**, Unterabschnitt direkt unter „Umbau Wartung“.
+
 **Hinweis:** **J2, J3, J4, J10** (MVP), **2FA**, **Arbeitszeiterfassung** (Modul), **Capacitor/APK** (**I1**) und die früheren Phasen **A–H** sind umgesetzt → **§7.3**. **Abarbeitungs-Vorschlag** Phasen 0–7: **§7.6.2**.
 
 #### 7.2.1 Offene Entscheidungen (Betrieb / Feinschliff)
@@ -345,6 +362,12 @@ Dieser Abschnitt ist die **einzige Arbeitsliste** für Prioritäten: **§7.2** =
 | **L4 – Pixel-Limit** | **§9.4a** und **Implementierung** `uploadTenantLogo.ts`: max. **Kante 2048 px** (WebP), konsistent dokumentiert. |
 
 **GitHub:** Issues aus dieser Liste anlegen: **`docs/GitHub-Roadmap-7.2.md`** (inkl. **T1** · `docs/github-issues/T1.body.md`, **CF1** · `docs/github-issues/CF1.body.md`) · Skript **`scripts/gh-roadmap-issues.sh`** (nach `gh auth login`).
+
+#### 7.2.2 Feinschnitt & Arbeitspakete (Ab April 2026)
+
+Für **kleinteilige Abarbeitung** (Reihenfolge, Schätzung pro Paket): **`docs/Roadmap-Offene-Punkte.md`** – dort **Teil B** („Arbeitspakete“). Produktentscheide **Protokoll-Mängel / Degraded-Netz / Portal Auftragsflow / LP-Releases**: **§11.17**–**§11.20**.
+
+**Abgleich Code ↔ Roadmap (2026-04-04):** In **`docs/Roadmap-Offene-Punkte.md`** sind die Pakete **WP-MANG-01–05**, **WP-NET-01–05**, **WP-NET-10**, **WP-PORTAL-01–03**, **WP-ORD-02**, **WP-REL-00**–**WP-REL-02** und **WP-REL-04** als **Kern umgesetzt (✅)** markiert; weiterhin **offen** u. a. **WP-REL-03**, **WP-J6-***, **WP-J7-***, **WP-T1**, **WP-CF1**, **Teil C/D**, sowie **WP-MANG-00** / **WP-ORD-01** (Rollout bzw. manuelle Datenbereinigung).
 
 ---
 
@@ -419,6 +442,26 @@ Langfristige Feature-Liste mit **Priorität** und **Aufwand** – nicht alles is
 
 **Stand:** Monteursbericht / Completions / Auftragsdetail vorhanden; **Freigabe**, **Portal-Flow** und weitere Phasen offen (**J6**). **Explizit noch zu erledigen:** **Übertragung der Berichte ins Kundenportal** (End-to-End vom Auftrag bis zur Portal-Ansicht inkl. PDF-Pfade und RLS).
 
+##### Phasen P0–P8 (Branch `wip/salvage-20260401`) vs. Umsetzung auf `main`
+
+Auf dem Branch **`wip/salvage-20260401`** ist das Paket **Prüfprotokoll / Feststellanlage / QR / Offline** in **`Vico.md` §7.2.4** (inkl. Rückfragen, Tabellen **§7.2.4.7–7.2.4.9**) ausführlich dokumentiert. **`main`** hält die Roadmap **kompakter** (§7.2–7.6 ohne diese Verschachtelung); die folgende Tabelle ist die **maßgebliche Kurzfassung** des Abgleichs **Soll (salvage)** ↔ **Ist (Code auf `main`)**.
+
+**Doku-Entscheid:** Ein **vollständiges Portieren** von salvage-**§7.2.4** nach **`main`** erfolgt **nicht** (Doppelpflege, Nummernkonflikt mit §7.2.2 UX-TT auf salvage). **Maßgeblich** bleiben **diese Tabelle** + Verweis auf den Branch; bei Bedarf einzelne Textbausteine gezielt übernehmen.
+
+| Phase | Kurz-Ziel (wie salvage **§7.2.4.7**) | Ist auf `main` |
+|-------|--------------------------------------|----------------|
+| **P0** | Einheitliches **JSON-Schema** für Protokoll-Daten (u. a. verschachteltes `checklist_protocol` an `maintenance_reports`, Merge-Hilfen) | **Abweichende, gewollte technische Lösung:** eigene Tabelle **`checklist_protocol`** (`supabase-complete.sql`) mit genau einem Parent (**`maintenance_report_id`** oder **`order_completion_id`**), Spalten **`door_checklist`** / **`feststell_checklist`**, RPCs **`merge_flat_boolean_jsonb`**, **`upsert_checklist_protocol_merge`**, **`upsert_checklist_protocol_replace`**. App: **`src/lib/checklistProtocolService.ts`**, Aufrufe aus **`createMaintenanceReport`**, **`updateOrderCompletion`**, Maintenance-Outbox in **`syncService.ts`**. Anzeige/Erfassung in der UI weiter über **`maintenance_reports.checklist_state`** und **`order_completions.completion_extra`** (Feststell-Block). |
+| **P1** | **QR → Auftrag zusammenführen** (Hybrid-Dialog, `object_ids` ergänzen, Duplikat- und 15-Tür-Regeln, **§7.2.4.6**) | **Umgesetzt:** **`fetchOrdersForQrMergeCandidates`**, **`QR_MERGE_DOOR_WARNING_THRESHOLD`**, Dialoge und **`updateOrder`** in **`AuftragAusQr.tsx`**; optional **`skipMerge=1`** im Query. Hinweisbox **offene Aufträge für dieselbe Tür** bleibt zusätzlich. |
+| **P2** | Automatische **Liste geprüfter Türen** im Monteursbericht-PDF | **Umgesetzt:** **`generateMonteurBerichtPdf.ts`** (Abschnitt „Geprüfte Türen/Tore“ aus **`object_ids`**). |
+| **P3** | **`feststellChecklistCatalog.ts`**: umfangreicher Katalog (8 Abschnitte / 32 Zeilen, Melder 5/8 J als **eine** Radio-Logik) | **Umgesetzt:** **`FESTSTELL_CHECKLIST_SECTIONS`**, **31 Checkbox-Prüfpunkte** + **Melder-Intervall** über **`completion_extra.feststell_melder_interval`**; UI/PDF in **`Auftragsdetail`**, **`generatePruefprotokollPdf.ts`**. Gegenüber salvage **kein** OK/Mangel/Notiz pro Punkt (nur erledigt = Checkbox). |
+| **P4** | Feststell-Panel in **`Auftragsdetail`**, Speichern mit **`upsertWartungsChecklistProtocol`** auf **gemergtes JSON** | **Umgesetzt** dem **`main`-Muster entsprechend:** Panel und Speicherung über **`completion_extra`**; Normierung serverseitig über **P0**-Replace-RPC (kein verschachteltes JSON-Feld am Wartungsbericht). |
+| **P5** | **Zwei PDFs:** Prüfprotokoll getrennt vom Monteursbericht | **Umgesetzt:** **`generatePruefprotokollPdf.ts`**, Monteursbericht unverändert separat; Pfad **`pruefprotokoll_pdf_path`** (siehe **`dataService`**, **`dataColumns`**). |
+| **P6** | **Portal:** Freigabe / Abruf Prüfprotokoll-PDF analog Monteursbericht | **Umgesetzt:** RPC z. B. **`get_portal_pruefprotokoll_pdf_path`**, UI **`portal/src/pages/Berichte.tsx`**. |
+| **P7** | **Offline** stufenweise (Checklisten → `maintenance_reports` → … laut salvage **§7.2.4.4**) | **Teilweise:** Nachsynchronisation **`checklist_protocol`** bei Maintenance-Outbox ✅. **Bewusst zurückgestellt:** Offline für **Completions** / Feststell-Checkliste (weiter **online-pflichtig**); voller Salvage-P7-Ausbau **🔲**. |
+| **P8** | Backlog (Follow-up-UI, Mängel-Fotos, LP-Systemwartung, UX-Feinschliff, …) | Überwiegend **🔲**; Einzelpunkte bei Bedarf mit salvage **§7.2.4.7 / 7.2.4.8** abgleichen. |
+
+**Produktentscheide (nach Rückmeldung):** (1) Doku wie oben **Abgleich**, kein Port salvage-§7.2.4. (2) **P3** Katalog erweitert wie beschrieben. (3) **P1** QR-Merge umgesetzt. (4) **P7** Offline Completions **zurückgestellt**.
+
 #### Arbeitszeiterfassung (Modul)
 
 **Aktivierung:** Lizenzmodul. **Technisch:** `time_entries`, `time_breaks`, Route `/arbeitszeit`, RLS.
@@ -436,7 +479,7 @@ Ein separates Supabase-Projekt für das **Lizenzportal**; Haupt-App bleibt eigen
 | 3 | Auth: Redirect-URLs, ggf. E-Mail-Bestätigung | |
 | 4 | API Keys (anon + ggf. service_role für Lizenz-API) | |
 | 5 | Admin-App `VITE_SUPABASE_*` = Lizenzportal-Projekt | |
-| 6 | Optional: `SUPABASE_LICENSE_PORTAL_*` für Netlify Functions | |
+| 6 | Optional: `SUPABASE_LICENSE_PORTAL_*` nur noch für Legacy/Referenz (`admin/netlify/functions`) | |
 | 7 | Test: Admin-Login, Mandanten/Lizenzen | |
 
 #### Verifikation ausgewählter Epics (Code-/Betriebsstand)
@@ -449,7 +492,7 @@ Ein separates Supabase-Projekt für das **Lizenzportal**; Haupt-App bleibt eigen
 | **J1** Wartungsplanung | ✅ In-App + **E-Mail-Digest** (Betrieb **§7.2.1**) |
 | **J2–J4** | ✅ MVP (**§7.3**) |
 | **J5** Filter | ✅ |
-| **J6** Umbau Wartung | ⚠️ Teilweise |
+| **J6** Umbau Wartung | ⚠️ Teilweise (Prüfprotokoll-Paket **P2–P6** u. a. siehe **§7.5** *Phasen P0–P8*) |
 | **J7** | ❌ |
 | **J8–J9** | ✅ |
 | **J10** Bug-Erfassung | ✅ MVP (**§7.3**) |
@@ -469,7 +512,7 @@ Ehemals verteilt auf `docs/Roadmap-Abarbeitung-Vorschlag.md`, `docs/Roadmap-Weit
 | **J3** | ✅ MVP | `/buchhaltung-export`, `accountingExportService.ts`; **SevDesk/API** später. |
 | **J4** | ✅ MVP A | `Startseite`, `profiles.dashboard_layout`; **J4-B** ✅ Favoriten/nur meine. |
 | **J5** | ✅ | Erweiterte Filter `Kunden.tsx`. |
-| **J6** | ⚠️ | Monteursbericht vorhanden; Freigabe/Portal/DIN großes Paket. **Offen:** **Übertragung der Berichte ins Kundenportal** (vollständiger Übermittlungs- und Anzeige-Flow). |
+| **J6** | ⚠️ | Monteursbericht vorhanden; Teilpaket Prüfprotokoll/Feststellanlage siehe **§7.5** (*Phasen P0–P8*). **Offen:** **Übertragung der Berichte ins Kundenportal** (vollständiger Übermittlungs- und Anzeige-Flow), Freigabe/DIN. |
 | **J7** | 🔲 | Priorität: (1) Mängel-Follow-up → (2) Bulk → (3) Portal-Push; **iCal** nicht in dieser Runde. |
 | **J10** | ✅ MVP | `Fehlerberichte`, `app_errors`, `errorReportService`. |
 | **I2** | ⚠️ UI | Preset/Maße **Einstellungen**; Hardware/Plugin – **§11.4**, **§7.2.1**. |
@@ -503,7 +546,7 @@ Ehemals verteilt auf `docs/Roadmap-Abarbeitung-Vorschlag.md`, `docs/Roadmap-Weit
 | **C** | Skript/CI: `scripts/netlify-apply-tenant-env.mjs`, Export im Mandanten-Formular | ✅ |
 | **D** | IaC (Terraform/Pulumi) + Supabase-/DNS-APIs | optional |
 
-**Manuell bleibend:** Mandanten-Supabase, Netlify-Sites, DNS, Secrets – siehe `docs/Netlify-README.md`, `docs/Netlify-Vier-Apps.md`.
+**Manuell bleibend:** Mandanten-Supabase, **Cloudflare Pages** (vier Apps), DNS, Secrets – siehe `docs/Cloudflare-Umzug-Roadmap.md`; Legacy-Netlify-Doku nur bei Rückgriff auf eingefrorene Sites.
 
 #### 7.6.4 Entscheidungen Roadmap J (übernommen)
 
@@ -911,7 +954,7 @@ Schwellwerte (80 %, 90 %) pro Mandant im Lizenzportal konfigurierbar oder fest. 
 
 | Nr. | Aufgabe | Technik | Aufwand |
 |-----|---------|---------|---------|
-| 16 | **Lizenz-Endpoint** – `GET /api/license?key=...&licenseNumber=...` → Lizenz + Design-Config | Netlify Function, Vercel, oder eigener Service | 2–3 T |
+| 16 | **Lizenz-Endpoint** – `GET …/license?licenseNumber=…` → Lizenz + Design-Config | Supabase Edge Function (Lizenzportal) | erledigt |
 | 17 | **Grenzüberschreitung-Endpoint** – `POST /api/limit-exceeded` – Meldung speichern, optional E-Mail | Wie oben | 0,5 T |
 | 18 | **Daten-Export** – Export aller Mandanten-Daten bei Kündigung | Script oder Admin-Funktion | 1–2 T |
 
@@ -928,9 +971,9 @@ Schwellwerte (80 %, 90 %) pro Mandant im Lizenzportal konfigurierbar oder fest. 
 
 **Speicherort Mandanten-Daten:** Eigenes Supabase-Projekt für das Lizenzportal. Tabellen z.B. `tenants`, `licenses`. Admin-App (`admin/`) verbindet sich mit diesem Supabase.
 
-**Lizenzportal-Hosting:** Netlify, separate Site für `admin/`. Domain: **lizenz.amrtech.de**.
+**Lizenzportal-Hosting:** Cloudflare Pages, Projekt für `admin/` (eigene URL/Domain).
 
-**Lizenz-API-Standort:** Netlify Function bei der admin-Site. Liest aus dem Lizenzportal-Supabase.
+**Lizenz-API-Standort:** Supabase Edge Function **`license`** im Lizenzportal-Supabase (`…/functions/v1/license`). Liest aus derselben Datenbank. Die Datei **`admin/netlify/functions/license.ts`** ist nur noch Referenz/Parität (kein produktiver Pfad bei ausschließlich CF).
 
 **API-Response-Schema (Lizenz + Design + Impressum/Datenschutz):**
 
@@ -1003,7 +1046,7 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 - `LicenseGate` – Prüfung bei API-Modus, Weiterleitung zu Aktivierung wenn nötig
 - `LicenseContext` – Unterstützt API-Modus (fetch von Lizenz-API) und Legacy (Supabase RPC)
 - Routes `/impressum`, `/datenschutz` in App
-- Supabase Edge Function `supabase-license-portal/supabase/functions/license` – GET /license?licenseNumber=... (Option D; Netlify-Funktion als Fallback vorhanden)
+- Supabase Edge Function `supabase-license-portal/supabase/functions/license` – GET /license?licenseNumber=… (produktiver Endpunkt bei CF-Pages-Setup)
 - Admin: Mandanten-CRUD (Liste, Anlegen, Bearbeiten, Löschen), Navigation
 
 **Erledigt (Lizenzvergabe):**
@@ -1016,7 +1059,7 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 - Design zur Laufzeit: CSS-Variablen (--vico-primary), Logo-URL, Favicon, App-Name, theme-color aus Lizenz-API
 
 **Hinweise:**
-- Vor Release auf Netlify: Lizenz-Architektur nochmals überdenken (aktuell: Supabase Edge Function).
+- Lizenz-Architektur: Mandanten-Apps rufen die Edge Function unter `VITE_LICENSE_API_URL` auf (nicht mehr Netlify Functions).
 - Ladezeiten Lizenzportal: zum Teil noch lang – wird beobachtet.
 
 **Nächste Schritte:**
@@ -1034,7 +1077,7 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 
 **Pflege Mandant:** Admin-App → Mandant bearbeiten → **„App-Versionen (optional, Mandant)“**.
 
-**Lizenz-API:** GET `…/license?licenseNumber=…` liefert zusätzlich **`appVersions`** (camelCase, gleiche Keys). Implementierung: Supabase Edge Function `license` und parallel Netlify `admin/netlify/functions/license.ts`.
+**Lizenz-API:** GET `…/license?licenseNumber=…` liefert u. a. **`appVersions`** und **`mandantenReleases`** (camelCase). Implementierung: Supabase Edge Function **`supabase-license-portal/supabase/functions/license`**; `admin/netlify/functions/license.ts` nur noch zur Referenz/Parität.
 
 **Clients:** Haupt-App (`LicenseContext` + `Info`), Kundenportal und Arbeitszeitenportal (`DesignContext` + `AppInfoContent`) zeigen die Angaben unter **„Lizenzportal (Anzeige)“**, sobald Inhalt gepflegt ist. Die **Build-Version** (`__APP_VERSION__` / `version.json`) bleibt die technische Referenz.
 
@@ -1455,11 +1498,11 @@ Hier sind die wichtigsten **fachlichen Konzepte** gebündelt, die zuvor als einz
 
 **Referenz:** §11.8, `docs/Arbeitszeit-Umstrukturierung-Portal.md`.
 
-#### 8. Lizenz-API (Edge Function vs. Netlify)
+#### 8. Lizenz-API (Supabase Edge)
 
 | Thema | Entscheidung |
 |--------|---------------|
-| **Entscheidung** | **Auf später verschoben.** Edge Function bleibt. |
+| **Entscheidung** | **Produktiv:** Edge Function `license` im Lizenzportal-Supabase; Mandanten-Apps: `VITE_LICENSE_API_URL` = `…/functions/v1`. |
 
 **Referenz:** `docs/Release-Checkliste.md`.
 
@@ -1671,3 +1714,364 @@ Details zu J1–J10 u. a.: **Vico.md §7** und **§7.6**. `docs/Noch-zu-erledi
 ---
 
 *Ende Abschnitt 11.*
+
+---
+
+### 11.13 Planungspunkte (Stand 2026-04-02) + Rückfragenprozess
+
+Für neue Planungspunkte gilt ab sofort:
+- Neue Punkte werden zuerst hier in `Vico.md` festgehalten.
+- Rückfragen erfolgen sequenziell (eine Frage nach der anderen) inkl. Antwortvorschlägen und Empfehlung.
+- Nach jeder beantworteten Frage wird die nächste Frage gestellt und die Entscheidung hier dokumentiert.
+
+Neue Planungspunkte aus Chat:
+- Wartungsseite im Lizenzportal (LP), um Wartungsarbeiten an der App durchzuführen und Datenverlust beim Mandanten während Wartung zu reduzieren.
+- Benennung: `Wartungsprotokolle` in `Prüfbericht` umbenennen.
+- Signaturregeln: Prüfbericht nur Monteur; Monteurbericht Monteur + Kunde.
+- Checkliste erweitern: Feststellanlagen-Punkte integrieren; Punkte nur anzeigen, wenn Tür eine Feststellanlage hat.
+- `Feststellanlage Wartung nach Herstellerangaben` entfernen.
+- `Wartung nach Herstellervorgabe` entfernen.
+- Geplante Funktion prüfen: Fotos pro Mangel hinterlegen.
+- Punkt `Sicherheit` aus Einstellungen entfernen.
+
+Entscheidungen (laufend):
+- Q1 Wartungsseite im LP: **Option B** bestätigt (echter Wartungsmodus mit serverseitiger Schreibsperre; optional Admin-Bypass).
+- Q2 Umbenennung auf „Prüfbericht“: **Option A** bestätigt (nur UI-Texte; technische Namen/DB-Schema bleiben unverändert).
+- Q3 Signaturregeln: **Option B** bestätigt (Prüfbericht: Monteur verpflichtend; Monteurbericht: Monteur verpflichtend, Kunde optional mit dokumentiertem Grund).
+- Q4 Checkliste/Feststellanlage: **Variante A** bestätigt (eine gemeinsame Checkliste; Feststellanlage-Bereich nur bei `has_hold_open=true`).
+
+Technik-Notiz zu Q4:
+- Compact/Detail-Modus ist im Datenmodell/Backend bereits vorgesehen (`monteur_report_settings.wartung_checkliste_modus`, SQL-Constraint vorhanden).
+- In der aktuellen UI ist dafür derzeit keine aktive Einstellungsmaske sichtbar; Umsetzungspfad für die Steuerung ist noch festzulegen.
+- Q5 Steuerung Compact/Detail: **Option C** bestätigt (globaler Default in `Einstellungen` + optionaler Override in `Auftragsdetail`).
+- Q6 Entfernen Herstellerangaben-Punkte: **Option A** bestätigt (aus UI/Neuanlage entfernen; Alt-Daten historisch lesbar belassen).
+- Q7 Mangel-Fotos: **Option B** bestätigt (eigene relationale Tabelle, initial max. 3 Fotos pro Mangel).
+- Q8 Foto-Position im Prüfbericht: **Option A** bestätigt (Fotos direkt unter dem jeweiligen Mangelpunkt).
+- Q9 `Sicherheit` in Einstellungen entfernen: **Option B** bestätigt (Section entfernen; Funktionen verbleiben im Profil).
+
+### 11.14 Umsetzungsplan (beschlossen, Stand 2026-04-02)
+
+#### Phase 1 – LP-Wartungsmodus (Q1)
+- LP erhält Wartungsseite + Schalter für globalen Wartungsmodus.
+- Serverseitige Schreibsperre für schreibende Operationen (Mandant), optionaler Admin-Bypass.
+- Wartungshinweis in App/Portal bei aktivem Modus; Lesezugriffe weiterhin möglich.
+- Betroffene Bereiche:
+  - LP: Wartungs-UI, Rechteprüfung
+  - API/Edge/RPC: Write-Guard
+  - App: Wartungshinweis + Fehlertext für blockierte Writes
+
+#### Phase 2 – Begriffe + Signaturlogik (Q2, Q3, Q9)
+- UI-Texte von `Wartungsprotokoll(e)` auf `Prüfbericht` umstellen (nur UI, keine Schema-Umbenennung).
+- Signaturregeln:
+  - Prüfbericht: Monteur verpflichtend
+  - Monteurbericht: Monteur verpflichtend, Kunde optional mit dokumentiertem Grund
+- `Sicherheit`-Bereich aus `Einstellungen` entfernen; Sicherheitsfunktionen ausschließlich über `Profil`.
+
+#### Phase 3 – Checklisten-Fusion + Compact/Detail-Steuerung (Q4, Q5, Q6)
+- Gemeinsame Checkliste in einer Ansicht:
+  - Feststellanlagen-Punkte nur bei `has_hold_open=true`
+- Compact/Detail:
+  - globaler Default in `Einstellungen`
+  - optionaler Override in `Auftragsdetail`
+- Punkte entfernen:
+  - `Feststellanlage Wartung nach Herstellerangaben`
+  - `Wartung nach Herstellervorgabe`
+- Alt-Daten historisch lesbar belassen (keine rückwirkende Migration).
+
+#### Phase 4 – Mangel-Fotos (Q7, Q8)
+- Neue relationale Tabelle für Fotos pro Mangelpunkt (max. 3 Fotos pro Mangel).
+- UI:
+  - Upload nur sichtbar/aktiv bei `status = mangel`
+  - Optionales Foto (keine Pflicht)
+- Prüfbericht-PDF:
+  - Mangelpunkt -> Beschreibung -> zugehörige Fotos direkt darunter
+- Offline:
+  - Outbox/Caching für Upload + Retry beim Sync
+
+#### Phase 5 – Tests, Rollout, Abnahme
+- Unit/Integrations-Tests:
+  - Signaturlogik je Dokument
+  - Compact/Detail + Override-Priorität
+  - Sichtbarkeit Feststellpunkte abhängig von `has_hold_open`
+  - Wartungsmodus blockiert Writes
+  - Mangel-Foto Upload/Sync/PDF
+- Rollout-Reihenfolge:
+  1) DB/SQL
+  2) Backend/Write-Guard
+  3) Frontend (Einstellungen/Auftragsdetail/PDF/Portal)
+  4) End-to-End Abnahme mit Testmandant
+
+### 11.15 Auftrag: Mehrfach-Türen & Audit „Trotzdem abschließen“ (Stand 2026-04-02)
+
+**Zweck:** Nachvollziehbarkeit im Produkt (ohne jedes Mal den Chat zu suchen).
+
+| Thema | Kurz | Details |
+|-------|------|---------|
+| UI Auftrag anlegen | Mehrfachauswahl ≠ Wartungs-Prüfprotokoll pro Tür | Siehe **§3** *Aufträge & Monteursbericht* → *Mehrere Türen am Auftrag* |
+| Audit bei Bypass-Abschluss | JSON in `completion_extra` | Feld `wartung_checkliste_abschluss_bypass` (`at`, `profile_id`, `incomplete_object_ids`); Typ `src/types/orderCompletionExtra.ts` |
+| Infobox | Nur `status = erledigt` mit gesetztem Feld | `src/Auftragsdetail.tsx` |
+| Chat-Protokoll (Fallback) | Inhaltliche Zusammenfassung | `docs/Chat-Backup-2026-04-02-Auftrag-Checkliste-Audit.md` |
+
+**Hinweis:** Ein vollständiger Roh-Export des Cursor-Chats liegt in Cursor-internen Transkripten; für das Repository reichen `Vico.md` + optionale `docs/Chat-Backup-*.md` (siehe Cursor-Regel *Vico – Chat-Zusammenfassung & Doku*).
+
+### 11.16 Planung & Rückfragen (Ergänzung aus Chat, Stand 2026-04-02)
+
+**Vorgehen:** Neue Planungspunkte werden hier gebündelt. **Rückfragen (RF)** sollen **der Reihe nach** geklärt werden (eine Frage pro Runde: Antwort wählen oder präzisieren → dann nächste RF). Technische Umsetzung erfolgt nach Beschluss.
+
+#### Eingangsliste (Themen aus Chat)
+
+| # | Thema | Kurz-Notiz |
+|---|--------|------------|
+| 1 | Hersteller-Punkte entfernen | `Feststellanlage Wartung nach Herstellerangaben`, `Wartung nach Herstellervorgabe` – siehe **Q6 / Phase 3 §11.14** (beschlossen); Code u. a. `ObjectFormModal.tsx`, `Wartungsprotokolle.tsx`, PDF-Texte |
+| 2 | Rauchmelder | **RF1 erledigt:** Stammdaten: nur bei **Feststellanlage vorhanden** (`has_hold_open`) – siehe Entscheid unter **RF1** |
+| 3 | Tür/Tor: Mängel + Fotos | **RF2 erledigt (Stammdaten):** strukturierte Mängel + Anzeige erledigter; **Fotos pro Stammdaten-Mangel** weiterhin offen (siehe Planung Q7) |
+| 4 | Mangel gleich beseitigt | UX/Fachlogik mit Wartungsprotokoll (`fixed_immediately`) und ggf. Checklisten-Mängeln abstimmen → **RF3** |
+| 5 | Prüfprotokoll im Kundenportal | Analog **Anzeige im Auftrag** (gespeichertes PDF / Vorschau) → **RF4** |
+| 6 | Einstellungen → Portal | Was wird ins Portal gestellt: **Monteurbericht** / **Prüfprotokoll** getrennt steuerbar? → **RF5** |
+| 7 | Salvage „Nachprüfung“ | Kurzabriss unten; keine gesonderte Salvage-Doku auf `main` → **Abschnitt *Salvage-Kontext*** |
+| 8 | Salvage „Mangel gleich beseitigt“ | Entspricht auf `main` weitgehend **`fixed_immediately`** – Kurzabriss unten |
+| 9 | „Abarbeiten“ ausblenden | Auftragsliste: Link **Abarbeiten** nicht bei Status **erledigt** → **RF6** |
+|10 | Erledigte Aufträge wieder öffnen | Reaktivierung: Rollen, Zielstatus, Umgang mit `order_completions`/PDFs → **RF7** |
+|11 | Bezeichnung Prüfprotokoll | In **abgeschlossenen** Aufträgen einheitlich **„Prüfprotokoll“** benennen (Buttons/Labels) → **RF8** |
+
+#### Salvage-Kontext (Branch `wip/salvage-20260401`)
+
+- **Doku auf `main`:** Ausführliche Salvage-Spezifikation liegt im Branch in **`Vico.md` §7.2.4**; auf `main` absichtlich **nur** die **Abgleich-Tabelle** in **§7.5** (*Phasen P0–P8 … vs. Umsetzung auf `main`*), nicht die volle §7.2.4 portiert.
+- **Nachprüfung (fachlich / Produkt):** In **§7.5** („Umbau Wartung“) als Auftragstyp genannt („… Wartung, Nachprüfung, Sonstiges“). **Im Code:** u. a. Typ/Label **`nachpruefung`** in `Wartungsprotokolle.tsx`, `portal/…/Berichte.tsx`, `generateMaintenancePdf.ts` – **kein** separates Salvage-Kapitel nur zu „Nachprüfung“ im konsolidierten `Vico.md`.
+- **„Mangel gleich beseitigt“ / Sofort-Behebung:** Auf `main` technisch **`maintenance_reports.fixed_immediately`** (boolean). **UI:** Checkbox in **`Wartungsprotokolle.tsx`**, Kennzeichnung in **`portal/…/Berichte.tsx`**, PDF-Text „Sofort behoben“ in **`generateMaintenancePdf.ts`**; **Abfragen** in **`dataService.ts`** filtern u. a. mit `fixed_immediately = false` für offene-Mängel-Logik. Das Salvage-Paket hatte das im Gesamt-Workflow **§7.2.4** eingebettet; fachliche Feinheiten ggf. dort nachlesen, Entscheidungen hier in **RF3** festhalten.
+
+#### Rückfragen zur Umsetzung (RF1–RF8)
+
+**RF1 – Rauchmelder vs. Feststellanlage (Stammdaten + ggf. Checkliste)**  
+*Kontext:* Heute u. a. eigener Block **Rauchmelder** und Feststellanlage in `ObjectFormModal.tsx`; in der Feststell-**Checkliste** gibt es bereits einen Abschnitt „Rauchmelder / Auslöseelemente“ (`feststellChecklistCatalog.ts`).
+
+| Option | Beschreibung |
+|--------|----------------|
+| **A** | **Stammdaten:** Rauchmelder-Felder nur anzeigen, wenn **`has_hold_open`** (Feststellanlage) gesetzt ist. |
+| **B** | **Stammdaten:** Rauchmelder bleibt sichtbar unabhängig von Feststell; **Checkliste** bleibt wie heute an Feststell gekoppelt. |
+| **C** | **Stammdaten:** Rauchmelder-Block **inhaltlich unter „Feststellanlage“** zusammenführen (eine Sektion, klare Überschriften), unabhängig von Sichtbarkeitslogik. |
+
+*Empfehlung zur Diskussion:* **A**, falls fachlich Rauchmelder nur im Feststell-Kontext vorkommt; sonst **B** oder **C**.  
+**Bitte festlegen:** A, B oder C (ggf. Kombination: z. B. A+C).
+
+**Entscheid (2026-04-02, Nutzer):** **Option A** – In den **Stammdaten Tür/Tor** (`ObjectFormModal`) werden **Rauchmelder** (Anzahl, Baujahre) **nur angezeigt**, wenn **„Feststellanlage vorhanden“** (`has_hold_open`) gesetzt ist. Ohne Feststellanlage werden beim Speichern **Rauchmelder-Daten auf 0/leer** gesetzt sowie Feststell-Freitextfelder und `hold_open_maintenance` zurückgenommen; beim Abwählen der Checkbox werden die Rauchmelder-Felder im Formular sofort geleert.
+
+---
+
+**RF2 – Mängel auf Tür/Tor: Nachvollziehbarkeit nach Beseitigung**  
+*Kontext:* „Wenn Mängel beseitigt, verschwindet der Mangel“ – gewünscht ist **Transparenz** für Historie.
+
+| Option | Beschreibung |
+|--------|----------------|
+| **A** | Mängel **nicht löschen**, Status **aktiv / erledigt**, Standardansicht nur **aktiv**, Umschalter **„Erledigte Mängel“**. |
+| **B** | **Historie-Eintrag** (z. B. `Historie`-Modul oder eigenes Tab) bei Beseitigung mit Zeit/Nutzer/Kurztext. |
+| **C** | Für die **fachliche** Nachweisebene nur **PDF/Prüfbericht**; in der Tür-UI nur **offene** Mängel. |
+
+*Empfehlung:* **A** für tägliche Nachverfolgung ohne zusätzliches Modul; **B** wenn Audit-Pflicht stark ist.  
+**Bitte festlegen:** A, B, C oder Kombination (z. B. A+B).
+
+**Entscheid (2026-04-02, Umsetzung „go“):** **Option A** umgesetzt. **Stammdaten Tür/Tor** (`ObjectFormModal`): Mängel als **Liste** mit Status **offen / erledigt**; **erledigte** per Checkbox **„Erledigte Mängel anzeigen“** sichtbar; **Wieder öffnen** möglich. Persistenz: neue Spalte **`objects.defects_structured`** (JSON-Array, `supabase-complete.sql`); Legacy-Feld **`defects`** enthält weiterhin nur die **offenen** Texte (Kompatibilität Kurzansichten). Bestehender Freitext wird beim ersten Laden ohne JSON in Einträge übernommen. Hilfsfunktionen: **`src/lib/objectDefects.ts`**.
+
+---
+
+**RF3 – „Mangel gleich beseitigt“ – Geltungsbereich**  
+
+Soll das Konzept (wie `fixed_immediately` beim klassischen **Wartungsprotokoll** / Prüfbericht) **auch** für **Checklisten-Mängel** im **Wartungsauftrag** gelten (Tür-Checkliste, Mangel-Items), oder nur **Begriff/Label** vereinheitlichen?
+
+| Option | Beschreibung |
+|--------|----------------|
+| **A** | Nur **Wartungsprotokoll**-Pfad (`maintenance_reports`) – Checklisten bleiben ohne „gleich beseitigt“. |
+| **B** | **Zusätzlich** Checklisten: z. B. pro Mangel-Item Flag oder global pro Tür beim Speichern. |
+| **C** | Nur **UI-Wortlaut** angleichen, Logik unverändert. |
+
+**Bitte festlegen:** A, B oder C (bei B: grobe UX-Skizze erwünscht).
+
+**Entscheid (2026-04-02, Nutzer: „ok“ = Zustimmung zur Empfehlung):** **Option A** – „Mangel gleich beseitigt“ / **`fixed_immediately`** bleibt dem **Wartungsprotokoll** (`maintenance_reports`) vorbehalten; die **Wartungs-Checkliste im Auftrag** erhält **kein** paralleles technisches Flag dazu (Umsetzung: keine Änderung am Checklisten-Modell nötig).
+
+---
+
+**RF4 – Prüfprotokoll im Kundenportal „wie im Auftrag“**  
+
+| Teilfrage | Antwortoptionen (bitte konkret wählen) |
+|-----------|----------------------------------------|
+| Darstellung | Nur **PDF-Download** / **Vorschau im Portal** / beides |
+| Datenquelle | Gespeicherter Storage-Pfad (wie `attachPruefprotokollPdfToOrderChecklistProtocol`) – gleiche Rechte/RLS umsetzen |
+
+**Bitte festlegen:** Portal-Verhalten + ob **pro Tür** wie in `Auftragsdetail`.
+
+**Entscheid (2026-04-02, Nutzer: „ok“ = Zustimmung zur Empfehlung):** **D3 + T1** – Im Kundenportal: **Vorschau und Download** für Prüfprotokoll-PDFs; **pro Tür** am Auftrag wie in `Auftragsdetail`, Datenquelle gespeicherter Pfad (Checklisten-Flow); RLS/Portal-Rechte analog bestehender Berichte. **Umsetzung:** nach Abschluss der Rückfragen **RF5–RF8** gemeinsam planen/implementieren.
+
+---
+
+**RF5 – Einstellungen: Freigabe Portal (Monteurbericht vs. Prüfprotokoll)**  
+
+| Option | Beschreibung |
+|--------|----------------|
+| **A** | **Eine** globale Portal-Freigabe wie heute am Auftrag; Prüfprotokoll erscheint automatisch mit, wenn technisch vorhanden. |
+| **B** | In **Firmen-Einstellungen** getrennt: **Monteurbericht ins Portal** / **Prüfprotokoll(e) ins Portal** (Checkboxen). |
+| **C** | **Pro Auftrag** beim Abschluss zwei Checkboxen (Monteurbericht / Prüfprotokoll). |
+
+**Bitte festlegen:** A, B oder C.
+
+**Entscheid (2026-04-02, Nutzer: „ok“ = Zustimmung zur Empfehlung):** **Option B** – In den **Firmen-Einstellungen** (bzw. sinnvoller Ort in der Haupt-App) **getrennt** steuerbar: **Monteurbericht ins Portal** und **Prüfprotokoll(e) ins Portal** (je Schalter/Default). **Umsetzung** mit **RF4**-/Portal-Logik verzahnen, sobald **RF6–RF8** geklärt sind.
+
+---
+
+**RF6 – „Abarbeiten“ bei erledigtem Auftrag**  
+
+`AuftragAnlegen.tsx` (Auftragsliste): Link **Abarbeiten** bei `status === 'erledigt'` ausblenden.
+
+| Option | Beschreibung |
+|--------|----------------|
+| **A** | Nur **entfernen** (Nutzer nutzt ggf. Kalender/Details wo vorhanden). |
+| **B** | Stattdessen **„Ansehen“** / **„Bericht“** → `Auftragsdetail` read-only bzw. gleiche Route ohne Bearbeitungsaktionen. |
+
+**Bitte festlegen:** A oder B.
+
+**Entscheid (2026-04-02, Nutzer: „ok“ = Zustimmung zur Empfehlung):** **Option B** – In der Auftragsliste bleibt der Link nach `/auftrag/:id`; bei **`status === 'erledigt'`** lautet der sichtbare Text **„Ansehen“** (statt „Abarbeiten“), passendes `aria-label`. **Umgesetzt** in `AuftragAnlegen.tsx`.
+
+---
+
+**RF7 – Abgeschlossene Aufträge wieder öffnen (Reaktivierung)**  
+
+| Teilfrage | Optionen |
+|-----------|----------|
+| Berechtigung | Nur **Admin** / **Admin + Mitarbeiter** / **+ Teamleiter** |
+| Zielstatus nach Öffnen | **offen** / **in_bearbeitung** / wählbar |
+| Completion | Bestehende **`order_completion`** **unverändert** lassen vs. **neue Version** vs. nur Status rücksetzen und Completion archivieren |
+
+**Bitte festlegen:** Kombination aus Tabelle (Freigabe, Status, Umgang mit Completion/PDF).
+
+**Entscheid (2026-04-02, Nutzer: „ok“ = Zustimmung zur Empfehlung):** **R2 + S1 + C1** – Wieder öffnen dürfen **Admin** und **Mitarbeiter** (nicht Teamleiter/Operator, sofern nicht ohnehin Admin/Mitarbeiter). Zielstatus: **`in_bearbeitung`**. **`order_completion`** inkl. gespeicherter PDF-Pfade **unverändert**. **Umgesetzt:** `Auftragsdetail.tsx` – Button **„Auftrag wieder öffnen“** bei `status === 'erledigt'`, Bestätigungsdialog, `updateOrderStatus`; Offline über bestehende Outbox.
+
+---
+
+**RF8 – Label „Prüfprotokoll“ in abgeschlossenen Aufträgen**  
+
+Einheitliche Button-/Link-Texte in **`Auftragsdetail`** (auch nach `erledigt`), z. B. immer **„Prüfprotokoll anzeigen“** statt gemischter Formulierungen.
+
+**Bitte festlegen:** Gewünschte **exakte** Bezeichnung(en) (Singular/Plural pro Tür).
+
+**Entscheid (2026-04-02, Nutzer: „ok“):** Sichtbarer Hauptbutton in **`Auftragsdetail`:** **„Prüfprotokoll anzeigen“** (auch bei erledigtem Auftrag unverändert). **`aria-label`** mit gleichem Wortlaut, bei gewählter Tür ergänzt um **`: {Türname}`**. In der Auftragsliste bleibt der **Kurzbutton `P …`** aus Platzgründen; **`aria-label`** dort: **„Prüfprotokoll anzeigen: {Tür}“**.
+
+---
+
+**Nächster Schritt im Rückfragenprozess:** Rückfragen **RF1–RF8** sind beschlossen. **RF5**, **RF4** (Portal-PDF-Vorschau), **Q6** (Hersteller-UI entfernt), **Q7** (Stammdaten-Mangel-Fotos, Tabelle `object_defect_photos`) sind umgesetzt – Mandanten-DB: neues SQL aus `supabase-complete.sql` ausrollen.
+
+### 11.17 Protokoll-Mängel in Tür/Tor & Kundenliste (Produktentscheid, Stand 2026-04-03)
+
+**Quelle:** Rückfragenprozess Chat; **Umsetzung:** nach separater Freigabe; Arbeitspakete **`WP-MANG-*`** in `docs/Roadmap-Offene-Punkte.md`.
+
+| # | Thema | Entscheidung |
+|---|--------|----------------|
+| 1 | Was zählt als Mangel? | Nur Checklistenpunkt mit Status **„Mangel“** (kein „Nicht geprüft“, kein Mitzählen ohne diesen Status). |
+| 2 | Tür- vs. Feststell-Checkliste | **Eine** Sektion „Offene Mängel“; Einträge mit Label **Tür** / **Feststell** (Feststell nur bei `has_hold_open`). |
+| 3 | Wann „beseitigt“? | Wenn in einem **späteren gespeicherten** Prüf-/Wartungsstand derselbe Punkt **nicht mehr** „Mangel“ ist; Historie bleibt im Protokoll. |
+| 4 | Massgeblichkeit Zähler vs. Detail | **Kundenliste / Zähler:** Stand aus **letztem abgeschlossenen** Wartungsauftrag mit gespeicherter Checkliste. **Tür-/Auftrags-Detail:** zusätzlich darf **neuester gespeicherter** Stand aus **laufendem** Auftrag angezeigt werden (Hinweis/Entwurf), ohne den Listen-Zähler zu verändern. |
+| 5 | Inhalt Sektion Tür/Tor | Punktbezeichnung + **Datum** der Feststellung + **Bezug zum Auftrag** + **Foto-Thumbnails** falls vorhanden. |
+| 5b | Stammdaten-Mängel | **Entfallen**; **eine** Quelle (**Protokoll**). **WP-MANG-00 (beschlossen):** **Neumandanten** ohne Alt-Daten; **Test-Installation:** vorhandene Werte in **`defects_structured`/`defects`** dürfen **ohne Export** ignoriert/verworfen werden. **Hinweis:** Sobald ein Mandant **produktiv** mit gefüllten Stammdaten-Mängeln existiert, vor dem Entfernen der UI **Export** oder **Lesen-Archiv** bewusst wählen. **Schema:** **Phase 1 = A:** Spalten **behalten**, nur UI/Schreiben entfernen. **Phase 2 = B:** nach Freigabe aller Mandanten **Migration** (Spalten droppen oder dauerhaft leer), wenn kein Rückroll-/Dump-Bedarf mehr. |
+| 6 | Kundenübersicht | Badge mit **Anzahl nur wenn &gt; 0** (Empfehlung: deutliche Farbe). |
+| 7 | Offline | Wie übrige App: **letzter Cache**; Zähler/Sektion können kurz veraltet sein. |
+
+**Umsetzung (2026-04-03):** **WP-MANG-01** – Aggregation für Listen-Zähler: `fetchProtocolOpenMangelsForListCounters` in `dataService.ts`; Kernlogik `protocolOpenMangels.ts` (letzter erledigter Wartungsauftrag mit `saved_at` pro Tür, nur Checklisten-Status „Mangel“, Tür + Feststell). **WP-MANG-02/03:** Kundenliste rose Badge pro Kunde und Tür (nur wenn Zähler &gt; 0); Tür-Modal `ObjectFormModal` Sektion „Offene Mängel (Prüfprotokoll)“ (maßgeblich) mit Datum, Auftrags-Link, optional Fotos (`fetchChecklistDefectPhotosGroupedForOrderObject`); **zusätzlich §11.17#4:** Sektion „Entwurf (laufender Wartungsauftrag)“ via `fetchProtocolOpenMangelsDraftForObject` / `buildDraftChecklistSnapshotForObjectId` (ohne Bypass-Filter, kein Zähler); Kunden-Übergabe `protocolOpenMangelRows`, sonst Lazy-Fetch (z. B. `ObjektBearbeiten`). **WP-MANG-04:** Offline dieselbe Aggregation aus Cache: `orders` + minimales `order_completions` (`offlineStorage` `order-completions`, Pull in `syncService`, Merge nach Online-Aggregation sowie bei `createOrderCompletion` / `updateOrderCompletion`); Kunden lädt Protokoll-Zähler immer über `fetchProtocolOpenMangelsForListCounters` (offline = letzter Stand); Entwurf ebenfalls aus Cache, wenn laufender Auftrag und Completion im Cache. Protokoll-Mängel-Fotos im Modal weiter nur online. **WP-MANG-05:** `wartung_checkliste_abschluss_bypass.incomplete_object_ids` — diese Türen zählen den betreffenden Abschluss **nicht** als maßgeblich (älterer Auftrag oder keiner); mehrere Türen pro Auftrag unabhängig; ohne gespeicherte Checkliste / ohne Completion-Zeile kein Beitrag zu diesem Auftrag (Tests in `protocolOpenMangels.test.ts`).
+
+**Hinweis:** Roadmap **J7 „Mängel-Follow-up“** (#9) bleibt verwandt (Prozess/Nachverfolgung), ist aber **inhaltlich** mit §11.17 beim Schneiden der Issues abzugleichen (keine Doppelarbeit).
+
+### 11.18 Eingeschränkter Netzwerkmodus („Degraded“, Produktentscheid, Stand 2026-04-03)
+
+**Quelle:** Rückfragenprozess Chat; **Umsetzung:** nach Freigabe (**`WP-NET-*`** in `docs/Roadmap-Offene-Punkte.md`). Ergänzt `navigator.onLine` in **`shared/networkUtils.ts`** – bislang **kein** Mess-Schwelle für „schwache“ Leitung ohne diese Logik.
+
+| # | Thema | Entscheidung |
+|---|--------|----------------|
+| 1 | Auslöser | **B:** Bei **fehlgeschlagenen** Requests (Timeout, Netzwerkfehler, o. Ä.) vorübergehend **eingeschränkter Modus**. **C zusätzlich:** periodischer **Erreichbarkeits-Ping** – **in Einstellungen aktivierbar**, **Standard aus**. |
+| 2 | Ende des Modus | **A:** Modus endet bei **erfolgreichem** relevanten Request wieder (keine feste Mindestdauer; bei Flackern später **Hysterese** nachziehbar). |
+| 3 | Lesen | **B:** Kurzer Netzversuch (Timeout z. B. 2–3 s), **dann** Cache. |
+| 4 | Schreiben | **B:** **Retries** (mehrere kurze Versuche), **dann** Outbox wie offline. |
+| 5 | UI | **A:** **Banner** mit kurzem Hinweis. |
+| 6 | Geltungsbereich | **C:** **Mandanten-Daten** (Supabase) und **Lizenzportal** **getrennt** – globaler Degraded-Zustand nicht allein durch Lizenz-Host setzen. |
+| 7 | Browser vs. Realität | **A:** **Outbox** und **Cache-First** auch erlaubt, wenn `navigator.onLine === true`, aber Requests **nach Retries** scheitern. |
+| 8 | Ping-Ziel (optional, Einstellung an) | **(A):** Anfrage gegen **Mandanten-Supabase** (leichtgewichtig, z. B. `REST`/`auth`-Health oder kleine **anon**-lesbare Abfrage) – **kein** zusätzlicher Host. **Nicht** Lizenz-API (**§11.18#6**). **Ausbau:** später **(B)** eigener `/health`-Endpunkt möglich. |
+| 9 | Timeouts / Retries | **(A):** **Lesen** Timeout **3 s**, dann Cache; **Schreiben** **3** Retries à **500 ms**, danach Outbox. |
+| 10 | Realtime-WebSocket | **(C):** zählt **mit** für Mandanten-**Degraded**, aber **entprellt:** mindestens **2** fehlgeschlagene Verbindungsversuche innerhalb **2 Minuten**; kein Banner bei einmaligem kurzen Drop. |
+
+**Status §11.18:** Rückfragen zu Ping, Zahlen und Realtime sind beschlossen. **WP-NET-01 (2026-04-03):** zentraler Zustand + `fetch`-Wrap + Banner (s. oben). **WP-NET-03/04 (2026-04-03):** im gleichen Wrap **Lesen** (GET/HEAD + POST `/rest/v1/rpc/`) mit **3 s** Abort-Timeout; **Schreiben** (POST/PATCH/PUT/DELETE ohne RPC-Pfad) mit **4 Versuchen** (1+3 Retries) und **500 ms** Pause. **Cache nach Lese-Timeout** und **Outbox nach ausgeschöpften Schreib-Versuchen** weiter über bestehende `dataService`/`isOnline()`-Pfade (kein automatisches Outbox-Enqueue nur durch fetch). **WP-NET-02 (2026-04-03):** optionaler Ping (`shared/mandantReachabilityPing.ts`), Standard aus, Schalter unter **Einstellungen → Netzwerk (Diagnose)** (Admin); Intervall 2 min, `localStorage`; `MandantPingScheduler` in **Layout**. **WP-NET-10 (2026-04-03):** `shared/mandantRealtimeDegraded.ts` – bei **CHANNEL_ERROR** / **TIMED_OUT** mindestens **2** Ereignisse innerhalb **2 Minuten** → Degraded; **SUBSCRIBED** leert Zähler und beendet Degraded. Angebunden an **orders-**, **profiles-** und **component_settings**-Realtime in der Haupt-App. **WP-NET-05 (2026-04-03):** Banner-Feinschliff §11.18#5/#6 – **`MandantDegradedBanner`**: Text „Mandanten-Datenbank“, ausblendbar bis zur nächsten erfolgreichen Mandanten-Antwort; **`LicensePortalStaleBanner`** + Kontextfeld **`licensePortalStale`** in **`LicenseContext`**: eigener Hinweis wenn Lizenz-API fehlschlägt, aber lokaler Cache genutzt wird (getrennt vom Mandanten-Degraded; bei Browser-Offline in **Layout** unterdrückt).
+
+### 11.19 Kundenportal: Transparenz laufender Aufträge, Zeitleiste, eine offene Zuordnung pro Tür (Stand 2026-04-03)
+
+**Quelle:** Chat-Abstimmung (Ergänzung zu Muster B / Mängel erst nach Auftragsabschluss). **Umsetzung:** Arbeitspakete **WP-PORTAL-…**, **WP-ORD-…** in `docs/Roadmap-Offene-Punkte.md`.
+
+**Umgesetzt (vertikaler Slice, 2026-04-03):** Mandantenweite Schalter `portal_timeline_show_planned`, `portal_timeline_show_termin`, `portal_timeline_show_in_progress` in `monteur_report_settings`; RPC `get_portal_order_timeline`; Kundenportal-Banner + Abschnitt „Ihre Aufträge“ auf **Berichte** (`portal`); Verwaltung unter **Einstellungen** (Kundenportal). **WP-PORTAL-03 (Feinschliff):** Aktivitäts-Banner **Ausblenden** mit Wiederanzeige, sobald sich der Fingerabdruck der banner-relevanten Aufträge / Schalter ändert (`buildOrderActivityBannerFingerprint`, `localStorage` pro Portal-Nutzer).
+
+**Umgesetzt (WP-ORD-01/02, 2026-04-03):** DB-Trigger `orders_single_active_per_object` auf `orders`; Client-Prüfung in `createOrder`, `updateOrder`, `updateOrderStatus` (`dataService`); Hinweis + Links + gesperrter Speichern-Button bei Konflikt in **Auftrag anlegen** (`AuftragAnlegen.tsx`). **Alt-Daten:** bestehende doppelte aktive Zuordnungen vor Rollout manuell bereinigen (kein automatisches Löschen im SQL).
+
+| Thema | Entscheidung |
+|--------|----------------|
+| **Einstellungen** | **Mandantenweit (global)** – **drei** getrennte Schalter (**Detail 1 = A**): (1) **Geplanter Auftrag sichtbar** (`offen`), (2) **Termin im Text** (nur bei `order_date`/`order_time`), (3) **Prüfung / in Bearbeitung** (`in_bearbeitung`). **Defaults (Detail 2 = A):** (1) **aus**, (2) **an**, (3) **an**. **Speicherort (Detail 3, Entscheid Agent):** **`monteur_report_settings`** (eine Firmenzeile pro Mandanten-DB, wie `portal_share_*`); **neue** boolesche Spalten oder ein **JSONB** `portal_order_timeline`. **Auslieferung ans Kundenportal:** nur über **RLS-sichere** Wege (z. B. bestehende/erweiterte **Portal-RPC**), nicht durch direktes `select` aus dem Portal-Client, falls Policies das verbieten. |
+| **Termin** | Anzeige über **`orders.order_date`** / **`order_time`**, wenn gesetzt; sonst Text ohne konkreten Termin (kein erfundenes Datum). |
+| **Auftragstypen** | **Alle** relevanten Typen gleich behandeln (keine Sonderlogik nur Wartung/Reparatur in dieser Spec). |
+| **Höchstens ein „laufender“ Auftrag pro Tür** | Pro **`object_id`** darf höchstens **ein** Auftrag mit Status **`offen`** oder **`in_bearbeitung`** existieren (**keine** parallelen offenen Aufträge dieselbe Tür); **Mehrfachauftreten unterbinden** (Haupt-App + ggf. DB-Constraint/RPC). Bereits vorhandene Warnungen beim Anlegen **ausbauen** / mit dieser Regel konsolidieren. Status **`storniert`** / **`erledigt`** zählen nicht als blockierend. |
+| **Unabhängigkeit** | Unabhängig von den **PDF-/Bericht-Freigabe-Schaltern** (**§11.16 RF5**) – reine **Status-/Hinweislogik** vs. Dokument-Freigabe. |
+| **Mängel aus Prüfliste** | Wie zuvor: im Portal **erst nach Auftrag `erledigt`**, nicht bei nur gespeicherter Checkliste (**§11.19** konsistent mit Produktziel „kein Mangel-Leak vor Abschluss“). |
+| **Darstellung (Nutzerwunsch)** | **Zeitleiste / Historie** mit festen **Einträgen** (chronologisch, ältere Punkte bleiben sichtbar): z. B. (1) **Auftrag angelegt am …** (+ optional Termin aus Feldern oben), (2) bei **`in_bearbeitung`:** weiterer Punkt **Prüfung läuft** / in Bearbeitung (neutral, ohne Mängel), (3) bei **`erledigt`:** **Auftrag abgeschlossen** (danach ggf. Berichte/Mängel gemäß Freigabe). |
+
+**Alternative (Umsetzung):** Statt freier Bullet-Liste ein **dreistufiges Status-Widget** (Angelegt → In Bearbeitung → Abgeschlossen) mit Datumsangaben – weniger Textvariation, gleiche Information.
+
+**Platzierung Zeitleiste / Hinweise (Rückfrage „2“ – beschlossen):** **(C)** schließbares **Banner** nach Login + **Detail** im **Berichte-/Tür-/Auftragskontext** (analog **§11.20** Zeile 12 für Mandanten-Apps).
+
+**Storno (Block §11.19 – beschlossen):** **(C)** bei Status **storniert** Eintrag **„Auftrag storniert“** (mit Datum); Punkt **„Prüfung läuft“** **entfällt** bzw. wird **nicht** parallel angezeigt (kein Widerspruch zur Historie).
+
+**Zeitleiste bei Schalter (1) aus, (3) an (Detail 4 = A):** Sobald der Auftrag für das Portal **relevant** ist (z. B. ab `in_bearbeitung`), erscheint **„Auftrag angelegt …“** **trotzdem** in der Historie vor **„Prüfung / in Bearbeitung“** – Schalter (1) steuert nur die **Sichtbarkeit in der Phase `offen`**, nicht die **Vollständigkeit** der Kette bei späteren Status.
+
+**Sichtbarkeit pro Tür / Nutzer (Detail, Entscheid Agent):** Zeitleiste und Auftrags-Hinweise nur für **Türen/Aufträge**, die der Portalnutzer ohnehin **sehen darf** – **gleiche Regeln** wie bei **Berichte / Objekt-Sichtbarkeit** (`portal_user_object_visibility`, bestehende RPCs). Keine Aufträge zu fremden Objekten.
+
+**Sprache (Detail, Entscheid Agent):** Texte der Zeitleiste/Banner **Deutsch**, **gleiche** Sprachlogik wie der Rest des **Kundenportals** (keine getrennte Übersetzung aus Lizenz-Design). Spätere **i18n** für das gesamte Portal würde diese Strings mitziehen.
+
+**Hinweis Technik:** Doppelte Offene je Tür ggf. mit **einmaliger Datenbereinigung** auf bestehenden Mandanten vor Produktivgang der harten Regel.
+
+### 11.20 Mandanten-App-Releases: Lizenzportal-Verwaltung, Incoming, gestaffeltes Update (Stand 2026-04-05)
+
+**Geltungsbereich:** Verwaltung nur im **Lizenzportal (Admin-UI)**; betroffene Mandanten-Deployments: **`main`**, **`portal`**, **`arbeitszeit-portal`**. Das **Admin-Frontend** (`admin` / Lizenzportal-App) ist **kein** Mandantenprodukt – **kein** Incoming-/Rollout-Kanal in diesem Konzept (separater Build, nur Verwalter).
+
+**Update-Arten (fachlich, nur noch diese drei):** (1) **Bugfixes**, (2) **Funktionsupdates**, (3) **Major** – technisch z. B. als `release_type` + Semver; Details der Mandanten-UX pro Typ in den noch offenen Rückfragen dieses Blocks.
+
+| # | Thema | Entscheidung |
+|---|--------|----------------|
+| 1 | Quelle Version / Notes | **Hybrid (C):** CI/GitHub liefert **Metadaten**; **Notes**, Modul-Tags, Freigaben **im Lizenzportal**. |
+| 2 | Kanäle | **Mehrkanal (C):** ein LP-Eintrag mit **Unterkonfiguration pro Kanal** (`main`, `portal`, `arbeitszeit-portal`); **ohne** `admin`. |
+| 3 | Incoming – wer zuerst | **(C):** zuerst nur **ausgewählte Test-Mandanten**; **„alle Mandanten“** nur als **zweiten expliziten** Schritt. |
+| 4 | „Update freigeben“ technisch | **(C):** ein Build auf CDN; **Go-Live** / Mindestversion **pro Mandant** über Lizenz-API (o. ä.), gestaffelter Test vor globalem Rollout. |
+| 5 | Release Notes & Modul-Filter | **Hybrid (C):** ein Fließtext + **Modul-Tags** auf Release-Ebene + Zeile **„Betrifft: …“** aus Tags. |
+| 6 | Modul-Tags pflegen | **(C):** zuerst **nur manuell**; CI-Vorschlag **Ausbau D** später (**+B** Aufwand siehe Absatz unten). |
+| 7 | Major – Zwang zum Reload | **(C):** **pro Release** im LP wählbar; **Default** für Typ **Major** = harter Block (**7A**), für Bugfix/Funktion eher weich/Badge. |
+| 8 | Incoming für Bugfixes | **(C):** **pro Release** Checkbox „Incoming“; **Default** z. B. Bugfix **aus**, Funktion/Major **an** (final bei Umsetzung). |
+| 9 | Mehrere Incoming gleichzeitig | **(B):** Liste der nächsten **N** Einträge, **N = 3** (konfigurierbar bei Umsetzung). |
+| 10 | **Rollback / Update zurückziehen** | **(B):** **Incoming** und **Go-Live** für das betroffene Release werden zurückgenommen; Mandanten fallen auf den **vorherigen** gültigen Release-Eintrag (kein neues CDN-Deploy nötig). **Ausbau (optional):** Nutzer-Hinweis oder Anbindung **Wartungsmodus** (**§11.13** Q1) – siehe **„Rollback UX“** unten. |
+| 11 | Test-Mandanten | **(C):** **Flag „Testmandant“** am Mandanten + **manuelle** Zusatzauswahl für Incoming/Go-Live. |
+| 12 | UI-Ort Incoming / Release-Liste | **(C):** schließbares **Banner** + **Detail** (Einstellungen/Über/Info) mit vollem Text; **pro Kanal** (`main`, `portal`, `arbeitszeit-portal`) analog. |
+| 13 | Audit / Protokoll | **(A):** **Vollständiges** Log (Zeit, Nutzer, Aktion, Release, Mandanten-Scope) für Incoming, Go-Live, Rollback. |
+| 14 | LP-Rechte Release-Verwaltung | **(C):** eigene Berechtigung **„Release-Verwalter“** (kein generelles „jeder LP-Admin“). **Begründung:** Delegation möglich, ohne Mandanten-Admins zu Releases zu befähigen; **erster Betreiber** erhält das Recht per Migration/Seed (**Start ≈ 14A**). |
+
+#### Ausbau-Optionen (Release Notes / Module – dokumentiert, nicht beschlossen)
+
+| Stufe | Option | Nutzen | Aufwand |
+|-------|--------|--------|---------|
+| **MVP+** | Wie **§11.20** Zeile 5 (**C**) | Schnell umsetzbar, brauchbare Filterung | gering |
+| **Ausbau A** | **Strukturierte Notes** mit Abschnitten **pro Modul** (vormals Frage **5A**) | Sehr präzise Filterung pro Abschnitt | höher Pflegeaufwand |
+| **Ausbau B** | Nur **ein** Text + Tags (**5B**), ohne „Betrifft“-Zeile | Minimal | unscharf bei Multi-Modul-Releases |
+| **Ausbau D (CI)** | Vorschlag **Modul-Tags** aus **GitHub-Labels** / Commit-Metadaten, manuell übersteuerbar | Weniger Vergessen | CI + LP-UI „Vorschlag übernehmen“ |
+
+**Umsetzung:** nach **Go** des Nutzers; Arbeitspakete **WP-REL-…** in `docs/Roadmap-Offene-Punkte.md`.
+
+#### Aufwand: Variant „B“ (CI-Vorschlag) sofort mitbauen?
+
+Grober **Mehraufwand** gegenüber **nur manuell (A):** ca. **1,5–3 T** zusätzlich (GitHub Action + gesicherter Endpoint ins Lizenzportal + Label-Konvention + UI „Vorschlag übernehmen“). Der **Grundaufwand** (Entwürfe, Incoming, Go-Live pro Mandant, API für Apps) fällt **sowieso** an. **Empfehlung:** **C** – MVP mit manuellem Tagging, **B** in zweiter Welle, um Secrets/Konvention nicht zu blockieren.
+
+**Rollback UX (optional, nicht beschlossen):** Kurz-Hinweis in der App nach Zurückziehen; oder **Wartungsmodus** (**§11.13** Q1). Standard: nur **Zeile 10** (**B**), ohne Zwang.
+
+**Status Rückfragenblock §11.20 (Releases):** Fragen **1–14** sind beschlossen; Umsetzung nach **Go** (**WP-REL-…**).
+
+**Prozess-Planung (GitHub-Metadaten → Lizenzportal → Rollout):** **`docs/Planung-Releases-GitHub-Lizenzportal.md`** (Phasen MVP/B/C, Mermaid-Abläufe, konsistent zu Zeile **1** Hybrid **C**).
+
+**Production-Deploy aus dem LP (2026-04-05):** Freigegebenes Release → Button in **`AppReleaseEditor`** und zentrale Seite **`/release-rollout`** („Rollout & Deploy“) → Supabase Edge **`trigger-github-deploy`** (JWT, nur **`profiles.role = admin`**) → **`workflow_dispatch`** auf **`.github/workflows/deploy-pages-from-release.yml`** (Checkout per Tag/SHA aus **`ci_metadata`** bzw. Fallback **`Kanal/Version`**). Build + **`wrangler pages deploy`**; GitHub-Repo-Secrets für **CF** und **VITE_*** pro App. Audit-Action **`release.deploy_triggered`**. **Phase 2:** Rollout-Assistent (**`RolloutChecklistModal`**) mit Schritten Freigabe → Notes → Deploy → GitHub → Incoming → Go-Live; gemeinsame Logik **`useReleaseDeployTrigger`** / **`ReleaseDeployPanel`**. Geplanter Ausbau: zentrale Env-Quelle (JSON/ Skript, Fragerunde 2).
+
+**Stand Code (2026-04-05):** Lizenzportal **`supabase-license-portal.sql`** (Abschnitt 7: `app_releases`, Zuweisungen, Audit, RLS, `is_test_mandant`, `can_manage_app_releases`), Admin-UI **`/app-releases`**, **`/release-rollout`**, **`MandantForm`** (Testmandant + Zuweisungen), Lizenz-API **Supabase Edge** **`supabase-license-portal/supabase/functions/license`** (`mandantenReleases` inkl. **`releaseAssignmentUpdatedAt`** + Overlay `appVersions` pro Kanal; Parität mit `admin/netlify/functions/license.ts`). **Deploy:** Edge **`trigger-github-deploy`**, GitHub **`deploy-pages-from-release.yml`**. Nach Zuweisung/Rollback: **`bumpClientConfigVersionsForTenantLicenses`** (alle Lizenzen des Mandanten). Mandanten-Apps: Parsing in **`licensePortalApi`** / **`fetchDesignFromLicense`**, **`LicenseContext`** / Portal-**`DesignContext`**, Banner **`shared/MandantenIncomingReleaseBanner.tsx`**, Hinweis bei geänderter Zuweisung **`shared/MandantenReleaseRolloutRefreshBanner.tsx`**, Pflicht-Reload bei **`active.forceHardReload`**: **`shared/MandantenReleaseHardReloadGate.tsx`** + **`shared/mandantenReleaseReloadBridge.ts`** (Haupt-App: **`PwaUpdatePrompt`** / `registerSW(true)`). **Offen/Feinschliff:** **WP-REL-03** (strukturierte Notes/CI-Tags).

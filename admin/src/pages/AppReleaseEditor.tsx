@@ -7,13 +7,16 @@ import {
   fetchAppRelease,
   fetchIncomingTenantIdsForRelease,
   listReleaseChannels,
+  publishAppRelease,
   RELEASE_CHANNEL_LABELS,
   RELEASE_TYPE_LABELS,
   updateAppRelease,
   deleteAppRelease,
+  type AppReleaseStatus,
   type ReleaseChannel,
   type ReleaseType,
 } from '../lib/mandantenReleaseService'
+import ReleaseDeployPanel from '../components/ReleaseDeployPanel'
 
 const emptyForm = () => ({
   channel: 'main' as ReleaseChannel,
@@ -39,6 +42,8 @@ const AppReleaseEditor = () => {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actorId, setActorId] = useState<string | null>(null)
+  const [releaseStatus, setReleaseStatus] = useState<AppReleaseStatus | null>(null)
+  const [ciMeta, setCiMeta] = useState<Record<string, unknown>>({})
 
   useEffect(() => {
     void supabase.auth.getUser().then(({ data }) => {
@@ -63,6 +68,8 @@ const AppReleaseEditor = () => {
         setError('Release nicht gefunden')
         return
       }
+      setReleaseStatus(r.status)
+      setCiMeta(r.ci_metadata && typeof r.ci_metadata === 'object' ? { ...r.ci_metadata } : {})
       setForm({
         channel: r.channel,
         version_semver: r.version_semver,
@@ -157,6 +164,22 @@ const AppReleaseEditor = () => {
     }
   }
 
+  const handlePublish = async () => {
+    if (!releaseId || isNew) return
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await publishAppRelease(releaseId, actorId)
+      if ('error' in res) {
+        setError(res.error)
+        return
+      }
+      await load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleDelete = async () => {
     if (!releaseId || isNew) return
     if (!window.confirm('Release wirklich löschen? Zuweisungen werden auf NULL gesetzt.')) return
@@ -186,6 +209,107 @@ const AppReleaseEditor = () => {
         </Link>
       </div>
       <h1 className="text-xl font-bold text-slate-800">{isNew ? 'Neuer Release' : 'Release bearbeiten'}</h1>
+      {!isNew && releaseStatus === 'published' ? (
+        <>
+          <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+            Freigegeben – sichtbar in der Lizenz-API und als Go-Live wählbar.
+          </p>
+          <div className="flex flex-wrap gap-2 text-sm">
+            <Link
+              to="/release-rollout"
+              className="inline-flex items-center px-3 py-2 rounded-lg border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
+            >
+              Rollout &amp; Deploy (Übersicht)
+            </Link>
+          </div>
+          <ReleaseDeployPanel
+            releaseId={releaseId ?? null}
+            channel={form.channel}
+            disabled={saving}
+            showEditorHint
+          />
+        </>
+      ) : null}
+      {!isNew && releaseStatus === 'draft' ? (
+        <div
+          className="rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-sm px-4 py-3 space-y-3"
+          role="status"
+        >
+          <p className="font-medium">Entwurf (z. B. aus GitHub) – noch nicht für Mandanten aktiv.</p>
+          <p className="text-xs text-amber-900/90">
+            Nach Prüfung von Notes und Einstellungen hier „Freigeben“ – danach Incoming und Go-Live wie gewohnt.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handlePublish()}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg bg-amber-800 text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-amber-600"
+          >
+            {saving ? 'Freigeben…' : 'Freigeben'}
+          </button>
+        </div>
+      ) : null}
+      {!isNew && Object.keys(ciMeta).length > 0 ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm space-y-2">
+          <h2 className="font-semibold text-slate-800">Build- / CI-Metadaten</h2>
+          <dl className="grid gap-1 text-slate-700">
+            {typeof ciMeta.source === 'string' ? (
+              <div className="flex flex-wrap gap-2">
+                <dt className="text-slate-500 shrink-0">Quelle</dt>
+                <dd>{ciMeta.source}</dd>
+              </div>
+            ) : null}
+            {typeof ciMeta.repository === 'string' ? (
+              <div className="flex flex-wrap gap-2">
+                <dt className="text-slate-500 shrink-0">Repository</dt>
+                <dd className="font-mono text-xs break-all">{ciMeta.repository}</dd>
+              </div>
+            ) : null}
+            {typeof ciMeta.tag === 'string' ? (
+              <div className="flex flex-wrap gap-2">
+                <dt className="text-slate-500 shrink-0">Tag</dt>
+                <dd className="font-mono text-xs break-all">{ciMeta.tag}</dd>
+              </div>
+            ) : null}
+            {typeof ciMeta.html_url === 'string' ? (
+              <div className="flex flex-wrap gap-2 items-baseline">
+                <dt className="text-slate-500 shrink-0">GitHub</dt>
+                <dd>
+                  <a
+                    href={ciMeta.html_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-vico-primary font-medium hover:underline break-all"
+                  >
+                    Release / Tag öffnen
+                  </a>
+                </dd>
+              </div>
+            ) : null}
+            {typeof ciMeta.workflow_run_url === 'string' ? (
+              <div className="flex flex-wrap gap-2 items-baseline">
+                <dt className="text-slate-500 shrink-0">Workflow</dt>
+                <dd>
+                  <a
+                    href={ciMeta.workflow_run_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-vico-primary font-medium hover:underline break-all"
+                  >
+                    Lauf ansehen
+                  </a>
+                </dd>
+              </div>
+            ) : null}
+            {typeof ciMeta.target_commitish === 'string' ? (
+              <div className="flex flex-wrap gap-2">
+                <dt className="text-slate-500 shrink-0">Commit (Ref)</dt>
+                <dd className="font-mono text-xs break-all">{ciMeta.target_commitish}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
+      ) : null}
       {error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 text-red-800 text-sm px-4 py-3" role="alert">
           {error}

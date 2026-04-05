@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 
 export type ReleaseChannel = 'main' | 'kundenportal' | 'arbeitszeit_portal'
 export type ReleaseType = 'bugfix' | 'feature' | 'major'
+export type AppReleaseStatus = 'draft' | 'published'
 
 export type AppReleaseRecord = {
   id: string
@@ -16,6 +17,8 @@ export type AppReleaseRecord = {
   incoming_all_mandanten: boolean
   force_hard_reload: boolean
   ci_metadata: Record<string, unknown>
+  /** Entwurf (z. B. GitHub-Import) – nicht in mandantenReleases, bis freigegeben */
+  status: AppReleaseStatus
   created_at: string
   updated_at: string
   created_by: string | null
@@ -33,6 +36,8 @@ export type AppReleaseInsert = {
   force_hard_reload?: boolean
   ci_metadata?: Record<string, unknown>
   created_by?: string | null
+  /** Default published (manuelle Anlage); GitHub-Action setzt draft */
+  status?: AppReleaseStatus
 }
 
 const CHANNELS: ReleaseChannel[] = ['main', 'kundenportal', 'arbeitszeit_portal']
@@ -73,7 +78,7 @@ export const fetchAppReleases = async (): Promise<AppReleaseRecord[]> => {
     .select('*')
     .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
-  return (data ?? []) as AppReleaseRecord[]
+  return normalizeReleaseRows(data)
 }
 
 export const fetchAppReleasesByChannel = async (channel: ReleaseChannel): Promise<AppReleaseRecord[]> => {
@@ -83,13 +88,33 @@ export const fetchAppReleasesByChannel = async (channel: ReleaseChannel): Promis
     .eq('channel', channel)
     .order('version_semver', { ascending: false })
   if (error) throw new Error(error.message)
-  return (data ?? []) as AppReleaseRecord[]
+  return normalizeReleaseRows(data)
 }
+
+/** Nur freigegebene Releases (Go-Live / Zuweisung) */
+export const fetchPublishedAppReleasesByChannel = async (channel: ReleaseChannel): Promise<AppReleaseRecord[]> => {
+  const { data, error } = await supabase
+    .from('app_releases')
+    .select('*')
+    .eq('channel', channel)
+    .eq('status', 'published')
+    .order('version_semver', { ascending: false })
+  if (error) throw new Error(error.message)
+  return normalizeReleaseRows(data)
+}
+
+const normalizeReleaseRows = (data: unknown[] | null): AppReleaseRecord[] =>
+  (data ?? []).map((row) => {
+    const r = row as Record<string, unknown>
+    const st = r.status === 'draft' ? 'draft' : 'published'
+    return { ...r, status: st } as AppReleaseRecord
+  })
 
 export const fetchAppRelease = async (id: string): Promise<AppReleaseRecord | null> => {
   const { data, error } = await supabase.from('app_releases').select('*').eq('id', id).maybeSingle()
   if (error) throw new Error(error.message)
-  return data as AppReleaseRecord | null
+  if (!data) return null
+  return normalizeReleaseRows([data])[0] ?? null
 }
 
 export const fetchIncomingTenantIdsForRelease = async (releaseId: string): Promise<string[]> => {
@@ -116,6 +141,7 @@ export const createAppRelease = async (
       incoming_all_mandanten: payload.incoming_all_mandanten ?? false,
       force_hard_reload: payload.force_hard_reload ?? false,
       ci_metadata: payload.ci_metadata ?? {},
+      status: payload.status ?? 'published',
       created_by: actorId,
       updated_at: new Date().toISOString(),
     })
@@ -146,6 +172,7 @@ export const updateAppRelease = async (
       | 'incoming_all_mandanten'
       | 'force_hard_reload'
       | 'ci_metadata'
+      | 'status'
     >
   >,
   incomingTenantIds: string[] | null,
@@ -161,6 +188,7 @@ export const updateAppRelease = async (
   if (patch.incoming_all_mandanten !== undefined) updateRow.incoming_all_mandanten = patch.incoming_all_mandanten
   if (patch.force_hard_reload !== undefined) updateRow.force_hard_reload = patch.force_hard_reload
   if (patch.ci_metadata !== undefined) updateRow.ci_metadata = patch.ci_metadata
+  if (patch.status !== undefined) updateRow.status = patch.status
 
   const { error } = await supabase.from('app_releases').update(updateRow).eq('id', id)
   if (error) return { error: error.message }
@@ -185,6 +213,33 @@ export const deleteAppRelease = async (id: string, actorId: string | null): Prom
   return { ok: true }
 }
 
+export const publishAppRelease = async (
+  id: string,
+  actorId: string | null
+): Promise<{ ok: true } | { error: string }> => {
+  const { data: row, error: selErr } = await supabase
+    .from('app_releases')
+    .select('status, version_semver')
+    .eq('id', id)
+    .maybeSingle()
+  if (selErr) return { error: selErr.message }
+  if (!row) return { error: 'Release nicht gefunden' }
+  if ((row as { status?: string }).status === 'published') {
+    void logAudit(actorId, 'release.publish', { releaseId: id, metadata: { noop: true } })
+    return { ok: true }
+  }
+  const { error } = await supabase
+    .from('app_releases')
+    .update({ status: 'published', updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) return { error: error.message }
+  void logAudit(actorId, 'release.publish', {
+    releaseId: id,
+    metadata: { version: (row as { version_semver?: string }).version_semver },
+  })
+  return { ok: true }
+}
+
 export type TenantReleaseAssignmentRow = {
   tenant_id: string
   channel: ReleaseChannel
@@ -204,6 +259,22 @@ export const setTenantChannelActiveRelease = async (
   newActiveReleaseId: string | null,
   actorId: string | null
 ): Promise<{ ok: true } | { error: string }> => {
+  if (newActiveReleaseId) {
+    const { data: rel, error: relErr } = await supabase
+      .from('app_releases')
+      .select('status')
+      .eq('id', newActiveReleaseId)
+      .maybeSingle()
+    if (relErr) return { error: relErr.message }
+    if (!rel) return { error: 'Release nicht gefunden' }
+    if ((rel as { status?: string }).status === 'draft') {
+      return {
+        error:
+          'Entwürfe können nicht als aktiver Release zugewiesen werden. Bitte im App-Release zuerst „Freigeben“.',
+      }
+    }
+  }
+
   const { data: cur } = await supabase
     .from('tenant_release_assignments')
     .select('active_release_id')

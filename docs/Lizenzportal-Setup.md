@@ -78,7 +78,15 @@ Die Haupt-App und die **Portale** rufen die Lizenz per HTTP ab: `GET …/license
 
 ### Edge Functions deployen (Variante B)
 
-**Wichtig:** Alle drei Functions müssen deployed sein (Lizenz-Check, Grenzüberschreitungen, Impressum):
+**Nur Mandanten-Release / Lizenz-Payload (`license`):** ohne die übrigen Functions neu zu deployen:
+
+```bash
+# Repo-Root
+npm run lp:deploy:mandanten-update
+# optional: npm run lp:deploy:mandanten-update -- --project-ref ojryoosqwfbzlmdeywzs
+```
+
+**Vollständig (Lizenz-Check, Grenzüberschreitungen, Impressum):** alle drei Functions:
 
 ```bash
 cd supabase-license-portal
@@ -91,6 +99,8 @@ supabase functions deploy update-impressum
 Oder alle auf einmal: `supabase functions deploy`
 
 Die Functions nutzen automatisch `SUPABASE_URL` und `SUPABASE_SERVICE_ROLE_KEY` des Lizenzportal-Projekts (von Supabase bereitgestellt).
+
+**Deploy anstoßen (App-Releases → GitHub → Cloudflare Pages):** Function **`trigger-github-deploy`** (`verify_jwt: true`). Deploy: `supabase functions deploy trigger-github-deploy` (im Ordner `supabase-license-portal`). **Supabase → Edge → Secrets:** mindestens `GITHUB_REPO_OWNER`, `GITHUB_REPO_NAME`, **`GITHUB_DEPLOY_TOKEN`** oder **`GITHUB_DISPATCH_TOKEN`** (PAT mit `repo` + `workflow`), optional `GITHUB_WORKFLOW_DEPLOY_FILE` (Default `deploy-pages-from-release.yml`), `GITHUB_WORKFLOW_REF` (Branch mit der Workflow-Datei, Default `main`), optional `DEPLOY_ALLOWED_ORIGINS` (kommagetrennt; leer = `*`). **GitHub → Repository secrets** für den Workflow siehe Kommentar in **`.github/workflows/deploy-pages-from-release.yml`** (Cloudflare + Vite-Variablen pro Kanal).
 
 ### Haupt-App / Portale konfigurieren
 

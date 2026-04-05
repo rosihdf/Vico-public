@@ -22,6 +22,11 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
     { to: '/', label: 'Mandanten', isActive: (p) => p === '/' || p.startsWith('/mandanten') },
     { to: '/globale-wartung', label: 'Globale Wartung', isActive: (p) => p.startsWith('/globale-wartung') },
     { to: '/app-releases', label: 'App-Releases', isActive: (p) => p.startsWith('/app-releases') },
+    {
+      to: '/release-rollout',
+      label: 'Rollout & Deploy',
+      isActive: (p) => p.startsWith('/release-rollout'),
+    },
     { to: '/lizenzmodelle', label: 'Lizenzmodelle', isActive: (p) => p.startsWith('/lizenzmodelle') },
     { to: '/grenzueberschreitungen', label: 'Grenzüberschreitungen', isActive: (p) => p.startsWith('/grenzueberschreitungen') },
     { to: '/einstellungen', label: 'Einstellungen', isActive: (p) => p.startsWith('/einstellungen') },

@@ -1,5 +1,6 @@
 # Lizenzportal Supabase – Projekt ojryoosqwfbzlmdeywzs
-# Deploy: cd supabase-license-portal && supabase link --project-ref ojryoosqwfbzlmdeywzs && supabase functions deploy
+# Nur Update/Lizenz-API: npm run lp:deploy:mandanten-update (Repo-Root)
+# Alle Functions: cd supabase-license-portal && supabase link --project-ref … && supabase functions deploy
 
 [api]
 enabled = true
@@ -12,3 +13,6 @@ verify_jwt = false
 
 [functions.trigger-mandanten-db-rollout]
 verify_jwt = false
+
+[functions.trigger-github-deploy]
+verify_jwt = true
