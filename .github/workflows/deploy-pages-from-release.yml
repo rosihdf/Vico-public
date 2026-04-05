@@ -1,0 +1,106 @@
+# Production-Build + Upload zu Cloudflare Pages (von LP Edge „trigger-github-deploy“ per workflow_dispatch).
+# Dispatch-Ref ist immer der Default-Branch (Workflow-Definition); der gebaute Code kommt von inputs.git_ref (Tag/SHA).
+#
+# GitHub Repository Secrets (Beispielnamen – in den Schritten explizit referenziert):
+#   CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN  (Pages deploy, wrangler)
+#   CF_PAGES_PROJECT_MAIN, CF_PAGES_PROJECT_KUNDENPORTAL, CF_PAGES_PROJECT_ARBEITSZEIT
+#   VITE_MAIN_SUPABASE_URL, VITE_MAIN_SUPABASE_ANON_KEY, VITE_MAIN_LICENSE_API_URL
+#   VITE_KP_SUPABASE_URL, VITE_KP_SUPABASE_ANON_KEY, VITE_KP_LICENSE_API_URL, VITE_KP_LICENSE_NUMBER (optional)
+#   VITE_AZ_SUPABASE_URL, VITE_AZ_SUPABASE_ANON_KEY, VITE_AZ_LICENSE_API_URL, VITE_AZ_LICENSE_NUMBER (optional)
+#
+# Später: JSON-Secret / zentrale Env-Quelle (Fragerunde 2) möglich.
+
+name: Deploy Pages from release
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'Mandanten-Kanal (Ordner im Monorepo)'
+        required: true
+        type: choice
+        options:
+          - main
+          - kundenportal
+          - arbeitszeit_portal
+      git_ref:
+        description: 'Git-Tag oder Commit-SHA zum Checkout (gebauter Stand)'
+        required: true
+        type: string
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Checkout release-Ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build and deploy (main)
+        if: inputs.app == 'main'
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_MAIN_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_MAIN_SUPABASE_ANON_KEY }}
+          VITE_LICENSE_API_URL: ${{ secrets.VITE_MAIN_LICENSE_API_URL }}
+          CF_PROJECT: ${{ secrets.CF_PAGES_PROJECT_MAIN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_PROJECT:-}" ] || [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "CF_PAGES_PROJECT_MAIN oder CLOUDFLARE_* fehlt."
+            exit 1
+          fi
+          npm ci --legacy-peer-deps
+          npm run build
+          npx --yes wrangler@3 pages deploy dist --project-name="$CF_PROJECT"
+
+      - name: Build and deploy (kundenportal)
+        if: inputs.app == 'kundenportal'
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_KP_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_KP_SUPABASE_ANON_KEY }}
+          VITE_LICENSE_API_URL: ${{ secrets.VITE_KP_LICENSE_API_URL }}
+          VITE_LICENSE_NUMBER: ${{ secrets.VITE_KP_LICENSE_NUMBER }}
+          CF_PROJECT: ${{ secrets.CF_PAGES_PROJECT_KUNDENPORTAL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_PROJECT:-}" ] || [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "CF_PAGES_PROJECT_KUNDENPORTAL oder CLOUDFLARE_* fehlt."
+            exit 1
+          fi
+          cd portal
+          npm ci
+          npm run build
+          cd ..
+          npx --yes wrangler@3 pages deploy portal/dist --project-name="$CF_PROJECT"
+
+      - name: Build and deploy (arbeitszeit_portal)
+        if: inputs.app == 'arbeitszeit_portal'
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_AZ_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_AZ_SUPABASE_ANON_KEY }}
+          VITE_LICENSE_API_URL: ${{ secrets.VITE_AZ_LICENSE_API_URL }}
+          VITE_LICENSE_NUMBER: ${{ secrets.VITE_AZ_LICENSE_NUMBER }}
+          CF_PROJECT: ${{ secrets.CF_PAGES_PROJECT_ARBEITSZEIT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_PROJECT:-}" ] || [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "CF_PAGES_PROJECT_ARBEITSZEIT oder CLOUDFLARE_* fehlt."
+            exit 1
+          fi
+          cd arbeitszeit-portal
+          npm ci
+          npm run build
+          cd ..
+          npx --yes wrangler@3 pages deploy arbeitszeit-portal/dist --project-name="$CF_PROJECT"
