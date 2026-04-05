@@ -86,7 +86,7 @@ const TenantDeploymentPanel = ({
       const res = await bumpClientConfigVersion(row.id)
       if (res.ok) {
         setPushMessage(
-          'Konfigurations-Version erhöht. Haupt-App, Kundenportal und Arbeitszeitenportal pollen die Lizenz-API (ca. alle 90 s bzw. kurz nach Seitenstart); ein Tab-Wechsel kann die nächste Prüfung auslösen. Vollständiger Reload ist nicht nötig.'
+          'Konfigurations-Version erhöht. Haupt-App, Kundenportal und Arbeitszeitenportal pollen die Lizenz-API (ca. alle 90 s bzw. kurz nach Seitenstart); ein Tab-Wechsel kann die nächste Prüfung auslösen. Vollständiger Reload ist nicht nötig.'
         )
         onClientPushComplete?.()
       } else {

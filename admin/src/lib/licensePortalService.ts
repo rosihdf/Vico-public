@@ -212,7 +212,7 @@ export const bumpClientConfigVersion = async (
   return { ok: true, client_config_version: next }
 }
 
-/** Erhöht `client_config_version` für alle Lizenzen eines Mandanten (typisch nach Release-Zuweisung oder Rollback). */
+/** For each license of the tenant: bump `client_config_version` (after release assignment or rollback). */
 export const bumpClientConfigVersionsForTenantLicenses = async (
   tenantId: string
 ): Promise<{ ok: boolean; error?: string }> => {
