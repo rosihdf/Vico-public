@@ -85,21 +85,21 @@ serve(async (req) => {
     return json(req, 401, { ok: false, error: 'Unauthorized' })
   }
 
-  let releaseId: string
-  let confirmRecentDuplicate = false
+  let raw: unknown
   try {
-    const body = (await req.json()) as {
-      release_id?: string
-      confirm_recent_duplicate?: boolean
-    }
-    releaseId = typeof body.release_id === 'string' ? body.release_id.trim() : ''
-    confirmRecentDuplicate = body.confirm_recent_duplicate === true
+    raw = await req.json()
   } catch {
     return json(req, 400, {
       ok: false,
       error: 'Ungültiger JSON-Body. Erwartet: { "release_id": string, "confirm_recent_duplicate"?: boolean }',
     })
   }
+  const body = raw as {
+    release_id?: string
+    confirm_recent_duplicate?: boolean
+  }
+  const releaseId = typeof body.release_id === 'string' ? body.release_id.trim() : ''
+  const confirmRecentDuplicate = body.confirm_recent_duplicate === true
 
   if (!releaseId) {
     return json(req, 400, { ok: false, error: 'release_id fehlt.' })

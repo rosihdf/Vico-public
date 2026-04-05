@@ -235,7 +235,7 @@ const AppReleaseEditor = () => {
           className="rounded-lg border border-amber-200 bg-amber-50 text-amber-950 text-sm px-4 py-3 space-y-3"
           role="status"
         >
-          <p className="font-medium">Entwurf (z. B. aus GitHub) – noch nicht für Mandanten aktiv.</p>
+          <p className="font-medium">Entwurf (z.B. aus GitHub) - noch nicht für Mandanten aktiv.</p>
           <p className="text-xs text-amber-900/90">
             Nach Prüfung von Notes und Einstellungen hier „Freigeben“ – danach Incoming und Go-Live wie gewohnt.
           </p>
