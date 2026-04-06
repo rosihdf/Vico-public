@@ -20,6 +20,8 @@ export const LICENSE_FEATURE_KEYS = [
   'ladezeiten',
   /** A4-Sammel-PDF mit QR-Etiketten (Haupt-App Kunden, Mehrfachauswahl) */
   'qr_batch_a4',
+  /** Beta-Live-Test: Feedback-Widget (Haupt-App, Kundenportal, Arbeitszeit-Portal) */
+  'beta_feedback',
 ] as const
 
 export type LicenseFeatureKey = (typeof LICENSE_FEATURE_KEYS)[number]
@@ -36,6 +38,7 @@ export const LICENSE_FEATURE_LABELS: Record<string, string> = {
   fehlerberichte: 'Fehlerberichte (System)',
   ladezeiten: 'Ladezeiten (System)',
   qr_batch_a4: 'A4-QR-Etiketten',
+  beta_feedback: 'Beta-Feedback (Live-Test)',
 }
 
 /** Default false für alle bekannten Keys (z. B. Formulare) */
@@ -79,6 +82,7 @@ export const TIER_DEFAULT_FEATURES: Record<string, Record<string, boolean>> = {
     fehlerberichte: false,
     ladezeiten: false,
     qr_batch_a4: false,
+    beta_feedback: false,
   },
   professional: {
     kundenportal: true,
@@ -91,6 +95,7 @@ export const TIER_DEFAULT_FEATURES: Record<string, Record<string, boolean>> = {
     fehlerberichte: true,
     ladezeiten: true,
     qr_batch_a4: false,
+    beta_feedback: false,
   },
   enterprise: {
     kundenportal: true,
@@ -103,5 +108,6 @@ export const TIER_DEFAULT_FEATURES: Record<string, Record<string, boolean>> = {
     fehlerberichte: true,
     ladezeiten: true,
     qr_batch_a4: false,
+    beta_feedback: false,
   },
 }

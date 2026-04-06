@@ -3,6 +3,15 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import SyncStatusIndicator from './SyncStatus'
 import Logo from './Logo'
 import UpdateBanner from '../shared/UpdateBanner'
+import MandantDegradedBanner from '../shared/MandantDegradedBanner'
+import MandantenIncomingReleaseBanner from '../shared/MandantenIncomingReleaseBanner'
+import MandantenReleaseRolloutRefreshBanner from '../shared/MandantenReleaseRolloutRefreshBanner'
+import MandantenReleaseHardReloadGate from '../shared/MandantenReleaseHardReloadGate'
+import LicensePortalStaleBanner from '../shared/LicensePortalStaleBanner'
+import MandantPingScheduler from './components/MandantPingScheduler'
+import BetaFeedbackWidget from '../shared/BetaFeedbackWidget'
+import { supabase } from './supabase'
+import { getStoredLicenseNumber, isLicenseApiConfigured } from './lib/licensePortalApi'
 import { useSync } from './SyncContext'
 import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
@@ -10,11 +19,21 @@ import { useComponentSettings } from './ComponentSettingsContext'
 import { hasFeature } from './lib/licenseService'
 import { fetchMaintenanceReminders, subscribeToDataChange } from './lib/dataService'
 import { countMaintenanceRemindersNeedingAttention } from './lib/maintenanceReminderUtils'
+import {
+  getMaintenanceAnnouncementForSurface,
+  getMaintenanceModeBannerForSurface,
+  isMaintenanceModeWindowActive,
+  type TenantMaintenanceApiShape,
+} from '../shared/tenantMaintenanceMode'
+
+const MAIN_APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
+const MAIN_RELEASE_LABEL_BUILD =
+  typeof __APP_RELEASE_LABEL__ !== 'undefined' ? __APP_RELEASE_LABEL__ : ''
 
 const Layout = () => {
   const { syncStatus, pendingCount } = useSync()
   const { isAuthenticated, logout, userRole } = useAuth()
-  const { license, storageUsageMb } = useLicense()
+  const { license, storageUsageMb, maintenance, licensePortalStale, mandantenReleases, appVersions } = useLicense()
   const { isEnabled } = useComponentSettings()
   const showBuchhaltungExport =
     isEnabled('auftrag') &&
@@ -31,6 +50,7 @@ const Layout = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [maintenanceAttentionCount, setMaintenanceAttentionCount] = useState(0)
   const [maintenanceHasOverdue, setMaintenanceHasOverdue] = useState(false)
+  const [nowTs, setNowTs] = useState(() => Date.now())
   const location = useLocation()
 
   const refreshMaintenanceAttentionBadge = useCallback(async () => {
@@ -54,6 +74,32 @@ const Layout = () => {
       void refreshMaintenanceAttentionBadge()
     })
   }, [refreshMaintenanceAttentionBadge])
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTs(Date.now()), 1_000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const maintenanceApi = maintenance as TenantMaintenanceApiShape | null
+  const announcementText = getMaintenanceAnnouncementForSurface(maintenanceApi, nowTs, 'main_app')
+  const maintenanceModeBanner = getMaintenanceModeBannerForSurface(maintenanceApi, nowTs, 'main_app')
+  const blockMainContent =
+    isMaintenanceModeWindowActive(maintenanceApi, nowTs) && maintenanceApi?.mode_apply_main_app !== false
+  const modeEndForCard = (() => {
+    const m = maintenanceApi
+    if (!m?.mode_auto_end) return NaN
+    const modeStart = m.mode_starts_at ? Date.parse(m.mode_starts_at) : NaN
+    const modeEndFromField = m.mode_ends_at ? Date.parse(m.mode_ends_at) : NaN
+    const modeEndFromDuration =
+      Number.isFinite(modeStart) && (m.mode_duration_min ?? 0) > 0
+        ? modeStart + (m.mode_duration_min ?? 0) * 60_000
+        : NaN
+    return Number.isFinite(modeEndFromField) ? modeEndFromField : modeEndFromDuration
+  })()
+  const remainingMinCard =
+    blockMainContent && Number.isFinite(modeEndForCard)
+      ? Math.ceil(Math.max(0, modeEndForCard - nowTs) / 60_000)
+      : null
 
   const handleLogout = async () => {
     handleMenuClose()
@@ -129,6 +175,7 @@ const Layout = () => {
 
   return (
     <div className="min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))]">
+      <MandantPingScheduler />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:bg-white focus:dark:bg-slate-800 focus:rounded-lg focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-vico-primary"
@@ -136,6 +183,9 @@ const Layout = () => {
         Zum Inhalt springen
       </a>
       <UpdateBanner />
+      <MandantenReleaseHardReloadGate releases={mandantenReleases} />
+      <MandantenReleaseRolloutRefreshBanner releases={mandantenReleases} />
+      <MandantenIncomingReleaseBanner releases={mandantenReleases} />
       {license?.expired && userRole === 'admin' && (
         <div
           role="alert"
@@ -167,6 +217,24 @@ const Layout = () => {
           Demo-Modus: Ihre Daten werden nach 24 Stunden automatisch gelöscht.
         </div>
       )}
+      {announcementText ? (
+        <div
+          role="status"
+          className="bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-200 text-center py-2 px-4 text-sm font-medium border-b border-blue-200 dark:border-blue-700"
+          aria-live="polite"
+        >
+          {announcementText}
+        </div>
+      ) : null}
+      {maintenanceModeBanner ? (
+        <div
+          role="alert"
+          className="bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 text-center py-2 px-4 text-sm font-medium border-b border-amber-200 dark:border-amber-700"
+          aria-live="polite"
+        >
+          {maintenanceModeBanner.message}
+        </div>
+      ) : null}
       {isOffline && (
         <div
           role="status"
@@ -176,6 +244,8 @@ const Layout = () => {
           Offline – Änderungen werden lokal gespeichert und beim nächsten Sync hochgeladen.
         </div>
       )}
+      <LicensePortalStaleBanner visible={licensePortalStale} suppress={isOffline} />
+      <MandantDegradedBanner suppress={isOffline} />
       <header className="relative bg-vico-background shadow-md sticky top-0 z-50 flex items-center justify-between gap-2 px-4 min-h-[calc(3.5rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] overflow-visible">
         <button
           type="button"
@@ -287,7 +357,32 @@ const Layout = () => {
       </aside>
 
       <main id="main-content" className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-900" tabIndex={-1}>
-        <Outlet />
+        {blockMainContent ? (
+          <div className="min-h-full flex items-center justify-center p-6">
+            <div className="max-w-xl w-full rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 p-6 text-center">
+              <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-3">Wartungsmodus</h1>
+              <p className="text-slate-700 dark:text-slate-200">
+                {maintenance?.mode_message?.trim() ||
+                  'Die Anwendung befindet sich aktuell im Wartungsmodus.'}
+              </p>
+              <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                {maintenance?.mode_auto_end && remainingMinCard != null ? (
+                  <>
+                    Voraussichtliche Restzeit:{' '}
+                    <span className="font-semibold">{remainingMinCard} Minuten</span>
+                  </>
+                ) : (
+                  <>
+                    Voraussichtliche Restzeit:{' '}
+                    <span className="font-semibold">offen (manuelle Beendigung)</span>
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <Outlet />
+        )}
       </main>
 
       {/* Bottom Navigation */}
@@ -330,6 +425,21 @@ const Layout = () => {
           })}
         </div>
       </nav>
+      {isAuthenticated &&
+      license &&
+      hasFeature(license, 'beta_feedback') &&
+      isLicenseApiConfigured() ? (
+        <BetaFeedbackWidget
+          supabase={supabase}
+          licenseApiUrl={(import.meta.env.VITE_LICENSE_API_URL ?? '').trim()}
+          licenseApiKey={(import.meta.env.VITE_LICENSE_API_KEY ?? '').trim() || undefined}
+          licenseNumber={getStoredLicenseNumber()}
+          sourceApp="main"
+          features={license.features ?? {}}
+          appVersion={MAIN_APP_VERSION}
+          releaseLabel={appVersions?.main?.releaseLabel?.trim() || MAIN_RELEASE_LABEL_BUILD}
+        />
+      ) : null}
     </div>
   )
 }

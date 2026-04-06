@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -11,9 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const appVersion = getAppVersion(__dirname)
 const appReleaseLabel = getAppReleaseLabel(__dirname)
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, __dirname, '')
-  return {
+export default defineConfig(() => ({
     envDir: __dirname,
     server: {
       port: 5173,
@@ -32,7 +30,7 @@ export default defineConfig(({ mode }) => {
         strategies: 'injectManifest',
         srcDir: 'src',
         filename: 'sw.ts',
-        registerType: 'autoUpdate',
+        registerType: 'prompt',
         devOptions: { enabled: false },
         includeAssets: ['favicon.svg'],
         // Ohne mode: 'development' kann die SW-Generierung (terser) hängen und „Unable to write the service worker file“ auslösen.
@@ -56,9 +54,8 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
       __APP_RELEASE_LABEL__: JSON.stringify(appReleaseLabel),
-      'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),
-      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY ?? ''),
-      'import.meta.env.VITE_VAPID_PUBLIC_KEY': JSON.stringify(env.VITE_VAPID_PUBLIC_KEY ?? ''),
+      // VITE_* nicht per define überschreiben: sonst können leere Strings eingebacken werden,
+      // wenn loadEnv zum Config-Zeitpunkt nicht wie erwartet greift (Login: „Supabase nicht konfiguriert“).
     },
     build: {
       rollupOptions: {
@@ -76,5 +73,4 @@ export default defineConfig(({ mode }) => {
       /** Eigene vite.config + Vitest in admin/ und arbeitszeit-portal/ */
       exclude: ['**/node_modules/**', '**/dist/**', 'admin/**', 'arbeitszeit-portal/**'],
     },
-  }
-})
+}))

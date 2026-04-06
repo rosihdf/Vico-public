@@ -27,6 +27,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
       label: 'Rollout & Deploy',
       isActive: (p) => p.startsWith('/release-rollout'),
     },
+    { to: '/beta-feedback', label: 'Beta-Feedback', isActive: (p) => p.startsWith('/beta-feedback') },
     { to: '/lizenzmodelle', label: 'Lizenzmodelle', isActive: (p) => p.startsWith('/lizenzmodelle') },
     { to: '/grenzueberschreitungen', label: 'Grenzüberschreitungen', isActive: (p) => p.startsWith('/grenzueberschreitungen') },
     { to: '/einstellungen', label: 'Einstellungen', isActive: (p) => p.startsWith('/einstellungen') },

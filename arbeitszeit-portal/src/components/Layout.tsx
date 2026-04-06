@@ -2,6 +2,21 @@ import { useState, useEffect, useCallback } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import type { User } from '@supabase/supabase-js'
 import { useDesign } from '../DesignContext'
+import {
+  getMaintenanceAnnouncementForSurface,
+  getMaintenanceModeBannerForSurface,
+  type TenantMaintenanceApiShape,
+} from '../../../shared/tenantMaintenanceMode'
+import MandantDegradedBanner from '../../../shared/MandantDegradedBanner'
+import MandantenIncomingReleaseBanner from '../../../shared/MandantenIncomingReleaseBanner'
+import MandantenReleaseRolloutRefreshBanner from '../../../shared/MandantenReleaseRolloutRefreshBanner'
+import MandantenReleaseHardReloadGate from '../../../shared/MandantenReleaseHardReloadGate'
+import BetaFeedbackWidget from '../../../shared/BetaFeedbackWidget'
+import { supabase } from '../lib/supabase'
+
+const AZ_APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
+const AZ_RELEASE_LABEL_BUILD =
+  typeof __APP_RELEASE_LABEL__ !== 'undefined' ? __APP_RELEASE_LABEL__ : ''
 
 type LayoutProps = {
   user: User
@@ -16,9 +31,18 @@ type NavItem = {
 
 const Layout = ({ user, onLogout }: LayoutProps) => {
   const location = useLocation()
-  const { appName, logoUrl, features } = useDesign()
+  const { appName, logoUrl, features, maintenance, mandantenReleases, appVersionInfo } = useDesign()
   const pathname = location.pathname
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [nowTs, setNowTs] = useState(() => Date.now())
+  const maintenanceApi = maintenance as TenantMaintenanceApiShape | null
+  const announcementText = getMaintenanceAnnouncementForSurface(maintenanceApi, nowTs, 'arbeitszeit_portal')
+  const maintenanceModeBanner = getMaintenanceModeBannerForSurface(maintenanceApi, nowTs, 'arbeitszeit_portal')
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTs(Date.now()), 1_000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const showStandort = features.standortabfrage === true
   const showUrlaub = features.urlaub === true
@@ -107,6 +131,9 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
         Zum Inhalt springen
       </a>
 
+      <MandantenReleaseHardReloadGate releases={mandantenReleases} />
+      <MandantenReleaseRolloutRefreshBanner releases={mandantenReleases} />
+
       {/* Kopfzeile z-50: über Overlay (z-40) und Drawer (z-[45]), Hamburger bleibt bedienbar */}
       <header className="sticky top-0 z-50 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 pt-[env(safe-area-inset-top,0px)] shrink-0">
         <div className="px-3 sm:px-4 py-3 flex items-center gap-3 min-h-[3rem]">
@@ -148,6 +175,27 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
           </div>
         </div>
       </header>
+
+      {announcementText ? (
+        <div
+          role="status"
+          className="bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-200 text-center py-2 px-4 text-sm font-medium border-b border-blue-200 dark:border-blue-800 shrink-0"
+          aria-live="polite"
+        >
+          {announcementText}
+        </div>
+      ) : null}
+      {maintenanceModeBanner ? (
+        <div
+          role="alert"
+          className="bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 text-center py-2 px-4 text-sm font-medium border-b border-amber-200 dark:border-amber-800 shrink-0"
+          aria-live="polite"
+        >
+          {maintenanceModeBanner.message}
+        </div>
+      ) : null}
+      <MandantenIncomingReleaseBanner releases={mandantenReleases} />
+      <MandantDegradedBanner />
 
       {/* Overlay unter Kopfzeile */}
       {isMenuOpen && (
@@ -202,6 +250,18 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
       >
         <Outlet />
       </main>
+      {(import.meta.env.VITE_LICENSE_API_URL ?? '').trim() ? (
+        <BetaFeedbackWidget
+          supabase={supabase}
+          licenseApiUrl={(import.meta.env.VITE_LICENSE_API_URL ?? '').trim()}
+          licenseApiKey={(import.meta.env.VITE_LICENSE_API_KEY ?? '').trim() || undefined}
+          licenseNumber={(import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()}
+          sourceApp="arbeitszeit_portal"
+          features={features}
+          appVersion={AZ_APP_VERSION}
+          releaseLabel={appVersionInfo?.releaseLabel?.trim() || AZ_RELEASE_LABEL_BUILD}
+        />
+      ) : null}
     </div>
   )
 }

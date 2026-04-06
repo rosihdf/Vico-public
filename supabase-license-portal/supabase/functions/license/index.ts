@@ -313,7 +313,8 @@ const assertOriginAllowedForTenantRequest = (req: Request, tenant: Record<string
   const origin = req.headers.get('origin') ?? req.headers.get('referer') ?? ''
   let requestHostFromHeader = ''
   try {
-    requestHostFromHeader = origin ? new URL(origin.trim()).host : ''
+    // Hostname ohne Port, damit localhost:5173 mit allowed_domains "localhost" matcht.
+    requestHostFromHeader = origin ? new URL(origin.trim()).hostname.toLowerCase() : ''
   } catch {
     requestHostFromHeader = ''
   }

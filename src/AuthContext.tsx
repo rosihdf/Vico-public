@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
-import { supabase, setRememberMe, warmUpConnection } from './supabase'
+import { supabase, setRememberMe, warmUpConnection, isMandantSupabaseEnvConfigured } from './supabase'
 import { getSupabaseErrorMessage } from './supabaseErrors'
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js'
 
@@ -64,9 +64,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return { success: false, message: msg }
     }
 
-    const url = import.meta.env.VITE_SUPABASE_URL
-    if (!url || url.includes('example.supabase.co')) {
-      const msg = 'Supabase nicht konfiguriert. .env mit VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY prüfen.'
+    if (!isMandantSupabaseEnvConfigured()) {
+      const msg =
+        'Supabase nicht konfiguriert. Im Repo-Root die Datei .env mit VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY setzen (Vorlage: .env.example), dann Dev-Server neu starten.'
       setLoginError(msg)
       return { success: false, message: msg }
     }
@@ -218,9 +218,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     warmUpConnection()
 
-    const url = import.meta.env.VITE_SUPABASE_URL
-    const key = import.meta.env.VITE_SUPABASE_ANON_KEY
-    if (!url || !key) {
+    if (!isMandantSupabaseEnvConfigured()) {
       setIsLoading(false)
       return
     }

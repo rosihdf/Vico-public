@@ -30,9 +30,17 @@ const customStorage = {
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim()
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? '').trim()
 
-if (!supabaseUrl || !supabaseAnonKey) {
+/** True, wenn Mandanten-Supabase aus .env nutzbar ist (nicht Platzhalter / leer). */
+export const isMandantSupabaseEnvConfigured = (): boolean =>
+  Boolean(
+    supabaseUrl &&
+      supabaseAnonKey &&
+      !supabaseUrl.includes('example.supabase.co')
+  )
+
+if (!isMandantSupabaseEnvConfigured()) {
   console.warn(
-    'Supabase: VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY in .env prüfen. Dev-Server neu starten (npm run dev).'
+    'Supabase: VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY in .env prüfen. Dev-Server im Repo-Root neu starten (npm run dev).'
   )
 }
 
@@ -45,4 +53,5 @@ export const supabase = createSupabaseClient({
   anonKey: supabaseAnonKey || PLACEHOLDER_KEY,
   customStorage,
   warnMessage: 'Supabase: VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY in .env prüfen.',
+  trackMandantDegraded: true,
 })

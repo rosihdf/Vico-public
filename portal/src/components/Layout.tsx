@@ -1,11 +1,30 @@
-import { useState, useEffect, useCallback, type KeyboardEvent } from 'react'
+import { useState, useEffect, useCallback, useMemo, type KeyboardEvent } from 'react'
+import {
+  getMaintenanceAnnouncementForSurface,
+  getMaintenanceModeBannerForSurface,
+  type TenantMaintenanceApiShape,
+} from '../../../shared/tenantMaintenanceMode'
 import { Link, Outlet, useLocation } from 'react-router-dom'
+import {
+  DEFAULT_PORTAL_ORDER_TIMELINE_SETTINGS,
+  fetchPortalOrderTimeline,
+  type PortalOrderTimelinePayload,
+} from '../lib/portalService'
+import {
+  buildOrderActivityBannerFingerprint,
+  shouldShowOrderActivityBanner,
+} from '../lib/portalOrderTimeline'
 import type { User } from '@supabase/supabase-js'
 import { useTheme } from '../ThemeContext'
 import { useDesign } from '../DesignContext'
 import type { Theme } from '../ThemeContext'
 import { saveProfileThemePreference } from '../../../shared/themePreferenceDb'
 import { supabase } from '../lib/supabase'
+import MandantDegradedBanner from '../../../shared/MandantDegradedBanner'
+import MandantenIncomingReleaseBanner from '../../../shared/MandantenIncomingReleaseBanner'
+import MandantenReleaseRolloutRefreshBanner from '../../../shared/MandantenReleaseRolloutRefreshBanner'
+import MandantenReleaseHardReloadGate from '../../../shared/MandantenReleaseHardReloadGate'
+import BetaFeedbackWidget from '../../../shared/BetaFeedbackWidget'
 
 const THEME_LABELS: Record<Theme, string> = {
   light: 'Hell',
@@ -18,7 +37,18 @@ type LayoutProps = {
   onLogout: () => void
 }
 
+export type PortalLayoutOutletContext = {
+  portalTimeline: PortalOrderTimelinePayload
+}
+
 const THEME_ORDER: Theme[] = ['light', 'dark', 'system']
+
+const PORTAL_APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
+const PORTAL_RELEASE_LABEL_BUILD =
+  typeof __APP_RELEASE_LABEL__ !== 'undefined' ? __APP_RELEASE_LABEL__ : ''
+
+/** WP-PORTAL-03: ausgeblendeter Stand pro Portal-Nutzer bis sich die Aktivitäts-Timeline ändert. */
+const ORDER_ACTIVITY_BANNER_DISMISS_PREFIX = 'vico-portal-order-activity-banner-dismiss:'
 
 const getNextTheme = (current: Theme): Theme =>
   THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length]
@@ -34,8 +64,71 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
   const location = useLocation()
   const pathname = location.pathname
   const { theme, resolvedTheme, setTheme } = useTheme()
-  const { appName, logoUrl } = useDesign()
+  const { appName, logoUrl, maintenance, mandantenReleases, features, appVersionInfo } = useDesign()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [portalTimeline, setPortalTimeline] = useState<PortalOrderTimelinePayload>(() => ({
+    settings: DEFAULT_PORTAL_ORDER_TIMELINE_SETTINGS,
+    orders: [],
+  }))
+  const [nowTs, setNowTs] = useState(() => Date.now())
+  const maintenanceApi = maintenance as TenantMaintenanceApiShape | null
+  const announcementText = getMaintenanceAnnouncementForSurface(maintenanceApi, nowTs, 'customer_portal')
+  const maintenanceModeBanner = getMaintenanceModeBannerForSurface(maintenanceApi, nowTs, 'customer_portal')
+  const orderActivityBannerWorthy = shouldShowOrderActivityBanner(
+    portalTimeline.orders,
+    portalTimeline.settings
+  )
+  const orderActivityFingerprint = useMemo(
+    () => buildOrderActivityBannerFingerprint(portalTimeline.orders, portalTimeline.settings),
+    [portalTimeline.orders, portalTimeline.settings]
+  )
+  const orderActivityDismissStorageKey = `${ORDER_ACTIVITY_BANNER_DISMISS_PREFIX}${user.id}`
+  const [dismissedOrderActivityFingerprint, setDismissedOrderActivityFingerprint] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      setDismissedOrderActivityFingerprint(window.localStorage.getItem(orderActivityDismissStorageKey))
+    } catch {
+      setDismissedOrderActivityFingerprint(null)
+    }
+  }, [orderActivityDismissStorageKey])
+
+  const showOrderActivityBanner =
+    orderActivityBannerWorthy && orderActivityFingerprint !== dismissedOrderActivityFingerprint
+
+  const handleDismissOrderActivityBanner = useCallback(() => {
+    try {
+      window.localStorage.setItem(orderActivityDismissStorageKey, orderActivityFingerprint)
+    } catch {
+      /* ignore quota / private mode */
+    }
+    setDismissedOrderActivityFingerprint(orderActivityFingerprint)
+  }, [orderActivityDismissStorageKey, orderActivityFingerprint])
+
+  const handleDismissOrderActivityBannerKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        handleDismissOrderActivityBanner()
+      }
+    },
+    [handleDismissOrderActivityBanner]
+  )
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTs(Date.now()), 1_000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchPortalOrderTimeline(user.id).then((payload) => {
+      if (!cancelled) setPortalTimeline(payload)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user.id])
 
   const handleCycleTheme = () => {
     const next = getNextTheme(theme)
@@ -85,6 +178,9 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
       >
         Zum Inhalt springen
       </a>
+
+      <MandantenReleaseHardReloadGate releases={mandantenReleases} />
+      <MandantenReleaseRolloutRefreshBanner releases={mandantenReleases} />
 
       {/* Kopfzeile z-50: über Overlay (z-40) und Drawer (z-[45]) */}
       <header className="sticky top-0 z-50 bg-vico-primary text-white shadow-md pt-[env(safe-area-inset-top,0px)]">
@@ -161,6 +257,55 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
         </div>
       </header>
 
+      {announcementText ? (
+        <div
+          role="status"
+          className="bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-200 text-center py-2 px-4 text-sm font-medium border-b border-blue-200 dark:border-blue-700"
+          aria-live="polite"
+        >
+          {announcementText}
+        </div>
+      ) : null}
+      {maintenanceModeBanner ? (
+        <div
+          role="alert"
+          className="bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 text-center py-2 px-4 text-sm font-medium border-b border-amber-200 dark:border-amber-700"
+          aria-live="polite"
+        >
+          {maintenanceModeBanner.message}
+        </div>
+      ) : null}
+      <MandantenIncomingReleaseBanner releases={mandantenReleases} />
+      <MandantDegradedBanner />
+      {showOrderActivityBanner ? (
+        <div
+          role="status"
+          className="bg-sky-100 dark:bg-sky-900/35 text-sky-900 dark:text-sky-100 py-2.5 px-4 text-sm border-b border-sky-200 dark:border-sky-800 flex flex-wrap items-center justify-center gap-3"
+          aria-live="polite"
+        >
+          <span className="text-center">
+            <span>Es gibt Aktivität zu Aufträgen an Ihren Türen. </span>
+            <Link
+              to="/berichte"
+              className="font-semibold underline underline-offset-2 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded"
+              tabIndex={0}
+            >
+              Details unter Berichte
+            </Link>
+            .
+          </span>
+          <button
+            type="button"
+            onClick={handleDismissOrderActivityBanner}
+            onKeyDown={handleDismissOrderActivityBannerKeyDown}
+            className="shrink-0 text-sm underline underline-offset-2 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded px-1"
+            aria-label="Hinweis ausblenden bis zur nächsten Aktivität"
+          >
+            Ausblenden
+          </button>
+        </div>
+      ) : null}
+
       {isMenuOpen && (
         <div
           className="fixed inset-0 bg-black/30 z-40"
@@ -210,7 +355,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
         className="flex-1 max-w-5xl mx-auto w-full px-3 sm:px-4 py-4 sm:py-6 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]"
         tabIndex={-1}
       >
-        <Outlet />
+        <Outlet context={{ portalTimeline } satisfies PortalLayoutOutletContext} />
       </main>
       <footer className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-slate-400 dark:text-slate-500 px-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
         <Link to="/datenschutz" className="hover:text-slate-600 dark:hover:text-slate-300 transition-colors" tabIndex={0}>
@@ -227,6 +372,18 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
         <span>·</span>
         <span className="text-center">{appName} Türen &amp; Tore</span>
       </footer>
+      {(import.meta.env.VITE_LICENSE_API_URL ?? '').trim() ? (
+        <BetaFeedbackWidget
+          supabase={supabase}
+          licenseApiUrl={(import.meta.env.VITE_LICENSE_API_URL ?? '').trim()}
+          licenseApiKey={(import.meta.env.VITE_LICENSE_API_KEY ?? '').trim() || undefined}
+          licenseNumber={(import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()}
+          sourceApp="kundenportal"
+          features={features}
+          appVersion={PORTAL_APP_VERSION}
+          releaseLabel={appVersionInfo?.releaseLabel?.trim() || PORTAL_RELEASE_LABEL_BUILD}
+        />
+      ) : null}
     </div>
   )
 }
