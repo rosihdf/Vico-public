@@ -382,6 +382,8 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
           features={features}
           appVersion={PORTAL_APP_VERSION}
           releaseLabel={appVersionInfo?.releaseLabel?.trim() || PORTAL_RELEASE_LABEL_BUILD}
+          routePath={location.pathname}
+          routeQuery={location.search.startsWith('?') ? location.search.slice(1) : location.search}
         />
       ) : null}
     </div>

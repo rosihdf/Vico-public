@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
-import { useLocation } from 'react-router-dom'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type BetaFeedbackSourceApp = 'main' | 'kundenportal' | 'arbeitszeit_portal'
@@ -30,6 +29,8 @@ export type BetaFeedbackWidgetProps = {
   features: Record<string, boolean>
   appVersion: string
   releaseLabel: string
+  routePath: string
+  routeQuery: string
 }
 
 const BetaFeedbackWidget = ({
@@ -41,8 +42,9 @@ const BetaFeedbackWidget = ({
   features,
   appVersion,
   releaseLabel,
+  routePath,
+  routeQuery,
 }: BetaFeedbackWidgetProps) => {
-  const location = useLocation()
   const panelId = useId()
   const titleId = useId()
   const openBtnRef = useRef<HTMLButtonElement>(null)
@@ -86,7 +88,6 @@ const BetaFeedbackWidget = ({
     }
     const base = licenseApiUrl.replace(/\/$/, '')
     const url = `${base}/submit-beta-feedback`
-    const routeQuery = location.search.startsWith('?') ? location.search.slice(1) : location.search
     setSubmitting(true)
     try {
       const headers: Record<string, string> = {
@@ -101,7 +102,7 @@ const BetaFeedbackWidget = ({
         body: JSON.stringify({
           ...(String(licenseNumber ?? '').trim() ? { license_number: String(licenseNumber).trim() } : {}),
           source_app: sourceApp,
-          route_path: location.pathname,
+          route_path: routePath,
           route_query: routeQuery,
           category,
           ...(severity ? { severity } : {}),
@@ -131,8 +132,8 @@ const BetaFeedbackWidget = ({
     licenseNumber,
     licenseApiKey,
     sourceApp,
-    location.pathname,
-    location.search,
+    routePath,
+    routeQuery,
     category,
     severity,
     title,
@@ -194,8 +195,8 @@ const BetaFeedbackWidget = ({
             <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
               Seite:{' '}
               <span className="font-mono break-all">
-                {location.pathname}
-                {location.search ? `?${location.search.slice(1)}` : ''}
+                {routePath}
+                {routeQuery ? `?${routeQuery}` : ''}
               </span>
             </p>
             <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">

@@ -438,6 +438,8 @@ const Layout = () => {
           features={license.features ?? {}}
           appVersion={MAIN_APP_VERSION}
           releaseLabel={appVersions?.main?.releaseLabel?.trim() || MAIN_RELEASE_LABEL_BUILD}
+          routePath={location.pathname}
+          routeQuery={location.search.startsWith('?') ? location.search.slice(1) : location.search}
         />
       ) : null}
     </div>

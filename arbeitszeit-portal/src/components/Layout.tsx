@@ -260,6 +260,8 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
           features={features}
           appVersion={AZ_APP_VERSION}
           releaseLabel={appVersionInfo?.releaseLabel?.trim() || AZ_RELEASE_LABEL_BUILD}
+          routePath={location.pathname}
+          routeQuery={location.search.startsWith('?') ? location.search.slice(1) : location.search}
         />
       ) : null}
     </div>
