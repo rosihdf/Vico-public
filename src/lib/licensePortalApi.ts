@@ -1,16 +1,17 @@
 import type { AppVersionsMap } from '../../shared/appVersions'
 import { parseAppVersionsFromDb } from '../../shared/appVersions'
+import type { MandantenReleasesApiPayload } from '../../shared/mandantenReleaseApi'
+import { parseMandantenReleasesPayload } from '../../shared/mandantenReleaseApi'
 
 /**
  * Lizenz-API-Client für Mandantenfähigkeit.
  * Ruft Lizenz + Design-Config vom Lizenzportal ab.
  *
  * Env:
- *   VITE_LICENSE_API_URL – Basis-URL der Lizenz-API (ohne trailing slash)
- *     - Supabase Edge: …/functions/v1 → Aufrufe z. B. …/functions/v1/limit-exceeded
- *     - Netlify Admin: https://<lizenz-domain>/api → …/api/limit-exceeded (Redirect zu Netlify Function)
- *   VITE_LICENSE_API_KEY – Optional, für Supabase Edge Function (anon key) wenn verify_jwt=true
- *   Kunden-/Arbeitszeitenportal: VITE_LICENSE_NUMBER optional – Host-Lookup (GET …/license ohne Query), siehe docs/Netlify-README.md
+ *   VITE_LICENSE_API_URL – Basis-URL der Lizenz-API (ohne trailing slash), typisch Supabase Edge:
+ *     …/functions/v1 → Aufrufe z. B. …/functions/v1/limit-exceeded, …/license
+ *   VITE_LICENSE_API_KEY – Optional (Anon-Key), wenn die Edge Functions mit verify_jwt arbeiten
+ *   Kunden-/Arbeitszeitenportal: VITE_LICENSE_NUMBER optional – Host-Lookup (GET …/license ohne Query)
  * Wenn nicht gesetzt: Legacy-Modus (Lizenz aus Mandanten-Supabase via get_license_status).
  */
 
@@ -168,6 +169,23 @@ export type LicenseApiResponse = {
     dsb_email?: string
   }
   appVersions?: AppVersionsMap
+  maintenance?: {
+    mode_enabled?: boolean
+    mode_message?: string | null
+    mode_starts_at?: string | null
+    mode_ends_at?: string | null
+    mode_duration_min?: number | null
+    mode_auto_end?: boolean
+    mode_apply_main_app?: boolean
+    mode_apply_arbeitszeit_portal?: boolean
+    mode_apply_customer_portal?: boolean
+    announcement_enabled?: boolean
+    announcement_message?: string | null
+    announcement_from?: string | null
+    announcement_until?: string | null
+  }
+  /** §11.20: Kanal, aktiver Release, Incoming-Liste (Lizenz-API) */
+  mandantenReleases?: MandantenReleasesApiPayload | null
 }
 
 const DEFAULT_DESIGN: LicenseApiResponse['design'] = {
@@ -188,17 +206,21 @@ const parseLicenseApiPayload = (
   const licNumRaw = data.license_number
   const licNum =
     typeof licNumRaw === 'string' && licNumRaw.trim() ? licNumRaw.trim() : undefined
+  const rawMr = (data as { mandantenReleases?: unknown }).mandantenReleases
+  const mandantenReleases =
+    rawMr !== undefined ? parseMandantenReleasesPayload(rawMr) : undefined
   return {
     ...data,
     ...(licNum ? { license_number: licNum } : {}),
     license: { ...data.license, client_config_version: ccv },
     design: { ...DEFAULT_DESIGN, ...data.design },
     ...(appVersions ? { appVersions } : {}),
+    ...(mandantenReleases !== undefined ? { mandantenReleases } : {}),
   }
 }
 
 /**
- * Optional: `VITE_LICENSE_NUMBER` im Build (Netlify) – gleiche Quelle wie Portale.
+ * Optional: `VITE_LICENSE_NUMBER` im Build (Cloudflare Pages / lokal) – gleiche Quelle wie Portale.
  * Nur nutzbar wenn vollständig normalisiert (11 Zeichen).
  */
 export const getEnvEmbeddedLicenseNumber = (): string | null => {

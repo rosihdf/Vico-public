@@ -24,7 +24,7 @@ export type BetaFeedbackWidgetProps = {
   supabase: SupabaseClient
   licenseApiUrl: string
   /** Optional; bei leerem String Host-Lookup am Edge (wie GET /license) */
-  licenseNumber: string
+  licenseNumber: string | null
   licenseApiKey?: string
   sourceApp: BetaFeedbackSourceApp
   features: Record<string, boolean>
@@ -99,7 +99,7 @@ const BetaFeedbackWidget = ({
         method: 'POST',
         headers,
         body: JSON.stringify({
-          ...(licenseNumber.trim() ? { license_number: licenseNumber.trim() } : {}),
+          ...(String(licenseNumber ?? '').trim() ? { license_number: String(licenseNumber).trim() } : {}),
           source_app: sourceApp,
           route_path: location.pathname,
           route_query: routeQuery,
