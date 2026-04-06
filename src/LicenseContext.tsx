@@ -21,6 +21,8 @@ import {
 } from './lib/licensePortalApi'
 import DesignApplier from './components/DesignApplier'
 import type { AppVersionsMap } from '../shared/appVersions'
+import type { MandantenReleasesApiPayload } from '../shared/mandantenReleaseApi'
+import { parseMandantenReleasesPayload } from '../shared/mandantenReleaseApi'
 
 export type DesignConfig = {
   app_name: string
@@ -32,16 +34,39 @@ export type DesignConfig = {
   favicon_url?: string | null
 }
 
+export type TenantMaintenanceInfo = {
+  mode_enabled: boolean
+  mode_message: string | null
+  mode_starts_at: string | null
+  mode_ends_at: string | null
+  mode_duration_min: number | null
+  mode_auto_end: boolean
+  mode_apply_main_app: boolean
+  mode_apply_arbeitszeit_portal: boolean
+  mode_apply_customer_portal: boolean
+  announcement_enabled: boolean
+  announcement_message: string | null
+  announcement_from: string | null
+  announcement_until: string | null
+}
+
 type LicenseContextType = {
   license: LicenseStatus | null
   design: DesignConfig | null
   /** Optional: mandantenweise gepflegte Versionen je App (Lizenz-API). */
   appVersions: AppVersionsMap | null
+  /** §11.20: Incoming-/Kanal-Info aus Lizenz-API */
+  mandantenReleases: MandantenReleasesApiPayload | null
+  maintenance: TenantMaintenanceInfo | null
   isLoading: boolean
   /** true wenn Lizenz abgelaufen, aber innerhalb Schonfrist (Nur-Lesen). */
   readOnly: boolean
   /** Speichernutzung in MB (für 80%-Warnung). */
   storageUsageMb: number
+  /**
+   * §11.18#6 / WP-NET-05: Lizenz-API zuletzt fehlgeschlagen; Anzeige aus lokalem Cache (nicht Mandanten-Degraded).
+   */
+  licensePortalStale: boolean
   refresh: (options?: { force?: boolean }) => Promise<void>
 }
 
@@ -55,21 +80,79 @@ const DEFAULT_DESIGN: DesignConfig = {
   favicon_url: null,
 }
 
+const mapMaintenance = (raw: unknown): TenantMaintenanceInfo | null => {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  return {
+    mode_enabled: Boolean(o.mode_enabled),
+    mode_message: o.mode_message != null ? String(o.mode_message) : null,
+    mode_starts_at: o.mode_starts_at != null ? String(o.mode_starts_at) : null,
+    mode_ends_at: o.mode_ends_at != null ? String(o.mode_ends_at) : null,
+    mode_duration_min:
+      o.mode_duration_min != null && Number.isFinite(Number(o.mode_duration_min))
+        ? Math.max(1, Math.floor(Number(o.mode_duration_min)))
+        : null,
+    mode_auto_end: Boolean(o.mode_auto_end),
+    mode_apply_main_app: o.mode_apply_main_app !== false,
+    mode_apply_arbeitszeit_portal: o.mode_apply_arbeitszeit_portal !== false,
+    mode_apply_customer_portal: o.mode_apply_customer_portal !== false,
+    announcement_enabled: Boolean(o.announcement_enabled),
+    announcement_message: o.announcement_message != null ? String(o.announcement_message) : null,
+    announcement_from: o.announcement_from != null ? String(o.announcement_from) : null,
+    announcement_until: o.announcement_until != null ? String(o.announcement_until) : null,
+  }
+}
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 const MS_PER_WEEK = 7 * MS_PER_DAY
 /** Abstand für Abgleich „client_config_version“ (Lizenzportal-Push) – unabhängig von daily/weekly */
 const LICENSE_CLIENT_CONFIG_POLL_MS = 90_000
+
+const mandantenReleasesFromApiField = (raw: unknown): MandantenReleasesApiPayload | null => {
+  if (raw == null) return null
+  return parseMandantenReleasesPayload(raw) ?? null
+}
 
 export const LicenseProvider = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, userRole } = useAuth()
   const [license, setLicense] = useState<LicenseStatus | null>(null)
   const [design, setDesign] = useState<DesignConfig | null>(null)
   const [appVersions, setAppVersions] = useState<AppVersionsMap | null>(null)
+  const [mandantenReleases, setMandantenReleases] = useState<MandantenReleasesApiPayload | null>(null)
+  const [maintenance, setMaintenance] = useState<TenantMaintenanceInfo | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [storageUsageMb, setStorageUsageMb] = useState(0)
+  const [licensePortalStale, setLicensePortalStale] = useState(false)
 
   const refresh = useCallback(async (options?: { force?: boolean }) => {
     const force = options?.force === true
+
+    const applyFromCachedApi = (licenseNumber: string, stale: boolean): boolean => {
+      const cached = getCachedLicenseResponse(licenseNumber)
+      if (!cached) {
+        if (!stale) setLicensePortalStale(false)
+        return false
+      }
+      const base = mapApiToLicenseStatus(cached)
+      setLicense({ ...base, current_customers: 0, current_users: 0 })
+      setDesign({ ...DEFAULT_DESIGN, ...cached.design })
+      setAppVersions(cached.appVersions ?? null)
+      setMandantenReleases(mandantenReleasesFromApiField(cached.mandantenReleases))
+      setMaintenance(mapMaintenance(cached.maintenance))
+      setLicensePortalStale(stale)
+      fetchUsageCounts()
+        .then((counts) => {
+          setLicense((prev) => (prev ? { ...prev, ...counts } : null))
+        })
+        .catch((err) => console.warn('LicenseContext: fetchUsageCounts', err))
+      if (base.max_storage_mb != null) {
+        fetchStorageUsageMb().then(setStorageUsageMb).catch((err) => console.warn('LicenseContext: fetchStorageUsageMb', err))
+      } else {
+        setStorageUsageMb(0)
+      }
+      return true
+    }
+
     try {
       if (isLicenseApiConfigured()) {
         const licenseNumber = getStoredLicenseNumber()
@@ -77,7 +160,10 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
           setLicense(null)
           setDesign(null)
           setAppVersions(null)
+          setMandantenReleases(null)
+          setMaintenance(null)
           setStorageUsageMb(0)
+          setLicensePortalStale(false)
           return
         }
 
@@ -98,6 +184,8 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
             setLicense({ ...base, current_customers: 0, current_users: 0 })
             setDesign({ ...DEFAULT_DESIGN, ...cached.design })
             setAppVersions(cached.appVersions ?? null)
+            setMandantenReleases(mandantenReleasesFromApiField(cached.mandantenReleases))
+            setMaintenance(mapMaintenance(cached.maintenance))
             fetchUsageCounts().then((counts) => {
               setLicense((prev) => (prev ? { ...prev, ...counts } : null))
             }).catch((err) => console.warn('LicenseContext: fetchUsageCounts', err))
@@ -106,11 +194,13 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
             } else {
               setStorageUsageMb(0)
             }
+            setLicensePortalStale(false)
             return
           }
           setIsLoading(true)
           const api = await fetchLicenseFromApi(licenseNumber, 8_000)
           if (api) {
+            setLicensePortalStale(false)
             const base = mapApiToLicenseStatus(api)
             const [counts, usageMb] = await Promise.all([
               fetchUsageCounts(),
@@ -120,14 +210,19 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
             setStorageUsageMb(usageMb)
             setDesign({ ...DEFAULT_DESIGN, ...api.design })
             setAppVersions(api.appVersions ?? null)
+            setMandantenReleases(mandantenReleasesFromApiField(api.mandantenReleases))
+            setMaintenance(mapMaintenance(api.maintenance))
             setLastLicenseCheck(now, licenseNumber)
             setStoredCheckInterval(api.license.check_interval ?? 'daily', licenseNumber)
             setCachedLicenseResponse(api, licenseNumber)
-          } else {
+          } else if (!applyFromCachedApi(licenseNumber, true)) {
             setLicense(null)
             setDesign(null)
             setAppVersions(null)
+            setMandantenReleases(null)
+            setMaintenance(null)
             setStorageUsageMb(0)
+            setLicensePortalStale(false)
           }
           return
         }
@@ -138,6 +233,9 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
           setLicense({ ...base, current_customers: 0, current_users: 0 })
           setDesign({ ...DEFAULT_DESIGN, ...cached.design })
           setAppVersions(cached.appVersions ?? null)
+          setMandantenReleases(mandantenReleasesFromApiField(cached.mandantenReleases))
+          setMaintenance(mapMaintenance(cached.maintenance))
+          setLicensePortalStale(false)
           fetchUsageCounts().then((counts) => {
             setLicense((prev) => (prev ? { ...prev, ...counts } : null))
           }).catch(() => {})
@@ -146,41 +244,59 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
           } else {
             setStorageUsageMb(0)
           }
-          fetchLicenseFromApi(licenseNumber, 8_000).then((api) => {
-            if (api) {
-              const base = mapApiToLicenseStatus(api)
-              setLastLicenseCheck(Date.now(), licenseNumber)
-              setStoredCheckInterval(api.license.check_interval ?? 'daily', licenseNumber)
-              setCachedLicenseResponse(api, licenseNumber)
-              setDesign({ ...DEFAULT_DESIGN, ...api.design })
-              setAppVersions(api.appVersions ?? null)
-              Promise.all([
-                fetchUsageCounts(),
-                base.max_storage_mb != null ? fetchStorageUsageMb() : Promise.resolve(0),
-              ]).then(([counts, usageMb]) => {
-                setLicense((prev) => (prev ? { ...base, ...counts } : null))
-                setStorageUsageMb(usageMb)
-              }).catch((err) => console.warn('LicenseContext: fetchUsageCounts/fetchStorageUsageMb', err))
-            }
-          }).catch((err) => console.warn('LicenseContext: fetchLicenseFromApi (background)', err))
+          fetchLicenseFromApi(licenseNumber, 8_000)
+            .then((api) => {
+              if (api) {
+                setLicensePortalStale(false)
+                const base = mapApiToLicenseStatus(api)
+                setLastLicenseCheck(Date.now(), licenseNumber)
+                setStoredCheckInterval(api.license.check_interval ?? 'daily', licenseNumber)
+                setCachedLicenseResponse(api, licenseNumber)
+                setDesign({ ...DEFAULT_DESIGN, ...api.design })
+                setAppVersions(api.appVersions ?? null)
+                setMandantenReleases(mandantenReleasesFromApiField(api.mandantenReleases))
+                setMaintenance(mapMaintenance(api.maintenance))
+                Promise.all([
+                  fetchUsageCounts(),
+                  base.max_storage_mb != null ? fetchStorageUsageMb() : Promise.resolve(0),
+                ])
+                  .then(([counts, usageMb]) => {
+                    setLicense((prev) => (prev ? { ...base, ...counts } : null))
+                    setStorageUsageMb(usageMb)
+                  })
+                  .catch((err) => console.warn('LicenseContext: fetchUsageCounts/fetchStorageUsageMb', err))
+              } else {
+                setLicensePortalStale(true)
+              }
+            })
+            .catch((err) => {
+              console.warn('LicenseContext: fetchLicenseFromApi (background)', err)
+              setLicensePortalStale(true)
+            })
           return
         }
 
         setIsLoading(true)
         const api = await fetchLicenseFromApi(licenseNumber, 8_000)
         if (api) {
+          setLicensePortalStale(false)
           const base = mapApiToLicenseStatus(api)
           const counts = await fetchUsageCounts()
           setLicense({ ...base, ...counts })
           setDesign({ ...DEFAULT_DESIGN, ...api.design })
           setAppVersions(api.appVersions ?? null)
+          setMandantenReleases(mandantenReleasesFromApiField(api.mandantenReleases))
+          setMaintenance(mapMaintenance(api.maintenance))
           setLastLicenseCheck(now, licenseNumber)
           setStoredCheckInterval(api.license.check_interval ?? 'daily', licenseNumber)
           setCachedLicenseResponse(api, licenseNumber)
-        } else {
+        } else if (!applyFromCachedApi(licenseNumber, true)) {
           setLicense(null)
           setDesign(null)
           setAppVersions(null)
+          setMandantenReleases(null)
+          setMaintenance(null)
+          setLicensePortalStale(false)
         }
       } else {
         setIsLoading(true)
@@ -188,6 +304,9 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
         setLicense(status)
         setDesign(null)
         setAppVersions(null)
+        setMandantenReleases(null)
+        setMaintenance(null)
+        setLicensePortalStale(false)
         if (status.max_storage_mb != null) {
           fetchStorageUsageMb().then(setStorageUsageMb).catch((err) => console.warn('LicenseContext: fetchStorageUsageMb', err))
         } else {
@@ -195,10 +314,16 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
         }
       }
     } catch {
-      setLicense(null)
-      setDesign(null)
-      setAppVersions(null)
-      setStorageUsageMb(0)
+      const licenseNumber = getStoredLicenseNumber()
+      if (!licenseNumber || !applyFromCachedApi(licenseNumber, true)) {
+        setLicense(null)
+        setDesign(null)
+        setAppVersions(null)
+        setMandantenReleases(null)
+        setMaintenance(null)
+        setStorageUsageMb(0)
+        setLicensePortalStale(false)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -282,7 +407,20 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
   const readOnly = license?.read_only === true
 
   return (
-    <LicenseContext.Provider value={{ license, design, appVersions, isLoading, readOnly, storageUsageMb, refresh }}>
+    <LicenseContext.Provider
+      value={{
+        license,
+        design,
+        appVersions,
+        mandantenReleases,
+        maintenance,
+        isLoading,
+        readOnly,
+        storageUsageMb,
+        licensePortalStale,
+        refresh,
+      }}
+    >
       <DesignApplier />
       {children}
     </LicenseContext.Provider>
