@@ -19,7 +19,13 @@ vi.mock('./supabase', () => ({
 }))
 
 import { supabase } from './supabase'
-import { fetchPortalReports, getPortalPdfPath } from './portalService'
+import {
+  DEFAULT_PORTAL_ORDER_TIMELINE_SETTINGS,
+  fetchPortalOrderTimeline,
+  fetchPortalReports,
+  getPortalPdfPath,
+  getPortalPruefprotokollPdfPath,
+} from './portalService'
 
 describe('portalService', () => {
   beforeEach(() => {
@@ -67,6 +73,61 @@ describe('portalService', () => {
       const result = await getPortalPdfPath('report-123')
       expect(result).toBe('path/to/file.pdf')
       expect(supabase.rpc).toHaveBeenCalledWith('get_portal_pdf_path', { p_report_id: 'report-123' })
+    })
+  })
+
+  describe('fetchPortalOrderTimeline', () => {
+    it('liefert Defaults bei Fehler', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: { message: 'Fehler' } } as never)
+      const result = await fetchPortalOrderTimeline('user-123')
+      expect(result).toEqual({ settings: DEFAULT_PORTAL_ORDER_TIMELINE_SETTINGS, orders: [] })
+    })
+
+    it('parst RPC-JSON', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: {
+          settings: {
+            portal_timeline_show_planned: true,
+            portal_timeline_show_termin: false,
+            portal_timeline_show_in_progress: true,
+          },
+          orders: [
+            {
+              id: 'o1',
+              status: 'offen',
+              order_type: 'wartung',
+              order_date: null,
+              order_time: null,
+              created_at: '2026-01-01T00:00:00.000Z',
+              updated_at: '2026-01-01T00:00:00.000Z',
+              object_names: 'T1',
+            },
+          ],
+        },
+        error: null,
+      } as never)
+      const result = await fetchPortalOrderTimeline('user-123')
+      expect(result.orders).toHaveLength(1)
+      expect(result.settings.portal_timeline_show_planned).toBe(true)
+      expect(result.settings.portal_timeline_show_termin).toBe(false)
+      expect(supabase.rpc).toHaveBeenCalledWith('get_portal_order_timeline', { p_user_id: 'user-123' })
+    })
+  })
+
+  describe('getPortalPruefprotokollPdfPath', () => {
+    it('gibt null bei Fehler', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: { message: 'Fehler' } } as never)
+      const result = await getPortalPruefprotokollPdfPath('report-123')
+      expect(result).toBeNull()
+    })
+
+    it('gibt Pfad zurück bei Erfolg', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: 'pdf/pruef-x.pdf', error: null } as never)
+      const result = await getPortalPruefprotokollPdfPath('report-123')
+      expect(result).toBe('pdf/pruef-x.pdf')
+      expect(supabase.rpc).toHaveBeenCalledWith('get_portal_pruefprotokoll_pdf_path', {
+        p_report_id: 'report-123',
+      })
     })
   })
 })

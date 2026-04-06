@@ -1,8 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import type { User } from '@supabase/supabase-js'
-import { fetchPortalReports, getPortalPdfSignedUrl, getPortalPdfPath } from '../lib/portalService'
+import type { PortalLayoutOutletContext } from '../components/Layout'
+import {
+  buildOrderTimelineSteps,
+  shouldListOrderInTimeline,
+} from '../lib/portalOrderTimeline'
+import {
+  fetchPortalReports,
+  getPortalPdfSignedUrl,
+  getPortalPdfPath,
+  getPortalPruefprotokollPdfPath,
+} from '../lib/portalService'
 import type { PortalReport } from '../lib/portalService'
 import EmptyState from '../../../shared/EmptyState'
+import PdfPreviewOverlay, { type PdfPreviewState } from '../../../shared/PdfPreviewOverlay'
 
 type BerichteProps = {
   user: User | null
@@ -12,6 +24,13 @@ const REASON_LABELS: Record<string, string> = {
   regelwartung: 'Regelwartung',
   reparatur: 'Reparatur',
   nachpruefung: 'Nachprüfung',
+  sonstiges: 'Sonstiges',
+}
+
+const ORDER_TYPE_LABELS: Record<string, string> = {
+  wartung: 'Wartung',
+  reparatur: 'Reparatur',
+  montage: 'Montage',
   sonstiges: 'Sonstiges',
 }
 
@@ -34,11 +53,14 @@ const formatDate = (dateStr: string): string => {
 }
 
 const Berichte = ({ user }: BerichteProps) => {
+  const { portalTimeline } = useOutletContext<PortalLayoutOutletContext>()
   const [reports, setReports] = useState<PortalReport[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [downloadingPruefId, setDownloadingPruefId] = useState<string | null>(null)
+  const [pdfPreview, setPdfPreview] = useState<PdfPreviewState>(null)
 
   const loadReports = useCallback(async () => {
     if (!user) return
@@ -56,8 +78,15 @@ const Berichte = ({ user }: BerichteProps) => {
     setExpandedId((prev) => (prev === reportId ? null : reportId))
   }
 
-  /** PDF stammt aus der Haupt-App (gespeicherter Export); Mandanten-Briefbogen ist dort bereits enthalten, wenn konfiguriert. */
-  const handleDownloadPdf = async (report: PortalReport) => {
+  const handleClosePdfPreview = useCallback(() => {
+    setPdfPreview((prev) => {
+      if (prev?.revokeOnClose) URL.revokeObjectURL(prev.url)
+      return null
+    })
+  }, [])
+
+  /** PDF: Vorschau im Overlay (wie Haupt-App); Download-Link im Overlay. */
+  const handleOpenMonteurPdf = async (report: PortalReport) => {
     if (!report.pdf_path) return
 
     setDownloadingId(report.report_id)
@@ -72,11 +101,41 @@ const Berichte = ({ user }: BerichteProps) => {
         alert('PDF nicht verfügbar.')
         return
       }
-      window.open(url, '_blank')
+      setPdfPreview({
+        url,
+        title: `Monteursbericht · ${formatDate(report.maintenance_date)}`,
+        revokeOnClose: false,
+      })
     } catch {
       alert('Fehler beim Laden des PDFs.')
     } finally {
       setDownloadingId(null)
+    }
+  }
+
+  const handleOpenPruefPdf = async (report: PortalReport) => {
+    if (!report.pruefprotokoll_pdf_path) return
+    setDownloadingPruefId(report.report_id)
+    try {
+      const pdfPath = await getPortalPruefprotokollPdfPath(report.report_id)
+      if (!pdfPath) {
+        alert('Prüfprotokoll nicht verfügbar.')
+        return
+      }
+      const url = await getPortalPdfSignedUrl(pdfPath)
+      if (!url) {
+        alert('Prüfprotokoll nicht verfügbar.')
+        return
+      }
+      setPdfPreview({
+        url,
+        title: `Prüfprotokoll · ${formatDate(report.maintenance_date)}`,
+        revokeOnClose: false,
+      })
+    } catch {
+      alert('Fehler beim Laden des Prüfprotokolls.')
+    } finally {
+      setDownloadingPruefId(null)
     }
   }
 
@@ -85,6 +144,14 @@ const Berichte = ({ user }: BerichteProps) => {
   }
 
   const searchLower = searchQuery.trim().toLowerCase()
+  const timelineBlocks = portalTimeline.orders
+    .filter((o) => shouldListOrderInTimeline(o, portalTimeline.settings))
+    .map((order) => ({
+      order,
+      steps: buildOrderTimelineSteps(order, portalTimeline.settings),
+    }))
+    .filter((x) => x.steps.length > 0)
+
   const filteredReports = searchLower
     ? reports.filter((r) =>
         (r.customer_name ?? '').toLowerCase().includes(searchLower) ||
@@ -125,6 +192,48 @@ const Berichte = ({ user }: BerichteProps) => {
           aria-label="Berichte durchsuchen"
         />
       </div>
+
+      {timelineBlocks.length > 0 ? (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"
+          aria-labelledby="auftrag-timeline-heading"
+        >
+          <h3
+            id="auftrag-timeline-heading"
+            className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1"
+          >
+            Ihre Aufträge
+          </h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+            Stand und Termine zu Aufträgen an den für Sie freigegebenen Türen (ohne interne Details).
+          </p>
+          <ul className="space-y-4">
+            {timelineBlocks.map(({ order, steps }) => (
+              <li
+                key={order.id}
+                className="border border-slate-100 dark:border-slate-600 rounded-lg p-3 bg-slate-50/80 dark:bg-slate-700/40"
+              >
+                <p className="font-semibold text-slate-800 dark:text-slate-100">
+                  {ORDER_TYPE_LABELS[order.order_type] ?? order.order_type}
+                </p>
+                {order.object_names ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{order.object_names}</p>
+                ) : null}
+                <ol className="mt-3 space-y-2 border-l-2 border-vico-primary/40 pl-3 ml-0.5" aria-label="Ablauf">
+                  {steps.map((s) => (
+                    <li key={`${order.id}-${s.key}`} className="text-sm text-slate-700 dark:text-slate-200">
+                      <span className="font-medium text-slate-800 dark:text-slate-100">{s.label}</span>
+                      {s.detail ? (
+                        <span className="text-slate-500 dark:text-slate-400"> · {s.detail}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {filteredReports.length === 0 ? (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -180,10 +289,10 @@ const Berichte = ({ user }: BerichteProps) => {
                       <span
                         role="button"
                         tabIndex={0}
-                        onClick={(e) => { e.stopPropagation(); handleDownloadPdf(report) }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); handleDownloadPdf(report) } }}
+                        onClick={(e) => { e.stopPropagation(); void handleOpenMonteurPdf(report) }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); void handleOpenMonteurPdf(report) } }}
                         className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-vico-primary text-white rounded-lg hover:bg-vico-primary-hover transition-colors"
-                        aria-label="PDF herunterladen"
+                        aria-label="Monteursbericht-PDF anzeigen"
                       >
                         {downloadingId === report.report_id ? (
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -192,7 +301,35 @@ const Berichte = ({ user }: BerichteProps) => {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
                         )}
-                        PDF
+                        Bericht anzeigen
+                      </span>
+                    )}
+                    {report.pruefprotokoll_pdf_path && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void handleOpenPruefPdf(report)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            void handleOpenPruefPdf(report)
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-700 dark:bg-slate-600 text-white rounded-lg hover:opacity-90 transition-opacity"
+                        aria-label="Prüfprotokoll anzeigen"
+                      >
+                        {downloadingPruefId === report.report_id ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        )}
+                        Prüfprotokoll anzeigen
                       </span>
                     )}
                     <svg
@@ -235,10 +372,12 @@ const Berichte = ({ user }: BerichteProps) => {
                           )}
                         </dd>
                       </div>
-                      <div>
-                        <dt className="text-slate-500 dark:text-slate-400 font-medium">Herstellerwartung</dt>
-                        <dd className="text-slate-800 dark:text-slate-100">{report.manufacturer_maintenance_done ? 'Ja' : 'Nein'}</dd>
-                      </div>
+                      {report.manufacturer_maintenance_done ? (
+                        <div>
+                          <dt className="text-slate-500 dark:text-slate-400 font-medium">Herstellerwartung</dt>
+                          <dd className="text-slate-800 dark:text-slate-100">Ja (historischer Eintrag)</dd>
+                        </div>
+                      ) : null}
                       {report.hold_open_checked !== null && (
                         <div>
                           <dt className="text-slate-500 dark:text-slate-400 font-medium">Feststellanlage geprüft</dt>
@@ -278,6 +417,7 @@ const Berichte = ({ user }: BerichteProps) => {
           })}
         </ul>
       )}
+      <PdfPreviewOverlay state={pdfPreview} onClose={handleClosePdfPreview} />
     </div>
   )
 }

@@ -14,6 +14,7 @@ export type PortalReport = {
   urgency: string | null
   fixed_immediately: boolean
   pdf_path: string | null
+  pruefprotokoll_pdf_path: string | null
   created_at: string
   object_name: string | null
   object_internal_id: string | null
@@ -21,6 +22,53 @@ export type PortalReport = {
   object_room: string | null
   bv_name: string | null
   customer_name: string | null
+}
+
+export type PortalOrderTimelineSettings = {
+  portal_timeline_show_planned: boolean
+  portal_timeline_show_termin: boolean
+  portal_timeline_show_in_progress: boolean
+}
+
+export type PortalOrderTimelineOrder = {
+  id: string
+  status: string
+  order_type: string
+  order_date: string | null
+  order_time: string | null
+  created_at: string
+  updated_at: string
+  object_names: string | null
+}
+
+export type PortalOrderTimelinePayload = {
+  settings: PortalOrderTimelineSettings
+  orders: PortalOrderTimelineOrder[]
+}
+
+export const DEFAULT_PORTAL_ORDER_TIMELINE_SETTINGS: PortalOrderTimelineSettings = {
+  portal_timeline_show_planned: false,
+  portal_timeline_show_termin: true,
+  portal_timeline_show_in_progress: true,
+}
+
+export const fetchPortalOrderTimeline = async (userId: string): Promise<PortalOrderTimelinePayload> => {
+  const { data, error } = await supabase.rpc('get_portal_order_timeline', { p_user_id: userId })
+  if (error || data == null || typeof data !== 'object') {
+    return { settings: DEFAULT_PORTAL_ORDER_TIMELINE_SETTINGS, orders: [] }
+  }
+  const raw = data as Record<string, unknown>
+  const settingsRaw = raw.settings as Record<string, unknown> | undefined
+  const settings: PortalOrderTimelineSettings = {
+    portal_timeline_show_planned: Boolean(settingsRaw?.portal_timeline_show_planned),
+    portal_timeline_show_termin: settingsRaw?.portal_timeline_show_termin !== false,
+    portal_timeline_show_in_progress: settingsRaw?.portal_timeline_show_in_progress !== false,
+  }
+  const ordersRaw = raw.orders
+  const orders: PortalOrderTimelineOrder[] = Array.isArray(ordersRaw)
+    ? (ordersRaw as PortalOrderTimelineOrder[]).filter((o) => o && typeof o.id === 'string')
+    : []
+  return { settings, orders }
 }
 
 export const fetchPortalReports = async (userId: string): Promise<PortalReport[]> => {
@@ -33,6 +81,14 @@ export const fetchPortalReports = async (userId: string): Promise<PortalReport[]
 
 export const getPortalPdfPath = async (reportId: string): Promise<string | null> => {
   const { data, error } = await supabase.rpc('get_portal_pdf_path', {
+    p_report_id: reportId,
+  })
+  if (error || !data) return null
+  return data as string
+}
+
+export const getPortalPruefprotokollPdfPath = async (reportId: string): Promise<string | null> => {
+  const { data, error } = await supabase.rpc('get_portal_pruefprotokoll_pdf_path', {
     p_report_id: reportId,
   })
   if (error || !data) return null

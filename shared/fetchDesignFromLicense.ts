@@ -1,11 +1,14 @@
 /**
  * Holt Design (app_name, etc.) aus der Lizenz-API.
  * Für Portal und Arbeitszeitenportal – nutzt VITE_LICENSE_API_URL und optional VITE_LICENSE_NUMBER.
- * Ohne Nummer: GET …/license (Host-Lookup per Browser-Origin), siehe Phase B / Netlify-README.
+ * Ohne Nummer: GET …/license (Host-Lookup per Browser-Origin); VITE_LICENSE_API_URL auf …/functions/v1 setzen.
  */
 
 import type { AppVersionsMap } from './appVersions'
 import { parseAppVersionsFromDb } from './appVersions'
+import type { TenantMaintenanceApiShape } from './tenantMaintenanceMode'
+import type { MandantenReleasesApiPayload } from './mandantenReleaseApi'
+import { parseMandantenReleasesPayload } from './mandantenReleaseApi'
 
 export type DesignFromLicense = {
   app_name: string
@@ -81,6 +84,10 @@ export type LicenseApiPayload = {
   design: DesignFromLicense
   /** Optional: mandantenweise gepflegte Versionen/Release Notes pro App (Lizenzportal). */
   appVersions?: AppVersionsMap
+  /** Optional: Wartungsmodus / Ankündigung (Lizenz-API `maintenance`). */
+  maintenance?: TenantMaintenanceApiShape
+  /** Optional: §11.20 Mandanten-Releases für den erkannten Kanal */
+  mandantenReleases?: MandantenReleasesApiPayload | null
 }
 
 /** Holt die vollständige Lizenz-Response (license + design) von der API. */
@@ -121,6 +128,14 @@ export const fetchLicenseFull = async (
       parseAppVersionsFromDb(data.appVersions) ??
       parseAppVersionsFromDb((data as { app_versions?: unknown }).app_versions)
     const ccv = Math.max(0, Math.floor(Number((data.license as { client_config_version?: unknown }).client_config_version) || 0))
+    const rawMaint = (data as { maintenance?: unknown }).maintenance
+    const maintenance: TenantMaintenanceApiShape | undefined =
+      rawMaint && typeof rawMaint === 'object'
+        ? (rawMaint as TenantMaintenanceApiShape)
+        : undefined
+    const rawMr = (data as { mandantenReleases?: unknown }).mandantenReleases
+    const mandantenReleases =
+      rawMr !== undefined ? parseMandantenReleasesPayload(rawMr) : undefined
     return {
       license: {
         tier: data.license.tier,
@@ -143,6 +158,8 @@ export const fetchLicenseFull = async (
         favicon_url: data.design.favicon_url ?? null,
       },
       ...(appVersions ? { appVersions } : {}),
+      ...(maintenance ? { maintenance } : {}),
+      ...(mandantenReleases !== undefined ? { mandantenReleases } : {}),
     }
   } catch {
     return null

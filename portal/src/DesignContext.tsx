@@ -3,6 +3,8 @@ import { fetchLicenseFull, getDefaultAppName } from '../../shared/fetchDesignFro
 import { applyVicoPrimaryCssVars, clearVicoPrimaryCssVars } from '../../shared/vicoCssPrimary'
 import type { AppVersionEntry } from '../../shared/appVersions'
 import { useLicenseClientConfigVersionPoll } from '../../shared/useLicenseClientConfigVersionPoll'
+import type { TenantMaintenanceApiShape } from '../../shared/tenantMaintenanceMode'
+import type { MandantenReleasesApiPayload } from '../../shared/mandantenReleaseApi'
 
 type DesignContextType = {
   appName: string
@@ -17,6 +19,10 @@ type DesignContextType = {
   kundenportalAllowed: boolean
   /** Lizenz-API war konfiguriert, Antwort aber fehlgeschlagen (Netzwerk o. Ä.) */
   licenseLoadError: string | null
+  /** Wartungsmodus / Ankündigung aus Lizenz-API */
+  maintenance: TenantMaintenanceApiShape | null
+  /** §11.20 Incoming-Releases für Kundenportal-Kanal */
+  mandantenReleases: MandantenReleasesApiPayload | null
   refresh: () => Promise<void>
 }
 
@@ -33,6 +39,8 @@ export const useDesign = (): DesignContextType => {
       features: {},
       kundenportalAllowed: true,
       licenseLoadError: null,
+      maintenance: null,
+      mandantenReleases: null,
       refresh: async () => {},
     }
   }
@@ -46,6 +54,8 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
   const [kundenportalAllowed, setKundenportalAllowed] = useState(true)
   const [licenseLoadError, setLicenseLoadError] = useState<string | null>(null)
   const [appVersionInfo, setAppVersionInfo] = useState<AppVersionEntry | null>(null)
+  const [maintenance, setMaintenance] = useState<TenantMaintenanceApiShape | null>(null)
+  const [mandantenReleases, setMandantenReleases] = useState<MandantenReleasesApiPayload | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -58,6 +68,8 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
       setKundenportalAllowed(true)
       setLicenseLoadError(null)
       setAppVersionInfo(null)
+      setMaintenance(null)
+      setMandantenReleases(null)
       applyVicoPrimaryCssVars('#5b7895')
       setIsLoading(false)
       return
@@ -76,10 +88,14 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
       setKundenportalAllowed(false)
       setLicenseLoadError('Lizenz konnte nicht geladen werden. Bitte Konfiguration prüfen.')
       setAppVersionInfo(null)
+      setMaintenance(null)
+      setMandantenReleases(null)
       applyVicoPrimaryCssVars('#5b7895')
       setIsLoading(false)
       return
     }
+    setMaintenance(full.maintenance ?? null)
+    setMandantenReleases(full.mandantenReleases ?? null)
     setAppVersionInfo(full.appVersions?.kundenportal ?? null)
     if (full.design.app_name) setAppName(full.design.app_name)
     setLogoUrl(full.design.logo_url?.trim() ? full.design.logo_url.trim() : null)
@@ -134,6 +150,8 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
         features,
         kundenportalAllowed,
         licenseLoadError,
+        maintenance,
+        mandantenReleases,
         refresh: load,
       }}
     >
