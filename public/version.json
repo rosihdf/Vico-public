@@ -1,9 +1,9 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "buildTime": "",
   "releaseNotes": [
-    "Beta-Testversion: Vom produktiven Einsatz wird abgeraten.",
-    "Diese Ausgabe dient der Erprobung; kein Ersatz für einen produktiven Rollout ohne Freigabe."
+    "Beta-Feedback: schwebendes Modul (lizenzgesteuert) – Seitenkontext, Kategorie, Beschreibung; Auswertung im Lizenzportal-Admin.",
+    "Beta-Feedback: Eingabefelder im Dark Theme lesbar (Text- und Placeholder-Farben)."
   ],
   "releaseLabel": "Beta"
 }

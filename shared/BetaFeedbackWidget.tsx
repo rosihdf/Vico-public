@@ -19,6 +19,10 @@ const SEVERITIES: { value: string; label: string }[] = [
   { value: 'wish', label: 'Verbesserungswunsch' },
 ]
 
+/** Explizite Text-/Placeholder-Farben: Browser-Defaults sind im Dark Mode oft dunkel. */
+const formFieldClassName =
+  'mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 dark:[color-scheme:dark]'
+
 export type BetaFeedbackWidgetProps = {
   supabase: SupabaseClient
   licenseApiUrl: string
@@ -161,7 +165,7 @@ const BetaFeedbackWidget = ({
           setOpen(true)
           setFeedbackMsg(null)
         }}
-        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] right-4 z-[200] flex h-12 w-12 items-center justify-center rounded-full bg-violet-600 text-white shadow-lg hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 dark:focus:ring-offset-slate-900 sm:bottom-[calc(1.25rem+env(safe-area-inset-bottom,0px))]"
+        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] right-4 z-[200] flex h-12 w-12 items-center justify-center rounded-full bg-violet-600 text-white shadow-lg hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
         aria-expanded={open}
         aria-controls={panelId}
         aria-haspopup="dialog"
@@ -213,7 +217,7 @@ const BetaFeedbackWidget = ({
                   id={`${panelId}-cat`}
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  className={formFieldClassName}
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c.value} value={c.value}>
@@ -230,7 +234,7 @@ const BetaFeedbackWidget = ({
                   id={`${panelId}-sev`}
                   value={severity}
                   onChange={(e) => setSeverity(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  className={formFieldClassName}
                 >
                   {SEVERITIES.map((c) => (
                     <option key={c.value || 'none'} value={c.value}>
@@ -249,7 +253,7 @@ const BetaFeedbackWidget = ({
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   maxLength={200}
-                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  className={formFieldClassName}
                 />
               </div>
               <div>
@@ -262,7 +266,7 @@ const BetaFeedbackWidget = ({
                   onChange={(e) => setDescription(e.target.value)}
                   rows={5}
                   maxLength={8000}
-                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                  className={formFieldClassName}
                   placeholder="Was erwarten Sie, was passiert stattdessen, welche Funktion fehlt …"
                 />
               </div>

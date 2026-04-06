@@ -1,4 +1,8 @@
 {
+  "1.0.2": [
+    "Beta-Feedback: schwebendes Modul (lizenzgesteuert) – Seitenkontext, Kategorie, Beschreibung; Auswertung im Lizenzportal-Admin.",
+    "Beta-Feedback: Eingabefelder im Dark Theme lesbar (Text- und Placeholder-Farben)."
+  ],
   "1.0.1": [
     "Beta-Testversion: Vom produktiven Einsatz wird abgeraten.",
     "Diese Ausgabe dient der Erprobung; kein Ersatz für einen produktiven Rollout ohne Freigabe."
