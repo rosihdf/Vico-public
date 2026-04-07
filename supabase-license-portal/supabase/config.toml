@@ -15,7 +15,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.trigger-github-deploy]
-verify_jwt = true
+verify_jwt = false
 
 [functions.submit-beta-feedback]
 verify_jwt = false
