@@ -65,7 +65,7 @@ jobs:
           fi
           npm ci --legacy-peer-deps
           npm run build
-          npx --yes wrangler@3 pages deploy dist --project-name="$CF_PROJECT"
+          npx --yes wrangler@3 pages deploy dist --project-name="$CF_PROJECT" --branch=main
 
       - name: Build and deploy (kundenportal)
         if: inputs.app == 'kundenportal'
@@ -85,7 +85,7 @@ jobs:
           npm ci
           npm run build
           cd ..
-          npx --yes wrangler@3 pages deploy portal/dist --project-name="$CF_PROJECT"
+          npx --yes wrangler@3 pages deploy portal/dist --project-name="$CF_PROJECT" --branch=main
 
       - name: Build and deploy (arbeitszeit_portal)
         if: inputs.app == 'arbeitszeit_portal'
@@ -105,7 +105,7 @@ jobs:
           npm ci
           npm run build
           cd ..
-          npx --yes wrangler@3 pages deploy arbeitszeit-portal/dist --project-name="$CF_PROJECT"
+          npx --yes wrangler@3 pages deploy arbeitszeit-portal/dist --project-name="$CF_PROJECT" --branch=main
 
       - name: Build and deploy (admin)
         if: inputs.app == 'admin'
@@ -124,4 +124,4 @@ jobs:
           npm ci
           npm run build
           cd ..
-          npx --yes wrangler@3 pages deploy admin/dist --project-name="$CF_PROJECT"
+          npx --yes wrangler@3 pages deploy admin/dist --project-name="$CF_PROJECT" --branch=main
