@@ -25,12 +25,23 @@ export const triggerReleaseDeploy = async (
   releaseId: string,
   confirmRecentDuplicate: boolean
 ): Promise<TriggerReleaseDeployResult> => {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const accessToken = sessionData.session?.access_token
+
   const { data, error } = await supabase.functions.invoke<InvokePayload>('trigger-github-deploy', {
     body: { release_id: releaseId, confirm_recent_duplicate: confirmRecentDuplicate },
+    ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
   })
 
   if (error) {
-    return { ok: false, error: error.message || 'Aufruf fehlgeschlagen' }
+    let detail = ''
+    if (error.context && typeof error.context === 'object') {
+      const maybe = error.context as { status?: number; statusText?: string }
+      if (typeof maybe.status === 'number') {
+        detail = ` (HTTP ${maybe.status}${maybe.statusText ? ` ${maybe.statusText}` : ''})`
+      }
+    }
+    return { ok: false, error: `${error.message || 'Aufruf fehlgeschlagen'}${detail}` }
   }
 
   const payload = data
