@@ -39,10 +39,10 @@ const json = (req: Request, status: number, body: Record<string, unknown>) =>
     headers: { ...baseCors(pickCorsOrigin(req)), 'Content-Type': 'application/json' },
   })
 
-type ReleaseChannel = 'main' | 'kundenportal' | 'arbeitszeit_portal'
+type ReleaseChannel = 'main' | 'kundenportal' | 'arbeitszeit_portal' | 'admin'
 
 const workflowAppForChannel = (ch: string): string | null => {
-  if (ch === 'main' || ch === 'kundenportal' || ch === 'arbeitszeit_portal') return ch
+  if (ch === 'main' || ch === 'kundenportal' || ch === 'arbeitszeit_portal' || ch === 'admin') return ch
   return null
 }
 

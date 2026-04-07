@@ -208,16 +208,16 @@ const AppReleaseEditor = () => {
           ← Alle Releases
         </Link>
       </div>
-      <h1 className="text-xl font-bold text-slate-800">{isNew ? 'Neuer Release' : 'Release bearbeiten'}</h1>
+      <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{isNew ? 'Neuer Release' : 'Release bearbeiten'}</h1>
       {!isNew && releaseStatus === 'published' ? (
         <>
-          <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+          <p className="text-sm text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg px-3 py-2">
             Freigegeben – sichtbar in der Lizenz-API und als Go-Live wählbar.
           </p>
           <div className="flex flex-wrap gap-2 text-sm">
             <Link
               to="/release-rollout"
-              className="inline-flex items-center px-3 py-2 rounded-lg border border-slate-300 text-slate-700 font-medium hover:bg-slate-50"
+              className="inline-flex items-center px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-700"
             >
               Rollout &amp; Deploy (Übersicht)
             </Link>

@@ -165,7 +165,8 @@ const BetaFeedbackWidget = ({
           setOpen(true)
           setFeedbackMsg(null)
         }}
-        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] right-4 z-[200] flex h-12 w-12 items-center justify-center rounded-full bg-violet-600 text-white shadow-lg hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+        className="fixed !bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] !right-4 !top-auto !left-auto z-[200] flex h-12 w-12 items-center justify-center rounded-full bg-violet-600 text-white shadow-lg hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+        style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))', right: '1rem', top: 'auto', left: 'auto' }}
         aria-expanded={open}
         aria-controls={panelId}
         aria-haspopup="dialog"

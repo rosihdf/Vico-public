@@ -28,14 +28,14 @@ const ReleaseDeployPanel = ({
 
   return (
     <div
-      className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm space-y-3"
+      className="rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800 p-4 text-sm space-y-3"
       aria-labelledby="deploy-heading"
     >
-      <h2 id="deploy-heading" className="font-semibold text-slate-800">
+      <h2 id="deploy-heading" className="font-semibold text-slate-800 dark:text-slate-100">
         Production-Deploy (Cloudflare Pages)
       </h2>
       {showEditorHint ? (
-        <p className="text-xs text-slate-600">
+        <p className="text-xs text-slate-600 dark:text-slate-300">
           Startet in GitHub Actions den Workflow{' '}
           <span className="font-mono text-[11px]">deploy-pages-from-release.yml</span> für Kanal{' '}
           <strong>{RELEASE_CHANNEL_LABELS[channel]}</strong>: Checkout per Tag/Commit aus den CI-Metadaten (oder
@@ -43,7 +43,7 @@ const ReleaseDeployPanel = ({
           und CF sind gesetzt (siehe Kommentar im Workflow).
         </p>
       ) : (
-        <p className="text-xs text-slate-600">
+        <p className="text-xs text-slate-600 dark:text-slate-300">
           Kanal <strong>{RELEASE_CHANNEL_LABELS[channel]}</strong> – gleicher Ablauf wie im Release-Editor.
         </p>
       )}
@@ -56,13 +56,13 @@ const ReleaseDeployPanel = ({
         type="button"
         onClick={handleDeployClick}
         disabled={deployBusy || disabled}
-        className="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-slate-600"
+        className="px-4 py-2 rounded-lg bg-slate-800 dark:bg-slate-700 text-white text-sm font-medium hover:opacity-90 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-slate-600"
       >
         {deployBusy ? 'Starte…' : 'Build & Deploy in GitHub starten'}
       </button>
       {deployOutcome?.type === 'ok' ? (
         <div
-          className="rounded-md border border-emerald-200 bg-white p-3 space-y-2 text-slate-700"
+          className="rounded-md border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-slate-800 p-3 space-y-2 text-slate-700 dark:text-slate-200"
           role="status"
         >
           <p className="text-sm text-emerald-800 font-medium">{deployOutcome.message}</p>
@@ -80,7 +80,7 @@ const ReleaseDeployPanel = ({
               GitHub Actions (Workflow) öffnen
             </a>
           </p>
-          <p className="text-xs text-slate-600 border-t border-slate-100 pt-2">
+          <p className="text-xs text-slate-600 dark:text-slate-300 border-t border-slate-100 dark:border-slate-700 pt-2">
             Nach erfolgreichem Deploy sehen Mandanten die neue Version erst, wenn der Stand über{' '}
             <strong>Incoming</strong> oder <strong>Go-Live</strong> zugewiesen ist.{' '}
             <Link to="/mandanten" className="text-vico-primary font-medium hover:underline">
