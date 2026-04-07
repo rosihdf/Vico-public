@@ -25,13 +25,27 @@ export const triggerReleaseDeploy = async (
   releaseId: string,
   confirmRecentDuplicate: boolean
 ): Promise<TriggerReleaseDeployResult> => {
-  const { data: sessionData } = await supabase.auth.getSession()
-  const accessToken = sessionData.session?.access_token
+  const invokeDeploy = async (accessToken?: string) =>
+    supabase.functions.invoke<InvokePayload>('trigger-github-deploy', {
+      body: { release_id: releaseId, confirm_recent_duplicate: confirmRecentDuplicate },
+      ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
+    })
 
-  const { data, error } = await supabase.functions.invoke<InvokePayload>('trigger-github-deploy', {
-    body: { release_id: releaseId, confirm_recent_duplicate: confirmRecentDuplicate },
-    ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
-  })
+  const { data: sessionData } = await supabase.auth.getSession()
+  let accessToken = sessionData.session?.access_token
+  let { data, error } = await invokeDeploy(accessToken)
+
+  const status =
+    error && error.context && typeof error.context === 'object'
+      ? (error.context as { status?: number }).status
+      : undefined
+  if (error && status === 401) {
+    const { data: refreshed } = await supabase.auth.refreshSession()
+    accessToken = refreshed.session?.access_token
+    if (accessToken) {
+      ;({ data, error } = await invokeDeploy(accessToken))
+    }
+  }
 
   if (error) {
     let detail = ''
@@ -40,6 +54,9 @@ export const triggerReleaseDeploy = async (
       if (typeof maybe.status === 'number') {
         detail = ` (HTTP ${maybe.status}${maybe.statusText ? ` ${maybe.statusText}` : ''})`
       }
+    }
+    if (detail.includes('HTTP 401')) {
+      return { ok: false, error: 'Nicht autorisiert (HTTP 401). Bitte im Lizenzportal einmal ab- und wieder anmelden.' }
     }
     return { ok: false, error: `${error.message || 'Aufruf fehlgeschlagen'}${detail}` }
   }
