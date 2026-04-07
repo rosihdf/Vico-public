@@ -21,6 +21,19 @@ type InvokePayload = {
   github_actions_url?: string
 }
 
+const parseJwtIssuer = (token: string): string | null => {
+  const parts = token.split('.')
+  if (parts.length < 2) return null
+  try {
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+    const json = JSON.parse(globalThis.atob(padded)) as { iss?: string }
+    return typeof json.iss === 'string' ? json.iss : null
+  } catch {
+    return null
+  }
+}
+
 export const triggerReleaseDeploy = async (
   releaseId: string,
   confirmRecentDuplicate: boolean
@@ -48,6 +61,16 @@ export const triggerReleaseDeploy = async (
 
   if (!accessToken) {
     return { ok: false, error: 'Sitzung ungültig. Bitte erneut im Lizenzportal anmelden.' }
+  }
+
+  const expectedIssuer = `${(import.meta.env.VITE_SUPABASE_URL ?? '').trim().replace(/\/$/, '')}/auth/v1`
+  const tokenIssuer = parseJwtIssuer(accessToken)
+  if (expectedIssuer && tokenIssuer && tokenIssuer !== expectedIssuer) {
+    return {
+      ok: false,
+      error:
+        'Projekt-Mismatch: Login-Token passt nicht zur Admin-Supabase-URL. Bitte VITE_ADMIN_SUPABASE_URL/ANON_KEY im gleichen Lizenzportal-Projekt setzen und neu deployen.',
+    }
   }
 
   const { data: userCheckAfterRefresh, error: userCheckAfterRefreshError } = await supabase.auth.getUser(accessToken)
