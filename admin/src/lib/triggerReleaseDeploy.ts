@@ -134,7 +134,13 @@ export const triggerReleaseDeploy = async (
 
   if (error) {
     if (status === 401) {
-      return { ok: false, error: 'Nicht autorisiert (HTTP 401). Bitte erneut im Lizenzportal anmelden.' }
+      const serverMessage = typeof data?.error === 'string' ? data.error.trim() : ''
+      return {
+        ok: false,
+        error: serverMessage
+          ? `${serverMessage} (HTTP 401)`
+          : 'Nicht autorisiert (HTTP 401). Bitte erneut im Lizenzportal anmelden.',
+      }
     }
     return { ok: false, error: typeof error === 'string' ? error : 'Aufruf fehlgeschlagen' }
   }
