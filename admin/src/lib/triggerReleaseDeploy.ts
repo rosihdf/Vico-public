@@ -47,13 +47,11 @@ export const triggerReleaseDeploy = async (
   }
 
   if (!accessToken) {
-    await supabase.auth.signOut()
     return { ok: false, error: 'Sitzung ungültig. Bitte erneut im Lizenzportal anmelden.' }
   }
 
   const { data: userCheckAfterRefresh, error: userCheckAfterRefreshError } = await supabase.auth.getUser(accessToken)
   if (userCheckAfterRefreshError || !userCheckAfterRefresh.user) {
-    await supabase.auth.signOut()
     return { ok: false, error: 'Sitzung ungültig. Bitte erneut im Lizenzportal anmelden.' }
   }
 
@@ -80,7 +78,6 @@ export const triggerReleaseDeploy = async (
       }
     }
     if (detail.includes('HTTP 401')) {
-      await supabase.auth.signOut()
       return { ok: false, error: 'Nicht autorisiert (HTTP 401). Bitte erneut im Lizenzportal anmelden.' }
     }
     return { ok: false, error: `${error.message || 'Aufruf fehlgeschlagen'}${detail}` }
