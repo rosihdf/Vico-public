@@ -38,11 +38,37 @@ export const triggerReleaseDeploy = async (
   releaseId: string,
   confirmRecentDuplicate: boolean
 ): Promise<TriggerReleaseDeployResult> => {
-  const invokeDeploy = async (accessToken?: string) =>
-    supabase.functions.invoke<InvokePayload>('trigger-github-deploy', {
-      body: { release_id: releaseId, confirm_recent_duplicate: confirmRecentDuplicate },
-      ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
+  const licenseApiBase =
+    (import.meta.env.VITE_LICENSE_API_URL ?? '').trim().replace(/\/$/, '') ||
+    `${(import.meta.env.VITE_SUPABASE_URL ?? '').trim().replace(/\/$/, '')}/functions/v1`
+  const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? '').trim()
+
+  const invokeDeploy = async (accessToken?: string) => {
+    if (!licenseApiBase) {
+      return {
+        data: null as InvokePayload | null,
+        error: 'Lizenz-API-URL fehlt (VITE_LICENSE_API_URL).',
+        status: 0,
+      }
+    }
+    const res = await fetch(`${licenseApiBase}/trigger-github-deploy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(anonKey ? { apikey: anonKey } : {}),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify({ release_id: releaseId, confirm_recent_duplicate: confirmRecentDuplicate }),
     })
+
+    const payload = (await res.json().catch(() => ({}))) as InvokePayload
+    return {
+      data: payload,
+      error: res.ok ? null : payload.error || `HTTP ${res.status}`,
+      status: res.status,
+    }
+  }
 
   const { data: sessionData } = await supabase.auth.getSession()
   let accessToken = sessionData.session?.access_token
@@ -78,32 +104,21 @@ export const triggerReleaseDeploy = async (
     return { ok: false, error: 'Sitzung ungültig. Bitte erneut im Lizenzportal anmelden.' }
   }
 
-  let { data, error } = await invokeDeploy(accessToken)
+  let { data, error, status } = await invokeDeploy(accessToken)
 
-  const status =
-    error && error.context && typeof error.context === 'object'
-      ? (error.context as { status?: number }).status
-      : undefined
   if (error && status === 401) {
     const { data: refreshed } = await supabase.auth.refreshSession()
     accessToken = refreshed.session?.access_token
     if (accessToken) {
-      ;({ data, error } = await invokeDeploy(accessToken))
+      ;({ data, error, status } = await invokeDeploy(accessToken))
     }
   }
 
   if (error) {
-    let detail = ''
-    if (error.context && typeof error.context === 'object') {
-      const maybe = error.context as { status?: number; statusText?: string }
-      if (typeof maybe.status === 'number') {
-        detail = ` (HTTP ${maybe.status}${maybe.statusText ? ` ${maybe.statusText}` : ''})`
-      }
-    }
-    if (detail.includes('HTTP 401')) {
+    if (status === 401) {
       return { ok: false, error: 'Nicht autorisiert (HTTP 401). Bitte erneut im Lizenzportal anmelden.' }
     }
-    return { ok: false, error: `${error.message || 'Aufruf fehlgeschlagen'}${detail}` }
+    return { ok: false, error: typeof error === 'string' ? error : 'Aufruf fehlgeschlagen' }
   }
 
   const payload = data
