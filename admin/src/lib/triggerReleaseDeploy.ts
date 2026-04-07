@@ -34,6 +34,14 @@ const parseJwtIssuer = (token: string): string | null => {
   }
 }
 
+const parseOrigin = (rawUrl: string): string => {
+  try {
+    return new URL(rawUrl).origin
+  } catch {
+    return ''
+  }
+}
+
 export const triggerReleaseDeploy = async (
   releaseId: string,
   confirmRecentDuplicate: boolean
@@ -96,6 +104,16 @@ export const triggerReleaseDeploy = async (
       ok: false,
       error:
         'Projekt-Mismatch: Login-Token passt nicht zur Admin-Supabase-URL. Bitte VITE_ADMIN_SUPABASE_URL/ANON_KEY im gleichen Lizenzportal-Projekt setzen und neu deployen.',
+    }
+  }
+
+  // Zusätzliche Quer-Prüfung: Login-Token muss zum Lizenz-API-Projekt passen.
+  const licenseApiOrigin = parseOrigin(licenseApiBase)
+  if (tokenIssuer && licenseApiOrigin && !tokenIssuer.startsWith(`${licenseApiOrigin}/auth/v1`)) {
+    return {
+      ok: false,
+      error:
+        `Projekt-Mismatch: Login läuft über ${parseOrigin(tokenIssuer)}, Deploy-API über ${licenseApiOrigin}. Bitte Admin-Login auf dasselbe Lizenzportal-Supabase-Projekt konfigurieren.`,
     }
   }
 
