@@ -33,6 +33,30 @@ export const triggerReleaseDeploy = async (
 
   const { data: sessionData } = await supabase.auth.getSession()
   let accessToken = sessionData.session?.access_token
+
+  // Lokale Vorprüfung gegen stale/fremdes JWT (typisch nach URL-/Projektwechsel).
+  if (accessToken) {
+    const { data: userCheck, error: userCheckError } = await supabase.auth.getUser(accessToken)
+    if (userCheckError || !userCheck.user) {
+      const { data: refreshed } = await supabase.auth.refreshSession()
+      accessToken = refreshed.session?.access_token
+    }
+  } else {
+    const { data: refreshed } = await supabase.auth.refreshSession()
+    accessToken = refreshed.session?.access_token
+  }
+
+  if (!accessToken) {
+    await supabase.auth.signOut()
+    return { ok: false, error: 'Sitzung ungültig. Bitte erneut im Lizenzportal anmelden.' }
+  }
+
+  const { data: userCheckAfterRefresh, error: userCheckAfterRefreshError } = await supabase.auth.getUser(accessToken)
+  if (userCheckAfterRefreshError || !userCheckAfterRefresh.user) {
+    await supabase.auth.signOut()
+    return { ok: false, error: 'Sitzung ungültig. Bitte erneut im Lizenzportal anmelden.' }
+  }
+
   let { data, error } = await invokeDeploy(accessToken)
 
   const status =
@@ -56,7 +80,8 @@ export const triggerReleaseDeploy = async (
       }
     }
     if (detail.includes('HTTP 401')) {
-      return { ok: false, error: 'Nicht autorisiert (HTTP 401). Bitte im Lizenzportal einmal ab- und wieder anmelden.' }
+      await supabase.auth.signOut()
+      return { ok: false, error: 'Nicht autorisiert (HTTP 401). Bitte erneut im Lizenzportal anmelden.' }
     }
     return { ok: false, error: `${error.message || 'Aufruf fehlgeschlagen'}${detail}` }
   }
