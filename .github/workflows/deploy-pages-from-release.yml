@@ -3,10 +3,11 @@
 #
 # GitHub Repository Secrets (Beispielnamen – in den Schritten explizit referenziert):
 #   CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN  (Pages deploy, wrangler)
-#   CF_PAGES_PROJECT_MAIN, CF_PAGES_PROJECT_KUNDENPORTAL, CF_PAGES_PROJECT_ARBEITSZEIT
+#   CF_PAGES_PROJECT_MAIN, CF_PAGES_PROJECT_KUNDENPORTAL, CF_PAGES_PROJECT_ARBEITSZEIT, CF_PAGES_PROJECT_ADMIN
 #   VITE_MAIN_SUPABASE_URL, VITE_MAIN_SUPABASE_ANON_KEY, VITE_MAIN_LICENSE_API_URL
 #   VITE_KP_SUPABASE_URL, VITE_KP_SUPABASE_ANON_KEY, VITE_KP_LICENSE_API_URL, VITE_KP_LICENSE_NUMBER (optional)
 #   VITE_AZ_SUPABASE_URL, VITE_AZ_SUPABASE_ANON_KEY, VITE_AZ_LICENSE_API_URL, VITE_AZ_LICENSE_NUMBER (optional)
+#   VITE_ADMIN_SUPABASE_URL, VITE_ADMIN_SUPABASE_ANON_KEY, VITE_ADMIN_LICENSE_API_URL (optional)
 #
 # Später: JSON-Secret / zentrale Env-Quelle (Fragerunde 2) möglich.
 
@@ -23,6 +24,7 @@ on:
           - main
           - kundenportal
           - arbeitszeit_portal
+          - admin
       git_ref:
         description: 'Git-Tag oder Commit-SHA zum Checkout (gebauter Stand)'
         required: true
@@ -104,3 +106,22 @@ jobs:
           npm run build
           cd ..
           npx --yes wrangler@3 pages deploy arbeitszeit-portal/dist --project-name="$CF_PROJECT"
+
+      - name: Build and deploy (admin)
+        if: inputs.app == 'admin'
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_ADMIN_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_ADMIN_SUPABASE_ANON_KEY }}
+          VITE_LICENSE_API_URL: ${{ secrets.VITE_ADMIN_LICENSE_API_URL }}
+          CF_PROJECT: ${{ secrets.CF_PAGES_PROJECT_ADMIN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CF_PROJECT:-}" ] || [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "CF_PAGES_PROJECT_ADMIN oder CLOUDFLARE_* fehlt."
+            exit 1
+          fi
+          cd admin
+          npm ci
+          npm run build
+          cd ..
+          npx --yes wrangler@3 pages deploy admin/dist --project-name="$CF_PROJECT"
