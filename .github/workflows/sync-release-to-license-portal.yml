@@ -36,7 +36,7 @@ jobs:
           GITHUB_SYNC_RELEASE_BODY: ${{ github.event_name == 'release' && github.event.release.body || '' }}
           GITHUB_SYNC_RELEASE_NAME: ${{ github.event_name == 'release' && github.event.release.name || '' }}
           GITHUB_SYNC_HTML_URL: ${{ github.event_name == 'release' && github.event.release.html_url || '' }}
-          GITHUB_SYNC_TARGET_COMMITISH: ${{ github.event_name == 'release' && github.event.release.target_commitish || '' }}
+          GITHUB_SYNC_TARGET_COMMITISH: ${{ github.event_name == 'release' && github.event.release.target_commitish || github.sha }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/sync-github-release-to-license-portal.mjs
