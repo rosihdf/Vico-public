@@ -1,0 +1,17 @@
+---
+description: Verweis auf kanonische Specs Protokoll-Mängel (Tür/Kundenliste) und Degraded-Netz; Arbeitspakete WP-MANG / WP-NET.
+globs: src/**/*.tsx,src/**/*.ts,shared/**/*.ts,docs/Roadmap-Offene-Punkte.md,Vico.md
+alwaysApply: false
+---
+
+# Vico – Protokoll-Mängel & eingeschränkter Netzmodus (Planung)
+
+Bei Umsetzung oder Refactoring in diesen Themen:
+
+- **Protokoll-Mängel (Stammdaten-Mängel entfallen):** `Vico.md` **§11.17**, Arbeitspakete **WP-MANG-…** in `docs/Roadmap-Offene-Punkte.md` **Teil B.0**.
+- **Degraded-Netz** (über `navigator.onLine` hinaus): `Vico.md` **§11.18**, **WP-NET-…** in derselben Datei.
+- **Kundenportal:** laufender Auftrag / Zeitleiste / max. 1 offener Auftrag pro Tür: **§11.19**, **WP-PORTAL-…**, **WP-ORD-…**.
+- **Mandanten-Releases / Incoming / gestaffeltes Update:** **§11.20**, **WP-REL-…** (Kanäle ohne `admin`-App).
+- **Abarbeitungsreihenfolge:** `docs/Roadmap-Offene-Punkte.md` **Teil A**; maßgeblich bleibt **`Vico.md` §7**.
+
+Noch offen in §11.18: Ping-URL, exakte Timeouts/Retries, ggf. Realtime-WebSocket vs. Degraded-State.

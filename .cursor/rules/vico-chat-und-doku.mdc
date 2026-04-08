@@ -1,0 +1,30 @@
+---
+description: Nach Features und längeren Chats Vico.md und optional Chat-Backup in docs/ pflegen – ohne den Nutzer jedes Mal zu fragen.
+alwaysApply: true
+---
+
+# Vico – Chat-Zusammenfassung & Doku
+
+## Ziel
+
+Fachliche und technische Entscheidungen **im Repo** nachvollziehbar halten, nicht nur im Chat.
+
+## Nach abgeschlossenen Feature-Umsetzungen oder inhaltlich relevanten Sessions
+
+1. **`Vico.md` aktualisieren**
+   - Primär **§3 Features** (betroffene Oberflächen, Nutzerlogik).
+   - Wo sinnvoll **§7** (Roadmap/Archiv) oder **§11** (kurzer Eintrag mit Datum, Verweis auf §3 und betroffene Dateien).
+
+2. **Optional: Chat-Backup unter `docs/`**
+   - Dateiname: `docs/Chat-Backup-YYYY-MM-DD-<kurzthema>.md`.
+   - Inhalt: **inhaltliche Zusammenfassung** (Wünsche, getroffene Entscheidungen, betroffene Pfade, **keine** mühsame Wiederholung jedes technischen Details, wenn es schon in `Vico.md` steht).
+   - Am Anfang **Verweis auf die konkreten `Vico.md`-Abschnitte**.
+
+3. **Roh-Chat**
+   - Vollständige Cursor-Konversationen werden von **Cursor** intern gespeichert (Agent-Transkripte). Der Agent kann den Roh-Export nicht zuverlässig erzwingen.
+   - Wenn der Nutzer einen **wörtlichen** Verlauf braucht: manuell aus Cursor exportieren bzw. relevante Stellen in die Backup-MD übernehmen.
+
+## Nicht nötig
+
+- Keine leeren Platzhalter-Dateien.
+- Kein Duplikat derselben Fakten an drei Stellen – **eine** kanonische Stelle in `Vico.md`, Backup nur als Session-Kontext.
