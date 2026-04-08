@@ -15,6 +15,7 @@ import ComponentGuard from './ComponentGuard'
 import LicenseFeatureGuard from './components/LicenseFeatureGuard'
 import LicenseGate from './components/LicenseGate'
 import { LoadingSpinner } from './components/LoadingSpinner'
+import PwaUpdatePrompt from './components/PwaUpdatePrompt'
 
 const Startseite = lazy(() => import('./Startseite'))
 const Kunden = lazy(() => import('./Kunden'))
@@ -58,6 +59,7 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-[#5b7895] dark:bg-slate-900 transition-colors">
+    <PwaUpdatePrompt />
     <ToastProvider>
     <ThemeProvider>
     <AuthProvider>

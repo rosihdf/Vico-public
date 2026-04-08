@@ -10,12 +10,26 @@
   --vico-background: #5b7895;
   --vico-button: #ffffff;
   --vico-button-hover: #f1f5f9;
+  --app-foreground: #0f172a;
+  --app-muted: #64748b;
+  --app-label: #475569;
+  --app-border: #cbd5e1;
+  --app-surface: #ffffff;
+  --app-error: #b91c1c;
+  --app-success: #047857;
 }
 
 /* Sekundär-Buttons (bg-vico-button): im Dark Mode keine weiße Fläche */
 .dark {
   --vico-button: #334155;
   --vico-button-hover: #475569;
+  --app-foreground: #f1f5f9;
+  --app-muted: #94a3b8;
+  --app-label: #cbd5e1;
+  --app-border: #475569;
+  --app-surface: #1e293b;
+  --app-error: #fca5a5;
+  --app-success: #6ee7b7;
 }
 
 body {

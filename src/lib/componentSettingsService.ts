@@ -13,18 +13,27 @@ export type ComponentSetting = {
   updated_at: string
 }
 
+/** Dropdowns Tür-/Schließmittel in Stammdaten (Einstellungen-Sektion, nicht in der Komponenten-Liste) */
+export const COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL = 'door_stammdaten_auswahllisten' as const
+
 export const DEFAULT_SETTINGS_META: { component_key: string; label: string; enabled: boolean; sort_order: number }[] = [
   { component_key: 'dashboard', label: 'Dashboard', enabled: true, sort_order: 0 },
   { component_key: 'kunden', label: 'Kunden', enabled: true, sort_order: 1 },
   { component_key: 'suche', label: 'Suche', enabled: true, sort_order: 2 },
   { component_key: 'auftrag', label: 'Auftrag', enabled: true, sort_order: 3 },
   { component_key: 'scan', label: 'Scan', enabled: true, sort_order: 4 },
-  { component_key: 'wartungsprotokolle', label: 'Wartungsprotokolle', enabled: true, sort_order: 5 },
+  { component_key: 'wartungsprotokolle', label: 'Prüfberichte', enabled: true, sort_order: 5 },
   { component_key: 'benutzerverwaltung', label: 'Benutzerverwaltung', enabled: true, sort_order: 6 },
   { component_key: 'info', label: 'Info', enabled: true, sort_order: 7 },
   { component_key: 'einstellungen', label: 'Einstellungen', enabled: true, sort_order: 8 },
   { component_key: 'profil', label: 'Profil', enabled: true, sort_order: 9 },
   { component_key: 'arbeitszeiterfassung', label: 'Arbeitszeiterfassung', enabled: true, sort_order: 10 },
+  {
+    component_key: COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL,
+    label: 'Tür-/Schließmittel-Auswahllisten',
+    enabled: true,
+    sort_order: 11,
+  },
 ]
 
 const DEFAULT_SETTINGS: Record<string, boolean> = Object.fromEntries(

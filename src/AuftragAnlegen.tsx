@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useToast } from './ToastContext'
@@ -17,15 +17,26 @@ import {
   fetchObjects,
   fetchObjectsDirectUnderCustomer,
   fetchAllObjects,
+  fetchCompletionByOrderId,
+  fetchPruefprotokollPdfPathForOrderObject,
+  getMaintenancePhotoUrl,
 } from './lib/dataService'
+import { isOnline } from '../shared/networkUtils'
 import { subscribeToOrderChanges } from './lib/orderRealtime'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { fetchProfiles, getProfileDisplayName } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
-import { getOrderObjectIds } from './lib/orderUtils'
+import {
+  findActiveOrderConflictsAmong,
+  getOrderObjectIds,
+  isOrderActivePerObjectError,
+  type ActiveOrderObjectConflict,
+} from './lib/orderUtils'
 import { OrderCalendar } from './components/OrderCalendar'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import ConfirmDialog from './components/ConfirmDialog'
+import PdfPreviewOverlay, { type PdfPreviewState } from './components/PdfPreviewOverlay'
+import OrderActiveConflictCallout from './components/OrderActiveConflictCallout'
 import EmptyState from '../shared/EmptyState'
 import type { Order, Customer, BV, Object as Obj, OrderType, OrderStatus } from './types'
 import type { Profile } from './lib/userService'
@@ -128,6 +139,70 @@ const AuftragAnlegen = () => {
     message: string
     onConfirm: () => void
   }>({ open: false, title: '', message: '', onConfirm: () => {} })
+  const [pdfViewer, setPdfViewer] = useState<PdfPreviewState>(null)
+  const [berichteLoadingOrderId, setBerichteLoadingOrderId] = useState<string | null>(null)
+  /** Server-/Cache-Abweichung: Konflikt erst nach Speichern erkannt */
+  const [serverConflictDoors, setServerConflictDoors] = useState<ActiveOrderObjectConflict[] | null>(null)
+
+  const handleCloseForm = useCallback(() => {
+    setShowForm(false)
+    setFormError(null)
+    setFormMode('create')
+    setEditingOrderId(null)
+    setServerConflictDoors(null)
+  }, [])
+
+  const handleClosePdfViewer = () => {
+    setPdfViewer((prev) => {
+      if (prev?.revokeOnClose && prev.url.startsWith('blob:')) {
+        URL.revokeObjectURL(prev.url)
+      }
+      return null
+    })
+  }
+
+  const handleListMonteursbericht = async (o: Order) => {
+    setBerichteLoadingOrderId(o.id)
+    try {
+      const comp = await fetchCompletionByOrderId(o.id)
+      const path = comp?.monteur_pdf_path?.trim()
+      if (!path) {
+        showError('Noch kein Monteursbericht-PDF. Öffnen Sie den Auftrag und tippen Sie auf „Monteursbericht“.')
+        return
+      }
+      setPdfViewer({
+        url: getMaintenancePhotoUrl(path),
+        title: 'Monteursbericht',
+        revokeOnClose: false,
+      })
+    } finally {
+      setBerichteLoadingOrderId(null)
+    }
+  }
+
+  const handleListPruefprotokoll = async (o: Order, objectId: string) => {
+    if (!isOnline()) {
+      showError('Prüfprotokoll ist nur mit Verbindung abrufbar.')
+      return
+    }
+    setBerichteLoadingOrderId(o.id)
+    try {
+      const path = await fetchPruefprotokollPdfPathForOrderObject(o.id, objectId)
+      if (!path) {
+        showError('Kein gespeichertes Prüfprotokoll für diese Tür. Ggf. Auftrag noch nicht abgeschlossen.')
+        return
+      }
+      const obj = allObjects.find((x) => x.id === objectId)
+      const label = obj ? getObjectDisplayName(obj) : objectId.slice(0, 8)
+      setPdfViewer({
+        url: getMaintenancePhotoUrl(path),
+        title: `Prüfprotokoll – ${label}`,
+        revokeOnClose: false,
+      })
+    } finally {
+      setBerichteLoadingOrderId(null)
+    }
+  }
 
   const loadData = useCallback(async () => {
     setIsLoading(true)
@@ -212,16 +287,33 @@ const AuftragAnlegen = () => {
     if (formData.bv_id) loadObjectsForBv(formData.bv_id)
   }, [formData.bv_id, loadObjectsForBv])
 
+  useEffect(() => {
+    if (!showForm) return
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleCloseForm()
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [showForm, handleCloseForm])
+
+  const orderObjectSummary = useCallback(
+    (o: Order) => {
+      const ids = getOrderObjectIds(o)
+      if (ids.length === 0) return null
+      if (ids.length === 1) {
+        const obj = allObjects.find((x) => x.id === ids[0])
+        return ` · ${obj ? getObjectDisplayName(obj) : ids[0].slice(0, 8)}`
+      }
+      return ` · ${ids.length} Türen/Tore`
+    },
+    [allObjects]
+  )
+
   const getCustomerName = (id: string) => customers.find((c) => c.id === id)?.name ?? '-'
   const getBvName = (id: string | null | undefined) => {
     if (!id) return '—'
     return allBvs.find((b) => b.id === id)?.name ?? '-'
   }
-  const getObjectLabel = (id: string) => {
-    const obj = allObjects.find((o) => o.id === id)
-    return obj ? getObjectDisplayName(obj) : id.slice(0, 8)
-  }
-
   const profilesAssignable = profiles.filter((p) => p.role !== 'demo' && p.role !== 'kunde')
   const getProfileLabel = (id: string | null) => {
     if (!id) return '-'
@@ -237,6 +329,7 @@ const AuftragAnlegen = () => {
     setEditingOrderId(null)
     setFormData(INITIAL_FORM)
     setFormError(null)
+    setServerConflictDoors(null)
     setShowForm(true)
   }
 
@@ -245,17 +338,14 @@ const AuftragAnlegen = () => {
     setEditingOrderId(o.id)
     setFormData(orderToFormState(o))
     setFormError(null)
+    setServerConflictDoors(null)
     setShowForm(true)
   }
 
-  const handleCloseForm = () => {
-    setShowForm(false)
-    setFormError(null)
-    setFormMode('create')
-    setEditingOrderId(null)
-  }
-
   const handleFormChange = (field: keyof OrderFormState, value: string | OrderType | OrderStatus) => {
+    if (field === 'customer_id' || field === 'bv_id' || field === 'status') {
+      setServerConflictDoors(null)
+    }
     setFormData((prev) => {
       const next = { ...prev, [field]: value }
       if (field === 'customer_id') {
@@ -268,6 +358,7 @@ const AuftragAnlegen = () => {
   }
 
   const handleToggleObject = (objectId: string) => {
+    setServerConflictDoors(null)
     setFormData((prev) => {
       const has = prev.selectedObjectIds.includes(objectId)
       const selectedObjectIds = has
@@ -298,9 +389,37 @@ const AuftragAnlegen = () => {
     (bvs.length === 0 || !!effectiveBvId) &&
     doorsRequirementMet
 
+  const activeDoorConflicts = useMemo(() => {
+    if (!showForm || !canEdit) return []
+    const exclude = formMode === 'edit' && editingOrderId ? editingOrderId : null
+    return findActiveOrderConflictsAmong(
+      orders,
+      exclude,
+      formData.selectedObjectIds,
+      formData.status
+    )
+  }, [showForm, canEdit, formMode, editingOrderId, orders, formData.selectedObjectIds, formData.status])
+
+  const saveBlockedByDoorConflict =
+    activeDoorConflicts.length > 0 &&
+    (formData.status === 'offen' || formData.status === 'in_bearbeitung')
+
+  const conflictCalloutRows =
+    serverConflictDoors ?? (saveBlockedByDoorConflict ? activeDoorConflicts : [])
+
+  const resolveConflictDoorLabel = useCallback(
+    (objectId: string) => {
+      const obj =
+        pickerObjects.find((x) => x.id === objectId) ?? allObjects.find((x) => x.id === objectId)
+      return obj ? getObjectDisplayName(obj) : `Tür ${objectId.slice(0, 8)}…`
+    },
+    [pickerObjects, allObjects]
+  )
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
+    setServerConflictDoors(null)
     if (!formData.customer_id || (bvs.length > 0 && !effectiveBvId)) {
       setFormError(
         bvs.length === 0
@@ -335,6 +454,12 @@ const AuftragAnlegen = () => {
       })
       setIsSaving(false)
       if (error) {
+        if (isOrderActivePerObjectError(error)) {
+          setServerConflictDoors(error.conflicts)
+          setFormError(error.message)
+          showError(error.message)
+          return
+        }
         const msg = getSupabaseErrorMessage(error)
         setFormError(msg)
         showError(msg)
@@ -360,6 +485,12 @@ const AuftragAnlegen = () => {
     const { data, error } = await createOrder(payload, user?.id ?? null)
     setIsSaving(false)
     if (error) {
+      if (isOrderActivePerObjectError(error)) {
+        setServerConflictDoors(error.conflicts)
+        setFormError(error.message)
+        showError(error.message)
+        return
+      }
       const msg = getSupabaseErrorMessage(error)
       setFormError(msg)
       showError(msg)
@@ -412,25 +543,6 @@ const AuftragAnlegen = () => {
     customerName: getCustomerName(o.customer_id),
     bvName: getBvName(o.bv_id),
   }))
-
-  useEffect(() => {
-    if (!showForm) return
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleCloseForm()
-    }
-    window.addEventListener('keydown', handleEscape)
-    return () => window.removeEventListener('keydown', handleEscape)
-  }, [showForm])
-
-  const orderObjectSummary = useCallback(
-    (o: Order) => {
-      const ids = getOrderObjectIds(o)
-      if (ids.length === 0) return null
-      if (ids.length === 1) return ` · ${getObjectLabel(ids[0])}`
-      return ` · ${ids.length} Türen/Tore`
-    },
-    [allObjects]
-  )
 
   return (
     <div className="p-4 min-w-0">
@@ -559,6 +671,39 @@ const AuftragAnlegen = () => {
                 )}
               </div>
               <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 w-full items-center justify-end">
+                {o.status === 'erledigt' && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={berichteLoadingOrderId === o.id}
+                      onClick={() => void handleListMonteursbericht(o)}
+                      className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                      title="Gespeicherten Monteursbericht anzeigen"
+                    >
+                      Monteursbericht
+                    </button>
+                    {o.order_type === 'wartung'
+                      ? getOrderObjectIds(o)
+                          .filter(Boolean)
+                          .map((oid) => {
+                            const obj = allObjects.find((x) => x.id === oid)
+                            return (
+                              <button
+                                key={oid}
+                                type="button"
+                                disabled={berichteLoadingOrderId === o.id}
+                                onClick={() => void handleListPruefprotokoll(o, oid)}
+                                className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 max-w-[140px] truncate"
+                                title={`Prüfprotokoll anzeigen: ${obj ? getObjectDisplayName(obj) : oid.slice(0, 8)}`}
+                                aria-label={`Prüfprotokoll anzeigen: ${obj ? getObjectDisplayName(obj) : oid.slice(0, 8)}`}
+                              >
+                                Prüfprotokoll
+                              </button>
+                            )
+                          })
+                      : null}
+                  </>
+                )}
                 {canAssign && archiveMode === 'active' && (
                   <select
                     value={profilesAssignable.some((p) => p.id === o.assigned_to) ? o.assigned_to ?? '' : ''}
@@ -612,8 +757,9 @@ const AuftragAnlegen = () => {
                 <Link
                   to={`/auftrag/${o.id}`}
                   className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-block text-center"
+                  aria-label={o.status === 'erledigt' ? 'Erledigten Auftrag ansehen' : 'Auftrag bearbeiten'}
                 >
-                  Abarbeiten
+                  {o.status === 'erledigt' ? 'Ansehen' : 'Abarbeiten'}
                 </Link>
                 <Link
                   to={buildObjektBearbeitenUrl(o)}
@@ -621,7 +767,7 @@ const AuftragAnlegen = () => {
                 >
                   Tür/Tor
                 </Link>
-                {canEdit && (
+                {canEdit && o.status !== 'erledigt' && o.status !== 'storniert' && (
                   <button
                     type="button"
                     onClick={() =>
@@ -645,6 +791,8 @@ const AuftragAnlegen = () => {
           ))}
         </ul>
       ))}
+
+      <PdfPreviewOverlay state={pdfViewer} onClose={handleClosePdfViewer} />
 
       <ConfirmDialog
         open={confirmDialog.open}
@@ -740,6 +888,25 @@ const AuftragAnlegen = () => {
                   {hasDoorsToPick ? (
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                       Mindestens eine Tür/Tor wählen, damit die Zuweisung und das Speichern möglich sind.
+                    </p>
+                  ) : null}
+                  {formData.order_type !== 'wartung' && formData.selectedObjectIds.length > 1 ? (
+                    <p
+                      className="text-xs text-slate-600 dark:text-slate-400 border-l-2 border-amber-400 pl-2 py-1 mb-2"
+                      role="note"
+                    >
+                      Hinweis: Bei Auftragstypen außer „Wartung“ dient die Mehrfachauswahl der Zuordnung mehrerer
+                      Türen zu <span className="font-medium">einem</span> Termin; der Monteurbericht wird nicht wie bei
+                      der Wartung automatisch türweise in getrennte Prüfprotokolle aufgeteilt.
+                    </p>
+                  ) : null}
+                  {formData.order_type === 'wartung' && formData.selectedObjectIds.length > 1 ? (
+                    <p
+                      className="text-xs text-slate-600 dark:text-slate-400 border-l-2 border-slate-300 dark:border-slate-600 pl-2 py-1 mb-2"
+                      role="note"
+                    >
+                      Bei „Wartung“ wird im Auftrag für <span className="font-medium">jede</span> gewählte Tür eine
+                      Prüf-Checkliste erwartet; Ausnahmen beim Abschluss werden im erledigten Auftrag dokumentiert.
                     </p>
                   ) : null}
                   {pickerObjects.length === 0 ? (
@@ -867,6 +1034,14 @@ const AuftragAnlegen = () => {
                   placeholder="Auftragsdetails…"
                 />
               </div>
+              {conflictCalloutRows.length > 0 ? (
+                <div className="pt-1">
+                  <OrderActiveConflictCallout
+                    conflicts={conflictCalloutRows}
+                    resolveDoorLabel={resolveConflictDoorLabel}
+                  />
+                </div>
+              ) : null}
               {formError && (
                 <p className="text-sm text-red-600 dark:text-red-400" role="alert">
                   {formError}
@@ -875,7 +1050,7 @@ const AuftragAnlegen = () => {
               <div className="flex flex-nowrap gap-2 pt-2">
                 <button
                   type="submit"
-                  disabled={!canSubmitOrder || isSaving}
+                  disabled={!canSubmitOrder || isSaving || saveBlockedByDoorConflict}
                   className="flex-1 min-w-0 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 disabled:opacity-50 font-medium border border-slate-300 dark:border-slate-600 shrink"
                 >
                   {isSaving ? 'Wird gespeichert…' : formMode === 'edit' ? 'Speichern' : 'Anlegen'}

@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
 } from 'react'
+import { recordMandantRealtimeSubscribeStatus } from '../shared/mandantRealtimeDegraded'
 import { supabase } from './supabase'
 import {
   fetchComponentSettings,
@@ -53,8 +54,12 @@ export const ComponentSettingsProvider = ({
         { event: '*', schema: 'public', table: 'component_settings' },
         () => { refresh() }
       )
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
+      .subscribe((status, err) => {
+        recordMandantRealtimeSubscribeStatus(status, err ?? undefined)
+      })
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [refresh])
 
   const isEnabled = useCallback(

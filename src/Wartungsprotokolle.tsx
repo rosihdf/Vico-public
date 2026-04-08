@@ -25,6 +25,7 @@ import ConfirmDialog from './components/ConfirmDialog'
 import EmptyState from '../shared/EmptyState'
 import { fetchMyProfile, getProfileDisplayName } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
+import { WARTUNG_CHECKLIST_ITEMS, emptyWartungChecklistState, mergeWartungChecklistState } from './lib/wartungChecklistCatalog'
 import { fetchBriefbogenDataUrlForPdf } from './lib/briefbogenService'
 import type {
   Object as Obj,
@@ -101,6 +102,7 @@ const Wartungsprotokolle = () => {
   const [isSaving, setIsSaving] = useState(false)
   const [sendingEmailFor, setSendingEmailFor] = useState<string | null>(null)
   const [expandedPhotoUrl, setExpandedPhotoUrl] = useState<string | null>(null)
+  const [checklistState, setChecklistState] = useState<Record<string, boolean>>(emptyWartungChecklistState)
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
     reportId: string | null
@@ -169,8 +171,16 @@ const Wartungsprotokolle = () => {
         status: 'ok' as SmokeDetectorStatus,
       })),
     })
+    setChecklistState(emptyWartungChecklistState())
     setFormError(null)
     setShowForm(true)
+  }
+
+  const handleWartungChecklistToggle = (itemId: string) => {
+    setChecklistState((prev) => {
+      const base = mergeWartungChecklistState(prev)
+      return { ...base, [itemId]: !base[itemId] }
+    })
   }
 
   const handleCloseForm = () => {
@@ -209,7 +219,7 @@ const Wartungsprotokolle = () => {
       technician_id: user?.id ?? null,
       reason: formData.reason || null,
       reason_other: formData.reason_other.trim() || null,
-      manufacturer_maintenance_done: formData.manufacturer_maintenance_done,
+      manufacturer_maintenance_done: false,
       hold_open_checked: object?.has_hold_open ? formData.hold_open_checked : null,
       deficiencies_found: formData.deficiencies_found,
       deficiency_description: formData.deficiency_description.trim() || null,
@@ -221,6 +231,7 @@ const Wartungsprotokolle = () => {
       customer_name_printed: formData.customer_name_printed.trim() || null,
       pdf_path: null,
       synced: true,
+      checklist_state: mergeWartungChecklistState(checklistState),
     }
 
     const smokeDetectors = formData.smoke_detector_statuses.map((sd) => ({
@@ -319,7 +330,7 @@ const Wartungsprotokolle = () => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `Wartungsprotokoll_${r.maintenance_date}_${getObjectDisplayName(object)}.pdf`
+    a.download = `Pruefbericht_${r.maintenance_date}_${getObjectDisplayName(object)}.pdf`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -333,7 +344,7 @@ const Wartungsprotokolle = () => {
   const handleSendEmail = async (r: MaintenanceReport) => {
     const recipient = getRecipientEmail()
     if (!recipient) {
-      alert('Keine E-Mail-Adresse hinterlegt. Bitte unter Kunde oder BV „E-Mail für Wartungsprotokoll“ eintragen.')
+      alert('Keine E-Mail-Adresse hinterlegt. Bitte unter Kunde oder BV „E-Mail für Prüfbericht“ eintragen.')
       return
     }
     if (!customer || !object) return
@@ -371,8 +382,8 @@ const Wartungsprotokolle = () => {
         customerSignaturePath: r.customer_signature_path,
         letterheadDataUrl,
       })
-      const filename = `Wartungsprotokoll_${r.maintenance_date}_${getObjectDisplayName(object)}.pdf`
-      const subject = `Wartungsprotokoll ${getObjectDisplayName(object)} – ${r.maintenance_date}`
+      const filename = `Pruefbericht_${r.maintenance_date}_${getObjectDisplayName(object)}.pdf`
+      const subject = `Prüfbericht ${getObjectDisplayName(object)} – ${r.maintenance_date}`
       const { error: sendError } = await sendMaintenanceReportEmailOrQueue(blob, r.id, recipient, subject, filename)
       if (sendError) {
         alert(`E-Mail konnte nicht gesendet werden: ${sendError.message}`)
@@ -380,7 +391,7 @@ const Wartungsprotokolle = () => {
       }
       alert(
         navigator.onLine
-          ? `Wartungsprotokoll wurde an ${recipient} gesendet.`
+          ? `Prüfbericht wurde an ${recipient} gesendet.`
           : `E-Mail wird beim nächsten Sync gesendet (${recipient}).`
       )
     } finally {
@@ -470,13 +481,13 @@ const Wartungsprotokolle = () => {
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-        <h2 className="text-xl font-bold text-slate-800">Wartungsprotokolle</h2>
+        <h2 className="text-xl font-bold text-slate-800">Prüfberichte</h2>
         {canEdit && (
           <button
             type="button"
             onClick={handleOpenCreate}
             className="px-4 py-2 bg-vico-button dark:bg-vico-primary text-slate-800 dark:text-white rounded-lg hover:bg-vico-button-hover dark:hover:opacity-90 font-medium border border-slate-300 dark:border-slate-600"
-            aria-label="Neues Wartungsprotokoll anlegen"
+            aria-label="Neuen Prüfbericht anlegen"
           >
             + Neues Protokoll
           </button>
@@ -485,7 +496,7 @@ const Wartungsprotokolle = () => {
 
       {reports.length === 0 ? (
         <EmptyState
-          title="Noch keine Wartungsprotokolle angelegt."
+          title="Noch keine Prüfberichte angelegt."
           description={canEdit ? 'Klicken Sie auf „+ Neues Protokoll“, um zu starten.' : undefined}
           className="py-8"
         />
@@ -605,8 +616,8 @@ const Wartungsprotokolle = () => {
 
       <ConfirmDialog
         open={confirmDialog.open}
-        title="Wartungsprotokoll löschen"
-        message="Wartungsprotokoll wirklich löschen?"
+        title="Prüfbericht löschen"
+        message="Prüfbericht wirklich löschen?"
         confirmLabel="Löschen"
         variant="danger"
         onConfirm={() => {
@@ -633,7 +644,7 @@ const Wartungsprotokolle = () => {
           >
             <div className="p-4 sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-600">
               <h3 id="wartung-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                Neues Wartungsprotokoll
+                Neuer Prüfbericht
               </h3>
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
@@ -696,19 +707,6 @@ const Wartungsprotokolle = () => {
               </div>
 
               <div className="space-y-2 text-slate-800 dark:text-slate-200">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.manufacturer_maintenance_done}
-                    onChange={(e) =>
-                      handleFormChange('manufacturer_maintenance_done', e.target.checked)
-                    }
-                  />
-                  Wartung nach Herstellerangaben durchgeführt
-                </label>
-                <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 -mt-1">
-                  Hinweis (J6): Orientierung an gängiger Praxis; keine zugesicherte DIN-/Norm-Konformität durch die App.
-                </p>
                 {object?.has_hold_open && (
                   <label className="flex items-center gap-2">
                     <input
@@ -722,6 +720,32 @@ const Wartungsprotokolle = () => {
                   </label>
                 )}
               </div>
+
+              <fieldset className="space-y-2 border border-slate-200 dark:border-slate-600 rounded-lg p-4">
+                <legend className="text-sm font-semibold text-slate-800 dark:text-slate-100 px-1">
+                  Wartungs-Checkliste
+                </legend>
+                <ul className="space-y-2 list-none p-0 m-0">
+                  {WARTUNG_CHECKLIST_ITEMS.map((item) => (
+                    <li key={item.id}>
+                      <label className="flex items-start gap-2 text-sm text-slate-800 dark:text-slate-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(checklistState[item.id])}
+                          onChange={() => handleWartungChecklistToggle(item.id)}
+                          disabled={isSaving}
+                          className="mt-0.5 rounded border-slate-400 text-vico-primary"
+                          aria-label={item.label}
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Wird im Protokoll gespeichert und bei Offline-Erfassung mit der Outbox synchronisiert.
+                </p>
+              </fieldset>
 
               {formData.smoke_detector_statuses.length > 0 && (
                 <div>

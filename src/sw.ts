@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { NetworkFirst } from 'workbox-strategies'
 import { registerRoute, setCatchHandler } from 'workbox-routing'
-import { clientsClaim, skipWaiting } from 'workbox-core'
+import { clientsClaim } from 'workbox-core'
 
 declare let self: ServiceWorkerGlobalScope
 
@@ -32,8 +32,15 @@ setCatchHandler(async ({ request }) => {
   return Response.error()
 })
 
-skipWaiting()
-clientsClaim()
+self.addEventListener('message', (event: ExtendableMessageEvent) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+})
+
+self.addEventListener('activate', (event: ExtendableEvent) => {
+  event.waitUntil(Promise.resolve(clientsClaim()))
+})
 
 // Web Push: Standortanfrage-Benachrichtigung
 self.addEventListener('push', (event: PushEvent) => {

@@ -8,10 +8,23 @@ import {
   fetchCustomers,
   fetchAllBvs,
   createOrder,
+  fetchOrders,
+  fetchOrdersForQrMergeCandidates,
+  fetchOrderById,
+  updateOrder,
+  QR_MERGE_DOOR_WARNING_THRESHOLD,
 } from '../lib/dataService'
+import {
+  findActiveOrderConflictsAmong,
+  getOrderObjectIds,
+  isOrderActivePerObjectError,
+  type ActiveOrderObjectConflict,
+} from '../lib/orderUtils'
 import { getObjectDisplayName, objectAccessoriesDisplayString } from '../lib/objectUtils'
 import { LoadingSpinner } from '../components/LoadingSpinner'
-import type { Object as Obj, Customer, BV, OrderType } from '../types'
+import OrderActiveConflictCallout from '../components/OrderActiveConflictCallout'
+import { isOnline } from '../../shared/networkUtils'
+import type { Object as Obj, Customer, BV, OrderType, Order } from '../types'
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
@@ -40,11 +53,12 @@ const AuftragAusQr = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { showError } = useToast()
+  const { showError, showToast } = useToast()
 
   const customerId = searchParams.get('customerId') ?? ''
   const bvId = searchParams.get('bvId')
   const objectId = searchParams.get('objectId') ?? ''
+  const skipMerge = searchParams.get('skipMerge') === '1'
 
   const [obj, setObj] = useState<Obj | null | 'loading'>('loading')
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -52,17 +66,33 @@ const AuftragAusQr = () => {
   const [orderType, setOrderType] = useState<OrderType>('wartung')
   const [description, setDescription] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [mergeOpen, setMergeOpen] = useState(false)
+  const [mergeCandidates, setMergeCandidates] = useState<Order[]>([])
+  const [pendingAndOpen, setPendingAndOpen] = useState(false)
+  const [selectedMergeOrderId, setSelectedMergeOrderId] = useState<string | null>(null)
+  const [merge15Open, setMerge15Open] = useState(false)
+  const [merge15Context, setMerge15Context] = useState<{ targetId: string; nextCount: number } | null>(null)
+  const [ordersSnapshot, setOrdersSnapshot] = useState<Order[]>([])
+  const [createConflictDoors, setCreateConflictDoors] = useState<ActiveOrderObjectConflict[] | null>(null)
 
   const load = useCallback(async () => {
     if (!objectId) {
       setObj(null)
+      setOrdersSnapshot([])
       return
     }
     setObj('loading')
-    const [o, c, b] = await Promise.all([fetchObject(objectId), fetchCustomers(), fetchAllBvs()])
+    setCreateConflictDoors(null)
+    const [o, c, b, ord] = await Promise.all([
+      fetchObject(objectId),
+      fetchCustomers(),
+      fetchAllBvs(),
+      fetchOrders(),
+    ])
     setObj(o)
     setCustomers(c ?? [])
     setBvs(b ?? [])
+    setOrdersSnapshot(ord ?? [])
   }, [objectId])
 
   useEffect(() => {
@@ -77,13 +107,20 @@ const AuftragAusQr = () => {
     return bvs.find((b) => b.id === id)?.name ?? '—'
   }, [bvs, bvId, obj])
 
-  const handleCreate = async (andOpen: boolean) => {
+  const qrSameDoorConflicts = useMemo(() => {
+    if (!objectId) return []
+    return findActiveOrderConflictsAmong(ordersSnapshot, null, [objectId], 'in_bearbeitung')
+  }, [ordersSnapshot, objectId])
+
+  const hasActiveOrderOnThisDoor =
+    (createConflictDoors?.length ?? 0) > 0 || qrSameDoorConflicts.length > 0
+
+  const doCreateNew = async (andOpen: boolean) => {
     if (!customerId || !objectId || obj === 'loading' || !obj) {
       showError('Kunde oder Tür/Tor fehlt.')
       return
     }
     const effectiveBvId = bvId ?? obj.bv_id ?? null
-
     setIsSaving(true)
     const payload = {
       customer_id: customerId,
@@ -100,12 +137,110 @@ const AuftragAusQr = () => {
     const { data, error } = await createOrder(payload, user?.id ?? null)
     setIsSaving(false)
     if (error) {
+      if (isOrderActivePerObjectError(error)) {
+        setCreateConflictDoors(error.conflicts)
+        showError(error.message)
+        return
+      }
       showError(getSupabaseErrorMessage(error))
       return
     }
     if (!data) return
     if (andOpen) navigate(`/auftrag/${data.id}`)
     else navigate('/auftrag')
+  }
+
+  const handleCreate = async (andOpen: boolean) => {
+    if (!customerId || !objectId || obj === 'loading' || !obj) {
+      showError('Kunde oder Tür/Tor fehlt.')
+      return
+    }
+    setCreateConflictDoors(null)
+    if (!isOnline()) {
+      showError('Auftrag anlegen ist nur bei Verbindung möglich.')
+      return
+    }
+    if (hasActiveOrderOnThisDoor) {
+      return
+    }
+    if (skipMerge) {
+      await doCreateNew(andOpen)
+      return
+    }
+    const effectiveBvId = bvId ?? obj.bv_id ?? null
+    const candidates = await fetchOrdersForQrMergeCandidates({
+      customerId,
+      bvId: effectiveBvId,
+      newObjectId: objectId,
+      orderType,
+    })
+    if (candidates.length === 0) {
+      await doCreateNew(andOpen)
+      return
+    }
+    setMergeCandidates(candidates)
+    setPendingAndOpen(andOpen)
+    setSelectedMergeOrderId(candidates.length === 1 ? candidates[0].id : null)
+    setMergeOpen(true)
+  }
+
+  const closeMerge = () => {
+    setMergeOpen(false)
+    setMergeCandidates([])
+    setSelectedMergeOrderId(null)
+  }
+
+  const runMergeInto = async (targetOrderId: string, andOpen: boolean, skip15Warn: boolean) => {
+    if (!objectId || obj === 'loading' || !obj) return
+    const target = await fetchOrderById(targetOrderId)
+    if (!target) {
+      showError('Ziel-Auftrag nicht gefunden.')
+      return
+    }
+    const ids = [...new Set([...getOrderObjectIds(target), objectId])]
+    if (!skip15Warn && ids.length >= QR_MERGE_DOOR_WARNING_THRESHOLD) {
+      setMerge15Context({ targetId: targetOrderId, nextCount: ids.length })
+      setMerge15Open(true)
+      return
+    }
+    setMerge15Open(false)
+    setMerge15Context(null)
+    setIsSaving(true)
+    const { error } = await updateOrder(targetOrderId, {
+      customer_id: target.customer_id,
+      bv_id: target.bv_id ?? null,
+      object_ids: ids,
+      order_date: target.order_date,
+      order_time: target.order_time ?? null,
+      order_type: target.order_type,
+      status: target.status,
+      description: target.description ?? null,
+      assigned_to: target.assigned_to ?? null,
+    })
+    setIsSaving(false)
+    if (error) {
+      showError(getSupabaseErrorMessage(error))
+      return
+    }
+    closeMerge()
+    showToast('Tür zum bestehenden Auftrag hinzugefügt.', 'success')
+    if (andOpen) navigate(`/auftrag/${targetOrderId}`)
+    else navigate('/auftrag')
+  }
+
+  const handleConfirmMerge = async () => {
+    const id =
+      mergeCandidates.length === 1 ? mergeCandidates[0].id : selectedMergeOrderId
+    if (!id) {
+      showError('Bitte einen Auftrag wählen.')
+      return
+    }
+    await runMergeInto(id, pendingAndOpen, false)
+  }
+
+  const handleConfirm15 = async () => {
+    if (!merge15Context) return
+    await runMergeInto(merge15Context.targetId, pendingAndOpen, true)
   }
 
   if (!customerId || !objectId) {
@@ -136,6 +271,109 @@ const AuftragAusQr = () => {
 
   return (
     <div className="p-4 max-w-2xl min-w-0 mx-auto space-y-4">
+      {mergeOpen && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="qr-merge-title"
+        >
+          <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 max-w-md w-full p-4 shadow-lg space-y-3">
+            <h3 id="qr-merge-title" className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+              Bestehenden Auftrag erweitern?
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Es gibt {mergeCandidates.length === 1 ? 'einen' : mergeCandidates.length} passenden offenen Auftrag
+              gleichen Typs ohne Monteursbericht. Sie können diese Tür hinzufügen oder einen neuen Auftrag anlegen.
+            </p>
+            {mergeCandidates.length > 1 && (
+              <div>
+                <label htmlFor="qr-merge-order" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                  Auftrag wählen
+                </label>
+                <select
+                  id="qr-merge-order"
+                  value={selectedMergeOrderId ?? ''}
+                  onChange={(e) => setSelectedMergeOrderId(e.target.value || null)}
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100"
+                  aria-label="Ziel-Auftrag für Zusammenführung"
+                >
+                  <option value="">— Bitte wählen —</option>
+                  {mergeCandidates.map((o) => {
+                    const n = getOrderObjectIds(o).length
+                    return (
+                      <option key={o.id} value={o.id}>
+                        {o.order_date} · {n} Tür{n === 1 ? '' : 'en'} · {o.description?.slice(0, 40) || o.id.slice(0, 8)}
+                      </option>
+                    )
+                  })}
+                </select>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2 justify-end pt-2">
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => {
+                  closeMerge()
+                  void doCreateNew(pendingAndOpen)
+                }}
+                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+              >
+                Neuer Auftrag
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => void handleConfirmMerge()}
+                className="px-3 py-2 text-sm rounded-lg bg-vico-primary text-white hover:opacity-90 disabled:opacity-50"
+              >
+                Hinzufügen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {merge15Open && merge15Context && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="qr-merge-15-title"
+        >
+          <div className="bg-white dark:bg-slate-800 rounded-xl border border-amber-200 dark:border-amber-800 max-w-md w-full p-4 shadow-lg space-y-3">
+            <h3 id="qr-merge-15-title" className="text-lg font-semibold text-amber-900 dark:text-amber-100">
+              Viele Türen am Auftrag
+            </h3>
+            <p className="text-sm text-slate-700 dark:text-slate-300">
+              Nach dem Hinzufügen hat dieser Auftrag {merge15Context.nextCount} Türen (Hinweis ab{' '}
+              {QR_MERGE_DOOR_WARNING_THRESHOLD}). Trotzdem fortfahren?
+            </p>
+            <div className="flex flex-wrap gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setMerge15Open(false)
+                  setMerge15Context(null)
+                }}
+                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => void handleConfirm15()}
+                className="px-3 py-2 text-sm rounded-lg bg-amber-700 text-white disabled:opacity-50"
+              >
+                Trotzdem hinzufügen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 justify-between">
         <Link to="/scan" className="text-vico-primary hover:underline text-sm">
           ← Scan
@@ -146,6 +384,20 @@ const AuftragAusQr = () => {
       </div>
 
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Tür/Tor aus QR</h2>
+
+      {hasActiveOrderOnThisDoor ? (
+        <OrderActiveConflictCallout
+          conflicts={createConflictDoors ?? qrSameDoorConflicts}
+          resolveDoorLabel={() => getObjectDisplayName(obj)}
+          intro="Für diese Tür/Tor gibt es bereits einen Auftrag mit Status „Offen“ oder „In Bearbeitung“. Öffnen Sie diesen Auftrag, um weiterzuarbeiten oder ihn abzuschließen. Ein zweiter paralleler Auftrag ist nicht möglich."
+        />
+      ) : null}
+
+      {skipMerge && (
+        <p className="text-xs text-slate-500 dark:text-slate-400" role="status">
+          Zusammenführung übersprungen (Link-Parameter). Es wird immer ein neuer Auftrag angelegt.
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -244,20 +496,31 @@ const AuftragAusQr = () => {
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={isSaving}
-          onClick={() => handleCreate(false)}
+          disabled={isSaving || hasActiveOrderOnThisDoor}
+          onClick={() => void handleCreate(false)}
           className="px-4 py-2 rounded-lg font-medium border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
         >
           Nur anlegen
         </button>
         <button
           type="button"
-          disabled={isSaving}
-          onClick={() => handleCreate(true)}
+          disabled={isSaving || hasActiveOrderOnThisDoor}
+          onClick={() => void handleCreate(true)}
           className="px-4 py-2 rounded-lg font-medium bg-vico-primary text-white hover:opacity-90 disabled:opacity-50"
         >
           {isSaving ? 'Wird angelegt…' : 'Anlegen & Abarbeiten'}
         </button>
+        {!skipMerge && (
+          <button
+            type="button"
+            disabled={isSaving || hasActiveOrderOnThisDoor}
+            onClick={() => void doCreateNew(true)}
+            className="px-4 py-2 rounded-lg font-medium border border-vico-primary text-vico-primary hover:bg-vico-primary/10 disabled:opacity-50"
+            title="Ohne Prüfung auf bestehende Aufträge"
+          >
+            Sofort neu anlegen & öffnen
+          </button>
+        )}
       </div>
     </div>
   )

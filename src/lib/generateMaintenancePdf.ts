@@ -128,7 +128,9 @@ export const generateMaintenancePdf = async (
 
   addText(`Datum: ${report.maintenance_date}${report.maintenance_time ? ` · ${report.maintenance_time}` : ''}`, { fontStyle: 'bold' })
   addText(`Prüfgrund: ${report.reason ? REASON_LABELS[report.reason] : '–'}${report.reason_other ? ` (${report.reason_other})` : ''}`)
-  addText(`Wartung nach Herstellerangaben: ${report.manufacturer_maintenance_done ? 'Ja' : 'Nein'}`)
+  if (report.manufacturer_maintenance_done) {
+    addText('Wartung nach Herstellerangaben: Ja (historischer Eintrag)')
+  }
   if (object.has_hold_open) {
     addText(`Feststellanlage geprüft: ${report.hold_open_checked === true ? 'Ja' : report.hold_open_checked === false ? 'Nein' : '–'}`)
   }

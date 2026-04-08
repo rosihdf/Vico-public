@@ -1,4 +1,7 @@
 {
+  "1.1.0": [
+    "Kompatibilitäts-Release 1.1.0: gemeinsame API-/Release-Metadaten und Rollout-Basis mit der Haupt-App synchronisiert."
+  ],
   "1.0.8": [
     "Stabilitäts-Hotfix 1.0.8: gemeinsame Release-/Versionsanpassung."
   ],

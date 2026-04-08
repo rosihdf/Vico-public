@@ -26,6 +26,8 @@ import {
   deleteMaintenanceContract,
   subscribeToDataChange,
   fetchPortalUsers,
+  fetchProtocolOpenMangelsForListCounters,
+  type ProtocolOpenMangelsListCounters,
 } from './lib/dataService'
 import { useComponentSettings } from './ComponentSettingsContext'
 import { useLicense } from './LicenseContext'
@@ -63,6 +65,34 @@ const ObjectProfileThumbInline = ({ path }: { path?: string | null }) => {
       className="w-10 h-10 rounded-md object-cover shrink-0 border border-slate-200 dark:border-slate-600"
       loading="lazy"
     />
+  )
+}
+
+const ProtocolMangelCustomerBadge = ({ count }: { count: number }) => {
+  if (count <= 0) return null
+  const label = `${count} offene Protokoll-Mängel (letzter abgeschlossener Wartungsauftrag)`
+  return (
+    <span
+      className="ml-2 inline-flex min-h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full bg-rose-100 px-2 text-xs font-bold text-rose-900 dark:bg-rose-900/45 dark:text-rose-100"
+      title={label}
+      aria-label={label}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  )
+}
+
+const ProtocolMangelObjectBadge = ({ count }: { count: number }) => {
+  if (count <= 0) return null
+  const label = `${count} offene Protokoll-Mängel`
+  return (
+    <span
+      className="inline-flex min-h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-rose-100 px-1 text-[10px] font-bold text-rose-900 dark:bg-rose-900/45 dark:text-rose-100"
+      title={label}
+      aria-label={label}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
   )
 }
 
@@ -179,6 +209,7 @@ const Kunden = () => {
   const [qrBatchPdfLoading, setQrBatchPdfLoading] = useState(false)
   const [showNeuDropdown, setShowNeuDropdown] = useState(false)
   const [maintenanceReminders, setMaintenanceReminders] = useState<MaintenanceReminder[]>([])
+  const [protocolMangels, setProtocolMangels] = useState<ProtocolOpenMangelsListCounters | null>(null)
   const [maintenanceContractsCustomer, setMaintenanceContractsCustomer] = useState<MaintenanceContract[]>([])
   const [maintenanceContractsBv, setMaintenanceContractsBv] = useState<MaintenanceContract[]>([])
   const [isContractsCustomerLoading, setIsContractsCustomerLoading] = useState(false)
@@ -232,6 +263,15 @@ const Kunden = () => {
     return map
   }, [allBvs])
 
+  const protocolMangelCountByObjectId = useMemo(
+    () => protocolMangels?.countByObjectId ?? {},
+    [protocolMangels]
+  )
+  const protocolMangelTotalByCustomerId = useMemo(
+    () => protocolMangels?.totalByCustomerId ?? {},
+    [protocolMangels]
+  )
+
   const customerWartungsstatus = useMemo(() => {
     const map = new Map<string, 'overdue' | 'due_soon' | 'ok' | 'none'>()
     const priority = { overdue: 3, due_soon: 2, ok: 1 }
@@ -252,14 +292,16 @@ const Kunden = () => {
 
   const loadCustomers = useCallback(async () => {
     setIsLoading(true)
-    const [customerData, reminderData, bvsData] = await Promise.all([
+    const [customerData, reminderData, bvsData, protocolPack] = await Promise.all([
       fetchCustomers(),
       fetchMaintenanceReminders(),
       fetchAllBvs(),
+      fetchProtocolOpenMangelsForListCounters(),
     ])
     setCustomers(customerData ?? [])
     setMaintenanceReminders(reminderData ?? [])
     setAllBvs(bvsData ?? [])
+    setProtocolMangels(protocolPack)
     setIsLoading(false)
   }, [])
 
@@ -1334,9 +1376,12 @@ const Kunden = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                     <div className="min-w-0">
-                      <p className="font-medium text-slate-800 dark:text-slate-100">
-                        {customer.name}
-                        <span className="ml-2 text-sm font-normal text-slate-400 dark:text-slate-500">
+                      <p className="font-medium text-slate-800 dark:text-slate-100 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                        <span className="inline-flex items-center">
+                          {customer.name}
+                          <ProtocolMangelCustomerBadge count={protocolMangelTotalByCustomerId[customer.id] ?? 0} />
+                        </span>
+                        <span className="text-sm font-normal text-slate-400 dark:text-slate-500">
                           ({bvCountByCustomerId.get(customer.id) ?? 0} BV{bvCountByCustomerId.get(customer.id) !== 1 ? 's' : ''})
                         </span>
                       </p>
@@ -1467,7 +1512,10 @@ const Kunden = () => {
                                       )
                                     })()}
                                     <div>
-                                      <p className="font-medium text-slate-600 dark:text-slate-300 text-xs">{getObjectDisplayName(obj)}</p>
+                                      <p className="font-medium text-slate-600 dark:text-slate-300 text-xs inline-flex items-center gap-1.5 flex-wrap">
+                                        {getObjectDisplayName(obj)}
+                                        <ProtocolMangelObjectBadge count={protocolMangelCountByObjectId[obj.id] ?? 0} />
+                                      </p>
                                       <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatObjectRoomFloor(obj)}</p>
                                     </div>
                                   </div>
@@ -1498,8 +1546,9 @@ const Kunden = () => {
                                       <Link
                                         to={`/auftrag/neu-aus-qr?customerId=${customer.id}&objectId=${obj.id}`}
                                         className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                        aria-label={`Auftrag anlegen: ${getObjectDisplayName(obj)}`}
                                       >
-                                        Wartung / Reparatur
+                                        Auftrag
                                       </Link>
                                     )}
                                     {isEnabled('wartungsprotokolle') && (
@@ -1660,7 +1709,10 @@ const Kunden = () => {
                                         )
                                       })()}
                                       <div>
-                                        <p className="font-medium text-slate-600 dark:text-slate-300 text-xs">{getObjectDisplayName(obj)}</p>
+                                        <p className="font-medium text-slate-600 dark:text-slate-300 text-xs inline-flex items-center gap-1.5 flex-wrap">
+                                          {getObjectDisplayName(obj)}
+                                          <ProtocolMangelObjectBadge count={protocolMangelCountByObjectId[obj.id] ?? 0} />
+                                        </p>
                                         <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatObjectRoomFloor(obj)}</p>
                                       </div>
                                     </div>
@@ -1691,8 +1743,9 @@ const Kunden = () => {
                                         <Link
                                           to={`/auftrag/neu-aus-qr?customerId=${customer.id}&objectId=${obj.id}`}
                                           className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                          aria-label={`Auftrag anlegen: ${getObjectDisplayName(obj)}`}
                                         >
-                                          Wartung / Reparatur
+                                          Auftrag
                                         </Link>
                                       )}
                                       {isEnabled('wartungsprotokolle') && (
@@ -1875,7 +1928,10 @@ const Kunden = () => {
                                                   )
                                                 })()}
                                                 <div>
-                                                  <p className="font-medium text-slate-600 dark:text-slate-300 text-xs">{getObjectDisplayName(obj)}</p>
+                                                  <p className="font-medium text-slate-600 dark:text-slate-300 text-xs inline-flex items-center gap-1.5 flex-wrap">
+                                                    {getObjectDisplayName(obj)}
+                                                    <ProtocolMangelObjectBadge count={protocolMangelCountByObjectId[obj.id] ?? 0} />
+                                                  </p>
                                                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                                     {formatObjectRoomFloor(obj)}
                                                   </p>
@@ -1916,8 +1972,9 @@ const Kunden = () => {
                                                   <Link
                                                     to={`/auftrag/neu-aus-qr?customerId=${customer.id}&bvId=${bv.id}&objectId=${obj.id}`}
                                                     className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                                    aria-label={`Auftrag anlegen: ${getObjectDisplayName(obj)}`}
                                                   >
-                                                    Wartung / Reparatur
+                                                    Auftrag
                                                   </Link>
                                                 )}
                                                 {isEnabled('wartungsprotokolle') && (
@@ -2217,6 +2274,11 @@ const Kunden = () => {
           object={editingObject}
           canEdit={canEdit}
           canDelete={canDelete}
+          protocolOpenMangelRows={
+            editingObject?.id && protocolMangels
+              ? protocolMangels.rows.filter((r) => r.object_id === editingObject.id)
+              : undefined
+          }
           onClose={handleObjectModalFinished}
           onSuccess={async () => {
             if (expandedCustomerId) {

@@ -1,9 +1,9 @@
 {
-  "version": "1.0.8",
+  "version": "1.1.0",
   "buildTime": "",
   "releaseNotes": [
-    "CI-Hotfix: checklistProtocol/checklistProtocolService und Feststell-Parsing mit versioniert, damit Datenservice- und Protokolltests konsistent laufen.",
-    "Import-/Parser-Konsistenz für Wartungs-Checklisten (Tür + Feststellanlage) in Completion-Extra verbessert."
+    "Großes Wartungs-/Checklisten-Update: neue Tür- und Feststellanlagen-Checklisten mit gespeicherten Protokollblöcken, Mangel-Logik und PDF-Erweiterungen.",
+    "Objekt-/Mangel-Fotofluss erweitert (inkl. Defektfotos) sowie verbesserte Auftragsdarstellung, Konflikt-Hinweise und UI-Bausteine."
   ],
   "releaseLabel": "Beta"
 }

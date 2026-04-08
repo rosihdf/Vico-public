@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useSync } from './SyncContext'
 import { useToast } from './ToastContext'
@@ -46,6 +46,12 @@ import {
 } from './lib/briefbogenService'
 import { isOnline } from '../shared/networkUtils'
 import {
+  getMandantPingEnabled,
+  setMandantPingEnabled,
+  MANDANT_PING_INTERVAL_MS,
+  MANDANT_PING_PREFERENCE_EVENT,
+} from '../shared/mandantReachabilityPing'
+import {
   getEtikettPresetId,
   setEtikettPresetId,
   ETIKETT_PRESET_OPTIONS,
@@ -53,13 +59,17 @@ import {
 } from './lib/etikettPreset'
 import { isEtikettendruckerAvailable } from './lib/etikettendrucker'
 import {
-  fetchMonteurReportSettings,
+  fetchMonteurReportSettingsFull,
   updateMonteurReportSettings,
+  updateMonteurReportWartungChecklisteSettings,
+  updateMonteurReportPortalPdfShareSettings,
   fetchMonteurReportOrgDigestSettings,
   updateMonteurReportOrgDigestSettings,
   type MonteurReportCustomerDeliveryMode,
+  type WartungChecklisteModus,
 } from './lib/dataService'
-import MfaSettings from './components/MfaSettings'
+import { fetchDoorFieldCatalog, updateDoorFieldCatalog } from './lib/doorFieldCatalog'
+import { COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL } from './lib/componentSettingsService'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   offline: '🔴 Offline',
@@ -75,12 +85,15 @@ const DIGEST_TIMEZONE_OPTIONS = [
   'UTC',
 ] as const
 
+const doorCatalogLinesToList = (s: string) => s.split('\n').map((l) => l.trim()).filter(Boolean)
+
 const Einstellungen = () => {
   const { showToast } = useToast()
   const { syncStatus, isOffline, setSyncStatus, syncNow, pendingCount, lastSyncError, clearSyncError } = useSync()
   const { userRole, user } = useAuth()
   const { design, license, refresh: refreshLicense } = useLicense()
   const { settingsList, updateSetting, refresh, isEnabled } = useComponentSettings()
+  const kundenModuleOn = isEnabled('kunden')
   const licenseNumber = getStoredLicenseNumber()
   const cachedLicense = licenseNumber ? getCachedLicenseResponse(licenseNumber) : null
   const impressum = cachedLicense?.impressum
@@ -116,6 +129,12 @@ const Einstellungen = () => {
   const [digestSettingsLoaded, setDigestSettingsLoaded] = useState(false)
   const [digestSaving, setDigestSaving] = useState(false)
   const [digestError, setDigestError] = useState<string | null>(null)
+  const [doorCatDoor, setDoorCatDoor] = useState('')
+  const [doorCatLockM, setDoorCatLockM] = useState('')
+  const [doorCatLockT, setDoorCatLockT] = useState('')
+  const [doorCatLoading, setDoorCatLoading] = useState(false)
+  const [doorCatSaving, setDoorCatSaving] = useState(false)
+  const [doorCatError, setDoorCatError] = useState<string | null>(null)
   const [etikettPreset, setEtikettPresetState] = useState<EtikettPresetId>(() =>
     typeof window !== 'undefined' ? getEtikettPresetId() : 'mini_50x25'
   )
@@ -124,6 +143,20 @@ const Einstellungen = () => {
   const [monteurDeliveryLoaded, setMonteurDeliveryLoaded] = useState(false)
   const [monteurDeliverySaving, setMonteurDeliverySaving] = useState(false)
   const [monteurDeliveryError, setMonteurDeliveryError] = useState<string | null>(null)
+  const [wartungChecklisteModus, setWartungChecklisteModus] = useState<WartungChecklisteModus>('detail')
+  const [mangelNeuerAuftragDefault, setMangelNeuerAuftragDefault] = useState(true)
+  const [wartungChecklisteSaving, setWartungChecklisteSaving] = useState(false)
+  const [wartungChecklisteError, setWartungChecklisteError] = useState<string | null>(null)
+  const [portalShareMonteurPdf, setPortalShareMonteurPdf] = useState(true)
+  const [portalSharePruefPdf, setPortalSharePruefPdf] = useState(true)
+  const [portalTimelineShowPlanned, setPortalTimelineShowPlanned] = useState(false)
+  const [portalTimelineShowTermin, setPortalTimelineShowTermin] = useState(true)
+  const [portalTimelineShowInProgress, setPortalTimelineShowInProgress] = useState(true)
+  const [portalPdfShareSaving, setPortalPdfShareSaving] = useState(false)
+  const [portalPdfShareError, setPortalPdfShareError] = useState<string | null>(null)
+  const [mandantPingEnabled, setMandantPingEnabledState] = useState(() =>
+    typeof window !== 'undefined' ? getMandantPingEnabled() : false
+  )
   const [stammdatenForm, setStammdatenForm] = useState({
     company_name: '',
     address: '',
@@ -196,9 +229,16 @@ const Einstellungen = () => {
     if (!showMonteurBerichtZustellung) return
     let cancelled = false
     const load = async () => {
-      const row = await fetchMonteurReportSettings()
+      const row = await fetchMonteurReportSettingsFull()
       if (cancelled) return
       setMonteurDeliveryMode(row?.customer_delivery_mode ?? 'none')
+      setWartungChecklisteModus(row?.wartung_checkliste_modus ?? 'detail')
+      setMangelNeuerAuftragDefault(row?.mangel_neuer_auftrag_default ?? true)
+      setPortalShareMonteurPdf(row?.portal_share_monteur_report_pdf ?? true)
+      setPortalSharePruefPdf(row?.portal_share_pruefprotokoll_pdf ?? true)
+      setPortalTimelineShowPlanned(row?.portal_timeline_show_planned ?? false)
+      setPortalTimelineShowTermin(row?.portal_timeline_show_termin ?? true)
+      setPortalTimelineShowInProgress(row?.portal_timeline_show_in_progress ?? true)
       setMonteurDeliveryLoaded(true)
     }
     void load()
@@ -206,6 +246,7 @@ const Einstellungen = () => {
       cancelled = true
     }
   }, [showMonteurBerichtZustellung])
+
 
   const refreshBriefbogenPreview = useCallback(async () => {
     if (!showBriefbogenSettings) return
@@ -470,6 +511,93 @@ const Einstellungen = () => {
     showToast('Zustellung Monteursbericht gespeichert.', 'success')
   }
 
+  const handleSaveWartungChecklisteSettings = async () => {
+    if (!showMonteurBerichtZustellung || wartungChecklisteSaving) return
+    if (!isOnline()) {
+      setWartungChecklisteError('Nur online speicherbar; bitte Verbindung herstellen.')
+      return
+    }
+    setWartungChecklisteSaving(true)
+    setWartungChecklisteError(null)
+    const { error } = await updateMonteurReportWartungChecklisteSettings({
+      wartung_checkliste_modus: wartungChecklisteModus,
+      mangel_neuer_auftrag_default: mangelNeuerAuftragDefault,
+    })
+    setWartungChecklisteSaving(false)
+    if (error) {
+      setWartungChecklisteError(error.message)
+      return
+    }
+    showToast('Prüfbericht-Checkliste Einstellungen gespeichert.', 'success')
+  }
+
+  const handleSavePortalPdfShare = async () => {
+    if (!showMonteurBerichtZustellung || !showMonteurPortalOption || portalPdfShareSaving) return
+    if (!isOnline()) {
+      setPortalPdfShareError('Nur online speicherbar; bitte Verbindung herstellen.')
+      return
+    }
+    setPortalPdfShareSaving(true)
+    setPortalPdfShareError(null)
+    const { error } = await updateMonteurReportPortalPdfShareSettings({
+      portal_share_monteur_report_pdf: portalShareMonteurPdf,
+      portal_share_pruefprotokoll_pdf: portalSharePruefPdf,
+      portal_timeline_show_planned: portalTimelineShowPlanned,
+      portal_timeline_show_termin: portalTimelineShowTermin,
+      portal_timeline_show_in_progress: portalTimelineShowInProgress,
+    })
+    setPortalPdfShareSaving(false)
+    if (error) {
+      setPortalPdfShareError(error.message)
+      return
+    }
+    showToast('Kundenportal-Einstellungen gespeichert.', 'success')
+  }
+
+  const handleMandantPingChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.checked
+    setMandantPingEnabled(v)
+    setMandantPingEnabledState(v)
+    window.dispatchEvent(new Event(MANDANT_PING_PREFERENCE_EVENT))
+  }
+
+  useEffect(() => {
+    if (userRole !== 'admin' || !kundenModuleOn) return
+    let cancelled = false
+    setDoorCatLoading(true)
+    void fetchDoorFieldCatalog().then((c) => {
+      if (cancelled) return
+      setDoorCatDoor(c.door_manufacturers.join('\n'))
+      setDoorCatLockM(c.lock_manufacturers.join('\n'))
+      setDoorCatLockT(c.lock_types.join('\n'))
+      setDoorCatLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [userRole, kundenModuleOn])
+
+  const handleSaveDoorFieldCatalog = async () => {
+    if (userRole !== 'admin' || !kundenModuleOn || doorCatSaving) return
+    if (!isOnline()) {
+      setDoorCatError('Nur online speicherbar; bitte Verbindung herstellen.')
+      return
+    }
+    setDoorCatSaving(true)
+    setDoorCatError(null)
+    const { error } = await updateDoorFieldCatalog({
+      door_manufacturers: doorCatalogLinesToList(doorCatDoor),
+      lock_manufacturers: doorCatalogLinesToList(doorCatLockM),
+      lock_types: doorCatalogLinesToList(doorCatLockT),
+    })
+    setDoorCatSaving(false)
+    if (error) {
+      setDoorCatError(error.message)
+      return
+    }
+    showToast('Auswahllisten Tür / Schließmittel gespeichert.', 'success')
+  }
+
   return (
     <div className="p-4 max-w-xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6">Einstellungen</h2>
@@ -493,6 +621,113 @@ const Einstellungen = () => {
           >
             Import öffnen
           </Link>
+        </section>
+      )}
+
+      {/* Tür / Schließmittel: Auswahllisten (Admin, Modul Kunden) */}
+      {userRole === 'admin' && kundenModuleOn && (
+        <section
+          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
+          aria-labelledby="door-field-catalog-heading"
+        >
+          <h3 id="door-field-catalog-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
+            Tür / Schließmittel (Auswahllisten)
+          </h3>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+            Eine Zeile pro Eintrag. Die Listen erscheinen in den Stammdaten der Tür/Tore als Dropdown, sofern unten
+            „Auswahllisten in Stammdaten aktiv“ eingeschaltet ist.
+          </p>
+          <label className="flex items-center justify-between gap-4 py-2 mb-3 border-b border-slate-200 dark:border-slate-600 cursor-pointer">
+            <span className="text-sm text-slate-700 dark:text-slate-200">Auswahllisten in Stammdaten aktiv</span>
+            <input
+              type="checkbox"
+              checked={isEnabled(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL)}
+              disabled={updatingKey === COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL}
+              onChange={async (e) => {
+                setComponentError(null)
+                const checked = e.target.checked
+                setUpdatingKey(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL)
+                const result = await updateSetting(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL, checked)
+                setUpdatingKey(null)
+                if (!result.ok) {
+                  setComponentError(result.error ?? 'Speichern fehlgeschlagen')
+                }
+              }}
+              className="w-5 h-5 rounded border-slate-300 dark:border-slate-500 text-vico-primary focus:ring-vico-primary disabled:opacity-50"
+              aria-label={
+                isEnabled(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL)
+                  ? 'Auswahllisten in Stammdaten deaktivieren'
+                  : 'Auswahllisten in Stammdaten aktivieren'
+              }
+            />
+          </label>
+          {!isEnabled(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL) ? (
+            <p
+              className="text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/30 px-3 py-2 rounded-lg mb-3"
+              role="status"
+            >
+              Deaktiviert: In Tür/Tor-Stammdaten erscheinen nur Freitextfelder (keine Dropdowns).
+            </p>
+          ) : null}
+          {doorCatLoading ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">Lade Katalog…</p>
+          ) : (
+            <div className="space-y-3 mb-4">
+              <div>
+                <label htmlFor="door-cat-manufacturers" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                  Tür-Hersteller
+                </label>
+                <textarea
+                  id="door-cat-manufacturers"
+                  value={doorCatDoor}
+                  onChange={(e) => setDoorCatDoor(e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm"
+                  placeholder="z. B. Mustermann GmbH"
+                  aria-label="Liste Tür-Hersteller, eine Zeile pro Eintrag"
+                />
+              </div>
+              <div>
+                <label htmlFor="door-cat-lock-m" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                  Schließmittel Hersteller
+                </label>
+                <textarea
+                  id="door-cat-lock-m"
+                  value={doorCatLockM}
+                  onChange={(e) => setDoorCatLockM(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm"
+                  aria-label="Liste Schließmittel-Hersteller"
+                />
+              </div>
+              <div>
+                <label htmlFor="door-cat-lock-t" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
+                  Schließmittel Typ
+                </label>
+                <textarea
+                  id="door-cat-lock-t"
+                  value={doorCatLockT}
+                  onChange={(e) => setDoorCatLockT(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-sm"
+                  aria-label="Liste Schließmittel-Typen"
+                />
+              </div>
+            </div>
+          )}
+          {doorCatError ? (
+            <p className="text-sm text-red-600 dark:text-red-400 mb-2" role="alert">
+              {doorCatError}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void handleSaveDoorFieldCatalog()}
+            disabled={doorCatSaving || doorCatLoading}
+            className="inline-flex px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+          >
+            {doorCatSaving ? 'Speichern…' : 'Auswahllisten speichern'}
+          </button>
         </section>
       )}
 
@@ -583,24 +818,6 @@ const Einstellungen = () => {
         </section>
       )}
 
-      {/* Sicherheit: 2FA optional (Standard aus), pro Nutzer — nicht in der Benutzerverwaltung zentral erzwungen */}
-      {user?.id && userRole !== 'kunde' && (
-        <section
-          id="sicherheit-2fa"
-          className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm scroll-mt-4"
-          aria-labelledby="security-2fa-heading"
-        >
-          <h3 id="security-2fa-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
-            Sicherheit
-          </h3>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-            Zwei-Faktor-Authentifizierung richten Sie für <strong className="font-medium text-slate-700 dark:text-slate-300">Ihr eigenes Konto</strong> ein
-            (optional). Admins können 2FA nicht für andere Nutzer erzwingen; Hinweis dazu steht in der Benutzerverwaltung.
-          </p>
-          <MfaSettings enrollFriendlyName={design?.app_name?.trim() || 'Vico'} />
-        </section>
-      )}
-
       {showMonteurBerichtZustellung && (
         <section
           className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
@@ -610,7 +827,7 @@ const Einstellungen = () => {
             id="monteur-zustellung-heading"
             className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2"
           >
-            Monteursbericht an Kunden (nach Auftrags-Abschluss)
+            Monteurbericht an Kunden (nach Auftrags-Abschluss)
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
             Gilt firmenweit für den Abschluss aus dem Auftrags-Monteursbericht (Tür/Tor-QR). Die Option „Kundenportal“
@@ -632,7 +849,7 @@ const Einstellungen = () => {
                   {
                     value: 'email_auto' as const,
                     label: 'Sofort per E-Mail (PDF im Anhang)',
-                    hint: 'Nach „Auftrag abschließen“ wird automatisch an die unter Kunde oder BV hinterlegte Wartungsprotokoll-Adresse gesendet (BV hat Vorrang).',
+                    hint: 'Nach „Auftrag abschließen“ wird automatisch an die unter Kunde oder BV hinterlegte Prüfbericht-Adresse gesendet (BV hat Vorrang).',
                   },
                   {
                     value: 'email_manual' as const,
@@ -644,7 +861,7 @@ const Einstellungen = () => {
                         {
                           value: 'portal_notify' as const,
                           label: 'Kundenportal + Benachrichtigung',
-                          hint: 'PDF als Wartungsbericht im Portal; Portal-Nutzer werden per E-Mail informiert (wie bei Wartungsprotokollen).',
+                          hint: 'PDF als Prüfbericht im Portal; Portal-Nutzer werden per E-Mail informiert.',
                         },
                       ]
                     : []),
@@ -688,8 +905,145 @@ const Einstellungen = () => {
             disabled={monteurDeliverySaving || !monteurDeliveryLoaded}
             className="inline-flex px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
           >
-            {monteurDeliverySaving ? 'Speichern…' : 'Monteursbericht-Zustellung speichern'}
+            {monteurDeliverySaving ? 'Speichern…' : 'Monteurbericht-Zustellung speichern'}
           </button>
+          {showMonteurPortalOption ? (
+            <div className="mt-4 border-t border-slate-200 dark:border-slate-600 pt-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                Kundenportal: PDF-Freigaben &amp; Auftrags-Fortschritt
+              </h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                Unabhängig von der Zustell-Option oben steuern Sie hier PDFs (Monteurbericht vs. Prüfprotokoll) sowie
+                Hinweise und eine einfache Zeitleiste zu Aufträgen an sichtbaren Türen im Kundenportal (Seite Berichte).
+              </p>
+              {!monteurDeliveryLoaded ? (
+                <p className="text-sm text-slate-500">Lade Einstellung…</p>
+              ) : (
+                <>
+                  <label className="flex items-start gap-3 cursor-pointer mb-2">
+                    <input
+                      type="checkbox"
+                      checked={portalShareMonteurPdf}
+                      onChange={(e) => setPortalShareMonteurPdf(e.target.checked)}
+                      className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                    />
+                    <span className="text-sm text-slate-800 dark:text-slate-100">
+                      Monteurbericht-PDF im Portal anzeigen
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer mb-2">
+                    <input
+                      type="checkbox"
+                      checked={portalSharePruefPdf}
+                      onChange={(e) => setPortalSharePruefPdf(e.target.checked)}
+                      className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                    />
+                    <span className="text-sm text-slate-800 dark:text-slate-100">
+                      Prüfprotokoll-PDF im Portal anzeigen
+                    </span>
+                  </label>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-3 mb-2">
+                    Auftrags-Fortschritt (Banner &amp; Zeitleiste)
+                  </p>
+                  <label className="flex items-start gap-3 cursor-pointer mb-2">
+                    <input
+                      type="checkbox"
+                      checked={portalTimelineShowPlanned}
+                      onChange={(e) => setPortalTimelineShowPlanned(e.target.checked)}
+                      className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                    />
+                    <span className="text-sm text-slate-800 dark:text-slate-100">
+                      Phase „geplant“ (Status offen) im Portal anzeigen
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer mb-2">
+                    <input
+                      type="checkbox"
+                      checked={portalTimelineShowTermin}
+                      onChange={(e) => setPortalTimelineShowTermin(e.target.checked)}
+                      className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                    />
+                    <span className="text-sm text-slate-800 dark:text-slate-100">
+                      Geplanten Wartungstermin in der Zeitleiste anzeigen
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer mb-2">
+                    <input
+                      type="checkbox"
+                      checked={portalTimelineShowInProgress}
+                      onChange={(e) => setPortalTimelineShowInProgress(e.target.checked)}
+                      className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                    />
+                    <span className="text-sm text-slate-800 dark:text-slate-100">
+                      Phase „in Bearbeitung“ / abgeschlossen in der Zeitleiste anzeigen
+                    </span>
+                  </label>
+                  {portalPdfShareError ? (
+                    <p className="text-sm text-red-600 dark:text-red-400 mb-2" role="alert">
+                      {portalPdfShareError}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={handleSavePortalPdfShare}
+                    disabled={portalPdfShareSaving || !monteurDeliveryLoaded}
+                    className="inline-flex px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                  >
+                    {portalPdfShareSaving ? 'Speichern…' : 'Kundenportal speichern'}
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
+          <div className="mt-4 border-t border-slate-200 dark:border-slate-600 pt-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+              Prüfbericht-Checkliste
+            </h4>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="checklist-modus"
+                  checked={wartungChecklisteModus === 'detail'}
+                  onChange={() => setWartungChecklisteModus('detail')}
+                  className="w-4 h-4 border-slate-300 text-vico-primary focus:ring-vico-primary"
+                />
+                Detailmodus
+              </label>
+              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="radio"
+                  name="checklist-modus"
+                  checked={wartungChecklisteModus === 'compact'}
+                  onChange={() => setWartungChecklisteModus('compact')}
+                  className="w-4 h-4 border-slate-300 text-vico-primary focus:ring-vico-primary"
+                />
+                Kompaktmodus
+              </label>
+            </div>
+            <label className="mt-3 flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={mangelNeuerAuftragDefault}
+                onChange={(e) => setMangelNeuerAuftragDefault(e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+              />
+              <span className="text-sm text-slate-800 dark:text-slate-100">
+                Nach Abschluss bei offenem Mangel standardmäßig Folgeauftrag empfehlen
+              </span>
+            </label>
+            {wartungChecklisteError ? (
+              <p className="text-sm text-red-600 dark:text-red-400 mt-2" role="alert">{wartungChecklisteError}</p>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleSaveWartungChecklisteSettings}
+              disabled={wartungChecklisteSaving || !monteurDeliveryLoaded}
+              className="mt-3 inline-flex px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+            >
+              {wartungChecklisteSaving ? 'Speichern…' : 'Checkliste-Einstellungen speichern'}
+            </button>
+          </div>
         </section>
       )}
 
@@ -786,6 +1140,31 @@ const Einstellungen = () => {
               </p>
             ) : null}
           </div>
+
+          {userRole === 'admin' && (
+            <div className="border-b border-slate-200 dark:border-slate-600 pb-4 mb-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                Netzwerk (Diagnose)
+              </h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                Optional: regelmäßiger Erreichbarkeits-Check zum Mandanten-Supabase (HEAD auf die REST-Schnittstelle).
+                Standard ist aus. Bei Aktivierung etwa alle {MANDANT_PING_INTERVAL_MS / 60_000} Minuten; nur
+                in diesem Browser gespeichert. Wirkt auf den Hinweis bei instabiler Verbindung (eingeschränkter Modus).
+              </p>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={mandantPingEnabled}
+                  onChange={handleMandantPingChange}
+                  className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                  aria-label="Erreichbarkeits-Ping zum Mandanten-Server aktivieren"
+                />
+                <span className="text-sm text-slate-800 dark:text-slate-100">
+                  Erreichbarkeits-Ping zum Server aktivieren
+                </span>
+              </label>
+            </div>
+          )}
 
           {userRole === 'admin' && (
             <div className="border-b border-slate-200 dark:border-slate-600 pb-4 mb-4">
@@ -1343,18 +1722,18 @@ const Einstellungen = () => {
         </section>
       )}
 
-      {/* PDF-Briefbogen für Wartungsprotokolle (Admin) */}
+      {/* PDF-Briefbogen für Prüfberichte (Admin) */}
       {showBriefbogenSettings && (
         <section
           className="mb-6 p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-600 shadow-sm"
           aria-labelledby="briefbogen-heading"
         >
           <h3 id="briefbogen-heading" className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">
-            PDF-Briefbogen (Wartungsprotokoll)
+            PDF-Briefbogen (Prüfbericht)
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
             PNG- oder JPEG-Vorlage im <strong className="text-slate-700 dark:text-slate-300">A4-Format</strong> – wird
-            beim PDF-Export und beim E-Mail-Versand des Wartungsprotokolls als Hintergrund jeder Seite eingefügt. Inhalt
+            beim PDF-Export und beim E-Mail-Versand des Prüfberichts als Hintergrund jeder Seite eingefügt. Inhalt
             des Protokolls wird darüber gezeichnet; freie Bereiche in der Vorlage sind sinnvoll zu planen.
           </p>
           {briefbogenError && (
@@ -1430,7 +1809,9 @@ const Einstellungen = () => {
             </p>
           )}
           <div className="space-y-2">
-            {settingsList.map((item) => (
+            {settingsList
+              .filter((item) => item.component_key !== COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL)
+              .map((item) => (
               <label
                 key={item.id}
                 className="flex items-center justify-between gap-4 py-2 border-b border-slate-100 dark:border-slate-600 last:border-0 cursor-pointer"

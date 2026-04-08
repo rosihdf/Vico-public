@@ -16,6 +16,10 @@ export type MonteurBerichtPdfInput = {
   /** Vollständige URL für QR (z. B. Link zum Auftrag) */
   scanUrl: string
   letterheadDataUrl?: string | null
+  /** Wartung: automatische Liste geprüfter Türen (§7.2.4.4 / P2). */
+  wartungInspectedDoorLabels?: string[]
+  /** P8.F: Verweis, wenn Prüfprotokoll separat existiert. */
+  pruefprotokollKurzverweis?: boolean
 }
 
 export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): Promise<Blob> => {
@@ -29,6 +33,8 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
     orderTypeLabel,
     scanUrl,
     letterheadDataUrl,
+    wartungInspectedDoorLabels,
+    pruefprotokollKurzverweis,
   } = input
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
@@ -55,6 +61,17 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
     `Tür/Tor: ${objectLabel}`,
     `Monteur: ${extra.monteur_name}`,
     '',
+    ...(order.order_type === 'wartung' &&
+    wartungInspectedDoorLabels &&
+    wartungInspectedDoorLabels.length > 0
+      ? ['Geprüfte Türen / Objekte:', ...wartungInspectedDoorLabels.map((l: string) => `  • ${l}`), '']
+      : []),
+    ...(pruefprotokollKurzverweis
+      ? [
+          'Hinweis: Ausführliches Prüfprotokoll (Checklisten Tür/Feststellanlage) liegt als separates PDF vor.',
+          '',
+        ]
+      : []),
     `Ausgeführte Arbeiten:`,
     ...(completion.ausgeführte_arbeiten ?? '').split('\n').filter(Boolean).length
       ? (completion.ausgeführte_arbeiten ?? '').split('\n')

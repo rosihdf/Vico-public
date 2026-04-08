@@ -170,7 +170,8 @@ const Scan = () => {
       <h2 className="text-xl font-bold text-slate-800">QR-Scan</h2>
       <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
         Scanne einen Tür/Tor-QR-Code: Es öffnet sich die Übersicht mit Stammdaten – dort können Sie einen Wartungs- oder
-        Reparaturauftrag anlegen und direkt zur Abarbeitung wechseln.
+        Reparaturauftrag anlegen und direkt zur Abarbeitung wechseln. Gibt es bereits offene Aufträge für dieselbe
+        Tür/Tor, werden diese auf der folgenden Seite angezeigt.
       </p>
 
       {status === 'idle' && (
@@ -216,7 +217,13 @@ const Scan = () => {
       )}
 
       {message && (
-        <p className="mt-4 text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">{message}</p>
+        <p
+          className="mt-4 text-sm text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 p-3 rounded-lg"
+          role="status"
+          aria-live="polite"
+        >
+          {message}
+        </p>
       )}
     </div>
   )

@@ -25,8 +25,11 @@ const applyDesignToDom = (design: { app_name?: string; primary_color: string; fa
     themeColorMeta.setAttribute('content', primary)
   }
 
-  if (design.app_name) {
-    document.title = `${design.app_name} Türen & Tore`
+  const displayName = design.app_name?.trim()
+  if (displayName) {
+    document.title = displayName
+  } else {
+    document.title = 'Vico'
   }
 
   let faviconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
@@ -47,7 +50,7 @@ const clearDesignFromDom = () => {
   root.style.removeProperty('--vico-primary')
   root.style.removeProperty('--vico-primary-hover')
 
-  document.title = 'AMRtech Türen & Tore'
+  document.title = 'Vico'
 
   const themeColorMeta = document.querySelector('meta[name="theme-color"]')
   if (themeColorMeta) {

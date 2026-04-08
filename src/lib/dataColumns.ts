@@ -82,13 +82,22 @@ export const OBJECT_COLUMNS =
     'maintenance_by_manufacturer',
     'hold_open_maintenance',
     'defects',
+    'defects_structured',
     'remarks',
     'maintenance_interval_months',
+    'last_door_maintenance_date',
+    'door_maintenance_date_manual',
+    'hold_open_last_maintenance_date',
+    'hold_open_maintenance_interval_months',
+    'hold_open_last_maintenance_manual',
     'profile_photo_path',
     'archived_at',
     'created_at',
     'updated_at',
   ].join(', ')
+
+export const OBJECT_DEFECT_PHOTO_COLUMNS =
+  'id, object_id, defect_entry_id, storage_path, created_at'
 
 export const ORDER_COLUMNS =
   [
@@ -125,6 +134,9 @@ export const ORDER_COMPLETION_COLUMNS = [
   'created_at',
   'updated_at',
 ].join(', ')
+
+/** Nur für Offline-Cache / Protokoll-Mängel-Aggregation (klein). */
+export const ORDER_COMPLETION_CACHE_COLUMNS = 'order_id, completion_extra, created_at'
 
 export const OBJECT_PHOTO_COLUMNS = [
   'id',
@@ -163,7 +175,10 @@ export const MAINTENANCE_REPORT_COLUMNS = [
   'technician_name_printed',
   'customer_name_printed',
   'pdf_path',
+  'pruefprotokoll_pdf_path',
   'synced',
+  'source_order_id',
+  'checklist_protocol',
   'created_at',
   'updated_at',
 ].join(', ')
@@ -174,6 +189,18 @@ export const MAINTENANCE_REPORT_PHOTO_COLUMNS = [
   'storage_path',
   'caption',
   'created_at',
+].join(', ')
+
+export const CHECKLIST_DEFECT_PHOTO_COLUMNS = [
+  'id',
+  'maintenance_report_id',
+  'object_id',
+  'checklist_scope',
+  'checklist_item_id',
+  'storage_path',
+  'caption',
+  'created_at',
+  'updated_at',
 ].join(', ')
 
 export const MAINTENANCE_REPORT_SMOKE_DETECTOR_COLUMNS = [

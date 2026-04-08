@@ -383,7 +383,34 @@ alter table public.objects add column if not exists maintenance_interval_months 
 alter table public.objects add column if not exists accessories_items jsonb default '[]'::jsonb;
 alter table public.objects add column if not exists profile_photo_path text;
 alter table public.objects add column if not exists archived_at timestamptz;
+alter table public.objects add column if not exists last_door_maintenance_date date;
+alter table public.objects add column if not exists door_maintenance_date_manual boolean default false;
+alter table public.objects add column if not exists hold_open_last_maintenance_date date;
+alter table public.objects add column if not exists hold_open_maintenance_interval_months int;
+alter table public.objects add column if not exists hold_open_last_maintenance_manual boolean default false;
+alter table public.objects add column if not exists defects_structured jsonb default '[]'::jsonb;
 alter table public.objects enable row level security;
+
+-- Stammdaten-Katalog Tür/Schließmittel (eine Zeile pro Mandanten-DB)
+create table if not exists public.door_field_catalog (
+  id smallint primary key default 1,
+  door_manufacturers jsonb not null default '[]'::jsonb,
+  lock_manufacturers jsonb not null default '[]'::jsonb,
+  lock_types jsonb not null default '[]'::jsonb,
+  updated_at timestamptz default now(),
+  constraint door_field_catalog_single_row check (id = 1)
+);
+insert into public.door_field_catalog (id) values (1)
+  on conflict (id) do nothing;
+alter table public.door_field_catalog enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'door_field_catalog' loop
+    execute format('drop policy if exists %I on public.door_field_catalog', r.policyname);
+  end loop;
+end $$;
+create policy "door_field_catalog read" on public.door_field_catalog for select using (auth.uid() is not null);
+create policy "door_field_catalog admin insert" on public.door_field_catalog for insert with check (public.is_admin());
+create policy "door_field_catalog admin update" on public.door_field_catalog for update using (public.is_admin()) with check (public.is_admin());
 
 create or replace function public.object_visible_to_user(o_bv_id uuid, o_customer_id uuid)
 returns boolean language sql security definer set search_path = public stable as $$
@@ -531,6 +558,48 @@ create policy "Non-leser can insert maintenance_report_photos" on public.mainten
 create policy "Non-leser can update maintenance_report_photos" on public.maintenance_report_photos for update using (auth.uid() is not null and not public.is_leser());
 create policy "Non-leser can delete maintenance_report_photos" on public.maintenance_report_photos for delete using (auth.uid() is not null and not public.is_leser());
 
+create table if not exists public.checklist_defect_photos (
+  id uuid default gen_random_uuid() primary key,
+  maintenance_report_id uuid references public.maintenance_reports(id) on delete cascade not null,
+  object_id uuid references public.objects(id) on delete cascade not null,
+  checklist_scope text not null check (checklist_scope in ('door', 'feststell')),
+  checklist_item_id text not null,
+  storage_path text not null,
+  caption text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.checklist_defect_photos enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'checklist_defect_photos' loop
+    execute format('drop policy if exists %I on public.checklist_defect_photos', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated read checklist_defect_photos" on public.checklist_defect_photos for select using (auth.uid() is not null);
+create policy "Non-leser insert checklist_defect_photos" on public.checklist_defect_photos for insert with check (auth.uid() is not null and not public.is_leser());
+create policy "Non-leser update checklist_defect_photos" on public.checklist_defect_photos for update using (auth.uid() is not null and not public.is_leser());
+create policy "Non-leser delete checklist_defect_photos" on public.checklist_defect_photos for delete using (auth.uid() is not null and not public.is_leser());
+
+-- Fotos zu Stammdaten-Mängeln (objects.defects_structured Einträge per defect_entry_id), max. 3 pro Mangel in der App
+create table if not exists public.object_defect_photos (
+  id uuid default gen_random_uuid() primary key,
+  object_id uuid not null references public.objects(id) on delete cascade,
+  defect_entry_id text not null,
+  storage_path text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_object_defect_photos_object_defect
+  on public.object_defect_photos (object_id, defect_entry_id);
+alter table public.object_defect_photos enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'object_defect_photos' loop
+    execute format('drop policy if exists %I on public.object_defect_photos', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated read object_defect_photos" on public.object_defect_photos for select using (auth.uid() is not null);
+create policy "Non-leser insert object_defect_photos" on public.object_defect_photos for insert with check (auth.uid() is not null and not public.is_leser());
+create policy "Non-leser delete object_defect_photos" on public.object_defect_photos for delete using (auth.uid() is not null and not public.is_leser());
+
 create table if not exists public.maintenance_report_smoke_detectors (
   id uuid default gen_random_uuid() primary key,
   report_id uuid references public.maintenance_reports(id) on delete cascade not null,
@@ -546,6 +615,39 @@ do $$ declare r record; begin
 end $$;
 create policy "Authenticated users can read maintenance_report_smoke_detectors" on public.maintenance_report_smoke_detectors for select using (auth.uid() is not null);
 create policy "Non-leser can insert maintenance_report_smoke_detectors" on public.maintenance_report_smoke_detectors for insert with check (auth.uid() is not null and not public.is_leser());
+
+-- Wartungsprotokoll aus Auftrags-Checkliste (je Auftrag + Objekt eine Zeile, revisionssicher nachgespeichert)
+alter table public.maintenance_reports add column if not exists source_order_id uuid references public.orders(id) on delete set null;
+alter table public.maintenance_reports add column if not exists checklist_protocol jsonb not null default '{}'::jsonb;
+alter table public.maintenance_reports add column if not exists pruefprotokoll_pdf_path text;
+create unique index if not exists idx_maintenance_reports_order_object
+  on public.maintenance_reports (source_order_id, object_id)
+  where source_order_id is not null;
+
+-- Follow-up Mängelbeseitigung (Zähler Badges, Workflow)
+create table if not exists public.defect_followups (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid references public.orders(id) on delete set null,
+  object_id uuid not null references public.objects(id) on delete cascade,
+  maintenance_report_id uuid not null references public.maintenance_reports(id) on delete cascade,
+  status text not null default 'offen'
+    check (status in ('offen', 'kv_versendet', 'kunde_bestaetigt', 'freigegeben', 'in_arbeit', 'behoben')),
+  assigned_to uuid references public.profiles(id) on delete set null,
+  notes text,
+  quote_attachment_path text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.defect_followups enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'defect_followups' loop
+    execute format('drop policy if exists %I on public.defect_followups', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated read defect_followups" on public.defect_followups
+  for select using (auth.uid() is not null);
+create policy "Non-leser manage defect_followups" on public.defect_followups
+  for all using (auth.uid() is not null and not public.is_leser());
 
 -- -----------------------------------------------------------------------------
 -- 4. AUFTRÄGE, ZEIT, URLAUB (leave_*), WORK SETTINGS, COMPONENT SETTINGS, AUDIT
@@ -631,6 +733,60 @@ drop trigger if exists check_order_assigned_to_valid_role on public.orders;
 create trigger check_order_assigned_to_valid_role
   before insert or update of assigned_to on public.orders
   for each row execute function public.check_order_assigned_to_valid_role();
+
+-- Höchstens ein aktiver Auftrag (offen / in_bearbeitung) pro Tür/Tor (object_id) – §11.19 / WP-ORD-01
+drop function if exists public.orders_enforce_single_active_per_object() cascade;
+create or replace function public.orders_enforce_single_active_per_object()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  oid uuid;
+  conflict_id uuid;
+begin
+  if new.status is distinct from 'offen' and new.status is distinct from 'in_bearbeitung' then
+    return new;
+  end if;
+
+  for oid in
+    select distinct u.x
+    from unnest(
+      coalesce(
+        new.object_ids,
+        case when new.object_id is not null then array[new.object_id] else array[]::uuid[] end
+      )
+    ) as u(x)
+  loop
+    if oid is null then
+      continue;
+    end if;
+    select o.id into conflict_id
+    from public.orders o
+    where o.id is distinct from new.id
+      and o.status in ('offen', 'in_bearbeitung')
+      and oid = any(
+        coalesce(
+          o.object_ids,
+          case when o.object_id is not null then array[o.object_id] else array[]::uuid[] end
+        )
+      )
+    limit 1;
+    if conflict_id is not null then
+      raise exception
+        'Für mindestens eine gewählte Tür/Tor existiert bereits ein aktiver Auftrag (offen oder in Bearbeitung). Bestehende Auftrags-ID: %',
+        conflict_id
+        using errcode = 'P0001';
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+drop trigger if exists orders_single_active_per_object on public.orders;
+create trigger orders_single_active_per_object
+  before insert or update of object_id, object_ids, status on public.orders
+  for each row execute function public.orders_enforce_single_active_per_object();
 
 -- Monteursbericht / Auftragsabarbeitung (1:1 pro Auftrag)
 create table if not exists public.order_completions (
@@ -1198,6 +1354,32 @@ create table if not exists public.monteur_report_settings (
 alter table public.monteur_report_settings add column if not exists maintenance_digest_local_time text default '07:00';
 alter table public.monteur_report_settings add column if not exists maintenance_digest_timezone text default 'Europe/Berlin';
 alter table public.monteur_report_settings add column if not exists app_public_url text default null;
+alter table public.monteur_report_settings add column if not exists wartung_checkliste_modus text default 'detail';
+alter table public.monteur_report_settings add column if not exists mangel_neuer_auftrag_default boolean default true;
+alter table public.monteur_report_settings add column if not exists portal_share_monteur_report_pdf boolean default true;
+alter table public.monteur_report_settings add column if not exists portal_share_pruefprotokoll_pdf boolean default true;
+alter table public.monteur_report_settings add column if not exists portal_timeline_show_planned boolean default false;
+alter table public.monteur_report_settings add column if not exists portal_timeline_show_termin boolean default true;
+alter table public.monteur_report_settings add column if not exists portal_timeline_show_in_progress boolean default true;
+do $$
+begin
+  alter table public.monteur_report_settings drop constraint if exists monteur_report_settings_wartung_checkliste_modus_check;
+  alter table public.monteur_report_settings
+    add constraint monteur_report_settings_wartung_checkliste_modus_check
+    check (wartung_checkliste_modus is null or wartung_checkliste_modus in ('compact', 'detail'));
+exception
+  when others then null;
+end $$;
+update public.monteur_report_settings set wartung_checkliste_modus = coalesce(wartung_checkliste_modus, 'detail') where id = 1;
+update public.monteur_report_settings set mangel_neuer_auftrag_default = coalesce(mangel_neuer_auftrag_default, true) where id = 1;
+update public.monteur_report_settings
+set
+  portal_share_monteur_report_pdf = coalesce(portal_share_monteur_report_pdf, true),
+  portal_share_pruefprotokoll_pdf = coalesce(portal_share_pruefprotokoll_pdf, true),
+  portal_timeline_show_planned = coalesce(portal_timeline_show_planned, false),
+  portal_timeline_show_termin = coalesce(portal_timeline_show_termin, true),
+  portal_timeline_show_in_progress = coalesce(portal_timeline_show_in_progress, true)
+where id = 1;
 insert into public.monteur_report_settings (id, customer_delivery_mode)
 values (1, 'none')
 on conflict (id) do nothing;
@@ -1211,6 +1393,87 @@ create policy "Authenticated read monteur_report_settings" on public.monteur_rep
   for select using (auth.uid() is not null);
 create policy "Admin manage monteur_report_settings" on public.monteur_report_settings
   for all using (public.is_admin());
+
+-- App-Wartungsmodus (Singleton): Hinweistext + serverseitiger Write-Guard
+create table if not exists public.app_maintenance_mode (
+  id int primary key default 1 check (id = 1),
+  enabled boolean not null default false,
+  message text,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.profiles(id) on delete set null
+);
+insert into public.app_maintenance_mode (id, enabled)
+values (1, false)
+on conflict (id) do nothing;
+alter table public.app_maintenance_mode enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'app_maintenance_mode' loop
+    execute format('drop policy if exists %I on public.app_maintenance_mode', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated read app_maintenance_mode" on public.app_maintenance_mode
+  for select using (auth.uid() is not null);
+create policy "Admin manage app_maintenance_mode" on public.app_maintenance_mode
+  for all using (public.is_admin());
+
+create or replace function public.is_app_maintenance_mode()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select coalesce((select enabled from public.app_maintenance_mode where id = 1), false);
+$$;
+grant execute on function public.is_app_maintenance_mode() to authenticated;
+
+create or replace function public.guard_app_maintenance_write()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.is_app_maintenance_mode() and not public.is_admin() then
+    raise exception 'APP_MAINTENANCE_MODE_ACTIVE'
+      using errcode = 'P0001',
+            hint = 'Die App befindet sich im Wartungsmodus. Schreibzugriffe sind vorübergehend deaktiviert.';
+  end if;
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
+end;
+$$;
+
+do $$
+declare
+  tbl text;
+  tbls text[] := array[
+    'customers',
+    'bvs',
+    'objects',
+    'object_photos',
+    'object_documents',
+    'maintenance_contracts',
+    'orders',
+    'order_completions',
+    'maintenance_reports',
+    'maintenance_report_photos',
+    'maintenance_report_smoke_detectors',
+    'defect_followups',
+    'component_settings',
+    'door_field_catalog'
+  ];
+begin
+  foreach tbl in array tbls loop
+    execute format('drop trigger if exists trg_guard_app_maintenance_write on public.%I', tbl);
+    execute format(
+      'create trigger trg_guard_app_maintenance_write before insert or update or delete on public.%I for each row execute function public.guard_app_maintenance_write()',
+      tbl
+    );
+  end loop;
+end $$;
 
 create table if not exists public.audit_log (
   id uuid default gen_random_uuid() primary key,
@@ -1256,7 +1519,7 @@ end;
 $$;
 do $$
 declare t text;
-  tbls text[] := array['customers','bvs','objects','object_photos','object_documents','maintenance_contracts','orders','order_completions','time_entries','time_breaks','profiles','maintenance_reports','maintenance_report_photos','maintenance_report_smoke_detectors','customer_portal_users','portal_user_object_visibility'];
+  tbls text[] := array['customers','bvs','objects','object_photos','object_documents','maintenance_contracts','orders','order_completions','time_entries','time_breaks','profiles','maintenance_reports','maintenance_report_photos','maintenance_report_smoke_detectors','defect_followups','customer_portal_users','portal_user_object_visibility'];
 begin
   foreach t in array tbls loop
     if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = t) then
@@ -1814,9 +2077,9 @@ language sql security definer set search_path = public stable as $$
   objs as (
     select o.id as object_id, o.bv_id, o.customer_id, o.internal_id, o.name as object_name, o.room as object_room, o.floor as object_floor, o.manufacturer as object_manufacturer,
            o.maintenance_interval_months,
-           coalesce(lm.d, null::date) as last_maintenance_date,
+           greatest(lm.d, o.last_door_maintenance_date) as last_maintenance_date,
            case when o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
-             then (coalesce(lm.d, current_date) + (o.maintenance_interval_months || ' months')::interval)::date else null end as next_maintenance_date
+             then (coalesce(greatest(lm.d, o.last_door_maintenance_date), current_date) + (o.maintenance_interval_months || ' months')::interval)::date else null end as next_maintenance_date
     from public.objects o left join last_maint lm on lm.object_id = o.id
     where o.archived_at is null
       and o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
@@ -1846,9 +2109,9 @@ language sql security definer set search_path = public stable as $$
   objs as (
     select o.id as object_id, o.bv_id, o.customer_id, o.internal_id, o.name as object_name, o.room as object_room, o.floor as object_floor, o.manufacturer as object_manufacturer,
            o.maintenance_interval_months,
-           coalesce(lm.d, null::date) as last_maintenance_date,
+           greatest(lm.d, o.last_door_maintenance_date) as last_maintenance_date,
            case when o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
-             then (coalesce(lm.d, current_date) + (o.maintenance_interval_months || ' months')::interval)::date else null end as next_maintenance_date
+             then (coalesce(greatest(lm.d, o.last_door_maintenance_date), current_date) + (o.maintenance_interval_months || ' months')::interval)::date else null end as next_maintenance_date
     from public.objects o left join last_maint lm on lm.object_id = o.id
     where o.archived_at is null
       and o.maintenance_interval_months is not null and o.maintenance_interval_months > 0
@@ -2578,13 +2841,112 @@ as $$
 $$;
 grant execute on function public.monteur_portal_delivery_eligible(uuid) to authenticated;
 
+-- Kundenportal: sichtbare Aufträge + Zeitleisten-Schalter (security definer, nur auth.uid() = p_user_id)
+drop function if exists public.get_portal_order_timeline(uuid);
+create or replace function public.get_portal_order_timeline(p_user_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+stable
+as $$
+declare
+  sp boolean := false;
+  st boolean := true;
+  sip boolean := true;
+  orders_json jsonb := '[]'::jsonb;
+begin
+  if p_user_id is distinct from auth.uid() then
+    return jsonb_build_object(
+      'settings',
+      jsonb_build_object(
+        'portal_timeline_show_planned', false,
+        'portal_timeline_show_termin', true,
+        'portal_timeline_show_in_progress', true
+      ),
+      'orders', '[]'::jsonb
+    );
+  end if;
+
+  select
+    coalesce(mrs.portal_timeline_show_planned, false),
+    coalesce(mrs.portal_timeline_show_termin, true),
+    coalesce(mrs.portal_timeline_show_in_progress, true)
+  into sp, st, sip
+  from public.monteur_report_settings mrs
+  where mrs.id = 1;
+
+  select coalesce(
+    jsonb_agg(
+      to_jsonb(t) - 'sort_date' - 'sort_time'
+      order by t.sort_date desc, t.sort_time desc nulls last
+    ),
+    '[]'::jsonb
+  )
+  into orders_json
+  from (
+    select
+      o.id,
+      o.status,
+      o.order_type,
+      o.order_date,
+      case when o.order_time is null then null else o.order_time::text end as order_time,
+      o.created_at,
+      o.updated_at,
+      (
+        select string_agg(ob.name, ', ' order by ob.name)
+        from unnest(
+          coalesce(
+            o.object_ids,
+            case when o.object_id is not null then array[o.object_id] else array[]::uuid[] end
+          )
+        ) as x(oid)
+        join public.objects ob on ob.id = x.oid
+        where public.portal_object_visible_to_user(p_user_id, ob.customer_id, ob.bv_id)
+          and ob.archived_at is null
+      ) as object_names,
+      o.order_date as sort_date,
+      o.order_time as sort_time
+    from public.orders o
+    where o.customer_id in (
+      select cpu.customer_id from public.customer_portal_users cpu
+      where cpu.user_id = p_user_id
+    )
+    and o.status in ('offen', 'in_bearbeitung', 'erledigt', 'storniert')
+    and exists (
+      select 1
+      from unnest(
+        coalesce(
+          o.object_ids,
+          case when o.object_id is not null then array[o.object_id] else array[]::uuid[] end
+        )
+      ) as u(oid)
+      join public.objects ob2 on ob2.id = u.oid
+      where public.portal_object_visible_to_user(p_user_id, ob2.customer_id, ob2.bv_id)
+        and ob2.archived_at is null
+    )
+  ) t;
+
+  return jsonb_build_object(
+    'settings',
+    jsonb_build_object(
+      'portal_timeline_show_planned', sp,
+      'portal_timeline_show_termin', st,
+      'portal_timeline_show_in_progress', sip
+    ),
+    'orders', orders_json
+  );
+end;
+$$;
+grant execute on function public.get_portal_order_timeline(uuid) to authenticated;
+
 drop function if exists public.get_portal_maintenance_reports(uuid);
 create or replace function public.get_portal_maintenance_reports(p_user_id uuid)
 returns table (
   report_id uuid, object_id uuid, maintenance_date date, maintenance_time text,
   reason text, reason_other text, manufacturer_maintenance_done boolean,
   hold_open_checked boolean, deficiencies_found boolean, deficiency_description text,
-  urgency text, fixed_immediately boolean, pdf_path text, created_at timestamptz,
+  urgency text, fixed_immediately boolean, pdf_path text, pruefprotokoll_pdf_path text, created_at timestamptz,
   object_name text, object_internal_id text, object_floor text, object_room text,
   bv_name text, customer_name text
 )
@@ -2593,14 +2955,19 @@ language sql security definer set search_path = public stable as $$
     mr.id as report_id, mr.object_id, mr.maintenance_date, mr.maintenance_time,
     mr.reason, mr.reason_other, mr.manufacturer_maintenance_done,
     mr.hold_open_checked, mr.deficiencies_found, mr.deficiency_description,
-    mr.urgency, mr.fixed_immediately, mr.pdf_path, mr.created_at,
+    mr.urgency, mr.fixed_immediately,
+    case when coalesce(mrs.portal_share_monteur_report_pdf, true) then mr.pdf_path else null end as pdf_path,
+    case when coalesce(mrs.portal_share_pruefprotokoll_pdf, true) then mr.pruefprotokoll_pdf_path else null end as pruefprotokoll_pdf_path,
+    mr.created_at,
     o.name as object_name, o.internal_id as object_internal_id, o.floor as object_floor, o.room as object_room,
     b.name as bv_name, c.name as customer_name
   from public.maintenance_reports mr
   join public.objects o on o.id = mr.object_id
   left join public.bvs b on b.id = o.bv_id
   join public.customers c on c.id = coalesce(b.customer_id, o.customer_id)
-  where c.id in (select customer_id from public.customer_portal_users where user_id = p_user_id)
+  cross join public.monteur_report_settings mrs
+  where mrs.id = 1
+    and c.id in (select customer_id from public.customer_portal_users where user_id = p_user_id)
     and public.portal_object_visible_to_user(p_user_id, c.id, o.bv_id)
   order by mr.maintenance_date desc;
 $$;
@@ -2613,11 +2980,30 @@ returns text language sql security definer set search_path = public stable as $$
   join public.objects o on o.id = mr.object_id
   left join public.bvs b on b.id = o.bv_id
   join public.customers c on c.id = coalesce(b.customer_id, o.customer_id)
-  where mr.id = p_report_id
+  cross join public.monteur_report_settings mrs
+  where mrs.id = 1
+    and coalesce(mrs.portal_share_monteur_report_pdf, true) = true
+    and mr.id = p_report_id
     and c.id in (select customer_id from public.customer_portal_users where user_id = auth.uid())
     and public.portal_object_visible_to_user(auth.uid(), c.id, o.bv_id);
 $$;
 grant execute on function public.get_portal_pdf_path(uuid) to authenticated;
+
+create or replace function public.get_portal_pruefprotokoll_pdf_path(p_report_id uuid)
+returns text language sql security definer set search_path = public stable as $$
+  select mr.pruefprotokoll_pdf_path
+  from public.maintenance_reports mr
+  join public.objects o on o.id = mr.object_id
+  left join public.bvs b on b.id = o.bv_id
+  join public.customers c on c.id = coalesce(b.customer_id, o.customer_id)
+  cross join public.monteur_report_settings mrs
+  where mrs.id = 1
+    and coalesce(mrs.portal_share_pruefprotokoll_pdf, true) = true
+    and mr.id = p_report_id
+    and c.id in (select customer_id from public.customer_portal_users where user_id = auth.uid())
+    and public.portal_object_visible_to_user(auth.uid(), c.id, o.bv_id);
+$$;
+grant execute on function public.get_portal_pruefprotokoll_pdf_path(uuid) to authenticated;
 
 -- -----------------------------------------------------------------------------
 -- 7. STORAGE BUCKETS

@@ -4,6 +4,8 @@ import { applyVicoPrimaryCssVars, clearVicoPrimaryCssVars } from '../../shared/v
 import { TIER_DEFAULT_FEATURES } from '../../shared/licenseFeatures'
 import type { AppVersionEntry } from '../../shared/appVersions'
 import { useLicenseClientConfigVersionPoll } from '../../shared/useLicenseClientConfigVersionPoll'
+import type { TenantMaintenanceApiShape } from '../../shared/tenantMaintenanceMode'
+import type { MandantenReleasesApiPayload } from '../../shared/mandantenReleaseApi'
 
 type DesignContextType = {
   appName: string
@@ -13,6 +15,8 @@ type DesignContextType = {
   isLoading: boolean
   /** Lizenz-Features (effektiv inkl. Tier-Defaults) */
   features: Record<string, boolean>
+  maintenance: TenantMaintenanceApiShape | null
+  mandantenReleases: MandantenReleasesApiPayload | null
   refresh: () => Promise<void>
 }
 
@@ -27,6 +31,8 @@ export const useDesign = (): DesignContextType => {
       appVersionInfo: null,
       isLoading: false,
       features: {},
+      maintenance: null,
+      mandantenReleases: null,
       refresh: async () => {},
     }
   }
@@ -38,6 +44,8 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [features, setFeatures] = useState<Record<string, boolean>>({})
   const [appVersionInfo, setAppVersionInfo] = useState<AppVersionEntry | null>(null)
+  const [maintenance, setMaintenance] = useState<TenantMaintenanceApiShape | null>(null)
+  const [mandantenReleases, setMandantenReleases] = useState<MandantenReleasesApiPayload | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -47,6 +55,8 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
       setAppName(getDefaultAppName())
       setLogoUrl(null)
       setAppVersionInfo(null)
+      setMaintenance(null)
+      setMandantenReleases(null)
       setFeatures(TIER_DEFAULT_FEATURES.professional)
       applyVicoPrimaryCssVars('#5b7895')
       setIsLoading(false)
@@ -61,9 +71,13 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
       setAppName(getDefaultAppName())
       setLogoUrl(null)
       setAppVersionInfo(null)
+      setMaintenance(null)
+      setMandantenReleases(null)
       setFeatures({})
       applyVicoPrimaryCssVars('#5b7895')
     } else {
+      setMaintenance(full.maintenance ?? null)
+      setMandantenReleases(full.mandantenReleases ?? null)
       setAppVersionInfo(full.appVersions?.arbeitszeit_portal ?? null)
       if (full.design.app_name) setAppName(full.design.app_name)
       setLogoUrl(full.design.logo_url?.trim() ? full.design.logo_url.trim() : null)
@@ -107,7 +121,18 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
   }, [])
 
   return (
-    <DesignContext.Provider value={{ appName, logoUrl, appVersionInfo, isLoading, features, refresh: load }}>
+    <DesignContext.Provider
+      value={{
+        appName,
+        logoUrl,
+        appVersionInfo,
+        isLoading,
+        features,
+        maintenance,
+        mandantenReleases,
+        refresh: load,
+      }}
+    >
       {children}
     </DesignContext.Provider>
   )

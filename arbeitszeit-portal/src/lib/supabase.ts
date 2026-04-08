@@ -16,4 +16,5 @@ export const supabase = createSupabaseClient({
   anonKey: supabaseAnonKey,
   storageKey: 'vico-arbeitszeit-portal-auth',
   warnMessage: 'Arbeitszeitenportal: VITE_SUPABASE_URL und VITE_SUPABASE_ANON_KEY in .env prüfen.',
+  trackMandantDegraded: true,
 })

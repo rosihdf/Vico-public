@@ -6,7 +6,6 @@ import { supabase } from './supabase'
 import { fetchProfiles, updateProfileRole, updateProfileName, getProfileDisplayName, updateProfileRoleByEmail, fetchTeams, updateProfileTeam, createTeam, deleteTeam } from './lib/userService'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import PortalBadge from './components/PortalBadge'
-import MfaSettingsHint from './components/MfaSettingsHint'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
 import { useLicense } from './LicenseContext'
 import { useSync } from './SyncContext'
@@ -373,8 +372,6 @@ const Benutzerverwaltung = () => {
       <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
         Benutzer anlegen und Rollen verwalten (nur Admin).
       </p>
-
-      <MfaSettingsHint variant="benutzerverwaltung" />
 
       {license && (
         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useToast } from '../ToastContext'
+import { useComponentSettings } from '../ComponentSettingsContext'
 import ConfirmDialog from './ConfirmDialog'
 import CameraCaptureModal from './CameraCaptureModal'
 import { getSupabaseErrorMessage } from '../supabaseErrors'
@@ -20,8 +21,26 @@ import {
   uploadObjectDocument,
   deleteObjectDocument,
   getObjectDocumentUrl,
+  fetchObjectDefectPhotosForDefect,
+  uploadObjectDefectPhoto,
+  deleteObjectDefectPhoto,
+  getObjectDefectPhotoDisplayUrl,
+  deleteAllObjectDefectPhotosForEntry,
+  fetchProtocolOpenMangelsForListCounters,
+  fetchProtocolOpenMangelsDraftForObject,
+  fetchChecklistDefectPhotosGroupedForOrderObject,
+  getMaintenancePhotoUrl,
 } from '../lib/dataService'
-import type { Object as Obj, ObjectFormData, ObjectDocumentType } from '../types'
+import { fetchDoorFieldCatalog, type DoorFieldCatalog } from '../lib/doorFieldCatalog'
+import { COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL } from '../lib/componentSettingsService'
+import type { Object as Obj, ObjectFormData, ObjectDocumentType, ObjectDefectPhotoDisplay } from '../types'
+import type { ChecklistDefectPhoto } from '../types/maintenance'
+import type { ProtocolOpenMangelRow } from '../lib/protocolOpenMangels'
+import {
+  defectEntriesFromObject,
+  normalizeDefectEntriesForSave,
+  openDefectsToLegacyText,
+} from '../lib/objectDefects'
 import { accessoriesFormLinesToPayload, objectAccessoriesToFormLines } from '../lib/objectUtils'
 import type { ObjectDocumentDisplay, ObjectPhotoDisplay } from '../lib/dataService'
 
@@ -70,7 +89,7 @@ const INITIAL_FORM: ObjectFormData = {
   accessories_lines: [''],
   maintenance_by_manufacturer: false,
   hold_open_maintenance: false,
-  defects: '',
+  defect_entries: [],
   remarks: '',
   maintenance_interval_months: '',
 }
@@ -110,7 +129,7 @@ const objToFormData = (obj: Obj): ObjectFormData => ({
   accessories_lines: objectAccessoriesToFormLines(obj),
   maintenance_by_manufacturer: obj.maintenance_by_manufacturer ?? false,
   hold_open_maintenance: obj.hold_open_maintenance ?? false,
-  defects: obj.defects ?? '',
+  defect_entries: defectEntriesFromObject(obj),
   remarks: obj.remarks ?? '',
   maintenance_interval_months: obj.maintenance_interval_months?.toString() ?? '',
 })
@@ -125,6 +144,8 @@ type ObjectFormModalProps = {
   object: Obj | null
   canEdit: boolean
   canDelete: boolean
+  /** §11.17: optional vom Parent (Kunden); sonst wird bei Bearbeitung online geladen */
+  protocolOpenMangelRows?: ProtocolOpenMangelRow[]
   onClose: () => void
   onSuccess: () => void
 }
@@ -136,12 +157,15 @@ const ObjectFormModal = ({
   object,
   canEdit,
   canDelete,
+  protocolOpenMangelRows: protocolOpenMangelRowsProp,
   onClose,
   onSuccess,
 }: ObjectFormModalProps) => {
   const effectiveBvId = bvId ?? object?.bv_id ?? null
   const effectiveCustomerId = customerId ?? object?.customer_id ?? null
   const { showError } = useToast()
+  const { isEnabled } = useComponentSettings()
+  const doorStammdatenListsEnabled = isEnabled(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL)
   const isEdit = !!object
   /** Zuordnung: null = direkt unter Kunde, string = BV-ID. Wenn Kunde Objekte/BV hat, darf nicht "direkt unter Kunde" gewählt werden. */
   const bvsList = useMemo(() => customerBvs ?? [], [customerBvs])
@@ -159,6 +183,17 @@ const ObjectFormModal = ({
   }, [object, object?.id, effectiveBvId, bvsList])
   const [formData, setFormData] = useState<ObjectFormData>(
     object ? objToFormData(object) : { ...INITIAL_FORM, internal_id: `OBJ-${Date.now().toString(36).toUpperCase()}` }
+  )
+  const [showResolvedDefects, setShowResolvedDefects] = useState(false)
+  const [protocolRowsFetched, setProtocolRowsFetched] = useState<ProtocolOpenMangelRow[]>([])
+  const [protocolPhotosByKey, setProtocolPhotosByKey] = useState<Record<string, ChecklistDefectPhoto[]>>({})
+  const [protocolDraftRowsFetched, setProtocolDraftRowsFetched] = useState<ProtocolOpenMangelRow[]>([])
+  const [protocolDraftPhotosByKey, setProtocolDraftPhotosByKey] = useState<
+    Record<string, ChecklistDefectPhoto[]>
+  >({})
+  const [defectPanelExpanded, setDefectPanelExpanded] = useState(false)
+  const [defectPhotosByEntryId, setDefectPhotosByEntryId] = useState<Record<string, ObjectDefectPhotoDisplay[]>>(
+    {}
   )
   const [profilePhotoPathState, setProfilePhotoPathState] = useState<string | null>(
     object?.profile_photo_path?.trim() ?? null
@@ -188,6 +223,14 @@ const ObjectFormModal = ({
   const [confirmProfileRemoveOpen, setConfirmProfileRemoveOpen] = useState(false)
   const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false)
   const [isArchiving, setIsArchiving] = useState(false)
+  const [doorCatalog, setDoorCatalog] = useState<DoorFieldCatalog>({
+    door_manufacturers: [],
+    lock_manufacturers: [],
+    lock_types: [],
+  })
+  const [manufacturerUseFreeText, setManufacturerUseFreeText] = useState(true)
+  const [lockManufacturerUseFreeText, setLockManufacturerUseFreeText] = useState(true)
+  const [lockTypeUseFreeText, setLockTypeUseFreeText] = useState(true)
   /** Profil-Steuerung: öffnet per Klick auf Foto/Platzhalter im Kopfbereich */
   const [profilePanelOpen, setProfilePanelOpen] = useState(false)
   const pendingPreviewCleanupRef = useRef<string | null>(null)
@@ -208,6 +251,10 @@ const ObjectFormModal = ({
   const revokePendingGallery = (items: PendingGalleryPhoto[]) => {
     items.forEach((p) => URL.revokeObjectURL(p.previewUrl))
   }
+
+  useEffect(() => {
+    setShowResolvedDefects(false)
+  }, [object?.id])
 
   useEffect(() => {
     if (object) {
@@ -239,6 +286,29 @@ const ObjectFormModal = ({
   }, [object?.id])
 
   useEffect(() => {
+    if (!doorStammdatenListsEnabled) {
+      setDoorCatalog({ door_manufacturers: [], lock_manufacturers: [], lock_types: [] })
+      return
+    }
+    void fetchDoorFieldCatalog().then((c) => {
+      setDoorCatalog(c)
+      if (!object) {
+        setManufacturerUseFreeText(c.door_manufacturers.length === 0)
+        setLockManufacturerUseFreeText(c.lock_manufacturers.length === 0)
+        setLockTypeUseFreeText(c.lock_types.length === 0)
+        return
+      }
+      const fd = objToFormData(object)
+      const m = fd.manufacturer.trim()
+      const lm = fd.lock_manufacturer.trim()
+      const lt = fd.lock_type.trim()
+      setManufacturerUseFreeText(c.door_manufacturers.length === 0 || !c.door_manufacturers.includes(m))
+      setLockManufacturerUseFreeText(c.lock_manufacturers.length === 0 || !c.lock_manufacturers.includes(lm))
+      setLockTypeUseFreeText(c.lock_types.length === 0 || !c.lock_types.includes(lt))
+    })
+  }, [object?.id, doorStammdatenListsEnabled])
+
+  useEffect(() => {
     return () => {
       const u = pendingPreviewCleanupRef.current
       if (u) URL.revokeObjectURL(u)
@@ -262,6 +332,120 @@ const ObjectFormModal = ({
   }, [object?.id])
 
   useEffect(() => {
+    if (object) {
+      setDefectPanelExpanded(defectEntriesFromObject(object).length > 0)
+    } else {
+      setDefectPanelExpanded(false)
+    }
+  }, [object?.id])
+
+  const protocolRowsEffective =
+    protocolOpenMangelRowsProp !== undefined ? protocolOpenMangelRowsProp : protocolRowsFetched
+
+  useEffect(() => {
+    if (!object?.id) {
+      setProtocolRowsFetched([])
+      return
+    }
+    if (protocolOpenMangelRowsProp !== undefined) {
+      setProtocolRowsFetched([])
+      return
+    }
+    if (!isOnline()) {
+      setProtocolRowsFetched([])
+      return
+    }
+    let cancelled = false
+    void fetchProtocolOpenMangelsForListCounters().then((d) => {
+      if (cancelled) return
+      setProtocolRowsFetched(d.rows.filter((r) => r.object_id === object.id))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [object?.id, protocolOpenMangelRowsProp])
+
+  useEffect(() => {
+    if (!object?.id || !isEdit) {
+      setProtocolDraftRowsFetched([])
+      return
+    }
+    let cancelled = false
+    void fetchProtocolOpenMangelsDraftForObject(object.id).then((rows) => {
+      if (!cancelled) setProtocolDraftRowsFetched(rows)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [object?.id, isEdit])
+
+  const protocolPhotoOrderId = protocolRowsEffective[0]?.order_id ?? ''
+
+  useEffect(() => {
+    if (!object?.id || !protocolPhotoOrderId || !isOnline()) {
+      setProtocolPhotosByKey({})
+      return
+    }
+    let cancelled = false
+    void fetchChecklistDefectPhotosGroupedForOrderObject(protocolPhotoOrderId, object.id).then((m) => {
+      if (!cancelled) setProtocolPhotosByKey(m)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [object?.id, protocolPhotoOrderId])
+
+  const protocolDraftPhotoOrderId = protocolDraftRowsFetched[0]?.order_id ?? ''
+
+  useEffect(() => {
+    if (!object?.id || !protocolDraftPhotoOrderId || !isOnline()) {
+      setProtocolDraftPhotosByKey({})
+      return
+    }
+    let cancelled = false
+    void fetchChecklistDefectPhotosGroupedForOrderObject(protocolDraftPhotoOrderId, object.id).then((m) => {
+      if (!cancelled) setProtocolDraftPhotosByKey(m)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [object?.id, protocolDraftPhotoOrderId])
+
+  const defectEntryIdsKey = useMemo(
+    () =>
+      [...formData.defect_entries]
+        .map((e) => e.id)
+        .sort()
+        .join('|'),
+    [formData.defect_entries]
+  )
+
+  const galleryDisplayItems: ObjectPhotoDisplay[] = useMemo(
+    () => [...pendingGalleryPhotos.map(toPendingPhotoDisplay), ...objectPhotos],
+    [pendingGalleryPhotos, objectPhotos]
+  )
+
+  useEffect(() => {
+    if (!object?.id) {
+      setDefectPhotosByEntryId({})
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const next: Record<string, ObjectDefectPhotoDisplay[]> = {}
+      for (const e of formData.defect_entries) {
+        const photos = await fetchObjectDefectPhotosForDefect(object.id, e.id)
+        if (cancelled) return
+        next[e.id] = photos
+      }
+      if (!cancelled) setDefectPhotosByEntryId(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [object?.id, defectEntryIdsKey])
+
+  useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
@@ -272,6 +456,10 @@ const ObjectFormModal = ({
   const handleFormChange = (field: keyof ObjectFormData, value: string | number | boolean) => {
     setFormData((prev) => {
       const next = { ...prev, [field]: value }
+      if (field === 'has_hold_open' && value === false) {
+        next.smoke_detector_count = '0'
+        next.smoke_detector_build_years = []
+      }
       if (field === 'smoke_detector_count') {
         const count = parseInt(String(value), 10) || 0
         const buildYears = prev.smoke_detector_build_years
@@ -290,6 +478,86 @@ const ObjectFormModal = ({
       next[index] = value
       return { ...prev, smoke_detector_build_years: next }
     })
+  }
+
+  const handleAddDefectEntry = () => {
+    setDefectPanelExpanded(true)
+    setFormData((prev) => ({
+      ...prev,
+      defect_entries: [
+        ...prev.defect_entries,
+        {
+          id: crypto.randomUUID(),
+          text: '',
+          status: 'open',
+          created_at: new Date().toISOString(),
+          resolved_at: null,
+        },
+      ],
+    }))
+  }
+
+  const handleDefectPhotoInputChange = async (entryId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !object?.id) return
+    const { data, error } = await uploadObjectDefectPhoto({
+      objectId: object.id,
+      defectEntryId: entryId,
+      file,
+    })
+    if (error) {
+      showError(error.message)
+      return
+    }
+    if (data) {
+      setDefectPhotosByEntryId((prev) => ({
+        ...prev,
+        [entryId]: [...(prev[entryId] ?? []), data],
+      }))
+    }
+  }
+
+  const handleRemoveDefectPhoto = async (entryId: string, photo: ObjectDefectPhotoDisplay) => {
+    const { error } = await deleteObjectDefectPhoto(photo.id, photo.storage_path || null)
+    if (error) {
+      showError(error.message)
+      return
+    }
+    setDefectPhotosByEntryId((prev) => ({
+      ...prev,
+      [entryId]: (prev[entryId] ?? []).filter((p) => p.id !== photo.id),
+    }))
+  }
+
+  const handleDefectTextChange = (id: string, text: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      defect_entries: prev.defect_entries.map((e) => (e.id === id ? { ...e, text } : e)),
+    }))
+  }
+
+  const handleMarkDefectResolved = (id: string) => {
+    const now = new Date().toISOString()
+    setFormData((prev) => ({
+      ...prev,
+      defect_entries: prev.defect_entries.map((e) =>
+        e.id === id && e.status === 'open'
+          ? { ...e, status: 'resolved' as const, resolved_at: now }
+          : e
+      ),
+    }))
+  }
+
+  const handleReopenDefect = (id: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      defect_entries: prev.defect_entries.map((e) =>
+        e.id === id && e.status === 'resolved'
+          ? { ...e, status: 'open' as const, resolved_at: null }
+          : e
+      ),
+    }))
   }
 
   const handleAccessoryLineChange = (index: number, value: string) => {
@@ -361,6 +629,21 @@ const ObjectFormModal = ({
       setFormError('Bitte ein Objekt/BV auswählen. Wenn Objekte/BV vorhanden sind, muss die Tür einem zugeordnet sein.')
       return
     }
+    const defectNorm = normalizeDefectEntriesForSave(formData.defect_entries)
+    if (editingId && object) {
+      const prevEntries = defectEntriesFromObject(object)
+      const nextIds = new Set(defectNorm.map((e) => e.id))
+      for (const e of prevEntries) {
+        if (!nextIds.has(e.id)) {
+          const { error: phErr } = await deleteAllObjectDefectPhotosForEntry(editingId, e.id)
+          if (phErr) {
+            setFormError(phErr.message)
+            showError(phErr.message)
+            return
+          }
+        }
+      }
+    }
     setIsSaving(true)
     const payload = {
       bv_id: assignmentBvId,
@@ -381,17 +664,18 @@ const ObjectFormModal = ({
       lock_manufacturer: formData.lock_manufacturer.trim() || null,
       lock_type: formData.lock_type.trim() || null,
       has_hold_open: formData.has_hold_open,
-      hold_open_manufacturer: formData.hold_open_manufacturer.trim() || null,
-      hold_open_type: formData.hold_open_type.trim() || null,
-      hold_open_approval_no: formData.hold_open_approval_no.trim() || null,
-      hold_open_approval_date: formData.hold_open_approval_date.trim() || null,
-      smoke_detector_count: parseInt(formData.smoke_detector_count, 10) || 0,
-      smoke_detector_build_years: formData.smoke_detector_build_years,
+      hold_open_manufacturer: formData.has_hold_open ? formData.hold_open_manufacturer.trim() || null : null,
+      hold_open_type: formData.has_hold_open ? formData.hold_open_type.trim() || null : null,
+      hold_open_approval_no: formData.has_hold_open ? formData.hold_open_approval_no.trim() || null : null,
+      hold_open_approval_date: formData.has_hold_open ? formData.hold_open_approval_date.trim() || null : null,
+      smoke_detector_count: formData.has_hold_open ? parseInt(formData.smoke_detector_count, 10) || 0 : 0,
+      smoke_detector_build_years: formData.has_hold_open ? formData.smoke_detector_build_years : [],
       panic_function: formData.panic_function.trim() || null,
       ...accessoriesFormLinesToPayload(formData.accessories_lines),
-      maintenance_by_manufacturer: formData.maintenance_by_manufacturer,
-      hold_open_maintenance: formData.hold_open_maintenance,
-      defects: formData.defects.trim() || null,
+      maintenance_by_manufacturer: false,
+      hold_open_maintenance: false,
+      defects: openDefectsToLegacyText(defectNorm),
+      defects_structured: defectNorm,
       remarks: formData.remarks.trim() || null,
       maintenance_interval_months: formData.maintenance_interval_months.trim()
         ? parseInt(formData.maintenance_interval_months, 10) || null
@@ -559,11 +843,6 @@ const ObjectFormModal = ({
     zertifikat: 'Zertifikat',
     sonstiges: 'Sonstiges',
   }
-
-  const galleryDisplayItems: ObjectPhotoDisplay[] = useMemo(
-    () => [...pendingGalleryPhotos.map(toPendingPhotoDisplay), ...objectPhotos],
-    [pendingGalleryPhotos, objectPhotos]
-  )
 
   const profileThumbSrc = profilePhotoPathState?.trim()
     ? getObjectPhotoUrl(profilePhotoPathState.trim())
@@ -854,13 +1133,44 @@ const ObjectFormModal = ({
                 />
               </div>
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Hersteller</label>
-                <input
-                  type="text"
-                  value={formData.manufacturer}
-                  onChange={(e) => handleFormChange('manufacturer', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Hersteller</label>
+                  {doorStammdatenListsEnabled && doorCatalog.door_manufacturers.length > 0 ? (
+                    <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={manufacturerUseFreeText}
+                        onChange={(e) => setManufacturerUseFreeText(e.target.checked)}
+                        className="rounded border-slate-400 dark:border-slate-500 text-vico-primary focus:ring-vico-primary"
+                      />
+                      Freitext
+                    </label>
+                  ) : null}
+                </div>
+                {!doorStammdatenListsEnabled ||
+                manufacturerUseFreeText ||
+                doorCatalog.door_manufacturers.length === 0 ? (
+                  <input
+                    type="text"
+                    value={formData.manufacturer}
+                    onChange={(e) => handleFormChange('manufacturer', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  />
+                ) : (
+                  <select
+                    value={formData.manufacturer}
+                    onChange={(e) => handleFormChange('manufacturer', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                    aria-label="Hersteller aus Liste"
+                  >
+                    <option value="">— Bitte wählen —</option>
+                    {doorCatalog.door_manufacturers.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Baujahr</label>
@@ -874,22 +1184,82 @@ const ObjectFormModal = ({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Schließmittel Hersteller</label>
-                <input
-                  type="text"
-                  value={formData.lock_manufacturer}
-                  onChange={(e) => handleFormChange('lock_manufacturer', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Schließmittel Hersteller</label>
+                  {doorStammdatenListsEnabled && doorCatalog.lock_manufacturers.length > 0 ? (
+                    <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={lockManufacturerUseFreeText}
+                        onChange={(e) => setLockManufacturerUseFreeText(e.target.checked)}
+                        className="rounded border-slate-400 dark:border-slate-500 text-vico-primary focus:ring-vico-primary"
+                      />
+                      Freitext
+                    </label>
+                  ) : null}
+                </div>
+                {!doorStammdatenListsEnabled ||
+                lockManufacturerUseFreeText ||
+                doorCatalog.lock_manufacturers.length === 0 ? (
+                  <input
+                    type="text"
+                    value={formData.lock_manufacturer}
+                    onChange={(e) => handleFormChange('lock_manufacturer', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  />
+                ) : (
+                  <select
+                    value={formData.lock_manufacturer}
+                    onChange={(e) => handleFormChange('lock_manufacturer', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                    aria-label="Schließmittel Hersteller aus Liste"
+                  >
+                    <option value="">— Bitte wählen —</option>
+                    {doorCatalog.lock_manufacturers.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Schließmittel Typ</label>
-                <input
-                  type="text"
-                  value={formData.lock_type}
-                  onChange={(e) => handleFormChange('lock_type', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Schließmittel Typ</label>
+                  {doorStammdatenListsEnabled && doorCatalog.lock_types.length > 0 ? (
+                    <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={lockTypeUseFreeText}
+                        onChange={(e) => setLockTypeUseFreeText(e.target.checked)}
+                        className="rounded border-slate-400 dark:border-slate-500 text-vico-primary focus:ring-vico-primary"
+                      />
+                      Freitext
+                    </label>
+                  ) : null}
+                </div>
+                {!doorStammdatenListsEnabled || lockTypeUseFreeText || doorCatalog.lock_types.length === 0 ? (
+                  <input
+                    type="text"
+                    value={formData.lock_type}
+                    onChange={(e) => handleFormChange('lock_type', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  />
+                ) : (
+                  <select
+                    value={formData.lock_type}
+                    onChange={(e) => handleFormChange('lock_type', e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                    aria-label="Schließmittel Typ aus Liste"
+                  >
+                    <option value="">— Bitte wählen —</option>
+                    {doorCatalog.lock_types.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
             <div>
@@ -903,57 +1273,374 @@ const ObjectFormModal = ({
                 </div>
               )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Rauchmelder Anzahl</label>
-              <input
-                type="number"
-                min={0}
-                value={formData.smoke_detector_count}
-                onChange={(e) => handleFormChange('smoke_detector_count', e.target.value)}
-                className="w-24 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                aria-label="Rauchmelder Anzahl"
-              />
-              {(() => {
-                const count = parseInt(formData.smoke_detector_count, 10) || 0
-                return count > 0 ? (
-                  <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {Array.from({ length: count }, (_, i) => (
-                      <div key={i}>
-                        <label htmlFor={`smoke-year-${i}`} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">RM{i + 1} Baujahr</label>
-                        <select
-                          id={`smoke-year-${i}`}
-                          value={formData.smoke_detector_build_years[i] ?? ''}
-                          onChange={(e) => handleSmokeDetectorBuildYearChange(i, e.target.value)}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                          aria-label={`Rauchmelder ${i + 1} Baujahr`}
-                        >
-                          <option value="">–</option>
-                          {YEAR_OPTIONS.map((y) => (
-                            <option key={y} value={String(y)}>{y}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                ) : null
-              })()}
-            </div>
-            <div>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={formData.maintenance_by_manufacturer} onChange={(e) => handleFormChange('maintenance_by_manufacturer', e.target.checked)} /> Wartung nach Herstellerangaben durchgeführt</label>
-              {formData.has_hold_open && (
-                <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={formData.hold_open_maintenance} onChange={(e) => handleFormChange('hold_open_maintenance', e.target.checked)} /> Feststellanlage Wartung nach Herstellerangaben</label>
-              )}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Vorhandene Mängel</label>
-                <textarea
-                  value={formData.defects}
-                  onChange={(e) => handleFormChange('defects', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  rows={2}
+            {formData.has_hold_open ? (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Rauchmelder Anzahl
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.smoke_detector_count}
+                  onChange={(e) => handleFormChange('smoke_detector_count', e.target.value)}
+                  className="w-24 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  aria-label="Rauchmelder Anzahl"
                 />
+                {(() => {
+                  const count = parseInt(formData.smoke_detector_count, 10) || 0
+                  return count > 0 ? (
+                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {Array.from({ length: count }, (_, i) => (
+                        <div key={i}>
+                          <label htmlFor={`smoke-year-${i}`} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            RM{i + 1} Baujahr
+                          </label>
+                          <select
+                            id={`smoke-year-${i}`}
+                            value={formData.smoke_detector_build_years[i] ?? ''}
+                            onChange={(e) => handleSmokeDetectorBuildYearChange(i, e.target.value)}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                            aria-label={`Rauchmelder ${i + 1} Baujahr`}
+                          >
+                            <option value="">–</option>
+                            {YEAR_OPTIONS.map((y) => (
+                              <option key={y} value={String(y)}>
+                                {y}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null
+                })()}
               </div>
+            ) : null}
+            {isEdit && protocolRowsEffective.length > 0 ? (
+              <div className="rounded-lg border border-rose-200 dark:border-rose-900/45 bg-rose-50/50 dark:bg-rose-950/25 p-4 space-y-3">
+                <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100">Offene Mängel (Prüfprotokoll)</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Aus dem letzten abgeschlossenen Wartungsauftrag mit gespeicherter Checkliste. Änderung durch erneute
+                  Wartung mit geändertem Prüfstand.
+                </p>
+                <ul className="space-y-3" aria-label="Offene Protokoll-Mängel">
+                  {[...protocolRowsEffective]
+                    .sort((a, b) => {
+                      if (a.source === b.source) return 0
+                      return a.source === 'tuer' ? -1 : 1
+                    })
+                    .map((row) => {
+                      const photoKey = `${row.source === 'feststell' ? 'feststell' : 'door'}:${row.item_id}`
+                      const thumbs = protocolPhotosByKey[photoKey] ?? []
+                      const sourceLabel = row.source === 'feststell' ? 'Feststell' : 'Tür'
+                      const dateLabel =
+                        row.established_on && /^\d{4}-\d{2}-\d{2}/.test(row.established_on)
+                          ? new Date(row.established_on.slice(0, 10) + 'T12:00:00').toLocaleDateString('de-DE')
+                          : row.established_on || '—'
+                      return (
+                        <li
+                          key={`${row.source}-${row.item_id}-${row.order_id}`}
+                          className="rounded-lg border border-rose-100 dark:border-rose-900/40 bg-white/90 dark:bg-slate-900/60 px-3 py-2 space-y-2"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-100">
+                              {sourceLabel}
+                            </span>
+                            <time className="text-xs text-slate-500 dark:text-slate-400" dateTime={row.established_on}>
+                              {dateLabel}
+                            </time>
+                            <Link
+                              to={`/auftrag/${row.order_id}`}
+                              className="text-xs font-medium text-vico-primary hover:underline dark:text-sky-400"
+                              aria-label="Zum abgeschlossenen Wartungsauftrag (Protokoll)"
+                            >
+                              Zum Auftrag
+                            </Link>
+                          </div>
+                          <p className="text-sm text-slate-800 dark:text-slate-100">
+                            <span className="text-slate-500 dark:text-slate-400">{row.section_title}</span>
+                            {row.section_title ? ' · ' : ''}
+                            {row.label}
+                          </p>
+                          {row.note ? (
+                            <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{row.note}</p>
+                          ) : null}
+                          {thumbs.length > 0 ? (
+                            <div className="flex flex-wrap gap-2" aria-label="Fotos zum Mangel">
+                              {thumbs.map((ph) => (
+                                <a
+                                  key={ph.id}
+                                  href={getMaintenancePhotoUrl(ph.storage_path)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block shrink-0 rounded-md border border-slate-200 dark:border-slate-600 overflow-hidden focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                                  aria-label={ph.caption ? `Foto: ${ph.caption}` : 'Foto vergrößern'}
+                                >
+                                  <img
+                                    src={getMaintenancePhotoUrl(ph.storage_path)}
+                                    alt={ph.caption || ''}
+                                    className="w-14 h-14 object-cover"
+                                    loading="lazy"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                        </li>
+                      )
+                    })}
+                </ul>
+              </div>
+            ) : null}
+            {isEdit && protocolDraftRowsFetched.length > 0 ? (
+              <div className="rounded-lg border border-sky-200 dark:border-sky-800/60 bg-sky-50/60 dark:bg-sky-950/30 p-4 space-y-3">
+                <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                  Entwurf (laufender Wartungsauftrag)
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Gespeicherter Prüfstand am noch nicht abgeschlossenen Auftrag. Er beeinflusst nicht die
+                  Kundenliste / Zähler; maßgeblich bleibt der letzte abgeschlossene Wartungsbericht (siehe oben).
+                </p>
+                <ul className="space-y-3" aria-label="Protokoll-Mängel Entwurf laufender Auftrag">
+                  {[...protocolDraftRowsFetched]
+                    .sort((a, b) => {
+                      if (a.source === b.source) return 0
+                      return a.source === 'tuer' ? -1 : 1
+                    })
+                    .map((row) => {
+                      const photoKey = `${row.source === 'feststell' ? 'feststell' : 'door'}:${row.item_id}`
+                      const thumbs = protocolDraftPhotosByKey[photoKey] ?? []
+                      const sourceLabel = row.source === 'feststell' ? 'Feststell' : 'Tür'
+                      const dateLabel =
+                        row.established_on && /^\d{4}-\d{2}-\d{2}/.test(row.established_on)
+                          ? new Date(row.established_on.slice(0, 10) + 'T12:00:00').toLocaleDateString('de-DE')
+                          : row.established_on || '—'
+                      return (
+                        <li
+                          key={`draft-${row.source}-${row.item_id}-${row.order_id}`}
+                          className="rounded-lg border border-sky-100 dark:border-sky-900/50 bg-white/90 dark:bg-slate-900/60 px-3 py-2 space-y-2"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-sky-100 text-sky-900 dark:bg-sky-900/50 dark:text-sky-100">
+                              {sourceLabel}
+                            </span>
+                            <time className="text-xs text-slate-500 dark:text-slate-400" dateTime={row.established_on}>
+                              {dateLabel}
+                            </time>
+                            <Link
+                              to={`/auftrag/${row.order_id}`}
+                              className="text-xs font-medium text-vico-primary hover:underline dark:text-sky-400"
+                              aria-label="Zum laufenden Wartungsauftrag"
+                            >
+                              Zum Auftrag
+                            </Link>
+                          </div>
+                          <p className="text-sm text-slate-800 dark:text-slate-100">
+                            <span className="text-slate-500 dark:text-slate-400">{row.section_title}</span>
+                            {row.section_title ? ' · ' : ''}
+                            {row.label}
+                          </p>
+                          {row.note ? (
+                            <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{row.note}</p>
+                          ) : null}
+                          {thumbs.length > 0 ? (
+                            <div className="flex flex-wrap gap-2" aria-label="Fotos zum Mangel Entwurf">
+                              {thumbs.map((ph) => (
+                                <a
+                                  key={ph.id}
+                                  href={getMaintenancePhotoUrl(ph.storage_path)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block shrink-0 rounded-md border border-slate-200 dark:border-slate-600 overflow-hidden focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                                  aria-label={ph.caption ? `Foto: ${ph.caption}` : 'Foto vergrößern'}
+                                >
+                                  <img
+                                    src={getMaintenancePhotoUrl(ph.storage_path)}
+                                    alt={ph.caption || ''}
+                                    className="w-14 h-14 object-cover"
+                                    loading="lazy"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                        </li>
+                      )
+                    })}
+                </ul>
+              </div>
+            ) : null}
+            {canEdit && formData.defect_entries.length === 0 && !defectPanelExpanded ? (
+              <div className="py-1">
+                <button
+                  type="button"
+                  onClick={() => setDefectPanelExpanded(true)}
+                  className="text-sm font-medium text-vico-primary hover:underline dark:text-sky-400"
+                  aria-label="Stammdaten-Mängel hinzufügen"
+                >
+                  + Mangel hinzufügen (Stammdaten)
+                </button>
+              </div>
+            ) : null}
+            {formData.defect_entries.length > 0 || defectPanelExpanded || !canEdit ? (
+              <div className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-slate-800 dark:text-slate-100">Mängel (Stammdaten)</span>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showResolvedDefects}
+                      onChange={(e) => setShowResolvedDefects(e.target.checked)}
+                      className="rounded border-slate-300 dark:border-slate-600"
+                      aria-label="Erledigte Mängel anzeigen"
+                    />
+                    Erledigte Mängel anzeigen
+                  </label>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Offene Mängel sind immer sichtbar. Erledigte werden nicht gelöscht und können hier wieder geöffnet
+                  werden. Maximal 3 Fotos pro offenem Mangel (nach Speichern der Tür online oder bei Sync).
+                </p>
+                <ul className="space-y-3" aria-label="Liste Stammdaten-Mängel">
+                  {(() => {
+                    const open = formData.defect_entries.filter((e) => e.status === 'open')
+                    const resolved = formData.defect_entries.filter((e) => e.status === 'resolved')
+                    const rows = [...open, ...(showResolvedDefects ? resolved : [])]
+                    if (rows.length === 0) {
+                      return (
+                        <li className="text-sm text-slate-500 dark:text-slate-400 py-2">Keine offenen Mängel erfasst.</li>
+                      )
+                    }
+                    return rows.map((entry) => {
+                      const photos = defectPhotosByEntryId[entry.id] ?? []
+                      const canAddPhotos =
+                        Boolean(canEdit && object?.id && entry.status === 'open' && photos.length < 3)
+                      return (
+                        <li
+                          key={entry.id}
+                          className={`rounded-lg border px-3 py-2 space-y-2 ${
+                            entry.status === 'resolved'
+                              ? 'border-slate-200 dark:border-slate-600 bg-white/70 dark:bg-slate-800/50 opacity-90'
+                              : 'border-amber-200 dark:border-amber-900/50 bg-white dark:bg-slate-800'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`text-xs font-medium px-2 py-0.5 rounded ${
+                                entry.status === 'open'
+                                  ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100'
+                                  : 'bg-slate-200 text-slate-700 dark:bg-slate-600 dark:text-slate-100'
+                              }`}
+                            >
+                              {entry.status === 'open' ? 'Offen' : 'Erledigt'}
+                            </span>
+                            {entry.status === 'resolved' && entry.resolved_at ? (
+                              <time
+                                className="text-xs text-slate-500 dark:text-slate-400"
+                                dateTime={entry.resolved_at}
+                              >
+                                Erledigt{' '}
+                                {new Date(entry.resolved_at).toLocaleString('de-DE', {
+                                  dateStyle: 'short',
+                                  timeStyle: 'short',
+                                })}
+                              </time>
+                            ) : null}
+                          </div>
+                          <textarea
+                            value={entry.text}
+                            onChange={(e) => handleDefectTextChange(entry.id, e.target.value)}
+                            disabled={!canEdit || entry.status === 'resolved'}
+                            rows={entry.text.length > 120 ? 4 : 2}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 disabled:opacity-80 disabled:cursor-not-allowed"
+                            aria-label={entry.status === 'open' ? 'Mangelbeschreibung' : 'Mangelbeschreibung (erledigt)'}
+                          />
+                          {photos.length > 0 ? (
+                            <ul className="flex flex-wrap gap-2 list-none p-0 m-0" aria-label="Mangel-Fotos">
+                              {photos.map((ph) => (
+                                <li key={ph.id} className="relative group">
+                                  <img
+                                    src={getObjectDefectPhotoDisplayUrl(ph)}
+                                    alt=""
+                                    className="h-20 w-20 object-cover rounded-lg border border-slate-200 dark:border-slate-600"
+                                  />
+                                  {canEdit && entry.status === 'open' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleRemoveDefectPhoto(entry.id, ph)}
+                                      className="absolute -top-1 -right-1 rounded-full bg-red-600 text-white text-xs w-6 h-6 leading-6 opacity-90 hover:opacity-100"
+                                      aria-label="Foto entfernen"
+                                    >
+                                      ×
+                                    </button>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {canAddPhotos ? (
+                            <div>
+                              <label className="text-xs text-slate-600 dark:text-slate-400 cursor-pointer inline-flex items-center gap-2">
+                                <span className="px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+                                  Foto hinzufügen
+                                </span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="sr-only"
+                                  aria-label={`Foto zu Mangel hinzufügen, ${photos.length} von 3`}
+                                  onChange={(ev) => void handleDefectPhotoInputChange(entry.id, ev)}
+                                />
+                              </label>
+                            </div>
+                          ) : null}
+                          {!object?.id && entry.status === 'open' && canEdit ? (
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              Fotos sind verfügbar, sobald die Tür gespeichert wurde.
+                            </p>
+                          ) : null}
+                          {canEdit ? (
+                            <div className="flex flex-wrap gap-2">
+                              {entry.status === 'open' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleMarkDefectResolved(entry.id)}
+                                  disabled={!entry.text.trim()}
+                                  className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                                  aria-label="Mangel als erledigt markieren"
+                                >
+                                  Als erledigt markieren
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleReopenDefect(entry.id)}
+                                  className="text-sm px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                                  aria-label="Mangel wieder öffnen"
+                                >
+                                  Wieder öffnen
+                                </button>
+                              )}
+                            </div>
+                          ) : null}
+                        </li>
+                      )
+                    })
+                  })()}
+                </ul>
+                {canEdit ? (
+                  <button
+                    type="button"
+                    onClick={handleAddDefectEntry}
+                    className="text-sm font-medium text-vico-primary hover:underline dark:text-sky-400"
+                    aria-label="Weiteren Mangel hinzufügen"
+                  >
+                    + Mangel hinzufügen
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="min-w-0">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bemerkungen</label>
                 <textarea

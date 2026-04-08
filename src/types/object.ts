@@ -1,3 +1,23 @@
+/** Foto zu einem Eintrag in `defects_structured` (Q7, max. 3 pro Mangel in der UI) */
+export type ObjectDefectPhoto = {
+  id: string
+  object_id: string
+  defect_entry_id: string
+  storage_path: string
+  created_at: string
+}
+
+export type ObjectDefectPhotoDisplay = ObjectDefectPhoto & { localDataUrl?: string }
+
+/** Mängel an der Tür/Tor-Stammdaten (RF2: nicht löschen, Status offen/erledigt) */
+export type ObjectDefectEntry = {
+  id: string
+  text: string
+  status: 'open' | 'resolved'
+  created_at: string
+  resolved_at: string | null
+}
+
 export type Object = {
   id: string
   bv_id: string | null
@@ -30,9 +50,18 @@ export type Object = {
   accessories: string | null
   maintenance_by_manufacturer: boolean
   hold_open_maintenance: boolean
+  /** Legacy: zusammenhängender Text der **offenen** Mängel (wird aus Einträgen mitgespeichert) */
   defects: string | null
+  /** Strukturierte Mängel inkl. erledigter (JSON array) */
+  defects_structured?: ObjectDefectEntry[] | null
   remarks: string | null
   maintenance_interval_months?: number | null
+  /** Letzte Wartung (Tür); ergänzt max(maintenance_reports); manuell wenn door_maintenance_date_manual */
+  last_door_maintenance_date?: string | null
+  door_maintenance_date_manual?: boolean
+  hold_open_last_maintenance_date?: string | null
+  hold_open_maintenance_interval_months?: number | null
+  hold_open_last_maintenance_manual?: boolean
   /** Pfad im Bucket object-photos (öffentliche URL), nur Anzeige Profilbild */
   profile_photo_path?: string | null
   archived_at?: string | null
@@ -68,9 +97,14 @@ export type ObjectFormData = {
   accessories_lines: string[]
   maintenance_by_manufacturer: boolean
   hold_open_maintenance: boolean
-  defects: string
+  defect_entries: ObjectDefectEntry[]
   remarks: string
   maintenance_interval_months: string
+  last_door_maintenance_date?: string
+  door_maintenance_date_manual?: boolean
+  hold_open_last_maintenance_date?: string
+  hold_open_maintenance_interval_months?: string
+  hold_open_last_maintenance_manual?: boolean
 }
 
 export type ObjectPhoto = {

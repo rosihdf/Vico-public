@@ -39,7 +39,12 @@ export type MaintenanceReport = {
   technician_name_printed: string | null
   customer_name_printed: string | null
   pdf_path: string | null
+  /** Separates Prüfprotokoll-PDF (Checklisten), optional. */
+  pruefprotokoll_pdf_path?: string | null
   synced: boolean
+  /** Gesetzlich/revisionssicheres Protokoll aus Auftrags-Wartungscheckliste */
+  source_order_id?: string | null
+  checklist_protocol?: unknown
   created_at: string
   updated_at: string
 }
@@ -50,6 +55,18 @@ export type MaintenanceReportPhoto = {
   storage_path: string | null
   caption: string | null
   created_at: string
+}
+
+export type ChecklistDefectPhoto = {
+  id: string
+  maintenance_report_id: string
+  object_id: string
+  checklist_scope: 'door' | 'feststell'
+  checklist_item_id: string
+  storage_path: string
+  caption: string | null
+  created_at: string
+  updated_at: string
 }
 
 export type MaintenanceReportSmokeDetector = {
