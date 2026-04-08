@@ -28,17 +28,19 @@ const MandantenIncomingReleaseBanner = ({ releases }: MandantenIncomingReleaseBa
   return (
     <div
       role="status"
-      className="bg-indigo-100 dark:bg-indigo-950/45 text-indigo-950 dark:text-indigo-100 text-center py-2 px-4 text-sm font-medium border-b border-indigo-200 dark:border-indigo-800"
+      className="border-b border-indigo-200 bg-indigo-100 py-2.5 px-4 text-center text-sm leading-relaxed text-indigo-950 dark:border-indigo-700 dark:bg-indigo-950 dark:text-slate-100"
       aria-live="polite"
     >
-      <span className="font-semibold">App-Release ({ch}):</span>{' '}
-      <span>
+      <span className="font-semibold text-indigo-950 dark:text-indigo-100">
+        App-Release ({ch}):
+      </span>{' '}
+      <span className="text-indigo-900 dark:text-slate-100">
         Anstehende Versionen – bitte testen und Rückmeldung geben: {parts.join(' · ')}.
       </span>
       {hardReloadHint ? (
-        <span className="mt-2 block text-xs font-medium text-indigo-900 dark:text-indigo-200">
-          Hinweis: Mindestens ein Release ist mit „hartem Neu-Laden“ nach Freigabe gekennzeichnet – nach Go-Live die
-          Seite/App vollständig neu laden.
+        <span className="mt-2 block border-t border-indigo-200/80 pt-2 text-xs font-normal text-indigo-900 dark:border-indigo-700/80 dark:text-slate-300">
+          Hinweis: Mindestens ein Release ist mit „hartem Neu-Laden“ nach Freigabe gekennzeichnet. Nach dem Go-Live die
+          Seite oder App vollständig neu laden (kein reines Weiterarbeiten im offenen Tab).
         </span>
       ) : null}
     </div>

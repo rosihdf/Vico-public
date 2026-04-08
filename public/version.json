@@ -1,9 +1,9 @@
 {
-  "version": "1.0.4",
+  "version": "1.0.5",
   "buildTime": "",
   "releaseNotes": [
-    "Mandanten-Erreichbarkeit: stabilere Degraded-Erkennung und Banner-/Statusverhalten bei Verbindungsproblemen.",
-    "Realtime/Sync: robustere Verarbeitung bei instabiler Verbindung (Order/Profile/Outbox), inkl. zugehöriger Tests."
+    "Update-Hinweis oben: Dark-Theme-Kontrast verbessert (Text und Aktionen jetzt klar lesbar).",
+    "Test/Build-Fix: fehlendes Modul doorMaintenanceChecklistCatalog ergänzt, damit Vitest-Suites wieder vollständig laufen."
   ],
   "releaseLabel": "Beta"
 }

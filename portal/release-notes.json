@@ -1,4 +1,7 @@
 {
+  "1.0.5": [
+    "Stabilitäts-Hotfix 1.0.5: gemeinsame Bibliotheks-/Release-Anpassungen aus der Haupt-App übernommen."
+  ],
   "1.0.4": [
     "Mandanten-Erreichbarkeit: verbesserte Degraded-/Reachability-Logik aus Shared-Bausteinen.",
     "Stabilere Release- und Online-Statusauswertung bei temporären Verbindungsabbrüchen."
