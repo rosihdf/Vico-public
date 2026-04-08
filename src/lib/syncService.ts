@@ -1,6 +1,18 @@
 import { supabase } from '../supabase'
 import type { Customer, BV, Object as Obj, Order, ObjectPhoto, ObjectDocument, MaintenanceReminder } from '../types'
-import { CUSTOMER_COLUMNS, BV_COLUMNS, OBJECT_COLUMNS, ORDER_COLUMNS, OBJECT_PHOTO_COLUMNS, OBJECT_DOCUMENT_COLUMNS, MAINTENANCE_REPORT_COLUMNS, MAINTENANCE_REPORT_PHOTO_COLUMNS, TIME_ENTRY_COLUMNS } from './dataColumns'
+import {
+  CUSTOMER_COLUMNS,
+  BV_COLUMNS,
+  OBJECT_COLUMNS,
+  ORDER_COLUMNS,
+  ORDER_COMPLETION_CACHE_COLUMNS,
+  OBJECT_PHOTO_COLUMNS,
+  OBJECT_DOCUMENT_COLUMNS,
+  MAINTENANCE_REPORT_COLUMNS,
+  MAINTENANCE_REPORT_PHOTO_COLUMNS,
+  TIME_ENTRY_COLUMNS,
+  OBJECT_DEFECT_PHOTO_COLUMNS,
+} from './dataColumns'
 import {
   getOutbox,
   removeOutboxItem,
@@ -14,6 +26,8 @@ import {
   removeTimeOutboxItem,
   getMaintenancePhotoOutbox,
   removeMaintenancePhotoOutboxItem,
+  getObjectDefectPhotoOutbox,
+  removeObjectDefectPhotoOutboxItem,
   getEmailOutbox,
   removeEmailOutboxItem,
   setCachedCustomers,
@@ -23,6 +37,8 @@ import {
   getCachedMaintenanceReports,
   setCachedOrders,
   getCachedOrders,
+  setCachedOrderCompletions,
+  type CachedOrderCompletionRow,
   setCachedObjectPhotos,
   getCachedObjectPhotos,
   setCachedObjectDocuments,
@@ -43,12 +59,14 @@ import {
   setCachedLicense,
 } from './offlineStorage'
 import { fetchLicenseStatus } from './licenseService'
+import { doorChecklistFromReportPayload, upsertChecklistProtocolReplace } from './checklistProtocolService'
 import { uploadMaintenancePdf, sendMaintenanceReportEmail } from './dataService'
 import { compressImageBase64 } from './imageCompression'
 
 const OBJECT_PHOTOS_BUCKET = 'object-photos'
 const OBJECT_DOCUMENTS_BUCKET = 'object-documents'
 const MAINTENANCE_PHOTOS_BUCKET = 'maintenance-photos'
+const OBJECT_DEFECT_STORAGE_PREFIX = 'object-defect-stammdaten'
 
 export type SyncResult = { success: boolean; pendingCount: number; error?: string }
 
@@ -111,6 +129,9 @@ export const processOutbox = async (): Promise<SyncResult> => {
         if (item.table === 'maintenance_report_photos' && storage_path) {
           await supabase.storage.from(MAINTENANCE_PHOTOS_BUCKET).remove([storage_path])
         }
+        if (item.table === 'object_defect_photos' && storage_path) {
+          await supabase.storage.from(MAINTENANCE_PHOTOS_BUCKET).remove([storage_path])
+        }
         if (item.table === 'object_documents' && storage_path) {
           await supabase.storage.from(OBJECT_DOCUMENTS_BUCKET).remove([storage_path])
         }
@@ -134,15 +155,17 @@ export type PullMetrics = { batch1Ms: number; batch2Ms: number; totalMs: number 
 export const pullFromServer = async (): Promise<PullMetrics> => {
   const pullStart = performance.now()
 
-  const [custRes, bvRes, objRes, ordersRes, photosRes, docsRes, maintPhotosRes] = await Promise.all([
-    supabase.from('customers').select(CUSTOMER_COLUMNS).order('name'),
-    supabase.from('bvs').select(BV_COLUMNS).order('name'),
-    supabase.from('objects').select(OBJECT_COLUMNS).order('internal_id'),
-    supabase.from('orders').select(ORDER_COLUMNS).order('order_date', { ascending: false }),
-    supabase.from('object_photos').select(OBJECT_PHOTO_COLUMNS).order('created_at', { ascending: false }),
-    supabase.from('object_documents').select(OBJECT_DOCUMENT_COLUMNS).order('created_at', { ascending: false }),
-    supabase.from('maintenance_report_photos').select(MAINTENANCE_REPORT_PHOTO_COLUMNS),
-  ])
+  const [custRes, bvRes, objRes, ordersRes, orderCompletionsRes, photosRes, docsRes, maintPhotosRes] =
+    await Promise.all([
+      supabase.from('customers').select(CUSTOMER_COLUMNS).order('name'),
+      supabase.from('bvs').select(BV_COLUMNS).order('name'),
+      supabase.from('objects').select(OBJECT_COLUMNS).order('internal_id'),
+      supabase.from('orders').select(ORDER_COLUMNS).order('order_date', { ascending: false }),
+      supabase.from('order_completions').select(ORDER_COMPLETION_CACHE_COLUMNS),
+      supabase.from('object_photos').select(OBJECT_PHOTO_COLUMNS).order('created_at', { ascending: false }),
+      supabase.from('object_documents').select(OBJECT_DOCUMENT_COLUMNS).order('created_at', { ascending: false }),
+      supabase.from('maintenance_report_photos').select(MAINTENANCE_REPORT_PHOTO_COLUMNS),
+    ])
 
   const batch1Ms = Math.round(performance.now() - pullStart)
 
@@ -150,6 +173,14 @@ export const pullFromServer = async (): Promise<PullMetrics> => {
   if (!bvRes.error) setCachedBvs((bvRes.data as unknown as BV[]) ?? [])
   if (!objRes.error) setCachedObjects((objRes.data as unknown as Obj[]) ?? [])
   if (!ordersRes.error) setCachedOrders((ordersRes.data ?? []) as unknown as Order[])
+  if (!orderCompletionsRes.error && Array.isArray(orderCompletionsRes.data)) {
+    const rows: CachedOrderCompletionRow[] = (orderCompletionsRes.data as Record<string, unknown>[]).map((r) => ({
+      order_id: String(r.order_id ?? ''),
+      completion_extra: r.completion_extra,
+      created_at: r.created_at != null ? String(r.created_at) : '',
+    }))
+    setCachedOrderCompletions(rows.filter((r) => r.order_id.length > 0))
+  }
   if (!photosRes.error) setCachedObjectPhotos((photosRes.data ?? []) as unknown as ObjectPhoto[])
   if (!docsRes.error) setCachedObjectDocuments((docsRes.data ?? []) as unknown as ObjectDocument[])
   if (!maintPhotosRes.error) setCachedMaintenancePhotos((maintPhotosRes.data ?? []) as unknown as { id: string; report_id: string; storage_path: string | null; caption: string | null }[])
@@ -246,6 +277,18 @@ const processMaintenanceOutbox = async (): Promise<SyncResult> => {
           .insert(rows)
         if (sdError) throw new Error(sdError.message)
       }
+      const checklistState = item.reportPayload.checklist_state as
+        | Record<string, boolean>
+        | null
+        | undefined
+      const door = doorChecklistFromReportPayload(checklistState)
+      const { error: cpErr } = await upsertChecklistProtocolReplace({
+        maintenanceReportId: reportRow.id,
+        orderCompletionId: null,
+        doorPatch: door,
+        feststellPatch: null,
+      })
+      if (cpErr) console.warn('[checklist_protocol sync]', cpErr.message)
       const photoOutbox = getMaintenancePhotoOutbox().filter((p) => p.report_id === item.tempId)
       for (const photoItem of photoOutbox) {
         const { blob, ext } = await compressImageBase64(photoItem.fileBase64, photoItem.ext)
@@ -272,7 +315,11 @@ const processMaintenanceOutbox = async (): Promise<SyncResult> => {
     } catch (err) {
       return {
         success: false,
-        pendingCount: getOutbox().length + getMaintenanceOutbox().length + getMaintenancePhotoOutbox().length,
+        pendingCount:
+          getOutbox().length +
+          getMaintenanceOutbox().length +
+          getMaintenancePhotoOutbox().length +
+          getObjectDefectPhotoOutbox().length,
         error: err instanceof Error ? err.message : String(err),
       }
     }
@@ -305,7 +352,46 @@ const processObjectPhotoOutbox = async (): Promise<SyncResult> => {
       return {
         success: false,
         pendingCount:
-          getOutbox().length + getMaintenanceOutbox().length + getObjectPhotoOutbox().length,
+          getOutbox().length +
+          getMaintenanceOutbox().length +
+          getObjectPhotoOutbox().length +
+          getObjectDefectPhotoOutbox().length,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
+  return { success: true, pendingCount: getOutbox().length + getMaintenanceOutbox().length }
+}
+
+const processObjectDefectPhotoOutbox = async (): Promise<SyncResult> => {
+  const box = getObjectDefectPhotoOutbox()
+  for (const item of [...box]) {
+    try {
+      const { blob, ext } = await compressImageBase64(item.fileBase64, item.ext)
+      const path = `${OBJECT_DEFECT_STORAGE_PREFIX}/${item.object_id}/${item.defect_entry_id}/${crypto.randomUUID()}.${ext}`
+      const { error: uploadError } = await supabase.storage
+        .from(MAINTENANCE_PHOTOS_BUCKET)
+        .upload(path, blob, { upsert: false, contentType: blob.type })
+      if (uploadError) throw new Error(uploadError.message)
+      const { error } = await supabase
+        .from('object_defect_photos')
+        .insert({
+          object_id: item.object_id,
+          defect_entry_id: item.defect_entry_id,
+          storage_path: path,
+        })
+        .select(OBJECT_DEFECT_PHOTO_COLUMNS)
+        .single()
+      if (error) throw new Error(error.message)
+      removeObjectDefectPhotoOutboxItem(item.id)
+    } catch (err) {
+      return {
+        success: false,
+        pendingCount:
+          getOutbox().length +
+          getMaintenanceOutbox().length +
+          getObjectPhotoOutbox().length +
+          getObjectDefectPhotoOutbox().length,
         error: err instanceof Error ? err.message : String(err),
       }
     }
@@ -346,6 +432,7 @@ const processObjectDocumentOutbox = async (): Promise<SyncResult> => {
           getMaintenanceOutbox().length +
           getObjectPhotoOutbox().length +
           getObjectDocumentOutbox().length +
+          getObjectDefectPhotoOutbox().length +
           getMaintenancePhotoOutbox().length +
           getEmailOutbox().length,
         error: err instanceof Error ? err.message : String(err),
@@ -398,6 +485,7 @@ const processTimeOutbox = async (): Promise<SyncResult> => {
           getObjectPhotoOutbox().length +
           getObjectDocumentOutbox().length +
           getTimeOutbox().length +
+          getObjectDefectPhotoOutbox().length +
           getMaintenancePhotoOutbox().length +
           getEmailOutbox().length,
         error: err instanceof Error ? err.message : String(err),
@@ -426,6 +514,7 @@ const processEmailOutbox = async (): Promise<SyncResult> => {
           getMaintenanceOutbox().length +
           getObjectPhotoOutbox().length +
           getObjectDocumentOutbox().length +
+          getObjectDefectPhotoOutbox().length +
           getMaintenancePhotoOutbox().length +
           getEmailOutbox().length,
         error: err instanceof Error ? err.message : String(err),
@@ -443,6 +532,8 @@ export const runSync = async (): Promise<SyncResult> => {
   if (!maintResult.success) return maintResult
   const photoResult = await processObjectPhotoOutbox()
   if (!photoResult.success) return photoResult
+  const defectPhotoResult = await processObjectDefectPhotoOutbox()
+  if (!defectPhotoResult.success) return defectPhotoResult
   const docResult = await processObjectDocumentOutbox()
   if (!docResult.success) return docResult
   const timeResult = await processTimeOutbox()
@@ -475,6 +566,7 @@ export const runSync = async (): Promise<SyncResult> => {
         getObjectPhotoOutbox().length +
         getObjectDocumentOutbox().length +
         getTimeOutbox().length +
+        getObjectDefectPhotoOutbox().length +
         getMaintenancePhotoOutbox().length +
         getEmailOutbox().length,
       error: err instanceof Error ? err.message : String(err),
@@ -487,6 +579,7 @@ export const getPendingCount = () =>
   getMaintenanceOutbox().length +
   getObjectPhotoOutbox().length +
   getObjectDocumentOutbox().length +
+  getObjectDefectPhotoOutbox().length +
   getTimeOutbox().length +
   getMaintenancePhotoOutbox().length +
   getEmailOutbox().length

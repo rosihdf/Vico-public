@@ -1,3 +1,4 @@
+import { recordMandantRealtimeSubscribeStatus } from '../../shared/mandantRealtimeDegraded'
 import { supabase } from '../supabase'
 
 export const subscribeToOrderChanges = (onChange: () => void): (() => void) => {
@@ -8,7 +9,9 @@ export const subscribeToOrderChanges = (onChange: () => void): (() => void) => {
       { event: '*', schema: 'public', table: 'orders' },
       () => onChange()
     )
-    .subscribe()
+    .subscribe((status, err) => {
+      recordMandantRealtimeSubscribeStatus(status, err ?? undefined)
+    })
 
   return () => {
     supabase.removeChannel(channel)

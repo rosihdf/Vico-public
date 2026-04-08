@@ -1,4 +1,8 @@
 {
+  "1.0.4": [
+    "Mandanten-Erreichbarkeit: verbesserte Degraded-/Reachability-Logik aus Shared-Bausteinen.",
+    "Stabilere Release- und Online-Statusauswertung bei temporären Verbindungsabbrüchen."
+  ],
   "1.0.3": [
     "Beta-Feedback: robustere Feature-Erkennung (true/\"true\"/1) für zuverlässige Sichtbarkeit.",
     "Beta-Feedback: Overlay-/Button-Rendering über Portal mit hoher Ebene für konsistente Anzeige."

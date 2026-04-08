@@ -4,6 +4,7 @@ const MAINTENANCE_OUTBOX_KEY = 'vico-outbox-maintenance'
 const OBJECT_PHOTO_OUTBOX_KEY = 'vico-outbox-object-photos'
 const OBJECT_DOCUMENT_OUTBOX_KEY = 'vico-outbox-object-documents'
 const MAINTENANCE_PHOTO_OUTBOX_KEY = 'vico-outbox-maintenance-photos'
+const OBJECT_DEFECT_PHOTO_OUTBOX_KEY = 'vico-outbox-object-defect-photos'
 const EMAIL_OUTBOX_KEY = 'vico-outbox-email'
 const TIME_OUTBOX_KEY = 'vico-outbox-time'
 const CACHE_KEYS = {
@@ -12,6 +13,7 @@ const CACHE_KEYS = {
   objects: `${CACHE_PREFIX}objects`,
   maintenanceReports: `${CACHE_PREFIX}maintenance-reports`,
   orders: `${CACHE_PREFIX}orders`,
+  orderCompletions: `${CACHE_PREFIX}order-completions`,
   objectPhotos: `${CACHE_PREFIX}object-photos`,
   objectDocuments: `${CACHE_PREFIX}object-documents`,
   timeEntries: `${CACHE_PREFIX}time-entries`,
@@ -27,7 +29,19 @@ export type OutboxAction = 'insert' | 'update' | 'delete'
 
 export type OutboxItem = {
   id: string
-  table: 'customers' | 'bvs' | 'objects' | 'orders' | 'object_photos' | 'object_documents' | 'time_entries' | 'time_breaks' | 'maintenance_report_photos' | 'component_settings' | 'profiles'
+  table:
+    | 'customers'
+    | 'bvs'
+    | 'objects'
+    | 'orders'
+    | 'object_photos'
+    | 'object_documents'
+    | 'object_defect_photos'
+    | 'time_entries'
+    | 'time_breaks'
+    | 'maintenance_report_photos'
+    | 'component_settings'
+    | 'profiles'
   action: OutboxAction
   payload: Record<string, unknown>
   tempId?: string
@@ -70,6 +84,32 @@ export const setCachedObjects = (data: unknown[]) => safeJsonSet(CACHE_KEYS.obje
 
 export const getCachedOrders = () => safeJsonParse<unknown[]>(CACHE_KEYS.orders, [])
 export const setCachedOrders = (data: unknown[]) => safeJsonSet(CACHE_KEYS.orders, data)
+
+/** Minimalzeilen für Protokoll-Mängel offline (WP-MANG-04); Pull ersetzt, merge ergänzt. */
+export type CachedOrderCompletionRow = {
+  order_id: string
+  completion_extra: unknown
+  created_at: string
+}
+
+export const getCachedOrderCompletions = (): CachedOrderCompletionRow[] =>
+  safeJsonParse<CachedOrderCompletionRow[]>(CACHE_KEYS.orderCompletions, [])
+
+export const setCachedOrderCompletions = (data: CachedOrderCompletionRow[]) =>
+  safeJsonSet(CACHE_KEYS.orderCompletions, data)
+
+/** Überschreibt pro `order_id`; behält übrige Cache-Einträge. */
+export const mergeCachedOrderCompletions = (incoming: CachedOrderCompletionRow[]) => {
+  if (incoming.length === 0) return
+  const byOrder = new Map<string, CachedOrderCompletionRow>()
+  for (const r of getCachedOrderCompletions()) {
+    if (r.order_id) byOrder.set(String(r.order_id), r)
+  }
+  for (const r of incoming) {
+    if (r.order_id) byOrder.set(String(r.order_id), r)
+  }
+  setCachedOrderCompletions([...byOrder.values()])
+}
 
 export const getCachedObjectPhotos = () => safeJsonParse<unknown[]>(CACHE_KEYS.objectPhotos, [])
 export const setCachedObjectPhotos = (data: unknown[]) => safeJsonSet(CACHE_KEYS.objectPhotos, data)
@@ -170,6 +210,36 @@ export const addToMaintenancePhotoOutbox = (item: Omit<MaintenancePhotoOutboxIte
 
 export const removeMaintenancePhotoOutboxItem = (id: string) => {
   setMaintenancePhotoOutbox(getMaintenancePhotoOutbox().filter((i) => i.id !== id))
+}
+
+export type ObjectDefectPhotoOutboxItem = {
+  id: string
+  object_id: string
+  defect_entry_id: string
+  fileBase64: string
+  ext: string
+  timestamp: string
+}
+
+export const getObjectDefectPhotoOutbox = (): ObjectDefectPhotoOutboxItem[] =>
+  safeJsonParse<ObjectDefectPhotoOutboxItem[]>(OBJECT_DEFECT_PHOTO_OUTBOX_KEY, [])
+const setObjectDefectPhotoOutbox = (items: ObjectDefectPhotoOutboxItem[]) =>
+  safeJsonSet(OBJECT_DEFECT_PHOTO_OUTBOX_KEY, items)
+
+export const addToObjectDefectPhotoOutbox = (item: Omit<ObjectDefectPhotoOutboxItem, 'id' | 'timestamp'>) => {
+  const full: ObjectDefectPhotoOutboxItem = {
+    ...item,
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+  }
+  const box = getObjectDefectPhotoOutbox()
+  box.push(full)
+  setObjectDefectPhotoOutbox(box)
+  return full
+}
+
+export const removeObjectDefectPhotoOutboxItem = (id: string) => {
+  setObjectDefectPhotoOutbox(getObjectDefectPhotoOutbox().filter((i) => i.id !== id))
 }
 
 export const getCachedMaintenancePhotos = () => safeJsonParse<unknown[]>(CACHE_KEYS.maintenancePhotos, [])

@@ -1,4 +1,8 @@
 {
+  "1.0.4": [
+    "Mandanten-Erreichbarkeit: stabilere Degraded-Erkennung und Banner-/Statusverhalten bei Verbindungsproblemen.",
+    "Realtime/Sync: robustere Verarbeitung bei instabiler Verbindung (Order/Profile/Outbox), inkl. zugehöriger Tests."
+  ],
   "1.0.3": [
     "Beta-Feedback: Button-Sichtbarkeit in der Haupt-App verbessert (über Bottom-Navigation, stabile Overlay-Ebene).",
     "Beta-Feedback: Absenden robuster bei fehlender tenants.supabase_url (JWT-Issuer-Fallback in der Edge Function)."
