@@ -50,6 +50,17 @@ export const emptyLicenseFeatures = (): Record<string, boolean> => {
   return o
 }
 
+/** Robuster Check (Lizenz-API / JSON kann true als Boolean oder String liefern). */
+export const isLicenseFeatureEnabled = (
+  features: Record<string, boolean> | null | undefined,
+  key: string
+): boolean => {
+  const raw = features?.[key] as unknown
+  if (raw === true) return true
+  if (raw === 'true' || raw === 1 || raw === '1') return true
+  return false
+}
+
 /** Normalisiert gespeicherte Features auf bekannte Keys (fehlende → false). */
 export const normalizeLicenseFeatures = (f: Record<string, boolean> | undefined | null): Record<string, boolean> => {
   const base = emptyLicenseFeatures()

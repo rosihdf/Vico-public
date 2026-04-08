@@ -12,6 +12,7 @@ import MandantenIncomingReleaseBanner from '../../../shared/MandantenIncomingRel
 import MandantenReleaseRolloutRefreshBanner from '../../../shared/MandantenReleaseRolloutRefreshBanner'
 import MandantenReleaseHardReloadGate from '../../../shared/MandantenReleaseHardReloadGate'
 import BetaFeedbackWidget from '../../../shared/BetaFeedbackWidget'
+import { isLicenseFeatureEnabled } from '../../../shared/licenseFeatures'
 import { supabase } from '../lib/supabase'
 
 const AZ_APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
@@ -250,14 +251,13 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
       >
         <Outlet />
       </main>
-      {(import.meta.env.VITE_LICENSE_API_URL ?? '').trim() ? (
+      {(import.meta.env.VITE_LICENSE_API_URL ?? '').trim() && isLicenseFeatureEnabled(features, 'beta_feedback') ? (
         <BetaFeedbackWidget
           supabase={supabase}
           licenseApiUrl={(import.meta.env.VITE_LICENSE_API_URL ?? '').trim()}
           licenseApiKey={(import.meta.env.VITE_LICENSE_API_KEY ?? '').trim() || undefined}
           licenseNumber={(import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()}
           sourceApp="arbeitszeit_portal"
-          features={features}
           appVersion={AZ_APP_VERSION}
           releaseLabel={appVersionInfo?.releaseLabel?.trim() || AZ_RELEASE_LABEL_BUILD}
           routePath={location.pathname}

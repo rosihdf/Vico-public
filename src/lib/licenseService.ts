@@ -2,6 +2,7 @@ import { supabase } from '../supabase'
 import { getCachedLicense, setCachedLicense } from './offlineStorage'
 import { isOnline } from '../../shared/networkUtils'
 import { getCachedLicenseResponse, getStoredLicenseNumber, isLicenseApiConfigured } from './licensePortalApi'
+import { isLicenseFeatureEnabled } from '../../shared/licenseFeatures'
 
 export type LicenseStatus = {
   tier: string
@@ -156,7 +157,7 @@ export const fetchUsageCounts = async (): Promise<{
 
 /** Nur explizit in `license.features` gesetzte Module (kein Tier-Auto-Merge). */
 export const hasFeature = (license: LicenseStatus, feature: string): boolean => {
-  return license.features?.[feature] === true
+  return isLicenseFeatureEnabled(license.features, feature)
 }
 
 export const isLimitReached = (current: number, max: number | null): boolean => {

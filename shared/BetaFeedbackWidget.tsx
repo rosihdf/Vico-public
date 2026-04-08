@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { SupabaseClient } from '@supabase/supabase-js'
+
+/** Standard: 1rem über Safe-Area. Haupt-App: fester Tab-Bar-Höhe (4rem) zusätzlich einrechnen. */
+const DEFAULT_FAB_BOTTOM_CSS = 'calc(1rem + env(safe-area-inset-bottom, 0px))'
+const FAB_RIGHT_CSS = 'max(1rem, env(safe-area-inset-right, 0px))'
 
 export type BetaFeedbackSourceApp = 'main' | 'kundenportal' | 'arbeitszeit_portal'
 
@@ -30,11 +35,15 @@ export type BetaFeedbackWidgetProps = {
   licenseNumber: string | null
   licenseApiKey?: string
   sourceApp: BetaFeedbackSourceApp
-  features: Record<string, boolean>
   appVersion: string
   releaseLabel: string
   routePath: string
   routeQuery: string
+  /**
+   * CSS `bottom` für den schwebenden Button (z. B. Haupt-App mit fester Tab-Leiste:
+   * `calc(4rem + 0.75rem + env(safe-area-inset-bottom, 0px))`).
+   */
+  fabInsetBottomCss?: string
 }
 
 const BetaFeedbackWidget = ({
@@ -43,11 +52,11 @@ const BetaFeedbackWidget = ({
   licenseNumber,
   licenseApiKey,
   sourceApp,
-  features,
   appVersion,
   releaseLabel,
   routePath,
   routeQuery,
+  fabInsetBottomCss,
 }: BetaFeedbackWidgetProps) => {
   const panelId = useId()
   const titleId = useId()
@@ -59,8 +68,6 @@ const BetaFeedbackWidget = ({
   const [severity, setSeverity] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-
-  const enabled = features.beta_feedback === true
 
   const handleClose = useCallback(() => {
     setOpen(false)
@@ -154,9 +161,9 @@ const BetaFeedbackWidget = ({
     }
   }, [handleClose])
 
-  if (!enabled) return null
+  const fabBottom = (fabInsetBottomCss?.trim() || DEFAULT_FAB_BOTTOM_CSS).trim()
 
-  return (
+  const tree = (
     <>
       <button
         ref={openBtnRef}
@@ -165,22 +172,22 @@ const BetaFeedbackWidget = ({
           setOpen(true)
           setFeedbackMsg(null)
         }}
-        className="fixed !bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] !right-4 !top-auto !left-auto z-[200] flex h-12 w-12 items-center justify-center rounded-full bg-violet-600 text-white shadow-lg hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
-        style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))', right: '1rem', top: 'auto', left: 'auto' }}
+        className="pointer-events-auto fixed z-[2147483000] flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-white/90 bg-violet-600 text-white shadow-xl ring-2 ring-violet-900/25 hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:ring-offset-2 dark:border-slate-900 dark:ring-white/15 dark:focus:ring-offset-slate-950"
+        style={{ bottom: fabBottom, right: FAB_RIGHT_CSS, top: 'auto', left: 'auto' }}
         aria-expanded={open}
         aria-controls={panelId}
         aria-haspopup="dialog"
         title="Beta-Feedback"
       >
         <span className="sr-only">Beta-Feedback zu dieser Seite</span>
-        <span className="text-xl font-bold" aria-hidden>
+        <span className="text-2xl font-bold leading-none" aria-hidden>
           β
         </span>
       </button>
 
       {open ? (
         <div
-          className="fixed inset-0 z-[210] flex items-end justify-center sm:items-center sm:p-4 bg-black/40"
+          className="fixed inset-0 z-[2147483001] flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
           role="presentation"
           onClick={handleClose}
           onKeyDown={(e) => e.key === 'Escape' && handleClose()}
@@ -304,6 +311,9 @@ const BetaFeedbackWidget = ({
       ) : null}
     </>
   )
+
+  if (typeof document === 'undefined') return tree
+  return createPortal(tree, document.body)
 }
 
 export default BetaFeedbackWidget

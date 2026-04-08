@@ -25,6 +25,7 @@ import MandantenIncomingReleaseBanner from '../../../shared/MandantenIncomingRel
 import MandantenReleaseRolloutRefreshBanner from '../../../shared/MandantenReleaseRolloutRefreshBanner'
 import MandantenReleaseHardReloadGate from '../../../shared/MandantenReleaseHardReloadGate'
 import BetaFeedbackWidget from '../../../shared/BetaFeedbackWidget'
+import { isLicenseFeatureEnabled } from '../../../shared/licenseFeatures'
 
 const THEME_LABELS: Record<Theme, string> = {
   light: 'Hell',
@@ -372,14 +373,13 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
         <span>·</span>
         <span className="text-center">{appName} Türen &amp; Tore</span>
       </footer>
-      {(import.meta.env.VITE_LICENSE_API_URL ?? '').trim() ? (
+      {(import.meta.env.VITE_LICENSE_API_URL ?? '').trim() && isLicenseFeatureEnabled(features, 'beta_feedback') ? (
         <BetaFeedbackWidget
           supabase={supabase}
           licenseApiUrl={(import.meta.env.VITE_LICENSE_API_URL ?? '').trim()}
           licenseApiKey={(import.meta.env.VITE_LICENSE_API_KEY ?? '').trim() || undefined}
           licenseNumber={(import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()}
           sourceApp="kundenportal"
-          features={features}
           appVersion={PORTAL_APP_VERSION}
           releaseLabel={appVersionInfo?.releaseLabel?.trim() || PORTAL_RELEASE_LABEL_BUILD}
           routePath={location.pathname}

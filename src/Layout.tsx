@@ -435,11 +435,11 @@ const Layout = () => {
           licenseApiKey={(import.meta.env.VITE_LICENSE_API_KEY ?? '').trim() || undefined}
           licenseNumber={getStoredLicenseNumber()}
           sourceApp="main"
-          features={license.features ?? {}}
           appVersion={MAIN_APP_VERSION}
           releaseLabel={appVersions?.main?.releaseLabel?.trim() || MAIN_RELEASE_LABEL_BUILD}
           routePath={location.pathname}
           routeQuery={location.search.startsWith('?') ? location.search.slice(1) : location.search}
+          fabInsetBottomCss="calc(4.5rem + env(safe-area-inset-bottom, 0px))"
         />
       ) : null}
     </div>
