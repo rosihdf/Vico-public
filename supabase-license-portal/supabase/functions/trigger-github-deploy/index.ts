@@ -149,9 +149,13 @@ serve(async (req) => {
       ? (rel.ci_metadata as Record<string, unknown>)
       : {}
   const tag = typeof meta.tag === 'string' ? meta.tag.trim() : ''
-  const sha = typeof meta.target_commitish === 'string' ? meta.target_commitish.trim() : ''
+  const targetCommitish =
+    typeof meta.target_commitish === 'string' ? meta.target_commitish.trim() : ''
   const versionSemver = typeof rel.version_semver === 'string' ? rel.version_semver.trim() : ''
-  let gitRef = tag || sha
+  // Wichtig: target_commitish zuerst (Sync-Workflow setzt z. B. github.sha). Der Anzeige-Tag
+  // „main/1.0.2“ liegt oft nur in der DB, ohne dass ein gleichnamiger Git-Tag im Repo existiert –
+  // dann schlägt actions/checkout fehl, wenn wir tag||sha nutzen würden.
+  let gitRef = targetCommitish || tag
   if (!gitRef && versionSemver) {
     gitRef = `${channel}/${versionSemver}`
   }
@@ -159,7 +163,7 @@ serve(async (req) => {
     return json(req, 400, {
       ok: false,
       error:
-        'Kein Git-Ref: bitte in ci_metadata „tag“ oder „target_commitish“ setzen (oder Version passt zur Tag-Konvention Kanal/Version).',
+        'Kein Git-Ref: bitte Release erneut mit „Sync release to license portal“ synchronisieren (ci_metadata.target_commitish) oder tag/target_commitish setzen.',
     })
   }
 
