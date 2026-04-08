@@ -17,6 +17,7 @@ import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
 import { useComponentSettings } from './ComponentSettingsContext'
 import { hasFeature } from './lib/licenseService'
+import { isLicenseFeatureEnabledWithDefault } from '../shared/licenseFeatures'
 import { fetchMaintenanceReminders, subscribeToDataChange } from './lib/dataService'
 import { countMaintenanceRemindersNeedingAttention } from './lib/maintenanceReminderUtils'
 import {
@@ -161,6 +162,7 @@ const Layout = () => {
   ]
 
   const isOffline = syncStatus === 'offline'
+  const showDegradedBanner = isLicenseFeatureEnabledWithDefault(license?.features, 'degraded_banner', true)
   const isAuthPage = location.pathname === '/login' || location.pathname === '/reset-password'
 
   if (isAuthPage) {
@@ -277,7 +279,7 @@ const Layout = () => {
         </div>
       )}
       <LicensePortalStaleBanner visible={licensePortalStale} suppress={isOffline} />
-      <MandantDegradedBanner suppress={isOffline} />
+      {showDegradedBanner ? <MandantDegradedBanner suppress={isOffline} /> : null}
 
       {/* Hamburger Overlay (unter Kopfzeile, damit Hamburger immer bedienbar bleibt) */}
       {isMenuOpen && (

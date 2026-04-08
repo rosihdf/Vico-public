@@ -14,6 +14,7 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { resolve4 } from 'node:dns/promises'
 
 const parseArgs = () => {
   const argv = process.argv.slice(2)
@@ -41,7 +42,61 @@ const loadUrls = (filePath) => {
   return urls
 }
 
-const main = () => {
+const runPsql = (dbUrl, sqlPath) => {
+  const r = spawnSync('psql', [dbUrl, '-v', 'ON_ERROR_STOP=1', '-f', sqlPath], {
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  if (r.stdout) process.stdout.write(r.stdout)
+  if (r.stderr) process.stderr.write(r.stderr)
+  return r
+}
+
+const hasSupabaseDbHostname = (dbUrl) => {
+  try {
+    const parsed = new URL(dbUrl)
+    return /^db\.[a-z0-9-]+\.supabase\.co$/i.test(parsed.hostname)
+  } catch {
+    return false
+  }
+}
+
+const hasHostaddrParam = (dbUrl) => {
+  try {
+    const parsed = new URL(dbUrl)
+    return parsed.searchParams.has('hostaddr')
+  } catch {
+    return false
+  }
+}
+
+const shouldRetryWithIpv4 = (status, stderr, dbUrl) => {
+  if (status === 0) return false
+  if (!hasSupabaseDbHostname(dbUrl)) return false
+  if (hasHostaddrParam(dbUrl)) return false
+  const s = String(stderr ?? '')
+  return (
+    /Network is unreachable/i.test(s) ||
+    /Cannot assign requested address/i.test(s) ||
+    /No route to host/i.test(s) ||
+    /connection to server at .* failed/i.test(s)
+  )
+}
+
+const tryBuildIpv4HostaddrUrl = async (dbUrl) => {
+  try {
+    const parsed = new URL(dbUrl)
+    if (!parsed.hostname || !parsed.hostname.startsWith('db.')) return null
+    const ipv4 = await resolve4(parsed.hostname)
+    if (!ipv4.length) return null
+    parsed.searchParams.set('hostaddr', ipv4[0])
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
+const main = async () => {
   const { sqlFile, urlsFile, dryRun } = parseArgs()
 
   if (!sqlFile || !urlsFile) {
@@ -92,12 +147,27 @@ const main = () => {
     const url = urls[i]
     const safe = url.replace(/:[^:@/]+@/, ':****@')
     console.log(`\n--- [${i + 1}/${urls.length}] ${safe} ---`)
-    const r = spawnSync('psql', [url, '-v', 'ON_ERROR_STOP=1', '-f', sqlPath], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'inherit', 'inherit'],
-    })
+    let r = runPsql(url, sqlPath)
+    const stderr = String(r.stderr ?? '')
+    if (shouldRetryWithIpv4(r.status, stderr, url)) {
+      const retryUrl = await tryBuildIpv4HostaddrUrl(url)
+      if (retryUrl) {
+        console.warn('IPv6 nicht erreichbar – Retry mit hostaddr (IPv4).')
+        r = runPsql(retryUrl, sqlPath)
+      } else {
+        console.warn(
+          'IPv4-Hostaddr konnte nicht ermittelt werden (DNS resolve4 ohne Treffer). ' +
+            'Der Host scheint nur IPv6 zu haben.'
+        )
+        console.warn(
+          'Hinweis: In GitHub-Hosted Runnern fehlt häufig IPv6. ' +
+            'Bitte in der URLs-Datei eine Supabase-Pooler-URL mit IPv4 verwenden (pooler.supabase.com) ' +
+            'oder den Job auf einem Runner mit IPv6 ausführen.'
+        )
+      }
+    }
     if (r.status !== 0) {
-      console.error(`Fehler bei Mandant ${i + 1} (Exit ${r.status}). Abbruch.`)
+      console.error(`Fehler bei Mandant ${i + 1} (Exit ${r.status ?? 1}). Abbruch.`)
       failed = true
       break
     }
@@ -107,4 +177,7 @@ const main = () => {
   console.log('\nFertig: alle URLs erfolgreich.')
 }
 
-main()
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : String(err))
+  process.exit(1)
+})

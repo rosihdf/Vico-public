@@ -38,6 +38,8 @@ import ConfirmDialog from './components/ConfirmDialog'
 import PdfPreviewOverlay, { type PdfPreviewState } from './components/PdfPreviewOverlay'
 import OrderActiveConflictCallout from './components/OrderActiveConflictCallout'
 import EmptyState from '../shared/EmptyState'
+import { useLicense } from './LicenseContext'
+import { isAssignedChannelReleaseAtLeast } from './lib/releaseGate'
 import type { Order, Customer, BV, Object as Obj, OrderType, OrderStatus } from './types'
 import type { Profile } from './lib/userService'
 
@@ -109,7 +111,9 @@ const buildObjektBearbeitenUrl = (o: Order): string => {
 
 const AuftragAnlegen = () => {
   const { user, userRole } = useAuth()
+  const { mandantenReleases } = useLicense()
   const { showError } = useToast()
+  const isRelease110Enabled = isAssignedChannelReleaseAtLeast(mandantenReleases, '1.1.0')
   const canAssign = userRole === 'admin'
   const canEdit = userRole === 'admin' || userRole === 'mitarbeiter'
   const canBuchhaltungExport =
@@ -792,7 +796,7 @@ const AuftragAnlegen = () => {
         </ul>
       ))}
 
-      <PdfPreviewOverlay state={pdfViewer} onClose={handleClosePdfViewer} />
+      {isRelease110Enabled ? <PdfPreviewOverlay state={pdfViewer} onClose={handleClosePdfViewer} /> : null}
 
       <ConfirmDialog
         open={confirmDialog.open}
@@ -1034,7 +1038,7 @@ const AuftragAnlegen = () => {
                   placeholder="Auftragsdetails…"
                 />
               </div>
-              {conflictCalloutRows.length > 0 ? (
+              {isRelease110Enabled && conflictCalloutRows.length > 0 ? (
                 <div className="pt-1">
                   <OrderActiveConflictCallout
                     conflicts={conflictCalloutRows}

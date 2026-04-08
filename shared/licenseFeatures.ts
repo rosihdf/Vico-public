@@ -22,6 +22,8 @@ export const LICENSE_FEATURE_KEYS = [
   'qr_batch_a4',
   /** Beta-Live-Test: Feedback-Widget (Haupt-App, Kundenportal, Arbeitszeit-Portal) */
   'beta_feedback',
+  /** Hinweis „Mandanten-Datenbank nicht erreichbar“ anzeigen */
+  'degraded_banner',
 ] as const
 
 export type LicenseFeatureKey = (typeof LICENSE_FEATURE_KEYS)[number]
@@ -39,6 +41,13 @@ export const LICENSE_FEATURE_LABELS: Record<string, string> = {
   ladezeiten: 'Ladezeiten (System)',
   qr_batch_a4: 'A4-QR-Etiketten',
   beta_feedback: 'Beta-Feedback (Live-Test)',
+  degraded_banner: 'Hinweis: Mandanten-Datenbank instabil',
+}
+
+/** Kurzhinweise für Admin-UI (Tooltip/Title an Feature-Checkboxen). */
+export const LICENSE_FEATURE_DESCRIPTIONS: Record<string, string> = {
+  degraded_banner:
+    'Steuert den Hinweis „Lizenzportal oder Mandanten-Datenbank nicht erreichbar“. false = Hinweis ausblenden.',
 }
 
 /** Default false für alle bekannten Keys (z. B. Formulare) */
@@ -59,6 +68,22 @@ export const isLicenseFeatureEnabled = (
   if (raw === true) return true
   if (raw === 'true' || raw === 1 || raw === '1') return true
   return false
+}
+
+/**
+ * Wie `isLicenseFeatureEnabled`, aber mit konfigurierbarem Default.
+ * Für Flags, die historisch "immer an" waren, kann so `defaultValue=true` genutzt werden.
+ */
+export const isLicenseFeatureEnabledWithDefault = (
+  features: Record<string, boolean> | null | undefined,
+  key: string,
+  defaultValue: boolean
+): boolean => {
+  const raw = features?.[key] as unknown
+  if (raw == null) return defaultValue
+  if (raw === true || raw === 'true' || raw === 1 || raw === '1') return true
+  if (raw === false || raw === 'false' || raw === 0 || raw === '0') return false
+  return defaultValue
 }
 
 /** Normalisiert gespeicherte Features auf bekannte Keys (fehlende → false). */
@@ -94,6 +119,7 @@ export const TIER_DEFAULT_FEATURES: Record<string, Record<string, boolean>> = {
     ladezeiten: false,
     qr_batch_a4: false,
     beta_feedback: false,
+    degraded_banner: true,
   },
   professional: {
     kundenportal: true,
@@ -107,6 +133,7 @@ export const TIER_DEFAULT_FEATURES: Record<string, Record<string, boolean>> = {
     ladezeiten: true,
     qr_batch_a4: false,
     beta_feedback: false,
+    degraded_banner: true,
   },
   enterprise: {
     kundenportal: true,
@@ -120,5 +147,6 @@ export const TIER_DEFAULT_FEATURES: Record<string, Record<string, boolean>> = {
     ladezeiten: true,
     qr_batch_a4: false,
     beta_feedback: false,
+    degraded_banner: true,
   },
 }

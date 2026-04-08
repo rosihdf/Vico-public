@@ -25,7 +25,7 @@ import MandantenIncomingReleaseBanner from '../../../shared/MandantenIncomingRel
 import MandantenReleaseRolloutRefreshBanner from '../../../shared/MandantenReleaseRolloutRefreshBanner'
 import MandantenReleaseHardReloadGate from '../../../shared/MandantenReleaseHardReloadGate'
 import BetaFeedbackWidget from '../../../shared/BetaFeedbackWidget'
-import { isLicenseFeatureEnabled } from '../../../shared/licenseFeatures'
+import { isLicenseFeatureEnabled, isLicenseFeatureEnabledWithDefault } from '../../../shared/licenseFeatures'
 
 const THEME_LABELS: Record<Theme, string> = {
   light: 'Hell',
@@ -96,6 +96,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
 
   const showOrderActivityBanner =
     orderActivityBannerWorthy && orderActivityFingerprint !== dismissedOrderActivityFingerprint
+  const showDegradedBanner = isLicenseFeatureEnabledWithDefault(features, 'degraded_banner', true)
 
   const handleDismissOrderActivityBanner = useCallback(() => {
     try {
@@ -277,7 +278,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
         </div>
       ) : null}
       <MandantenIncomingReleaseBanner releases={mandantenReleases} />
-      <MandantDegradedBanner />
+      {showDegradedBanner ? <MandantDegradedBanner /> : null}
       {showOrderActivityBanner ? (
         <div
           role="status"

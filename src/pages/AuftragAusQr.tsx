@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
+import { useLicense } from '../LicenseContext'
 import { useToast } from '../ToastContext'
 import { getSupabaseErrorMessage } from '../supabaseErrors'
 import {
@@ -23,6 +24,7 @@ import {
 import { getObjectDisplayName, objectAccessoriesDisplayString } from '../lib/objectUtils'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import OrderActiveConflictCallout from '../components/OrderActiveConflictCallout'
+import { isAssignedChannelReleaseAtLeast } from '../lib/releaseGate'
 import { isOnline } from '../../shared/networkUtils'
 import type { Object as Obj, Customer, BV, OrderType, Order } from '../types'
 
@@ -53,7 +55,9 @@ const AuftragAusQr = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { mandantenReleases } = useLicense()
   const { showError, showToast } = useToast()
+  const isRelease110Enabled = isAssignedChannelReleaseAtLeast(mandantenReleases, '1.1.0')
 
   const customerId = searchParams.get('customerId') ?? ''
   const bvId = searchParams.get('bvId')
@@ -385,7 +389,7 @@ const AuftragAusQr = () => {
 
       <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Tür/Tor aus QR</h2>
 
-      {hasActiveOrderOnThisDoor ? (
+      {isRelease110Enabled && hasActiveOrderOnThisDoor ? (
         <OrderActiveConflictCallout
           conflicts={createConflictDoors ?? qrSameDoorConflicts}
           resolveDoorLabel={() => getObjectDisplayName(obj)}

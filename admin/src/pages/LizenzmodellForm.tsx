@@ -6,7 +6,12 @@ import {
   updateLicenseModel,
   type LicenseModelInsert,
 } from '../lib/licensePortalService'
-import { LICENSE_FEATURE_KEYS, LICENSE_FEATURE_LABELS, emptyLicenseFeatures } from '../../../shared/licenseFeatures'
+import {
+  LICENSE_FEATURE_KEYS,
+  LICENSE_FEATURE_LABELS,
+  LICENSE_FEATURE_DESCRIPTIONS,
+  emptyLicenseFeatures,
+} from '../../../shared/licenseFeatures'
 
 const TIER_OPTIONS = ['free', 'professional', 'enterprise'] as const
 const CHECK_INTERVAL_OPTIONS = ['on_start', 'daily', 'weekly'] as const
@@ -264,7 +269,11 @@ const LizenzmodellForm = () => {
           <span className="block text-sm font-medium text-slate-700 mb-2">Features</span>
           <div className="flex flex-wrap gap-4">
             {LICENSE_FEATURE_KEYS.map((key) => (
-              <label key={key} className="flex items-center gap-2 cursor-pointer">
+              <label
+                key={key}
+                className="flex items-center gap-2 cursor-pointer"
+                title={LICENSE_FEATURE_DESCRIPTIONS[key] ?? ''}
+              >
                 <input
                   type="checkbox"
                   checked={form.features?.[key] ?? false}

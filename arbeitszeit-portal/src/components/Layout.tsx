@@ -12,7 +12,7 @@ import MandantenIncomingReleaseBanner from '../../../shared/MandantenIncomingRel
 import MandantenReleaseRolloutRefreshBanner from '../../../shared/MandantenReleaseRolloutRefreshBanner'
 import MandantenReleaseHardReloadGate from '../../../shared/MandantenReleaseHardReloadGate'
 import BetaFeedbackWidget from '../../../shared/BetaFeedbackWidget'
-import { isLicenseFeatureEnabled } from '../../../shared/licenseFeatures'
+import { isLicenseFeatureEnabled, isLicenseFeatureEnabledWithDefault } from '../../../shared/licenseFeatures'
 import { supabase } from '../lib/supabase'
 
 const AZ_APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
@@ -47,6 +47,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
 
   const showStandort = features.standortabfrage === true
   const showUrlaub = features.urlaub === true
+  const showDegradedBanner = isLicenseFeatureEnabledWithDefault(features, 'degraded_banner', true)
 
   const navItems: NavItem[] = [
     { to: '/', label: 'Übersicht', isActive: (p) => p === '/' || p === '/uebersicht' },
@@ -196,7 +197,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
         </div>
       ) : null}
       <MandantenIncomingReleaseBanner releases={mandantenReleases} />
-      <MandantDegradedBanner />
+      {showDegradedBanner ? <MandantDegradedBanner /> : null}
 
       {/* Overlay unter Kopfzeile */}
       {isMenuOpen && (
