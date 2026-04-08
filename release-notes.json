@@ -1,4 +1,7 @@
 {
+  "1.0.7": [
+    "CI/Test-Hotfix: fehlendes Modul feststellChecklistCatalog versioniert; Testlauf wieder vollständig ausführbar."
+  ],
   "1.0.6": [
     "Beta-Feedback (Mobile): Dialog bis ganz unten erreichbar, inkl. Safe-Area-optimierter Scrollhöhe.",
     "Haupt-App-Menüleiste stabilisiert: Kopfleiste bleibt auch bei Update-/Offline-Hinweisen an fixer Position."
