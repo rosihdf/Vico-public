@@ -1,8 +1,9 @@
 {
-  "version": "1.0.7",
+  "version": "1.0.8",
   "buildTime": "",
   "releaseNotes": [
-    "CI/Test-Hotfix: fehlendes Modul feststellChecklistCatalog versioniert; Testlauf wieder vollständig ausführbar."
+    "CI-Hotfix: checklistProtocol/checklistProtocolService und Feststell-Parsing mit versioniert, damit Datenservice- und Protokolltests konsistent laufen.",
+    "Import-/Parser-Konsistenz für Wartungs-Checklisten (Tür + Feststellanlage) in Completion-Extra verbessert."
   ],
   "releaseLabel": "Beta"
 }
