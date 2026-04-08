@@ -15,3 +15,9 @@ Workflow **Mandanten-DB – Rollout (psql)** (`mandanten-db-apply-complete.yml`)
 
 - **Kein** Leerzeichen und **kein** geschütztes Leerzeichen (NBSP) **nach** `build` – sonst meldet npm `Missing script: "build "` und der Deploy bricht ab.
 - Befehl bei Bedarf **neu eintippen**, nicht aus Word/PDF mit Sonderzeichen einfügen.
+
+## Lizenz-API (Mandanten-Apps)
+
+**`VITE_LICENSE_API_URL`** = Basis-URL des **Lizenzportal-Supabase** mit Pfad **`/functions/v1`** (ohne trailing slash), z. B. `https://<ref>.supabase.co/functions/v1`. Die Function **`license`** liefert Lizenz + Design + `mandantenReleases`. **Kein** Netlify-`/api`-Pfad mehr, wenn ausschließlich Cloudflare Pages genutzt wird.
+
+**Nur diese Function deployen (Release-/Lizenz-API-Änderungen):** Repo-Root **`npm run lp:deploy:mandanten-update`** bzw. GitHub Actions **„LP – Deploy Mandanten-Update (license)“** (`workflow_dispatch`).

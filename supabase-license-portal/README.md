@@ -2,7 +2,23 @@
 
 Supabase Edge Functions für das Lizenzportal (Projekt ojryoosqwfbzlmdeywzs).
 
-## Lizenz-Funktion deployen
+## Nur Mandanten-Update / Lizenz-API (`license`) deployen
+
+**Empfohlen (Repo-Root):** nur diese Function – ohne `limit-exceeded`, `update-impressum`, Rollout-Trigger:
+
+```bash
+npm run lp:deploy:mandanten-update
+```
+
+Optional mit Ref (ohne vorher `supabase link`):
+
+```bash
+npm run lp:deploy:mandanten-update -- --project-ref ojryoosqwfbzlmdeywzs
+```
+
+**CI:** Workflow **„LP – Deploy Mandanten-Update (license)“** (`workflow_dispatch`) – Secrets siehe `.github/workflows/supabase-license-portal-deploy-mandanten-update.yml`.
+
+**Manuell im Ordner:**
 
 ```bash
 cd supabase-license-portal
@@ -32,5 +48,5 @@ Im **GitHub-Repo** zusätzlich: **`MANDANTEN_DB_URLS_STAGING`** und **`MANDANTEN
 
 ## Hinweise
 
-- **Vor Release auf Netlify:** Lizenz-Architektur nochmals überdenken.
+- Mandanten-Apps (Cloudflare Pages) nutzen **`VITE_LICENSE_API_URL`** → `…/functions/v1`; die Function **`license`** ist der Endpunkt für Releases / `mandantenReleases`.
 - **Ladezeiten:** Lizenzportal-Ladezeiten werden beobachtet.
