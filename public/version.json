@@ -1,9 +1,9 @@
 {
-  "version": "1.0.5",
+  "version": "1.0.6",
   "buildTime": "",
   "releaseNotes": [
-    "Update-Hinweis oben: Dark-Theme-Kontrast verbessert (Text und Aktionen jetzt klar lesbar).",
-    "Test/Build-Fix: fehlendes Modul doorMaintenanceChecklistCatalog ergänzt, damit Vitest-Suites wieder vollständig laufen."
+    "Beta-Feedback (Mobile): Dialog bis ganz unten erreichbar, inkl. Safe-Area-optimierter Scrollhöhe.",
+    "Haupt-App-Menüleiste stabilisiert: Kopfleiste bleibt auch bei Update-/Offline-Hinweisen an fixer Position."
   ],
   "releaseLabel": "Beta"
 }

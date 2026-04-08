@@ -197,7 +197,11 @@ const BetaFeedbackWidget = ({
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-800 shadow-xl border border-slate-200 dark:border-slate-600 p-4 sm:p-6"
+            className="w-full max-w-lg overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-800 shadow-xl border border-slate-200 dark:border-slate-600 p-4 sm:p-6"
+            style={{
+              maxHeight: 'calc(100dvh - 1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))',
+              paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+            }}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={handlePanelKeyDown}
           >

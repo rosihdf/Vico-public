@@ -182,6 +182,38 @@ const Layout = () => {
       >
         Zum Inhalt springen
       </a>
+      <header className="relative bg-vico-background shadow-md sticky top-0 z-50 flex items-center justify-between gap-2 px-4 min-h-[calc(3.5rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] overflow-visible">
+        <button
+          type="button"
+          onClick={handleMenuToggle}
+          onKeyDown={handleKeyDown}
+          className="flex-shrink-0 p-2 -ml-2 rounded-lg hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/50"
+          aria-label={isMenuOpen ? 'Menü schließen' : 'Menü öffnen'}
+          aria-expanded={isMenuOpen}
+        >
+          <svg
+            className="w-6 h-6 text-white"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 6h16M4 12h16M4 18h16"
+            />
+          </svg>
+        </button>
+
+        <div className="flex-1 min-w-0 flex justify-center items-center pr-16">
+          <Logo variant="header" />
+        </div>
+
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10">
+          <SyncStatusIndicator status={syncStatus} pendingCount={pendingCount} />
+        </div>
+      </header>
       <UpdateBanner />
       <MandantenReleaseHardReloadGate releases={mandantenReleases} />
       <MandantenReleaseRolloutRefreshBanner releases={mandantenReleases} />
@@ -246,38 +278,6 @@ const Layout = () => {
       )}
       <LicensePortalStaleBanner visible={licensePortalStale} suppress={isOffline} />
       <MandantDegradedBanner suppress={isOffline} />
-      <header className="relative bg-vico-background shadow-md sticky top-0 z-50 flex items-center justify-between gap-2 px-4 min-h-[calc(3.5rem+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] overflow-visible">
-        <button
-          type="button"
-          onClick={handleMenuToggle}
-          onKeyDown={handleKeyDown}
-          className="flex-shrink-0 p-2 -ml-2 rounded-lg hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/50"
-          aria-label={isMenuOpen ? 'Menü schließen' : 'Menü öffnen'}
-          aria-expanded={isMenuOpen}
-        >
-          <svg
-            className="w-6 h-6 text-white"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 6h16M4 12h16M4 18h16"
-            />
-          </svg>
-        </button>
-
-        <div className="flex-1 min-w-0 flex justify-center items-center pr-16">
-          <Logo variant="header" />
-        </div>
-
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10">
-          <SyncStatusIndicator status={syncStatus} pendingCount={pendingCount} />
-        </div>
-      </header>
 
       {/* Hamburger Overlay (unter Kopfzeile, damit Hamburger immer bedienbar bleibt) */}
       {isMenuOpen && (
