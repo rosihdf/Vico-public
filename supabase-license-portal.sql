@@ -750,3 +750,43 @@ end $$;
 
 create policy "Admins read beta_feedback" on public.beta_feedback for select using (public.is_admin());
 create policy "Admins update beta_feedback" on public.beta_feedback for update using (public.is_admin());
+
+-- ---------------------------------------------------------------------------
+-- Roadmap-Board (Lizenzportal-Admin)
+-- ---------------------------------------------------------------------------
+create table if not exists public.roadmap_items (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references public.tenants(id) on delete set null,
+  title text not null,
+  wp_id text,
+  status text not null default 'planned' check (
+    status in ('idea', 'planned', 'in_progress', 'blocked', 'done')
+  ),
+  priority text check (priority in ('p0', 'p1', 'p2', 'p3')),
+  target_channel text not null default 'all' check (
+    target_channel in ('all', 'main', 'kundenportal', 'arbeitszeit_portal')
+  ),
+  scope text not null default 'global' check (scope in ('global', 'pilot', 'tenant')),
+  beta_feedback_id uuid references public.beta_feedback(id) on delete set null,
+  public_note text,
+  internal_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists roadmap_items_status_idx on public.roadmap_items (status, created_at desc);
+create index if not exists roadmap_items_priority_idx on public.roadmap_items (priority, created_at desc);
+create index if not exists roadmap_items_tenant_idx on public.roadmap_items (tenant_id, created_at desc);
+
+alter table public.roadmap_items enable row level security;
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'roadmap_items' loop
+    execute format('drop policy if exists %I on public.roadmap_items', r.policyname);
+  end loop;
+end $$;
+
+create policy "Admins read roadmap_items" on public.roadmap_items for select using (public.is_admin());
+create policy "Admins insert roadmap_items" on public.roadmap_items for insert with check (public.is_admin());
+create policy "Admins update roadmap_items" on public.roadmap_items for update using (public.is_admin());
+create policy "Admins delete roadmap_items" on public.roadmap_items for delete using (public.is_admin());

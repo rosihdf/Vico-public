@@ -18,6 +18,7 @@ const GlobaleWartung = lazy(() => import('./pages/GlobaleWartung'))
 const AppReleases = lazy(() => import('./pages/AppReleases'))
 const AppReleaseEditor = lazy(() => import('./pages/AppReleaseEditor'))
 const ReleaseRollout = lazy(() => import('./pages/ReleaseRollout'))
+const Roadmap = lazy(() => import('./pages/Roadmap'))
 const BetaFeedback = lazy(() => import('./pages/BetaFeedback'))
 
 const PageFallback = () => (
@@ -283,6 +284,11 @@ const App = () => {
           <Route path="release-rollout" element={
             <Suspense fallback={<PageFallback />}>
               <ReleaseRollout />
+            </Suspense>
+          } />
+          <Route path="roadmap" element={
+            <Suspense fallback={<PageFallback />}>
+              <Roadmap />
             </Suspense>
           } />
           <Route path="beta-feedback" element={
