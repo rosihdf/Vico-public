@@ -1,4 +1,8 @@
 {
+  "1.0.3": [
+    "Beta-Feedback: robustere Feature-Erkennung (true/\"true\"/1) für zuverlässige Sichtbarkeit.",
+    "Beta-Feedback: Overlay-/Button-Rendering über Portal mit hoher Ebene für konsistente Anzeige."
+  ],
   "1.0.2": [
     "Beta-Feedback: schwebendes Modul (lizenzgesteuert) wie in der Haupt-App.",
     "Beta-Feedback: Dark-Theme-Lesbarkeit in den Formularfeldern."

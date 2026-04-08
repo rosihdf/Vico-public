@@ -1,9 +1,9 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "buildTime": "",
   "releaseNotes": [
-    "Beta-Feedback: schwebendes Modul (lizenzgesteuert) – Seitenkontext, Kategorie, Beschreibung; Auswertung im Lizenzportal-Admin.",
-    "Beta-Feedback: Eingabefelder im Dark Theme lesbar (Text- und Placeholder-Farben)."
+    "Beta-Feedback: Button-Sichtbarkeit in der Haupt-App verbessert (über Bottom-Navigation, stabile Overlay-Ebene).",
+    "Beta-Feedback: Absenden robuster bei fehlender tenants.supabase_url (JWT-Issuer-Fallback in der Edge Function)."
   ],
   "releaseLabel": "Beta"
 }

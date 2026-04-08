@@ -24,6 +24,28 @@ const json = (status: number, body: Record<string, unknown>) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 
+const decodeJwtPayload = (jwt: string): Record<string, unknown> | null => {
+  const parts = jwt.split('.')
+  if (parts.length < 2) return null
+  try {
+    const payload = parts[1]
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(parts[1].length / 4) * 4, '=')
+    const decoded = atob(payload)
+    const parsed = JSON.parse(decoded) as unknown
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+const getIssuerFromJwt = (jwt: string): string => {
+  const payload = decodeJwtPayload(jwt)
+  const iss = payload?.iss
+  return typeof iss === 'string' ? iss.trim() : ''
+}
+
 const extractHostnameFromOriginOrReferer = (originOrReferer: string): string => {
   const t = originOrReferer.trim()
   if (!t) return ''
@@ -274,17 +296,27 @@ serve(async (req) => {
     return json(403, { ok: false, error: 'Modul Beta-Feedback für diese Lizenz nicht aktiv' })
   }
 
+  const issuerFromJwt = getIssuerFromJwt(jwt)
+  const issuerBaseUrl =
+    issuerFromJwt && issuerFromJwt.endsWith('/auth/v1')
+      ? issuerFromJwt.slice(0, -'/auth/v1'.length)
+      : ''
   const mandantSupabaseUrl = tenant?.supabase_url != null ? String(tenant.supabase_url).trim() : ''
-  if (!mandantSupabaseUrl) {
-    return json(503, { ok: false, error: 'Mandanten-Supabase-URL nicht konfiguriert' })
+  const baseUrl = (mandantSupabaseUrl || issuerBaseUrl).replace(/\/$/, '')
+  if (!baseUrl) {
+    return json(503, {
+      ok: false,
+      error:
+        'Mandanten-Supabase-URL nicht konfiguriert und Token-Issuer fehlt. Bitte tenants.supabase_url setzen.',
+    })
   }
 
-  const baseUrl = mandantSupabaseUrl.replace(/\/$/, '')
+  const expectedIssuer = issuerFromJwt || `${baseUrl}/auth/v1`
   let mandantUserId: string
   try {
     const JWKS = createRemoteJWKSet(new URL(`${baseUrl}/auth/v1/.well-known/jwks.json`))
     const { payload } = await jwtVerify(jwt, JWKS, {
-      issuer: `${baseUrl}/auth/v1`,
+      issuer: expectedIssuer,
     })
     const sub = payload.sub
     if (!sub || typeof sub !== 'string') {
