@@ -30,7 +30,12 @@ import {
   initialAppVersionRows,
   type AppVersionRowsState,
 } from '../lib/appVersionFormUtils'
-import { removeTenantLogoFromStorage, uploadTenantLogoWebP } from '../lib/uploadTenantLogo'
+import {
+  removeTenantFaviconFromStorage,
+  removeTenantLogoFromStorage,
+  uploadTenantFaviconWebP,
+  uploadTenantLogoWebP,
+} from '../lib/uploadTenantLogo'
 
 const TIER_OPTIONS = ['free', 'professional', 'enterprise'] as const
 const CHECK_INTERVAL_OPTIONS = ['on_start', 'daily', 'weekly'] as const
@@ -138,6 +143,8 @@ const MandantForm = () => {
   /** Lokale Datei → WebP-Upload nach Speichern (L4) */
   const [logoFilePending, setLogoFilePending] = useState<File | null>(null)
   const [logoPreviewObjectUrl, setLogoPreviewObjectUrl] = useState<string | null>(null)
+  const [faviconFilePending, setFaviconFilePending] = useState<File | null>(null)
+  const [faviconPreviewObjectUrl, setFaviconPreviewObjectUrl] = useState<string | null>(null)
   const [maintenanceExtendMinutes, setMaintenanceExtendMinutes] = useState('30')
 
   const loadLicenses = useCallback(async (tenantId: string) => {
@@ -178,6 +185,7 @@ const MandantForm = () => {
         ])
         if (t) {
           setLogoFilePending(null)
+          setFaviconFilePending(null)
           setForm({
             name: t.name ?? '',
             app_domain: t.app_domain ?? '',
@@ -240,6 +248,16 @@ const MandantForm = () => {
   }, [logoFilePending])
 
   useEffect(() => {
+    if (!faviconFilePending) {
+      setFaviconPreviewObjectUrl(null)
+      return
+    }
+    const u = URL.createObjectURL(faviconFilePending)
+    setFaviconPreviewObjectUrl(u)
+    return () => URL.revokeObjectURL(u)
+  }, [faviconFilePending])
+
+  useEffect(() => {
     if (isNew || !id || !locationState) return
     if (locationState.openCreateLicense) {
       setShowCreateLicense(true)
@@ -271,6 +289,12 @@ const MandantForm = () => {
     e.target.value = ''
   }
 
+  const handleFaviconFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (f) setFaviconFilePending(f)
+    e.target.value = ''
+  }
+
   const handleRemoveStoredLogo = async () => {
     if (!id) return
     setError(null)
@@ -281,6 +305,18 @@ const MandantForm = () => {
     }
     setForm((prev) => ({ ...prev, logo_url: '' }))
     setLogoFilePending(null)
+  }
+
+  const handleRemoveStoredFavicon = async () => {
+    if (!id) return
+    setError(null)
+    const rm = await removeTenantFaviconFromStorage(id)
+    if (rm.error) {
+      setError(rm.error)
+      return
+    }
+    setForm((prev) => ({ ...prev, favicon_url: '' }))
+    setFaviconFilePending(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -332,6 +368,7 @@ const MandantForm = () => {
         })
         if ('id' in result) {
           let logoUrl = form.logo_url.trim() || null
+          let faviconUrl = form.favicon_url.trim() || null
           if (logoFilePending) {
             const up = await uploadTenantLogoWebP(result.id, logoFilePending)
             if (up.error) {
@@ -347,12 +384,28 @@ const MandantForm = () => {
               }
             }
           }
+          if (faviconFilePending) {
+            const upFav = await uploadTenantFaviconWebP(result.id, faviconFilePending)
+            if (upFav.error) {
+              setError(upFav.error)
+              return
+            }
+            if (upFav.publicUrl) {
+              faviconUrl = upFav.publicUrl
+              const updFav = await updateTenant(result.id, { favicon_url: faviconUrl })
+              if (!updFav.ok) {
+                setError(updFav.error ?? 'Favicon-URL konnte nicht gespeichert werden.')
+                return
+              }
+            }
+          }
           navigate('/mandanten')
         } else {
           setError(result.error ?? 'Speichern fehlgeschlagen')
         }
       } else if (id) {
         let logoUrl = form.logo_url.trim() || null
+        let faviconUrl = form.favicon_url.trim() || null
         if (logoFilePending) {
           const up = await uploadTenantLogoWebP(id, logoFilePending)
           if (up.error) {
@@ -360,6 +413,14 @@ const MandantForm = () => {
             return
           }
           if (up.publicUrl) logoUrl = up.publicUrl
+        }
+        if (faviconFilePending) {
+          const upFav = await uploadTenantFaviconWebP(id, faviconFilePending)
+          if (upFav.error) {
+            setError(upFav.error)
+            return
+          }
+          if (upFav.publicUrl) faviconUrl = upFav.publicUrl
         }
         const result = await updateTenant(id, {
           name: form.name,
@@ -375,7 +436,7 @@ const MandantForm = () => {
           primary_color: form.primary_color,
           app_name: form.app_name,
           logo_url: logoUrl || null,
-          favicon_url: form.favicon_url.trim() || null,
+          favicon_url: faviconUrl || null,
           impressum_company_name: form.impressum_company_name || null,
           impressum_address: form.impressum_address || null,
           impressum_contact: form.impressum_contact || null,
@@ -1282,6 +1343,36 @@ const MandantForm = () => {
             <code className="bg-slate-100 px-1 rounded">design.favicon_url</code> ausgeliefert.
           </p>
           <input
+            id="favicon_file"
+            type="file"
+            accept="image/*,.ico"
+            className="sr-only"
+            onChange={handleFaviconFileChange}
+            aria-label="Favicon-Datei auswählen"
+          />
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <label
+              htmlFor="favicon_file"
+              className="inline-flex px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 cursor-pointer"
+            >
+              Datei wählen (PNG/ICO …)
+            </label>
+            {faviconFilePending ? (
+              <span className="text-xs text-slate-600 truncate max-w-[12rem]" title={faviconFilePending.name}>
+                Auswahl: {faviconFilePending.name}
+              </span>
+            ) : null}
+            {id && !isNew ? (
+              <button
+                type="button"
+                onClick={handleRemoveStoredFavicon}
+                className="text-sm text-red-600 hover:text-red-800 underline"
+              >
+                Gespeichertes Storage-Favicon entfernen
+              </button>
+            ) : null}
+          </div>
+          <input
             id="favicon_url"
             type="url"
             inputMode="url"
@@ -1290,11 +1381,11 @@ const MandantForm = () => {
             onChange={(e) => setForm((f) => ({ ...f, favicon_url: e.target.value }))}
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
           />
-          {form.favicon_url.trim() ? (
+          {(faviconPreviewObjectUrl || form.favicon_url.trim()) ? (
             <div className="mt-2 flex items-center gap-3">
               <span className="text-xs text-slate-500">Vorschau:</span>
               <img
-                src={form.favicon_url.trim()}
+                src={faviconPreviewObjectUrl ?? form.favicon_url.trim()}
                 alt=""
                 className="h-8 w-8 object-contain border border-slate-200 rounded bg-white p-1"
                 onError={(e) => {
