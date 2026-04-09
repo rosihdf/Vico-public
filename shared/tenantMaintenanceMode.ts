@@ -75,12 +75,10 @@ export const getMaintenanceModeBannerForSurface = (
       ? modeStart + (m!.mode_duration_min ?? 0) * 60_000
       : NaN
   const modeEnd = Number.isFinite(modeEndFromField) ? modeEndFromField : modeEndFromDuration
-  const remainingMs =
-    m!.mode_auto_end && Number.isFinite(modeEnd) ? Math.max(0, modeEnd - nowTs) : 0
-  const remainingMin =
-    m!.mode_auto_end && Number.isFinite(modeEnd) ? Math.ceil(remainingMs / 60_000) : null
+  const remainingMs = Number.isFinite(modeEnd) ? Math.max(0, modeEnd - nowTs) : 0
+  const remainingMin = Number.isFinite(modeEnd) ? Math.ceil(remainingMs / 60_000) : null
   const msg = (m!.mode_message?.trim() || 'Wartungsmodus aktiv.') +
-    (m!.mode_auto_end && Number.isFinite(modeEnd)
+    (Number.isFinite(modeEnd)
       ? ` Voraussichtliche Restzeit: ${remainingMin} Min.`
       : ' Voraussichtliche Restzeit: offen (manuelle Beendigung).')
   return { message: msg, remainingMin }
