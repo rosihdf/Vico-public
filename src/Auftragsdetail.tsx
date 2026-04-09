@@ -42,7 +42,6 @@ import {
 import { isOrderActivePerObjectError } from './lib/orderUtils'
 import { useLicense } from './LicenseContext'
 import { hasFeature } from './lib/licenseService'
-import { isAssignedChannelReleaseAtLeast } from './lib/releaseGate'
 import { isOnline } from '../shared/networkUtils'
 import { fetchMyProfile, fetchProfiles, getProfileDisplayName } from './lib/userService'
 import { LoadingSpinner } from './components/LoadingSpinner'
@@ -192,8 +191,7 @@ const Auftragsdetail = () => {
   const { orderId } = useParams<{ orderId: string }>()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { license, design, mandantenReleases } = useLicense()
-  const isRelease110Enabled = isAssignedChannelReleaseAtLeast(mandantenReleases, '1.1.0')
+  const { license, design } = useLicense()
   const { showError, showToast } = useToast()
   const [order, setOrder] = useState<Order | null>(null)
   const [completion, setCompletion] = useState<OrderCompletion | null>(null)
@@ -1259,7 +1257,7 @@ const Auftragsdetail = () => {
         pruefprotokollKurzverweis: order.order_type === 'wartung' && oidsComplete.length > 0,
       })
       const { monteurPath } = await runAfterSavePdfAndPortal(comp, pdfBlob, doPortal, extraSnap)
-      if (order.order_type === 'wartung' && isRelease110Enabled && isOnline()) {
+      if (order.order_type === 'wartung' && isOnline()) {
         for (const oid of oidsComplete) {
           const obj = orderObjects.find((x) => x.id === oid)
           const per = extraSnap.wartung_checkliste?.by_object_id[oid]
@@ -1560,10 +1558,6 @@ const Auftragsdetail = () => {
           return
         }
       }
-      if (!isRelease110Enabled) {
-        showError('Prüfprotokoll ist für diesen Mandanten noch nicht freigeschaltet.')
-        return
-      }
       const mode = per.checklist_modus === 'compact' ? 'compact' : 'detail'
       const prBlob = await generatePruefprotokollPdf({
         order,
@@ -1759,7 +1753,7 @@ const Auftragsdetail = () => {
         </div>
       ) : null}
 
-      {isRelease110Enabled && order.order_type === 'wartung' && orderObjectIds.length > 0 && (
+      {order.order_type === 'wartung' && orderObjectIds.length > 0 && (
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">Prüfcheckliste (kombiniert)</h3>
           <div className="mb-3 flex items-center gap-2">
@@ -2275,7 +2269,7 @@ const Auftragsdetail = () => {
         onCancel={() => setReopenDialogOpen(false)}
       />
 
-      {isRelease110Enabled ? <PdfPreviewOverlay state={pdfViewer} onClose={handleClosePdfViewer} /> : null}
+      <PdfPreviewOverlay state={pdfViewer} onClose={handleClosePdfViewer} />
     </div>
   )
 }
