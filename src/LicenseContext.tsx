@@ -345,6 +345,30 @@ export const LicenseProvider = ({ children }: { children: React.ReactNode }) => 
     return () => window.removeEventListener(LICENSE_NUMBER_STORAGE_EVENT, onLicenseStorage)
   }, [isAuthenticated, userRole, refresh])
 
+  /**
+   * Regelmäßige Aktualisierung der Lizenz-/Wartungsdaten:
+   * - Intervall (60s): hält Wartungsmodus/Ankündigung zeitnah
+   * - Beim Tab-Fokus sofort nachziehen
+   */
+  useEffect(() => {
+    if (!isAuthenticated || userRole === 'kunde') return
+    if (!isLicenseApiConfigured()) return
+
+    const id = window.setInterval(() => {
+      void refresh()
+    }, 60_000)
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void refresh()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [isAuthenticated, userRole, refresh])
+
   useEffect(() => {
     if (!license?.check_interval || license.check_interval === 'on_start') return
     const licenseNumber = getStoredLicenseNumber()

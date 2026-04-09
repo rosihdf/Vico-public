@@ -88,7 +88,7 @@ const Layout = () => {
     isMaintenanceModeWindowActive(maintenanceApi, nowTs) && maintenanceApi?.mode_apply_main_app !== false
   const modeEndForCard = (() => {
     const m = maintenanceApi
-    if (!m?.mode_auto_end) return NaN
+    if (!m) return NaN
     const modeStart = m.mode_starts_at ? Date.parse(m.mode_starts_at) : NaN
     const modeEndFromField = m.mode_ends_at ? Date.parse(m.mode_ends_at) : NaN
     const modeEndFromDuration =
@@ -368,7 +368,7 @@ const Layout = () => {
                   'Die Anwendung befindet sich aktuell im Wartungsmodus.'}
               </p>
               <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                {maintenance?.mode_auto_end && remainingMinCard != null ? (
+                {remainingMinCard != null ? (
                   <>
                     Voraussichtliche Restzeit:{' '}
                     <span className="font-semibold">{remainingMinCard} Minuten</span>
