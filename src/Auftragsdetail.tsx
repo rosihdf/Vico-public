@@ -1193,7 +1193,8 @@ const Auftragsdetail = () => {
           },
         }
       } else {
-        const { wartung_checkliste_abschluss_bypass: _omitBypass, ...restExtra } = payload.completion_extra
+        const restExtra = { ...payload.completion_extra }
+        delete restExtra.wartung_checkliste_abschluss_bypass
         payload.completion_extra = restExtra as OrderCompletionExtraV1
       }
     }
@@ -1780,7 +1781,7 @@ const Auftragsdetail = () => {
             </select>
           </div>
           <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">
-            Eingaben werden automatisch im Bericht entworfen (ca. 0,5 s nach der letzten Änderung, nur online). Das
+            Eingaben werden automatisch im Bericht entworfen (ca. 0,5 s nach der letzten Änderung, nur online). Das
             Prüfprotokoll in der Datenbank entsteht erst, wenn Tür- und ggf. Feststell-Checkliste vollständig und gültig
             ausgefüllt sind. Mangelfotos können Sie schon vorher anlegen; sie werden als Entwurf gespeichert und beim
             Anlegen des Prüfprotokolls automatisch übernommen.
