@@ -64,6 +64,7 @@ jobs:
             exit 1
           fi
           npm ci --legacy-peer-deps
+          npm run build:checklist
           npm run build
           npx --yes wrangler@3 pages deploy dist --project-name="$CF_PROJECT" --branch=main
 
