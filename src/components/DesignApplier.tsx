@@ -13,6 +13,32 @@ const darkenHex = (hex: string, percent: number): string => {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
 }
 
+const inferFaviconType = (url: string): string | null => {
+  const u = url.toLowerCase()
+  if (u.endsWith('.svg')) return 'image/svg+xml'
+  if (u.endsWith('.png')) return 'image/png'
+  if (u.endsWith('.ico')) return 'image/x-icon'
+  if (u.endsWith('.webp')) return 'image/webp'
+  if (u.endsWith('.jpg') || u.endsWith('.jpeg')) return 'image/jpeg'
+  return null
+}
+
+const setFavicon = (url: string) => {
+  const type = inferFaviconType(url)
+  const rels: Array<'icon' | 'shortcut icon'> = ['icon', 'shortcut icon']
+  for (const rel of rels) {
+    let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`)
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = rel
+      document.head.appendChild(link)
+    }
+    link.href = url
+    if (type) link.type = type
+    else link.removeAttribute('type')
+  }
+}
+
 const applyDesignToDom = (design: { app_name?: string; primary_color: string; favicon_url?: string | null }) => {
   const root = document.documentElement
   const primary = design.primary_color || '#5b7895'
@@ -32,17 +58,7 @@ const applyDesignToDom = (design: { app_name?: string; primary_color: string; fa
     document.title = 'Vico'
   }
 
-  let faviconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
-  if (design.favicon_url) {
-    if (!faviconLink) {
-      faviconLink = document.createElement('link')
-      faviconLink.rel = 'icon'
-      document.head.appendChild(faviconLink)
-    }
-    faviconLink.href = design.favicon_url
-  } else if (faviconLink) {
-    faviconLink.href = '/favicon.svg'
-  }
+  setFavicon(design.favicon_url?.trim() ? design.favicon_url.trim() : '/favicon.svg')
 }
 
 const clearDesignFromDom = () => {
@@ -57,10 +73,7 @@ const clearDesignFromDom = () => {
     themeColorMeta.setAttribute('content', '#5b7895')
   }
 
-  const faviconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
-  if (faviconLink) {
-    faviconLink.href = '/favicon.svg'
-  }
+  setFavicon('/favicon.svg')
 }
 
 const DesignApplier = () => {
