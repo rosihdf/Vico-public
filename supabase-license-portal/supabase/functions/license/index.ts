@@ -178,6 +178,21 @@ type LicenseResponse = {
   }
   impressum?: Record<string, string | null>
   datenschutz?: Record<string, string | null>
+  maintenance?: {
+    mode_enabled: boolean
+    mode_message: string | null
+    mode_starts_at: string | null
+    mode_ends_at: string | null
+    mode_duration_min: number | null
+    mode_auto_end: boolean
+    mode_apply_main_app: boolean
+    mode_apply_arbeitszeit_portal: boolean
+    mode_apply_customer_portal: boolean
+    announcement_enabled: boolean
+    announcement_message: string | null
+    announcement_from: string | null
+    announcement_until: string | null
+  }
   appVersions?: Record<string, AppVersionEntry>
   mandantenReleases?: {
     channel: ReleaseChannel
@@ -391,6 +406,19 @@ serve(async (req) => {
           primary_color,
           secondary_color,
           favicon_url,
+          maintenance_mode_enabled,
+          maintenance_mode_message,
+          maintenance_mode_duration_min,
+          maintenance_mode_started_at,
+          maintenance_mode_ends_at,
+          maintenance_mode_auto_end,
+          maintenance_mode_apply_main_app,
+          maintenance_mode_apply_arbeitszeit_portal,
+          maintenance_mode_apply_customer_portal,
+          maintenance_announcement_enabled,
+          maintenance_announcement_message,
+          maintenance_announcement_from,
+          maintenance_announcement_until,
           allowed_domains,
           app_domain,
           portal_domain,
@@ -551,6 +579,26 @@ serve(async (req) => {
             responsible: tenant.datenschutz_responsible as string | null,
             contact_email: tenant.datenschutz_contact_email as string | null,
             dsb_email: tenant.datenschutz_dsb_email as string | null,
+          }
+        : undefined,
+      maintenance: tenant
+        ? {
+            mode_enabled: Boolean(tenant.maintenance_mode_enabled),
+            mode_message: (tenant.maintenance_mode_message as string | null) ?? null,
+            mode_starts_at: (tenant.maintenance_mode_started_at as string | null) ?? null,
+            mode_ends_at: (tenant.maintenance_mode_ends_at as string | null) ?? null,
+            mode_duration_min:
+              tenant.maintenance_mode_duration_min != null
+                ? Number(tenant.maintenance_mode_duration_min)
+                : null,
+            mode_auto_end: Boolean(tenant.maintenance_mode_auto_end),
+            mode_apply_main_app: tenant.maintenance_mode_apply_main_app !== false,
+            mode_apply_arbeitszeit_portal: tenant.maintenance_mode_apply_arbeitszeit_portal !== false,
+            mode_apply_customer_portal: tenant.maintenance_mode_apply_customer_portal !== false,
+            announcement_enabled: Boolean(tenant.maintenance_announcement_enabled),
+            announcement_message: (tenant.maintenance_announcement_message as string | null) ?? null,
+            announcement_from: (tenant.maintenance_announcement_from as string | null) ?? null,
+            announcement_until: (tenant.maintenance_announcement_until as string | null) ?? null,
           }
         : undefined,
     }

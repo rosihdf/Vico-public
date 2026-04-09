@@ -41,6 +41,8 @@ export const isMaintenanceModeWindowActive = (
 ): boolean => {
   if (!m || !m.mode_enabled) return false
   const modeStart = m.mode_starts_at ? Date.parse(m.mode_starts_at) : NaN
+  // Ohne expliziten Start: sofort aktiv, sobald der Modus eingeschaltet ist.
+  if (!Number.isFinite(modeStart)) return true
   const modeEndFromField = m.mode_ends_at ? Date.parse(m.mode_ends_at) : NaN
   const modeEndFromDuration =
     Number.isFinite(modeStart) && (m.mode_duration_min ?? 0) > 0
@@ -94,10 +96,8 @@ export const getMaintenanceAnnouncementForSurface = (
   const until = m?.announcement_until ? Date.parse(m.announcement_until) : NaN
   const visible =
     Boolean(m?.announcement_enabled) &&
-    Number.isFinite(from) &&
-    Number.isFinite(until) &&
-    nowTs >= from &&
-    nowTs <= until
+    (Number.isFinite(from) ? nowTs >= from : true) &&
+    (Number.isFinite(until) ? nowTs <= until : true)
   if (!visible) return null
   return m?.announcement_message?.trim() || 'Geplante Wartung im angegebenen Zeitraum.'
 }
