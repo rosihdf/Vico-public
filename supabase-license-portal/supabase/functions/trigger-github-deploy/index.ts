@@ -152,9 +152,10 @@ serve(async (req) => {
   const targetCommitish =
     typeof meta.target_commitish === 'string' ? meta.target_commitish.trim() : ''
   const versionSemver = typeof rel.version_semver === 'string' ? rel.version_semver.trim() : ''
-  // Wichtig: target_commitish zuerst (Sync-Workflow setzt z. B. github.sha). Der Anzeige-Tag
-  // „main/1.0.2“ liegt oft nur in der DB, ohne dass ein gleichnamiger Git-Tag im Repo existiert –
-  // dann schlägt actions/checkout fehl, wenn wir tag||sha nutzen würden.
+  // Wichtig: target_commitish zuerst (Sync-Workflow setzt github.sha). Ohne SHA/Tag in
+  // ci_metadata: Fallback „Kanal/Version“ – nur nutzbar, wenn im Repo ein gleichnamiger Git-Tag
+  // existiert (sonst actions/checkout@v4-Fehler). Manuell angelegte Releases: SHA in
+  // ci_metadata.target_commitish eintragen (siehe docs/sql/LP-app-release-*.sql).
   let gitRef = targetCommitish || tag
   if (!gitRef && versionSemver) {
     gitRef = `${channel}/${versionSemver}`
@@ -163,7 +164,7 @@ serve(async (req) => {
     return json(req, 400, {
       ok: false,
       error:
-        'Kein Git-Ref: bitte Release erneut mit „Sync release to license portal“ synchronisieren (ci_metadata.target_commitish) oder tag/target_commitish setzen.',
+        'Kein Git-Ref: bitte Release mit „Sync release to license portal“ synchronisieren oder ci_metadata.target_commitish / ci_metadata.tag setzen.',
     })
   }
 
