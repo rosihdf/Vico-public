@@ -11,6 +11,8 @@ const asSb = (client: unknown): Sb => client as Sb
 
 const LETTERHEAD_OBJECT_PATH = 'mandant/briefbogen'
 
+const BRIEFBOGEN_MAX_BYTES = 15 * 1024 * 1024
+
 type BriefbogenConfigValue = {
   storage_path: string
 }
@@ -36,7 +38,15 @@ export const fetchBriefbogenStoragePath = async (client: unknown): Promise<strin
   return parseConfigValue(data.value)
 }
 
-/** Data-URL für jsPDF (PNG/JPEG), oder null wenn nicht konfiguriert / nicht ladbar. */
+const bufferToImageDataUrl = (buf: ArrayBuffer, mime: string): Promise<string | null> =>
+  new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(new Blob([buf], { type: mime || 'image/png' }))
+  })
+
+/** Data-URL für jsPDF (PNG/JPEG), oder null wenn nicht konfiguriert / nicht ladbar. PDF: erste Seite → PNG. */
 export const fetchBriefbogenDataUrlForPdf = async (client: unknown): Promise<string | null> => {
   const sb = asSb(client)
   const path = await fetchBriefbogenStoragePath(client)
@@ -47,12 +57,14 @@ export const fetchBriefbogenDataUrlForPdf = async (client: unknown): Promise<str
     const res = await fetch(signed.signedUrl, { mode: 'cors' })
     if (!res.ok) return null
     const blob = await res.blob()
-    return await new Promise<string | null>((resolve) => {
-      const reader = new FileReader()
-      reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null)
-      reader.onerror = () => resolve(null)
-      reader.readAsDataURL(blob)
-    })
+    const buf = await blob.arrayBuffer()
+    const pathLower = path.toLowerCase()
+    const mimePdf = blob.type === 'application/pdf' || blob.type === 'application/x-pdf'
+    const { isPdfMagicBytes, renderPdfFirstPageToPngDataUrl } = await import('./renderPdfFirstPageToPngDataUrl')
+    if (pathLower.endsWith('.pdf') || mimePdf || isPdfMagicBytes(buf)) {
+      return await renderPdfFirstPageToPngDataUrl(buf)
+    }
+    return await bufferToImageDataUrl(buf, blob.type || 'image/png')
   } catch {
     return null
   }
@@ -70,19 +82,33 @@ export const createBriefbogenPreviewUrl = async (client: unknown): Promise<strin
 
 export const uploadBriefbogenFile = async (client: unknown, file: File): Promise<{ ok: boolean; error?: string }> => {
   const sb = asSb(client)
-  const isPng = file.type === 'image/png'
-  const isJpeg = file.type === 'image/jpeg' || file.type === 'image/jpg'
-  if (!isPng && !isJpeg) {
-    return { ok: false, error: 'Bitte PNG- oder JPEG-Datei wählen.' }
+  if (file.size > BRIEFBOGEN_MAX_BYTES) {
+    return { ok: false, error: 'Datei zu groß (max. 15 MB).' }
   }
-  const ext = isPng ? 'png' : 'jpg'
+  const nameLower = file.name.toLowerCase()
+  const isPng = file.type === 'image/png' || nameLower.endsWith('.png')
+  const isJpeg =
+    file.type === 'image/jpeg' || file.type === 'image/jpg' || nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg')
+  const isPdf = file.type === 'application/pdf' || nameLower.endsWith('.pdf')
+  if (!isPng && !isJpeg && !isPdf) {
+    return { ok: false, error: 'Bitte PNG-, JPEG- oder PDF-Datei wählen.' }
+  }
+  const ext = isPdf ? 'pdf' : isPng ? 'png' : 'jpg'
   const path = `${LETTERHEAD_OBJECT_PATH}.${ext}`
 
-  await sb.storage.from('briefbogen').remove([`${LETTERHEAD_OBJECT_PATH}.png`, `${LETTERHEAD_OBJECT_PATH}.jpg`])
+  await sb.storage.from('briefbogen').remove([
+    `${LETTERHEAD_OBJECT_PATH}.png`,
+    `${LETTERHEAD_OBJECT_PATH}.jpg`,
+    `${LETTERHEAD_OBJECT_PATH}.pdf`,
+  ])
+
+  const contentType = isPdf
+    ? 'application/pdf'
+    : file.type || (isPng ? 'image/png' : 'image/jpeg')
 
   const { error: upErr } = await sb.storage.from('briefbogen').upload(path, file, {
     upsert: true,
-    contentType: file.type || (isPng ? 'image/png' : 'image/jpeg'),
+    contentType,
   })
   if (upErr) {
     return { ok: false, error: upErr.message }

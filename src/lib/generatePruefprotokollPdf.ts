@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { paintLetterheadOnCurrentPage } from '../../shared/pdfLetterhead'
 import type { Order } from '../types'
 import type { Object as Obj } from '../types'
 import type { WartungChecklistItemState } from '../types/orderCompletionExtra'
@@ -45,6 +46,8 @@ export type PruefprotokollPdfInput = {
   feststellItems: Record<string, FeststellChecklistItemState>
   includeFeststell: boolean
   defectPhotosByItem?: Record<string, Array<{ storage_path: string; caption?: string | null }>>
+  /** Optional: Mandanten-Briefbogen (PNG/JPEG Data-URL), Hintergrund pro Seite */
+  letterheadDataUrl?: string | null
 }
 
 const objectStammdatenLines = (o: Obj): string[] => {
@@ -73,16 +76,26 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
     feststellItems,
     includeFeststell,
     defectPhotosByItem,
+    letterheadDataUrl,
   } = input
 
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const margin = 14
   let y = margin
 
+  const applyLetterheadIfSet = () => {
+    if (letterheadDataUrl) {
+      paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+    }
+  }
+
+  applyLetterheadIfSet()
+
   const addLine = (text: string, size = 10) => {
     if (y > 275) {
       doc.addPage()
       y = margin
+      applyLetterheadIfSet()
     }
     doc.setFontSize(size)
     const lines = doc.splitTextToSize(text, 180)
@@ -110,6 +123,7 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
         if (y > 230) {
           doc.addPage()
           y = margin
+          applyLetterheadIfSet()
         }
         doc.setFontSize(8)
         if (p.caption) addLine(`Foto: ${p.caption}`, 8)

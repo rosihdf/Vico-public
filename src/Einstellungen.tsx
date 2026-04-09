@@ -113,6 +113,7 @@ const Einstellungen = () => {
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null)
   const [pushSaving, setPushSaving] = useState(false)
   const [briefbogenPreviewUrl, setBriefbogenPreviewUrl] = useState<string | null>(null)
+  const [briefbogenIsPdf, setBriefbogenIsPdf] = useState(false)
   const [briefbogenConfigured, setBriefbogenConfigured] = useState(false)
   const [briefbogenLoading, setBriefbogenLoading] = useState(false)
   const [briefbogenUploading, setBriefbogenUploading] = useState(false)
@@ -255,6 +256,7 @@ const Einstellungen = () => {
     try {
       const path = await fetchBriefbogenStoragePath()
       setBriefbogenConfigured(Boolean(path))
+      setBriefbogenIsPdf(Boolean(path?.toLowerCase().endsWith('.pdf')))
       if (path) {
         const url = await createBriefbogenPreviewUrl()
         setBriefbogenPreviewUrl(url)
@@ -265,6 +267,7 @@ const Einstellungen = () => {
       setBriefbogenError('Briefbogen-Status konnte nicht geladen werden.')
       setBriefbogenPreviewUrl(null)
       setBriefbogenConfigured(false)
+      setBriefbogenIsPdf(false)
     } finally {
       setBriefbogenLoading(false)
     }
@@ -1732,9 +1735,11 @@ const Einstellungen = () => {
             PDF-Briefbogen (Prüfbericht)
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-            PNG- oder JPEG-Vorlage im <strong className="text-slate-700 dark:text-slate-300">A4-Format</strong> – wird
-            beim PDF-Export und beim E-Mail-Versand des Prüfberichts als Hintergrund jeder Seite eingefügt. Inhalt
-            des Protokolls wird darüber gezeichnet; freie Bereiche in der Vorlage sind sinnvoll zu planen.
+            <strong className="text-slate-700 dark:text-slate-300">PNG, JPEG</strong> oder{' '}
+            <strong className="text-slate-700 dark:text-slate-300">PDF</strong> (einseitig, ideal A4) – wird beim
+            PDF-Export als Hintergrund jeder Seite genutzt. Bei PDF wird nur die{' '}
+            <strong className="text-slate-700 dark:text-slate-300">erste Seite</strong> gerendert; der Protokollinhalt
+            liegt darüber – freie Bereiche in der Vorlage sinnvoll planen.
           </p>
           {briefbogenError && (
             <p className="mb-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg" role="alert">
@@ -1749,11 +1754,19 @@ const Einstellungen = () => {
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Vorschau (Ausschnitt)</p>
                   <div className="rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden bg-slate-100 dark:bg-slate-900 max-h-48">
-                    <img
-                      src={briefbogenPreviewUrl}
-                      alt="Aktueller PDF-Briefbogen"
-                      className="w-full h-auto object-top object-contain max-h-48"
-                    />
+                    {briefbogenIsPdf ? (
+                      <iframe
+                        title="Vorschau Mandanten-Briefbogen PDF"
+                        src={briefbogenPreviewUrl}
+                        className="w-full h-48 border-0 bg-white"
+                      />
+                    ) : (
+                      <img
+                        src={briefbogenPreviewUrl}
+                        alt="Aktueller PDF-Briefbogen"
+                        className="w-full h-auto object-top object-contain max-h-48"
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -1762,11 +1775,11 @@ const Einstellungen = () => {
                   <span className="sr-only">Briefbogen-Datei auswählen</span>
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,.jpg,.jpeg,.png"
+                    accept="image/png,image/jpeg,application/pdf,.jpg,.jpeg,.png,.pdf"
                     onChange={(e) => void handleBriefbogenFileChange(e)}
                     disabled={briefbogenUploading}
                     className="block text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-vico-primary file:text-white hover:file:bg-vico-primary-hover disabled:opacity-50"
-                    aria-label="Briefbogen hochladen (PNG oder JPEG)"
+                    aria-label="Briefbogen hochladen (PNG, JPEG oder PDF)"
                   />
                 </label>
                 {briefbogenConfigured && (

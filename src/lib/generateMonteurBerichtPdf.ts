@@ -42,9 +42,13 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
   const margin = 14
   let y = margin
 
-  if (letterheadDataUrl) {
-    paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+  const applyLetterheadIfSet = () => {
+    if (letterheadDataUrl) {
+      paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+    }
   }
+
+  applyLetterheadIfSet()
 
   doc.setFontSize(16)
   doc.text('Monteursbericht / Auftragsnachweis', margin, y)
@@ -85,6 +89,7 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
     if (y > 270) {
       doc.addPage()
       y = margin
+      applyLetterheadIfSet()
     }
     doc.text(line, margin, y)
     y += 5
@@ -99,6 +104,7 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
       if (y > 270) {
         doc.addPage()
         y = margin
+        applyLetterheadIfSet()
       }
       doc.text(
         `${z.name}: ${z.start || '—'} – ${z.end || '—'}, Pause ${z.pause_minuten} Min.`,
@@ -114,6 +120,7 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
     if (y > 250) {
       doc.addPage()
       y = margin
+      applyLetterheadIfSet()
     }
     doc.setFont('helvetica', 'bold')
     doc.text('Material:', margin, y)
