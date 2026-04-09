@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import {
   fetchBetaFeedbackList,
+  setBetaFeedbackArchived,
   updateBetaFeedbackAdmin,
+  type BetaFeedbackListView,
   type BetaFeedbackRow,
 } from '../lib/betaFeedbackService'
 
@@ -42,6 +44,7 @@ type TenantOpt = { id: string; name: string }
 
 const BetaFeedback = () => {
   const [tenantFilter, setTenantFilter] = useState<string>('all')
+  const [viewFilter, setViewFilter] = useState<BetaFeedbackListView>('active')
   const [tenants, setTenants] = useState<TenantOpt[]>([])
   const [rows, setRows] = useState<BetaFeedbackRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -59,12 +62,13 @@ const BetaFeedback = () => {
     setLoading(true)
     setError(null)
     const { rows: list, error: err } = await fetchBetaFeedbackList(
-      tenantFilter === 'all' ? 'all' : tenantFilter
+      tenantFilter === 'all' ? 'all' : tenantFilter,
+      viewFilter
     )
     if (err) setError(err)
     setRows(list)
     setLoading(false)
-  }, [tenantFilter])
+  }, [tenantFilter, viewFilter])
 
   useEffect(() => {
     void loadTenants()
@@ -109,6 +113,32 @@ const BetaFeedback = () => {
     )
   }
 
+  const handleArchiveToggle = async (row: BetaFeedbackRow, archived: boolean) => {
+    setSavingId(row.id)
+    const r = await setBetaFeedbackArchived(row.id, archived)
+    setSavingId(null)
+    if (!r.ok) {
+      setError(r.error ?? 'Archivieren fehlgeschlagen')
+      return
+    }
+    if ((viewFilter === 'active' && archived) || (viewFilter === 'archived' && !archived)) {
+      setRows((prev) => prev.filter((x) => x.id !== row.id))
+      return
+    }
+    const nowIso = new Date().toISOString()
+    setRows((prev) =>
+      prev.map((x) =>
+        x.id === row.id
+          ? {
+              ...x,
+              archived_at: archived ? nowIso : null,
+              updated_at: nowIso,
+            }
+          : x
+      )
+    )
+  }
+
   return (
     <div className="max-w-6xl mx-auto w-full">
       <h1 className="text-xl font-bold text-slate-900 mb-2">Beta-Feedback</h1>
@@ -132,6 +162,19 @@ const BetaFeedback = () => {
               {t.name}
             </option>
           ))}
+        </select>
+        <label className="text-sm font-medium text-slate-700" htmlFor="bf-view-filter">
+          Ansicht
+        </label>
+        <select
+          id="bf-view-filter"
+          value={viewFilter}
+          onChange={(e) => setViewFilter(e.target.value as BetaFeedbackListView)}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white"
+        >
+          <option value="active">Aktiv</option>
+          <option value="archived">Archiv</option>
+          <option value="all">Alle</option>
         </select>
         <button
           type="button"
@@ -157,7 +200,9 @@ const BetaFeedback = () => {
           {rows.map((row) => (
             <article
               key={row.id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className={`rounded-xl border p-4 shadow-sm ${
+                row.archived_at ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'
+              }`}
             >
               <div className="flex flex-wrap gap-2 items-start justify-between">
                 <div>
@@ -166,6 +211,11 @@ const BetaFeedback = () => {
                     {row.tenants?.name ?? row.tenant_id.slice(0, 8)} ·{' '}
                     {APP_LABELS[row.source_app] ?? row.source_app}
                   </p>
+                  {row.archived_at ? (
+                    <p className="text-xs text-slate-500 mt-1">
+                      Archiviert am {new Date(row.archived_at).toLocaleString('de-DE')}
+                    </p>
+                  ) : null}
                   <p className="font-mono text-sm text-slate-800 mt-1 break-all">
                     {row.route_path}
                     {row.route_query ? `?${row.route_query}` : ''}
@@ -207,6 +257,14 @@ const BetaFeedback = () => {
                       </option>
                     ))}
                   </select>
+                  <button
+                    type="button"
+                    disabled={savingId === row.id}
+                    onClick={() => void handleArchiveToggle(row, !row.archived_at)}
+                    className="text-sm rounded-lg border border-slate-300 px-2 py-1 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {row.archived_at ? 'Aus Archiv holen' : 'Archivieren'}
+                  </button>
                 </div>
               </div>
               <p className="text-xs text-slate-600 mt-2">

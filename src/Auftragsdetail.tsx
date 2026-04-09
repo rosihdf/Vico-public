@@ -450,6 +450,15 @@ const Auftragsdetail = () => {
     for (const o of orderObjects) m[o.id] = o
     return m
   }, [orderObjects])
+  const orderDoorLabels = useMemo(
+    () =>
+      orderObjectIds.map((oid) => {
+        const obj = objectsById[oid]
+        const display = obj ? getObjectDisplayName(obj) : `Tür/Tor ${oid.slice(0, 8)}`
+        return { oid, display }
+      }),
+    [orderObjectIds, objectsById]
+  )
 
   orderRef.current = order
   extraRef.current = extra
@@ -1913,6 +1922,22 @@ const Auftragsdetail = () => {
             rows={3}
             placeholder="Beschreibung der durchgeführten Arbeiten"
           />
+          {orderDoorLabels.length > 1 ? (
+            <div className="mt-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Ausgewählte Türen/Tore für diesen Auftrag:</p>
+              <ul className="mt-1 flex flex-wrap gap-1.5">
+                {orderDoorLabels.map((entry) => (
+                  <li
+                    key={entry.oid}
+                    className="inline-flex items-center rounded-full border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-200"
+                    title={`Objekt-ID: ${entry.oid}`}
+                  >
+                    {entry.display}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </AppField>
 
         <fieldset className="space-y-3 border border-slate-200 dark:border-slate-600 rounded-lg p-4">

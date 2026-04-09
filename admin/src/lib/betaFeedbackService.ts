@@ -19,10 +19,16 @@ export type BetaFeedbackRow = {
   internal_note: string | null
   created_at: string
   updated_at: string
+  archived_at: string | null
   tenants: { name: string } | null
 }
 
-export const fetchBetaFeedbackList = async (tenantId: string | 'all'): Promise<{ rows: BetaFeedbackRow[]; error?: string }> => {
+export type BetaFeedbackListView = 'active' | 'archived' | 'all'
+
+export const fetchBetaFeedbackList = async (
+  tenantId: string | 'all',
+  view: BetaFeedbackListView = 'active'
+): Promise<{ rows: BetaFeedbackRow[]; error?: string }> => {
   let q = supabase
     .from('beta_feedback')
     .select('*, tenants(name)')
@@ -31,6 +37,8 @@ export const fetchBetaFeedbackList = async (tenantId: string | 'all'): Promise<{
   if (tenantId !== 'all') {
     q = q.eq('tenant_id', tenantId)
   }
+  if (view === 'active') q = q.is('archived_at', null)
+  if (view === 'archived') q = q.not('archived_at', 'is', null)
   const { data, error } = await q
   if (error) return { rows: [], error: error.message }
   return { rows: (data ?? []) as BetaFeedbackRow[] }
@@ -47,6 +55,22 @@ export const updateBetaFeedbackAdmin = async (
       priority: payload.priority,
       internal_note: payload.internal_note,
       updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+export const setBetaFeedbackArchived = async (
+  id: string,
+  archived: boolean
+): Promise<{ ok: boolean; error?: string }> => {
+  const nowIso = new Date().toISOString()
+  const { error } = await supabase
+    .from('beta_feedback')
+    .update({
+      archived_at: archived ? nowIso : null,
+      updated_at: nowIso,
     })
     .eq('id', id)
   if (error) return { ok: false, error: error.message }

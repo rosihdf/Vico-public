@@ -106,6 +106,8 @@ const MandantForm = () => {
     app_name: 'AMRtech',
     /** Öffentliche Logo-URL (HTTPS), z. B. CDN oder Storage – wie in der Lizenz-API unter design.logo_url */
     logo_url: '',
+    /** Optional: Mandanten-Favicon (wird als design.favicon_url ausgeliefert). */
+    favicon_url: '',
     impressum_company_name: '',
     impressum_address: '',
     impressum_contact: '',
@@ -184,6 +186,7 @@ const MandantForm = () => {
             primary_color: t.primary_color ?? '#5b7895',
             app_name: t.app_name ?? 'AMRtech',
             logo_url: t.logo_url ?? '',
+            favicon_url: t.favicon_url ?? '',
             impressum_company_name: t.impressum_company_name ?? '',
             impressum_address: t.impressum_address ?? '',
             impressum_contact: t.impressum_contact ?? '',
@@ -301,6 +304,7 @@ const MandantForm = () => {
           primary_color: form.primary_color,
           app_name: form.app_name,
           logo_url: form.logo_url.trim() || null,
+          favicon_url: form.favicon_url.trim() || null,
           impressum_company_name: form.impressum_company_name || null,
           impressum_address: form.impressum_address || null,
           impressum_contact: form.impressum_contact || null,
@@ -371,6 +375,7 @@ const MandantForm = () => {
           primary_color: form.primary_color,
           app_name: form.app_name,
           logo_url: logoUrl || null,
+          favicon_url: form.favicon_url.trim() || null,
           impressum_company_name: form.impressum_company_name || null,
           impressum_address: form.impressum_address || null,
           impressum_contact: form.impressum_contact || null,
@@ -1266,6 +1271,39 @@ const MandantForm = () => {
             </div>
           ) : (
             <p className="mt-2 text-xs text-slate-400">Kein Logo gesetzt (Platzhalter in Apps bis zur Konfiguration).</p>
+          )}
+        </div>
+        <div>
+          <label htmlFor="favicon_url" className="block text-sm font-medium text-slate-700 mb-1">
+            Favicon-URL
+          </label>
+          <p className="text-xs text-slate-500 mb-2">
+            Optional: Öffentliche URL (z. B. PNG oder ICO). Wird in den Apps als{' '}
+            <code className="bg-slate-100 px-1 rounded">design.favicon_url</code> ausgeliefert.
+          </p>
+          <input
+            id="favicon_url"
+            type="url"
+            inputMode="url"
+            placeholder="https://…/favicon.png"
+            value={form.favicon_url}
+            onChange={(e) => setForm((f) => ({ ...f, favicon_url: e.target.value }))}
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
+          />
+          {form.favicon_url.trim() ? (
+            <div className="mt-2 flex items-center gap-3">
+              <span className="text-xs text-slate-500">Vorschau:</span>
+              <img
+                src={form.favicon_url.trim()}
+                alt=""
+                className="h-8 w-8 object-contain border border-slate-200 rounded bg-white p-1"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+              />
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-400">Kein Favicon gesetzt (Standard-Favicon bleibt aktiv).</p>
           )}
         </div>
         <div className="pt-4 border-t border-slate-200">

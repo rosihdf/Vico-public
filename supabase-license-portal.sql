@@ -732,13 +732,16 @@ create table if not exists public.beta_feedback (
   ),
   priority text check (priority in ('p0', 'p1', 'p2', 'p3')),
   internal_note text,
+  archived_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.beta_feedback add column if not exists archived_at timestamptz;
 
 create index if not exists beta_feedback_tenant_created_idx on public.beta_feedback (tenant_id, created_at desc);
 create index if not exists beta_feedback_tenant_user_day_idx on public.beta_feedback (tenant_id, mandant_user_id, created_at desc);
 create index if not exists beta_feedback_status_idx on public.beta_feedback (status);
+create index if not exists beta_feedback_archived_idx on public.beta_feedback (archived_at, created_at desc);
 
 alter table public.beta_feedback enable row level security;
 
