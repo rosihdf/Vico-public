@@ -7,6 +7,7 @@ import {
 import type { WartungChecklistItemState } from '../types/orderCompletionExtra'
 import type { Object as Obj } from '../types'
 import { getMaintenancePhotoUrl } from '../lib/dataService'
+import { getObjectDisplayName } from '../lib/objectUtils'
 import type { ChecklistMangelPhoto } from '../types/maintenance'
 
 const MANGEL_NOTE_INPUT_CLASS =
@@ -101,7 +102,7 @@ const WartungOrderChecklistPanel = ({
           >
             {objectIds.map((oid) => {
               const o = objectsById[oid]
-              const label = o?.internal_id || o?.name || oid.slice(0, 8)
+              const label = o ? getObjectDisplayName(o) : 'Unbenannte Tür/Tor'
               return (
                 <option key={oid} value={oid}>
                   {label}
