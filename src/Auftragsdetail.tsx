@@ -28,9 +28,13 @@ import {
   insertDefectFollowupsForCompletedWartungOrder,
   fetchMaintenanceReportIdByOrderObject,
   fetchPruefprotokollPdfPathForOrderObject,
-  fetchChecklistDefectPhotos,
+  fetchChecklistMangelPhotosGroupedForOrderObject,
   uploadChecklistDefectPhoto,
+  uploadChecklistDefectPhotoDraft,
   deleteChecklistDefectPhoto,
+  deleteChecklistDefectPhotoDraft,
+  promoteChecklistDefectPhotoDrafts,
+  mapDefectPhotoToMangel,
   getMaintenancePhotoUrl,
   type MonteurReportCustomerDeliveryMode,
   type MonteurReportSettingsFull,
@@ -64,6 +68,7 @@ import {
   type OrderCompletionExtraV1,
   type WartungChecklistExtraV1,
   type WartungChecklistItemState,
+  type WartungChecklistPerObject,
 } from './types/orderCompletionExtra'
 import {
   buildDeficiencyTextFromChecklist,
@@ -85,7 +90,7 @@ import { getObjectDisplayName } from './lib/objectUtils'
 import type { Order, OrderCompletion, Customer, BV, OrderType, OrderStatus, Object as Obj } from './types'
 import type { Profile } from './lib/userService'
 import type { MaintenanceReason } from './types/maintenance'
-import type { ChecklistDefectPhoto } from './types/maintenance'
+import type { ChecklistMangelPhoto } from './types/maintenance'
 import { resolveReportDeliverySettings } from './lib/reportDeliverySettings'
 
 const ORDER_TYPE_LABELS: Record<OrderType, string> = {
@@ -222,17 +227,16 @@ const Auftragsdetail = () => {
   const [checklistItemsByObject, setChecklistItemsByObject] = useState<
     Record<string, Record<string, WartungChecklistItemState>>
   >({})
-  const [checklistSaving, setChecklistSaving] = useState(false)
+  const [checklistSyncing, setChecklistSyncing] = useState(false)
   const [checklistSaveError, setChecklistSaveError] = useState<string | null>(null)
   const [feststellItemsByObject, setFeststellItemsByObject] = useState<
     Record<string, Record<string, FeststellChecklistItemState>>
   >({})
-  const [feststellSaving, setFeststellSaving] = useState(false)
   const [feststellSaveError, setFeststellSaveError] = useState<string | null>(null)
   const [checklistModeOverride, setChecklistModeOverride] = useState<ChecklistDisplayMode | null>(null)
   const [checklistReportIdByObject, setChecklistReportIdByObject] = useState<Record<string, string>>({})
   const [defectPhotosByObject, setDefectPhotosByObject] = useState<
-    Record<string, Record<string, ChecklistDefectPhoto[]>>
+    Record<string, Record<string, ChecklistMangelPhoto[]>>
   >({})
   const [uploadingDefectPhotoItem, setUploadingDefectPhotoItem] = useState<string | null>(null)
   const [pdfViewer, setPdfViewer] = useState<PdfPreviewState>(null)
@@ -240,6 +244,23 @@ const Auftragsdetail = () => {
   const [myProfile, setMyProfile] = useState<Profile | null>(null)
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false)
   const checklistInitKeyRef = useRef<string>('')
+  const checklistDraftAutosaveReadyRef = useRef(false)
+  const checklistDraftFingerprintByOidRef = useRef<Record<string, string>>({})
+  const persistChecklistDraftForObjectRef = useRef<(oid: string) => Promise<string | null>>(async () => null)
+  const orderRef = useRef<Order | null>(null)
+  const extraRef = useRef(extra)
+  const completionRef = useRef<OrderCompletion | null>(null)
+  const userRef = useRef(user)
+  const licenseReadOnlyRef = useRef(false)
+  const checklistItemsByObjectRef = useRef<Record<string, Record<string, WartungChecklistItemState>>>({})
+  const feststellItemsByObjectRef = useRef<Record<string, Record<string, FeststellChecklistItemState>>>({})
+  const checklistModeRef = useRef<ChecklistDisplayMode>('detail')
+  const objectsByIdRef = useRef<Record<string, Obj>>({})
+  const ausgeführteRef = useRef(ausgeführte)
+  const printedTechRef = useRef(printedTech)
+  const printedCustRef = useRef(printedCust)
+  const checklistSyncingRef = useRef(false)
+  const checklistReportIdByObjectRef = useRef<Record<string, string>>({})
 
   const handleClosePdfViewer = () => {
     setPdfViewer((prev) => {
@@ -273,6 +294,7 @@ const Auftragsdetail = () => {
 
   const loadData = useCallback(async () => {
     if (!orderId) return
+    checklistDraftAutosaveReadyRef.current = false
     setIsLoading(true)
     setFormError(null)
     const [orderData, completionData, customerData, bvData, profileData, allProfiles] = await Promise.all([
@@ -339,16 +361,13 @@ const Auftragsdetail = () => {
       if (isOnline()) {
         for (const oid of oids) {
           const rid = await fetchMaintenanceReportIdByOrderObject(orderData.id, oid)
-          if (rid) {
-            reportMap[oid] = rid
-            const rows = await fetchChecklistDefectPhotos(rid, oid)
-            const grouped: Record<string, ChecklistDefectPhoto[]> = {}
-            for (const r of rows) {
-              const key = `${r.checklist_scope}:${r.checklist_item_id}`
-              grouped[key] = [...(grouped[key] ?? []), r]
-            }
-            setDefectPhotosByObject((prev) => ({ ...prev, [oid]: grouped }))
-          }
+          if (rid) reportMap[oid] = rid
+          const grouped = await fetchChecklistMangelPhotosGroupedForOrderObject(
+            orderData.id,
+            oid,
+            rid ?? null
+          )
+          setDefectPhotosByObject((prev) => ({ ...prev, [oid]: grouped }))
         }
       }
       setChecklistReportIdByObject(reportMap)
@@ -375,6 +394,25 @@ const Auftragsdetail = () => {
         setFeststellItemsByObject(festMap)
         setSelectedChecklistObjectId(oids[0] ?? null)
       }
+      for (const oid of oids) {
+        const saved = wc[oid]?.items
+        const doorItems =
+          saved && Object.keys(saved).length > 0 ? { ...saved } : initEmptyChecklistItems(mode)
+        const o = objs.find((x) => x.id === oid)
+        const fs = wc[oid]?.feststell_checkliste?.items
+        const festForFp =
+          o?.has_hold_open && fs && Object.keys(fs).length > 0
+            ? { ...fs }
+            : o?.has_hold_open
+              ? initEmptyFeststellChecklistItems(mode)
+              : {}
+        checklistDraftFingerprintByOidRef.current[oid] = JSON.stringify({
+          m: mode,
+          door: doorItems,
+          fest: festForFp,
+        })
+      }
+      checklistDraftAutosaveReadyRef.current = true
     } else {
       setOrderObjects([])
       setChecklistItemsByObject({})
@@ -383,6 +421,8 @@ const Auftragsdetail = () => {
       setDefectPhotosByObject({})
       setSelectedChecklistObjectId(null)
       checklistInitKeyRef.current = ''
+      checklistDraftFingerprintByOidRef.current = {}
+      checklistDraftAutosaveReadyRef.current = false
     }
     setSigTechDataUrl(null)
     setSigCustDataUrl(null)
@@ -412,6 +452,22 @@ const Auftragsdetail = () => {
     for (const o of orderObjects) m[o.id] = o
     return m
   }, [orderObjects])
+
+  orderRef.current = order
+  extraRef.current = extra
+  completionRef.current = completion
+  userRef.current = user
+  licenseReadOnlyRef.current = Boolean(license?.read_only)
+  checklistItemsByObjectRef.current = checklistItemsByObject
+  feststellItemsByObjectRef.current = feststellItemsByObject
+  checklistModeRef.current = checklistMode
+  objectsByIdRef.current = objectsById
+  ausgeführteRef.current = ausgeführte
+  printedTechRef.current = printedTech
+  printedCustRef.current = printedCust
+  checklistSyncingRef.current = checklistSyncing
+  checklistReportIdByObjectRef.current = checklistReportIdByObject
+
   const monteurLocked = useMemo(() => {
     if (order?.order_type !== 'wartung' || orderObjectIds.length === 0) return false
     const sel = selectedChecklistObjectId
@@ -442,33 +498,6 @@ const Auftragsdetail = () => {
     if (!myProfile) return false
     return myProfile.role === 'admin' || myProfile.role === 'mitarbeiter'
   }, [order, license?.read_only, myProfile])
-
-  const buildMergedDeficiencyForOid = useCallback(
-    (oid: string) => {
-      const doorItems =
-        checklistItemsByObject[oid] ?? extra.wartung_checkliste?.by_object_id[oid]?.items ?? {}
-      const doorText = buildDeficiencyTextFromChecklist(checklistMode, doorItems)
-      const ob = objectsById[oid]
-      if (!ob?.has_hold_open) {
-        const t = doorText.trim()
-        return { text: doorText, hasDef: t.length > 0 }
-      }
-      const festItems =
-        feststellItemsByObject[oid] ??
-        extra.wartung_checkliste?.by_object_id[oid]?.feststell_checkliste?.items ??
-        {}
-      const festText = buildDeficiencyTextFromFeststellChecklist(checklistMode, festItems)
-      const merged = [doorText, festText].filter((x) => x.trim().length > 0).join('\n\n---\n\n')
-      return { text: merged, hasDef: merged.trim().length > 0 }
-    },
-    [
-      checklistItemsByObject,
-      checklistMode,
-      extra.wartung_checkliste?.by_object_id,
-      feststellItemsByObject,
-      objectsById,
-    ]
-  )
 
   const setExtraField = <K extends keyof OrderCompletionExtraV1>(key: K, value: OrderCompletionExtraV1[K]) => {
     setExtra((prev) => ({ ...prev, [key]: value }))
@@ -601,6 +630,229 @@ const Auftragsdetail = () => {
       completion_extra: payloadBase.completion_extra,
     } as OrderCompletion
   }
+
+  persistChecklistDraftForObjectRef.current = async (oid: string): Promise<string | null> => {
+    const orderL = orderRef.current
+    if (!orderL || orderL.order_type !== 'wartung') return null
+    if (licenseReadOnlyRef.current) return null
+    if (!isOnline()) return null
+    if (checklistSyncingRef.current) {
+      return checklistReportIdByObjectRef.current[oid] ?? null
+    }
+    if (!checklistDraftAutosaveReadyRef.current) {
+      return checklistReportIdByObjectRef.current[oid] ?? null
+    }
+
+    const extraL = extraRef.current
+    const mode = checklistModeRef.current
+    const items = checklistItemsByObjectRef.current[oid] ?? {}
+    const objectsByIdL = objectsByIdRef.current
+    const ob = objectsByIdL[oid]
+    const festItems = ob?.has_hold_open ? feststellItemsByObjectRef.current[oid] ?? {} : {}
+
+    const doorV = validateChecklistComplete(mode, items)
+    const festV = ob?.has_hold_open ? validateFeststellChecklistComplete(mode, festItems) : { ok: true as const, message: '' }
+    const fullyOk = doorV.ok && festV.ok
+
+    const fp = JSON.stringify({
+      m: mode,
+      door: items,
+      fest: festItems,
+    })
+    const existingRid = checklistReportIdByObjectRef.current[oid]
+    if (checklistDraftFingerprintByOidRef.current[oid] === fp) {
+      if (!fullyOk) return existingRid ?? null
+      if (existingRid) return existingRid
+    }
+
+    const prevPer = extraL.wartung_checkliste?.by_object_id[oid]
+    const stamp = new Date().toISOString()
+
+    const draftPer: WartungChecklistPerObject = {
+      ...(prevPer ?? { items: {} }),
+      checklist_modus: mode,
+      items: { ...items },
+      saved_at: undefined,
+    }
+    if (ob?.has_hold_open) {
+      draftPer.feststell_checkliste = {
+        ...(prevPer?.feststell_checkliste ?? { items: {} }),
+        checklist_modus: mode,
+        items: { ...festItems },
+        saved_at: undefined,
+      }
+    } else if (prevPer?.feststell_checkliste) {
+      draftPer.feststell_checkliste = { ...prevPer.feststell_checkliste }
+    }
+
+    const mergeExtraWithPer = (per: WartungChecklistPerObject): OrderCompletionExtraV1 => ({
+      ...extraL,
+      wartung_checkliste: {
+        v: 1,
+        by_object_id: {
+          ...(extraL.wartung_checkliste?.by_object_id ?? {}),
+          [oid]: per,
+        },
+      },
+    })
+
+    const doorText = buildDeficiencyTextFromChecklist(mode, items)
+    const festText = ob?.has_hold_open
+      ? buildDeficiencyTextFromFeststellChecklist(mode, festItems)
+      : ''
+    const merged = [doorText, festText].filter((x) => x.trim().length > 0).join('\n\n---\n\n')
+    const mergedDef = { text: merged, hasDef: merged.trim().length > 0 }
+
+    const draftExtra = mergeExtraWithPer(draftPer)
+    const completionL = completionRef.current
+    const aus = ausgeführteRef.current
+    const pt = printedTechRef.current
+    const pc = printedCustRef.current
+
+    const buildCompletionPayload = (x: OrderCompletionExtraV1) => ({
+      ausgeführte_arbeiten: aus.trim() || null,
+      material: materialLinesToText(x.material_lines) || null,
+      arbeitszeit_minuten: sumWorkMinutes(x.primary, x.zusatz_monteure) > 0
+        ? sumWorkMinutes(x.primary, x.zusatz_monteure)
+        : null,
+      completion_extra: x,
+      unterschrift_mitarbeiter_name: pt.trim() || null,
+      unterschrift_mitarbeiter_date: new Date().toISOString(),
+      unterschrift_kunde_name: pc.trim() || null,
+      unterschrift_kunde_date: pc.trim() ? new Date().toISOString() : null,
+      unterschrift_mitarbeiter_path: completionL?.unterschrift_mitarbeiter_path ?? null,
+      unterschrift_kunde_path: completionL?.unterschrift_kunde_path ?? null,
+    })
+
+    checklistSyncingRef.current = true
+    setChecklistSyncing(true)
+    setChecklistSaveError(doorV.ok ? null : doorV.message)
+    setFeststellSaveError(ob?.has_hold_open && !festV.ok ? festV.message : null)
+
+    setExtra(draftExtra)
+    const compDraft = await persistCompletion(completionL?.id ?? null, buildCompletionPayload(draftExtra))
+    if (!compDraft) {
+      checklistSyncingRef.current = false
+      setChecklistSyncing(false)
+      return null
+    }
+    setCompletion(compDraft)
+    extraRef.current = draftExtra
+    completionRef.current = compDraft
+
+    if (!fullyOk) {
+      if (checklistReportIdByObjectRef.current[oid]) {
+        setChecklistReportIdByObject((prev) => {
+          if (!prev[oid]) return prev
+          const next = { ...prev }
+          delete next[oid]
+          return next
+        })
+        const ridMap = { ...checklistReportIdByObjectRef.current }
+        delete ridMap[oid]
+        checklistReportIdByObjectRef.current = ridMap
+      }
+      checklistDraftFingerprintByOidRef.current[oid] = fp
+      checklistSyncingRef.current = false
+      setChecklistSyncing(false)
+      return null
+    }
+
+    const hadReportBefore = Boolean(checklistReportIdByObjectRef.current[oid])
+    const festProto = ob?.has_hold_open
+      ? {
+          modus: mode,
+          items: festItems,
+          norms: ['DIN 14677-1', 'DIN 14677-2'],
+          order_id: orderL.id,
+        }
+      : undefined
+
+    const up = await upsertWartungsChecklistProtocol({
+      orderId: orderL.id,
+      objectId: oid,
+      maintenanceDate: draftExtra.bericht_datum,
+      technicianId: userRef.current?.id ?? null,
+      checklistProtocol: {
+        modus: mode,
+        items,
+        norms: ['DIN EN 1634', 'DIN EN 16034', 'DIN 4102', 'DIN 18040'],
+        order_id: orderL.id,
+      },
+      ...(festProto ? { feststellChecklistProtocol: festProto } : {}),
+      deficiencyDescription: mergedDef.hasDef ? mergedDef.text : null,
+      deficienciesFound: mergedDef.hasDef,
+    })
+    if (up.error) {
+      showError(up.error.message)
+      checklistSyncingRef.current = false
+      setChecklistSyncing(false)
+      return null
+    }
+
+    const completePer: WartungChecklistPerObject = {
+      ...draftPer,
+      saved_at: prevPer?.saved_at ?? stamp,
+    }
+    if (ob?.has_hold_open && draftPer.feststell_checkliste) {
+      completePer.feststell_checkliste = {
+        ...draftPer.feststell_checkliste,
+        saved_at: prevPer?.feststell_checkliste?.saved_at ?? stamp,
+      }
+    }
+
+    const completeExtra = mergeExtraWithPer(completePer)
+    setExtra(completeExtra)
+    const compFinal = await persistCompletion(compDraft.id, buildCompletionPayload(completeExtra))
+    checklistSyncingRef.current = false
+    setChecklistSyncing(false)
+    if (!compFinal) return null
+    setCompletion(compFinal)
+    extraRef.current = completeExtra
+    completionRef.current = compFinal
+
+    checklistDraftFingerprintByOidRef.current[oid] = fp
+    const newId = up.data?.id ?? null
+    if (newId) {
+      setChecklistReportIdByObject((prev) => ({ ...prev, [oid]: newId }))
+      checklistReportIdByObjectRef.current = { ...checklistReportIdByObjectRef.current, [oid]: newId }
+      const prom = await promoteChecklistDefectPhotoDrafts(orderL.id, oid, newId)
+      if (prom.error) {
+        showToast(`Entwurfsfotos konnten nicht übernommen werden: ${prom.error.message}`, 'info')
+      }
+      const regrouped = await fetchChecklistMangelPhotosGroupedForOrderObject(orderL.id, oid, newId)
+      setDefectPhotosByObject((prev) => ({ ...prev, [oid]: regrouped }))
+      if (!hadReportBefore) {
+        showToast(
+          prom.promoted > 0
+            ? `Prüfprotokoll angelegt; ${prom.promoted} Entwurfsfoto${prom.promoted === 1 ? '' : 's'} übernommen.`
+            : 'Prüfprotokoll angelegt.',
+          'success'
+        )
+      }
+    }
+    return newId
+  }
+
+  useEffect(() => {
+    if (!checklistDraftAutosaveReadyRef.current) return
+    if (order?.order_type !== 'wartung') return
+    const oid = selectedChecklistObjectId
+    if (!oid) return
+    if (license?.read_only) return
+    const t = window.setTimeout(() => {
+      void persistChecklistDraftForObjectRef.current(oid)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [
+    checklistItemsByObject,
+    feststellItemsByObject,
+    selectedChecklistObjectId,
+    checklistMode,
+    order?.id,
+    order?.order_type,
+    license?.read_only,
+  ])
 
   const buildPayload = useCallback(
     (parked: boolean): Omit<Parameters<typeof persistCompletion>[1], never> & { order_id?: string } => {
@@ -748,18 +1000,36 @@ const Auftragsdetail = () => {
     if (!order || !selectedChecklistObjectId) return
     const oid = selectedChecklistObjectId
     const reportId = checklistReportIdByObject[oid]
-    if (!reportId) {
-      showError('Bitte zuerst Checkliste speichern, damit das Prüfprotokoll erstellt ist.')
-      return
-    }
     const key = `door:${itemId}`
     if ((defectPhotosByObject[oid]?.[key] ?? []).length >= 3) {
       showError('Maximal 3 Fotos pro Mangelpunkt.')
       return
     }
     setUploadingDefectPhotoItem(itemId)
-    const { data, error } = await uploadChecklistDefectPhoto({
-      maintenanceReportId: reportId,
+    if (reportId) {
+      const { data, error } = await uploadChecklistDefectPhoto({
+        maintenanceReportId: reportId,
+        objectId: oid,
+        checklistScope: 'door',
+        checklistItemId: itemId,
+        file,
+      })
+      setUploadingDefectPhotoItem(null)
+      if (error || !data) {
+        showError(error?.message ?? 'Foto konnte nicht gespeichert werden.')
+        return
+      }
+      setDefectPhotosByObject((prev) => ({
+        ...prev,
+        [oid]: {
+          ...(prev[oid] ?? {}),
+          [key]: [...(prev[oid]?.[key] ?? []), mapDefectPhotoToMangel(data)],
+        },
+      }))
+      return
+    }
+    const { data, error } = await uploadChecklistDefectPhotoDraft({
+      orderId: order.id,
       objectId: oid,
       checklistScope: 'door',
       checklistItemId: itemId,
@@ -783,18 +1053,36 @@ const Auftragsdetail = () => {
     if (!order || !selectedChecklistObjectId) return
     const oid = selectedChecklistObjectId
     const reportId = checklistReportIdByObject[oid]
-    if (!reportId) {
-      showError('Bitte zuerst Checkliste speichern, damit das Prüfprotokoll erstellt ist.')
-      return
-    }
     const key = `feststell:${itemId}`
     if ((defectPhotosByObject[oid]?.[key] ?? []).length >= 3) {
       showError('Maximal 3 Fotos pro Mangelpunkt.')
       return
     }
     setUploadingDefectPhotoItem(itemId)
-    const { data, error } = await uploadChecklistDefectPhoto({
-      maintenanceReportId: reportId,
+    if (reportId) {
+      const { data, error } = await uploadChecklistDefectPhoto({
+        maintenanceReportId: reportId,
+        objectId: oid,
+        checklistScope: 'feststell',
+        checklistItemId: itemId,
+        file,
+      })
+      setUploadingDefectPhotoItem(null)
+      if (error || !data) {
+        showError(error?.message ?? 'Foto konnte nicht gespeichert werden.')
+        return
+      }
+      setDefectPhotosByObject((prev) => ({
+        ...prev,
+        [oid]: {
+          ...(prev[oid] ?? {}),
+          [key]: [...(prev[oid]?.[key] ?? []), mapDefectPhotoToMangel(data)],
+        },
+      }))
+      return
+    }
+    const { data, error } = await uploadChecklistDefectPhotoDraft({
+      orderId: order.id,
       objectId: oid,
       checklistScope: 'feststell',
       checklistItemId: itemId,
@@ -818,12 +1106,15 @@ const Auftragsdetail = () => {
     scope: 'door' | 'feststell',
     itemId: string,
     photoId: string,
-    storagePath: string | null
+    storagePath: string | null,
+    isDraft?: boolean
   ) => {
     if (!selectedChecklistObjectId) return
     const oid = selectedChecklistObjectId
     const key = `${scope}:${itemId}`
-    const { error } = await deleteChecklistDefectPhoto(photoId, storagePath)
+    const { error } = isDraft
+      ? await deleteChecklistDefectPhotoDraft(photoId, storagePath)
+      : await deleteChecklistDefectPhoto(photoId, storagePath)
     if (error) {
       showError(error.message)
       return
@@ -835,185 +1126,6 @@ const Auftragsdetail = () => {
         [key]: (prev[oid]?.[key] ?? []).filter((p) => p.id !== photoId),
       },
     }))
-  }
-
-  const handleSaveFeststellChecklist = async () => {
-    if (!order || !selectedChecklistObjectId) return
-    if (license?.read_only) {
-      showError('Schreibschutz aktiv (Lizenz).')
-      return
-    }
-    const oid = selectedChecklistObjectId
-    if (!objectsById[oid]?.has_hold_open) return
-    const items = feststellItemsByObject[oid] ?? {}
-    const v = validateFeststellChecklistComplete(checklistMode, items)
-    if (!v.ok) {
-      setFeststellSaveError(v.message)
-      return
-    }
-    setFeststellSaveError(null)
-    if (!isOnline()) {
-      showError('Checklisten-Protokoll ist nur bei Verbindung speicherbar.')
-      return
-    }
-    const prevPer = extra.wartung_checkliste?.by_object_id[oid]
-    const baseDoorItems = checklistItemsByObject[oid] ?? prevPer?.items ?? {}
-    setFeststellSaving(true)
-    const nextWartung: WartungChecklistExtraV1 = {
-      v: 1,
-      by_object_id: {
-        ...(extra.wartung_checkliste?.by_object_id ?? {}),
-        [oid]: {
-          ...prevPer,
-          saved_at: prevPer?.saved_at ?? new Date().toISOString(),
-          checklist_modus: checklistMode,
-          items: { ...baseDoorItems },
-          feststell_checkliste: {
-            saved_at: new Date().toISOString(),
-            checklist_modus: checklistMode,
-            items: { ...items },
-          },
-        },
-      },
-    }
-    const mergedExtra: OrderCompletionExtraV1 = { ...extra, wartung_checkliste: nextWartung }
-    setExtra(mergedExtra)
-    const totalMin = sumWorkMinutes(mergedExtra.primary, mergedExtra.zusatz_monteure)
-    const completionPayload = {
-      ausgeführte_arbeiten: ausgeführte.trim() || null,
-      material: materialLinesToText(mergedExtra.material_lines) || null,
-      arbeitszeit_minuten: totalMin > 0 ? totalMin : null,
-      completion_extra: mergedExtra,
-      unterschrift_mitarbeiter_name: printedTech.trim() || null,
-      unterschrift_mitarbeiter_date: new Date().toISOString(),
-      unterschrift_kunde_name: printedCust.trim() || null,
-      unterschrift_kunde_date: printedCust.trim() ? new Date().toISOString() : null,
-      unterschrift_mitarbeiter_path: completion?.unterschrift_mitarbeiter_path ?? null,
-      unterschrift_kunde_path: completion?.unterschrift_kunde_path ?? null,
-    }
-    const comp = await persistCompletion(completion?.id ?? null, completionPayload)
-    if (comp) {
-      setCompletion(comp)
-      const merged = buildMergedDeficiencyForOid(oid)
-      const up = await upsertWartungsChecklistProtocol({
-        orderId: order.id,
-        objectId: oid,
-        maintenanceDate: mergedExtra.bericht_datum,
-        technicianId: user?.id ?? null,
-        feststellChecklistProtocol: {
-          modus: checklistMode,
-          items,
-          norms: ['DIN 14677-1', 'DIN 14677-2'],
-          order_id: order.id,
-        },
-        deficiencyDescription: merged.hasDef ? merged.text : null,
-        deficienciesFound: merged.hasDef,
-      })
-      if (up.error) showError(up.error.message)
-      else {
-        if (up.data?.id) setChecklistReportIdByObject((prev) => ({ ...prev, [oid]: up.data!.id }))
-        showToast('Feststellanlagen-Checkliste gespeichert.', 'success')
-      }
-    }
-    setFeststellSaving(false)
-  }
-
-  const handleSaveCombinedChecklist = async () => {
-    await handleSaveChecklist()
-    if (selectedChecklistObjectId && objectsById[selectedChecklistObjectId]?.has_hold_open) {
-      await handleSaveFeststellChecklist()
-    }
-  }
-
-  const handleSaveChecklist = async () => {
-    if (!order || !selectedChecklistObjectId) return
-    if (license?.read_only) {
-      showError('Schreibschutz aktiv (Lizenz).')
-      return
-    }
-    const oid = selectedChecklistObjectId
-    const items = checklistItemsByObject[oid] ?? {}
-    const v = validateChecklistComplete(checklistMode, items)
-    if (!v.ok) {
-      setChecklistSaveError(v.message)
-      return
-    }
-    setChecklistSaveError(null)
-    if (!isOnline()) {
-      showError('Checklisten-Protokoll ist nur bei Verbindung speicherbar.')
-      return
-    }
-    setChecklistSaving(true)
-    const prevPer = extra.wartung_checkliste?.by_object_id[oid]
-    const nextWartung: WartungChecklistExtraV1 = {
-      v: 1,
-      by_object_id: {
-        ...(extra.wartung_checkliste?.by_object_id ?? {}),
-        [oid]: {
-          saved_at: new Date().toISOString(),
-          checklist_modus: checklistMode,
-          items: { ...items },
-          ...(prevPer?.feststell_checkliste
-            ? { feststell_checkliste: { ...prevPer.feststell_checkliste } }
-            : {}),
-        },
-      },
-    }
-    const mergedExtra: OrderCompletionExtraV1 = { ...extra, wartung_checkliste: nextWartung }
-    setExtra(mergedExtra)
-    const totalMin = sumWorkMinutes(mergedExtra.primary, mergedExtra.zusatz_monteure)
-    const completionPayload = {
-      ausgeführte_arbeiten: ausgeführte.trim() || null,
-      material: materialLinesToText(mergedExtra.material_lines) || null,
-      arbeitszeit_minuten: totalMin > 0 ? totalMin : null,
-      completion_extra: mergedExtra,
-      unterschrift_mitarbeiter_name: printedTech.trim() || null,
-      unterschrift_mitarbeiter_date: new Date().toISOString(),
-      unterschrift_kunde_name: printedCust.trim() || null,
-      unterschrift_kunde_date: printedCust.trim() ? new Date().toISOString() : null,
-      unterschrift_mitarbeiter_path: completion?.unterschrift_mitarbeiter_path ?? null,
-      unterschrift_kunde_path: completion?.unterschrift_kunde_path ?? null,
-    }
-    const comp = await persistCompletion(completion?.id ?? null, completionPayload)
-    if (comp) {
-      setCompletion(comp)
-      const merged = buildMergedDeficiencyForOid(oid)
-      const ob = objectsById[oid]
-      const festItems =
-        feststellItemsByObject[oid] ??
-        extra.wartung_checkliste?.by_object_id[oid]?.feststell_checkliste?.items ??
-        {}
-      const festProto =
-        ob?.has_hold_open
-          ? {
-              modus: checklistMode,
-              items: festItems,
-              norms: ['DIN 14677-1', 'DIN 14677-2'],
-              order_id: order.id,
-            }
-          : undefined
-      const up = await upsertWartungsChecklistProtocol({
-        orderId: order.id,
-        objectId: oid,
-        maintenanceDate: mergedExtra.bericht_datum,
-        technicianId: user?.id ?? null,
-        checklistProtocol: {
-          modus: checklistMode,
-          items,
-          norms: ['DIN EN 1634', 'DIN EN 16034', 'DIN 4102', 'DIN 18040'],
-          order_id: order.id,
-        },
-        ...(festProto ? { feststellChecklistProtocol: festProto } : {}),
-        deficiencyDescription: merged.hasDef ? merged.text : null,
-        deficienciesFound: merged.hasDef,
-      })
-      if (up.error) showError(up.error.message)
-      else {
-        if (up.data?.id) setChecklistReportIdByObject((prev) => ({ ...prev, [oid]: up.data!.id }))
-        showToast('Checkliste und Prüfprotokoll gespeichert.', 'success')
-      }
-    }
-    setChecklistSaving(false)
   }
 
   const handlePark = async () => {
@@ -1430,7 +1542,7 @@ const Auftragsdetail = () => {
     }
     const per = extra.wartung_checkliste?.by_object_id[selectedChecklistObjectId]
     if (!per?.saved_at) {
-      showError('Bitte zuerst die Prüfcheckliste speichern.')
+      showError('Bitte die Prüfcheckliste vollständig ausfüllen; das Prüfprotokoll wird dann automatisch angelegt.')
       return
     }
     const obj = orderObjects.find((x) => x.id === selectedChecklistObjectId)
@@ -1667,6 +1779,17 @@ const Auftragsdetail = () => {
               <option value="compact">Kompakt</option>
             </select>
           </div>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">
+            Eingaben werden automatisch im Bericht entworfen (ca. 0,5 s nach der letzten Änderung, nur online). Das
+            Prüfprotokoll in der Datenbank entsteht erst, wenn Tür- und ggf. Feststell-Checkliste vollständig und gültig
+            ausgefüllt sind. Mangelfotos können Sie schon vorher anlegen; sie werden als Entwurf gespeichert und beim
+            Anlegen des Prüfprotokolls automatisch übernommen.
+            {checklistSyncing ? (
+              <span className="ml-2 text-slate-500 dark:text-slate-400" role="status">
+                Synchronisiere…
+              </span>
+            ) : null}
+          </p>
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/30 p-3 space-y-4">
             <WartungOrderChecklistPanel
               mode={checklistMode}
@@ -1674,6 +1797,10 @@ const Auftragsdetail = () => {
               objectsById={objectsById}
               selectedObjectId={selectedChecklistObjectId}
               onSelectObjectId={(id) => {
+                const prev = selectedChecklistObjectId
+                if (prev && prev !== id) {
+                  void persistChecklistDraftForObjectRef.current(prev)
+                }
                 setSelectedChecklistObjectId(id)
                 setChecklistSaveError(null)
                 setFeststellSaveError(null)
@@ -1685,8 +1812,8 @@ const Auftragsdetail = () => {
                   ? extra.wartung_checkliste?.by_object_id[selectedChecklistObjectId]?.saved_at
                   : undefined
               }
-              onSave={() => void handleSaveChecklist()}
-              saving={checklistSaving}
+              onSave={() => {}}
+              saving={checklistSyncing}
               saveError={checklistSaveError}
               defectPhotosByItem={
                 selectedChecklistObjectId
@@ -1698,8 +1825,8 @@ const Auftragsdetail = () => {
                   : {}
               }
               onUploadDefectPhoto={handleUploadDoorDefectPhoto}
-              onDeleteDefectPhoto={(itemId, photoId, storagePath) =>
-                handleDeleteDefectPhoto('door', itemId, photoId, storagePath)
+              onDeleteDefectPhoto={(itemId, photoId, storagePath, isDraft) =>
+                handleDeleteDefectPhoto('door', itemId, photoId, storagePath, isDraft)
               }
               uploadingItemId={uploadingDefectPhotoItem}
               showSaveControls={false}
@@ -1710,8 +1837,8 @@ const Auftragsdetail = () => {
                 items={feststellItemsByObject[selectedChecklistObjectId] ?? {}}
                 onChangeItem={handleFeststellItemChange}
                 savedAt={extra.wartung_checkliste?.by_object_id[selectedChecklistObjectId]?.feststell_checkliste?.saved_at}
-                onSave={() => void handleSaveFeststellChecklist()}
-                saving={feststellSaving}
+                onSave={() => {}}
+                saving={checklistSyncing}
                 saveError={feststellSaveError}
                 defectPhotosByItem={Object.fromEntries(
                   Object.entries(defectPhotosByObject[selectedChecklistObjectId] ?? {})
@@ -1719,8 +1846,8 @@ const Auftragsdetail = () => {
                     .map(([k, v]) => [k.slice(10), v])
                 )}
                 onUploadDefectPhoto={handleUploadFeststellDefectPhoto}
-                onDeleteDefectPhoto={(itemId, photoId, storagePath) =>
-                  handleDeleteDefectPhoto('feststell', itemId, photoId, storagePath)
+                onDeleteDefectPhoto={(itemId, photoId, storagePath, isDraft) =>
+                  handleDeleteDefectPhoto('feststell', itemId, photoId, storagePath, isDraft)
                 }
                 uploadingItemId={uploadingDefectPhotoItem}
                 showSaveControls={false}
@@ -1736,8 +1863,7 @@ const Auftragsdetail = () => {
                 type="button"
                 variant="outline"
                 disabled={
-                  checklistSaving ||
-                  feststellSaving ||
+                  checklistSyncing ||
                   !selectedChecklistObjectId ||
                   pruefprotokollViewLoading ||
                   !extra.wartung_checkliste?.by_object_id[selectedChecklistObjectId ?? '']?.saved_at
@@ -1751,14 +1877,6 @@ const Auftragsdetail = () => {
               >
                 {pruefprotokollViewLoading ? 'Laden…' : 'Prüfprotokoll anzeigen'}
               </AppButton>
-              <button
-                type="button"
-                onClick={() => void handleSaveCombinedChecklist()}
-                disabled={checklistSaving || feststellSaving || !selectedChecklistObjectId}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
-              >
-                {checklistSaving || feststellSaving ? 'Speichern…' : 'Gesamte Prüfcheckliste speichern'}
-              </button>
             </div>
           </div>
         </div>

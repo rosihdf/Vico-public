@@ -184,7 +184,7 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 
 - **Lizenzmodul (Admin):** Mandanten, Lizenzen, **App-Releases** je Kanal (Haupt-App, Kundenportal, Arbeitszeitenportal), **Zuweisungen** / Incoming / Rollback; Edge-Function **`license`** liefert u. a. **`mandantenReleases`** an die Mandanten-Apps (Banner, Rollout-Hinweis, Hard-Reload). Technischer Stand und Konzept: **§11.20**.
 - **Planung Prozess:** GitHub (Tag/Release mit Beschreibung) → Entwurf/Freigabe im Lizenzportal → gestaffelter Rollout; Phasen, Datenmodell-Idee und Funktionsablauf (Mermaid): **`docs/Planung-Releases-GitHub-Lizenzportal.md`**.
-- **Beta-Feedback (Live-Test):** Lizenz-Feature **`beta_feedback`**; schwebender Button in **Haupt-App**, **Kundenportal**, **Arbeitszeit-Portal** (nur eingeloggt, Lizenz-API konfiguriert). Submit über Edge **`submit-beta-feedback`** (Mandanten-JWT per JWKS, Rate-Limit 10/Tag/Nutzer). Auswertung im Admin unter **`/beta-feedback`** (Status, Priorität, interne Notiz). Schema: **`beta_feedback`** in `supabase-license-portal.sql`; deploy Function + SQL auf Lizenzportal-Supabase. **Smoke-Test & Kategorie-Mapping:** `docs/Beta-Feedback-Smoke-Test-und-Mapping.md`.
+- **Beta-Feedback (Live-Test):** Lizenz-Feature **`beta_feedback`**; schwebender Button in **Haupt-App**, **Kundenportal**, **Arbeitszeit-Portal** (nur eingeloggt, Lizenz-API konfiguriert). Submit über Edge **`submit-beta-feedback`** (Mandanten-JWT per JWKS). Auswertung im Admin unter **`/beta-feedback`** (Status, Priorität, interne Notiz). Schema: **`beta_feedback`** in `supabase-license-portal.sql`; deploy Function + SQL auf Lizenzportal-Supabase. **Smoke-Test & Kategorie-Mapping:** `docs/Beta-Feedback-Smoke-Test-und-Mapping.md`.
 
 ---
 

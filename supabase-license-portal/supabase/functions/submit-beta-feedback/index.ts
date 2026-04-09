@@ -12,7 +12,6 @@ const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, accept',
 }
 
-const DAILY_SUBMIT_MAX = 10
 const DESC_MAX = 8000
 const TITLE_MAX = 200
 const PATH_MAX = 2048
@@ -331,24 +330,6 @@ serve(async (req) => {
   const tenantId = String(licenseRow.tenant_id)
   const licenseNumberStored =
     licenseRow.license_number != null ? String(licenseRow.license_number).trim() : licenseNumberParam
-
-  const startUtc = new Date()
-  startUtc.setUTCHours(0, 0, 0, 0)
-  const { count, error: cntErr } = await admin
-    .from('beta_feedback')
-    .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
-    .eq('mandant_user_id', mandantUserId)
-    .gte('created_at', startUtc.toISOString())
-
-  if (cntErr) {
-    console.warn('beta_feedback count', cntErr.message)
-  } else if ((count ?? 0) >= DAILY_SUBMIT_MAX) {
-    return json(429, {
-      ok: false,
-      error: `Maximal ${DAILY_SUBMIT_MAX} Feedbacks pro Nutzer und Tag.`,
-    })
-  }
 
   const { data: inserted, error: insErr } = await admin
     .from('beta_feedback')

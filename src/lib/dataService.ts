@@ -35,6 +35,8 @@ import type {
   MaintenanceReport,
   MaintenanceReportPhoto,
   ChecklistDefectPhoto,
+  ChecklistDefectDraftPhoto,
+  ChecklistMangelPhoto,
   ObjectDefectPhotoDisplay,
   MaintenanceReportSmokeDetector,
   MaintenanceReminder,
@@ -57,6 +59,7 @@ import {
   MAINTENANCE_REPORT_SMOKE_DETECTOR_COLUMNS,
   PORTAL_USER_COLUMNS,
   CHECKLIST_DEFECT_PHOTO_COLUMNS,
+  CHECKLIST_DEFECT_PHOTO_DRAFT_COLUMNS,
   OBJECT_DEFECT_PHOTO_COLUMNS,
 } from './dataColumns'
 import { isOnline } from '../../shared/networkUtils'
@@ -2080,6 +2083,180 @@ export const deleteChecklistDefectPhoto = async (
     await supabase.storage.from(MAINTENANCE_PHOTOS_BUCKET).remove([storagePath])
   }
   return { error: null }
+}
+
+export const mapDefectPhotoToMangel = (p: ChecklistDefectPhoto): ChecklistMangelPhoto => ({
+  id: p.id,
+  object_id: p.object_id,
+  checklist_scope: p.checklist_scope,
+  checklist_item_id: p.checklist_item_id,
+  storage_path: p.storage_path,
+  caption: p.caption,
+  created_at: p.created_at,
+  updated_at: p.updated_at,
+  maintenance_report_id: p.maintenance_report_id,
+  isDraft: false,
+})
+
+export const mapDraftPhotoToMangel = (d: ChecklistDefectDraftPhoto): ChecklistMangelPhoto => ({
+  id: d.id,
+  object_id: d.object_id,
+  checklist_scope: d.checklist_scope,
+  checklist_item_id: d.checklist_item_id,
+  storage_path: d.storage_path,
+  caption: d.caption,
+  created_at: d.created_at,
+  updated_at: d.updated_at,
+  maintenance_report_id: null,
+  isDraft: true,
+})
+
+export const fetchChecklistDefectPhotoDrafts = async (
+  orderId: string,
+  objectId: string
+): Promise<ChecklistDefectDraftPhoto[]> => {
+  if (!isOnline()) return []
+  const { data, error } = await supabase
+    .from('checklist_defect_photo_drafts')
+    .select(CHECKLIST_DEFECT_PHOTO_DRAFT_COLUMNS)
+    .eq('source_order_id', orderId)
+    .eq('object_id', objectId)
+    .order('created_at', { ascending: true })
+  if (error || !data) return []
+  return data as unknown as ChecklistDefectDraftPhoto[]
+}
+
+export const fetchChecklistDefectPhotoDraftsGroupedForOrderObject = async (
+  orderId: string,
+  objectId: string
+): Promise<Record<string, ChecklistMangelPhoto[]>> => {
+  const rows = await fetchChecklistDefectPhotoDrafts(orderId, objectId)
+  const out: Record<string, ChecklistMangelPhoto[]> = {}
+  for (const d of rows) {
+    const k = `${d.checklist_scope}:${d.checklist_item_id}`
+    if (!out[k]) out[k] = []
+    out[k].push(mapDraftPhotoToMangel(d))
+  }
+  return out
+}
+
+export const mergeDraftAndFinalMangelPhotos = (
+  draftGrouped: Record<string, ChecklistMangelPhoto[]>,
+  finalGrouped: Record<string, ChecklistMangelPhoto[]>
+): Record<string, ChecklistMangelPhoto[]> => {
+  const keys = new Set([...Object.keys(draftGrouped), ...Object.keys(finalGrouped)])
+  const out: Record<string, ChecklistMangelPhoto[]> = {}
+  for (const k of keys) {
+    const finals = finalGrouped[k] ?? []
+    const drafts = draftGrouped[k] ?? []
+    out[k] = [...finals, ...drafts]
+  }
+  return out
+}
+
+export const fetchChecklistMangelPhotosGroupedForOrderObject = async (
+  orderId: string,
+  objectId: string,
+  maintenanceReportId: string | null
+): Promise<Record<string, ChecklistMangelPhoto[]>> => {
+  const draftGrouped = await fetchChecklistDefectPhotoDraftsGroupedForOrderObject(orderId, objectId)
+  if (!maintenanceReportId) return draftGrouped
+  const finals = await fetchChecklistDefectPhotos(maintenanceReportId, objectId)
+  const finalGrouped: Record<string, ChecklistMangelPhoto[]> = {}
+  for (const p of finals) {
+    const k = `${p.checklist_scope}:${p.checklist_item_id}`
+    if (!finalGrouped[k]) finalGrouped[k] = []
+    finalGrouped[k].push(mapDefectPhotoToMangel(p))
+  }
+  return mergeDraftAndFinalMangelPhotos(draftGrouped, finalGrouped)
+}
+
+export const uploadChecklistDefectPhotoDraft = async (params: {
+  orderId: string
+  objectId: string
+  checklistScope: 'door' | 'feststell'
+  checklistItemId: string
+  file: File
+  caption?: string
+}): Promise<{ data: ChecklistMangelPhoto | null; error: { message: string } | null }> => {
+  if (!isOnline()) return { data: null, error: { message: 'Fotos sind nur online speicherbar.' } }
+  const isImage = params.file.type.startsWith('image/')
+  const payload = isImage ? await compressImageFile(params.file) : params.file
+  const safeName = params.file.name.toLowerCase().replace(/[^a-z0-9.\-_]+/g, '-')
+  const extFromName = safeName.includes('.') ? safeName.split('.').pop() ?? '' : ''
+  const extFromType = (payload.type.split('/')[1] || '').toLowerCase()
+  const ext = (extFromName || extFromType || (isImage ? 'jpg' : 'bin')).replace(/[^a-z0-9]/g, '')
+  const path = `checklist-defect-drafts/${params.orderId}/${params.objectId}/${params.checklistScope}/${params.checklistItemId}/${crypto.randomUUID()}.${ext}`
+  const { error: uploadError } = await supabase.storage
+    .from(MAINTENANCE_PHOTOS_BUCKET)
+    .upload(path, payload, { upsert: false, contentType: payload.type || undefined })
+  if (uploadError) return { data: null, error: { message: uploadError.message } }
+  const { data, error } = await supabase
+    .from('checklist_defect_photo_drafts')
+    .insert({
+      source_order_id: params.orderId,
+      object_id: params.objectId,
+      checklist_scope: params.checklistScope,
+      checklist_item_id: params.checklistItemId,
+      storage_path: path,
+      caption: params.caption ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .select(CHECKLIST_DEFECT_PHOTO_DRAFT_COLUMNS)
+    .single()
+  if (error || !data) return { data: null, error: { message: error?.message ?? 'Speichern fehlgeschlagen.' } }
+  return { data: mapDraftPhotoToMangel(data as unknown as ChecklistDefectDraftPhoto), error: null }
+}
+
+export const deleteChecklistDefectPhotoDraft = async (
+  photoId: string,
+  storagePath: string | null
+): Promise<{ error: { message: string } | null }> => {
+  if (!isOnline()) return { error: { message: 'Nur online löschbar.' } }
+  const { error } = await supabase.from('checklist_defect_photo_drafts').delete().eq('id', photoId)
+  if (error) return { error: { message: error.message } }
+  if (storagePath) {
+    await supabase.storage.from(MAINTENANCE_PHOTOS_BUCKET).remove([storagePath])
+  }
+  return { error: null }
+}
+
+/** Entwurfsfotos in checklist_defect_photos übernehmen (gleicher storage_path), Entwurfszeilen löschen. */
+export const promoteChecklistDefectPhotoDrafts = async (
+  orderId: string,
+  objectId: string,
+  maintenanceReportId: string
+): Promise<{ error: { message: string } | null; promoted: number }> => {
+  if (!isOnline()) return { error: { message: 'Nur online möglich.' }, promoted: 0 }
+  const { data: drafts, error: fe } = await supabase
+    .from('checklist_defect_photo_drafts')
+    .select(CHECKLIST_DEFECT_PHOTO_DRAFT_COLUMNS)
+    .eq('source_order_id', orderId)
+    .eq('object_id', objectId)
+  if (fe) return { error: { message: fe.message }, promoted: 0 }
+  const list = (drafts ?? []) as unknown as ChecklistDefectDraftPhoto[]
+  if (list.length === 0) return { error: null, promoted: 0 }
+  let n = 0
+  for (const d of list) {
+    const { error: ie } = await supabase.from('checklist_defect_photos').insert({
+      maintenance_report_id: maintenanceReportId,
+      object_id: d.object_id,
+      checklist_scope: d.checklist_scope,
+      checklist_item_id: d.checklist_item_id,
+      storage_path: d.storage_path,
+      caption: d.caption,
+      updated_at: new Date().toISOString(),
+    })
+    if (ie) return { error: { message: ie.message }, promoted: n }
+    n += 1
+  }
+  const { error: de } = await supabase
+    .from('checklist_defect_photo_drafts')
+    .delete()
+    .eq('source_order_id', orderId)
+    .eq('object_id', objectId)
+  if (de) return { error: { message: de.message }, promoted: n }
+  return { error: null, promoted: n }
 }
 
 const MAX_STAMMDATEN_DEFECT_PHOTOS = 3

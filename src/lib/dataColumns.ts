@@ -203,6 +203,18 @@ export const CHECKLIST_DEFECT_PHOTO_COLUMNS = [
   'updated_at',
 ].join(', ')
 
+export const CHECKLIST_DEFECT_PHOTO_DRAFT_COLUMNS = [
+  'id',
+  'source_order_id',
+  'object_id',
+  'checklist_scope',
+  'checklist_item_id',
+  'storage_path',
+  'caption',
+  'created_at',
+  'updated_at',
+].join(', ')
+
 export const MAINTENANCE_REPORT_SMOKE_DETECTOR_COLUMNS = [
   'id',
   'report_id',

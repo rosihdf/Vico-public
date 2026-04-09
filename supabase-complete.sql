@@ -580,6 +580,32 @@ create policy "Non-leser insert checklist_defect_photos" on public.checklist_def
 create policy "Non-leser update checklist_defect_photos" on public.checklist_defect_photos for update using (auth.uid() is not null and not public.is_leser());
 create policy "Non-leser delete checklist_defect_photos" on public.checklist_defect_photos for delete using (auth.uid() is not null and not public.is_leser());
 
+-- Mangelfotos zur Wartungscheckliste **bevor** die Prüfprotokoll-Zeile (maintenance_reports) existiert;
+-- werden bei erfolgreicher Checkliste in checklist_defect_photos übernommen (gleicher storage_path).
+create table if not exists public.checklist_defect_photo_drafts (
+  id uuid default gen_random_uuid() primary key,
+  source_order_id uuid not null references public.orders(id) on delete cascade,
+  object_id uuid not null references public.objects(id) on delete cascade,
+  checklist_scope text not null check (checklist_scope in ('door', 'feststell')),
+  checklist_item_id text not null,
+  storage_path text not null,
+  caption text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_checklist_defect_photo_drafts_order_object
+  on public.checklist_defect_photo_drafts (source_order_id, object_id);
+alter table public.checklist_defect_photo_drafts enable row level security;
+do $$ declare r record; begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'checklist_defect_photo_drafts' loop
+    execute format('drop policy if exists %I on public.checklist_defect_photo_drafts', r.policyname);
+  end loop;
+end $$;
+create policy "Authenticated read checklist_defect_photo_drafts" on public.checklist_defect_photo_drafts for select using (auth.uid() is not null);
+create policy "Non-leser insert checklist_defect_photo_drafts" on public.checklist_defect_photo_drafts for insert with check (auth.uid() is not null and not public.is_leser());
+create policy "Non-leser update checklist_defect_photo_drafts" on public.checklist_defect_photo_drafts for update using (auth.uid() is not null and not public.is_leser());
+create policy "Non-leser delete checklist_defect_photo_drafts" on public.checklist_defect_photo_drafts for delete using (auth.uid() is not null and not public.is_leser());
+
 -- Fotos zu Stammdaten-Mängeln (objects.defects_structured Einträge per defect_entry_id), max. 3 pro Mangel in der App
 create table if not exists public.object_defect_photos (
   id uuid default gen_random_uuid() primary key,

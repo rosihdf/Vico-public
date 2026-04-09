@@ -69,6 +69,33 @@ export type ChecklistDefectPhoto = {
   updated_at: string
 }
 
+/** Entwurfs-Foto vor angelegtem Prüfprotokoll (`checklist_defect_photo_drafts`). */
+export type ChecklistDefectDraftPhoto = {
+  id: string
+  source_order_id: string
+  object_id: string
+  checklist_scope: 'door' | 'feststell'
+  checklist_item_id: string
+  storage_path: string
+  caption: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Checklisten-Panel: finale Zeilen + Entwürfe einheitlich. */
+export type ChecklistMangelPhoto = {
+  id: string
+  object_id: string
+  checklist_scope: 'door' | 'feststell'
+  checklist_item_id: string
+  storage_path: string
+  caption: string | null
+  created_at: string
+  updated_at: string
+  maintenance_report_id: string | null
+  isDraft: boolean
+}
+
 export type MaintenanceReportSmokeDetector = {
   id: string
   report_id: string

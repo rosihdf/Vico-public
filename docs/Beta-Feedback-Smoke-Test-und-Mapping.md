@@ -21,7 +21,7 @@ Kurzreferenz zur Umsetzung; fachlicher Überblick in **Vico.md** (Abschnitt Lize
 - [ ] Feature aus → **kein** Button.
 - [ ] Dialog öffnen, Pfad/Query stimmen mit aktueller URL überein.
 - [ ] Absenden → **200**, Eintrag in LP unter **`/beta-feedback`**, Mandant gefiltert korrekt.
-- [ ] **11.** Absenden am selben Tag → bis Limit **10** ok, danach **429** mit verständlicher Meldung.
+- [ ] Mehrfaches Absenden am selben Tag → jeweils **200** (kein Tageslimit pro Nutzer).
 
 ### Kundenportal & Arbeitszeit-Portal
 

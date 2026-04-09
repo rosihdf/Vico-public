@@ -7,7 +7,7 @@ import {
 import type { WartungChecklistItemState } from '../types/orderCompletionExtra'
 import type { Object as Obj } from '../types'
 import { getMaintenancePhotoUrl } from '../lib/dataService'
-import type { ChecklistDefectPhoto } from '../types/maintenance'
+import type { ChecklistMangelPhoto } from '../types/maintenance'
 
 const MANGEL_NOTE_INPUT_CLASS =
   'mt-2 w-full px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400'
@@ -42,9 +42,14 @@ type WartungOrderChecklistPanelProps = {
   onSave: () => void
   saving: boolean
   saveError: string | null
-  defectPhotosByItem: Record<string, ChecklistDefectPhoto[]>
+  defectPhotosByItem: Record<string, ChecklistMangelPhoto[]>
   onUploadDefectPhoto: (itemId: string, file: File) => Promise<void>
-  onDeleteDefectPhoto: (itemId: string, photoId: string, storagePath: string | null) => Promise<void>
+  onDeleteDefectPhoto: (
+    itemId: string,
+    photoId: string,
+    storagePath: string | null,
+    isDraft?: boolean
+  ) => Promise<void>
   uploadingItemId: string | null
   showSaveControls?: boolean
 }
@@ -205,6 +210,11 @@ const WartungOrderChecklistPanel = ({
                               <div className="flex flex-wrap gap-2">
                                 {(defectPhotosByItem[d.id] ?? []).map((p) => (
                                   <div key={p.id} className="relative">
+                                    {p.isDraft ? (
+                                      <span className="absolute -bottom-1 left-0 z-[1] rounded bg-amber-100 dark:bg-amber-900/80 px-0.5 text-[9px] font-medium text-amber-950 dark:text-amber-100">
+                                        Entwurf
+                                      </span>
+                                    ) : null}
                                     {isImageStoragePath(p.storage_path) ? (
                                       <img
                                         src={getMaintenancePhotoUrl(p.storage_path)}
@@ -223,7 +233,7 @@ const WartungOrderChecklistPanel = ({
                                     )}
                                     <button
                                       type="button"
-                                      onClick={() => void onDeleteDefectPhoto(d.id, p.id, p.storage_path)}
+                                      onClick={() => void onDeleteDefectPhoto(d.id, p.id, p.storage_path, p.isDraft)}
                                       className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-600 text-white text-[10px] leading-none"
                                       aria-label="Mangelfoto löschen"
                                     >
@@ -323,6 +333,11 @@ const WartungOrderChecklistPanel = ({
                         <div className="flex flex-wrap gap-2">
                           {(defectPhotosByItem[sec.id] ?? []).map((p) => (
                             <div key={p.id} className="relative">
+                              {p.isDraft ? (
+                                <span className="absolute -bottom-1 left-0 z-[1] rounded bg-amber-100 dark:bg-amber-900/80 px-0.5 text-[9px] font-medium text-amber-950 dark:text-amber-100">
+                                  Entwurf
+                                </span>
+                              ) : null}
                               {isImageStoragePath(p.storage_path) ? (
                                 <img
                                   src={getMaintenancePhotoUrl(p.storage_path)}
@@ -341,7 +356,7 @@ const WartungOrderChecklistPanel = ({
                               )}
                               <button
                                 type="button"
-                                onClick={() => void onDeleteDefectPhoto(sec.id, p.id, p.storage_path)}
+                                onClick={() => void onDeleteDefectPhoto(sec.id, p.id, p.storage_path, p.isDraft)}
                                 className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-600 text-white text-[10px] leading-none"
                                 aria-label="Mangelfoto löschen"
                               >
