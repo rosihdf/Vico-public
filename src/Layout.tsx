@@ -128,6 +128,8 @@ const Layout = () => {
 
   const showWartungsstatistik =
     Boolean(license && hasFeature(license, 'wartungsprotokolle'))
+  const showOffeneMaengel =
+    Boolean(license && hasFeature(license, 'wartungsprotokolle') && isEnabled('wartungsprotokolle'))
 
   const menuLinks = [
     ...(isEnabled('dashboard') ? [{ to: '/', label: 'Dashboard' }] : []),
@@ -137,6 +139,7 @@ const Layout = () => {
           ...(showWartungsstatistik ? [{ to: '/wartungsstatistik', label: 'Wartungsstatistik' }] : []),
         ]
       : []),
+    ...(showOffeneMaengel ? [{ to: '/offene-maengel', label: 'Offene Mängel' }] : []),
     ...(isEnabled('suche') ? [{ to: '/suche', label: 'Suche' }] : []),
     ...(isEnabled('auftrag') ? [{ to: '/auftrag', label: 'Auftrag' }] : []),
     ...(showBuchhaltungExport ? [{ to: '/buchhaltung-export', label: 'Buchhaltungs-Export' }] : []),

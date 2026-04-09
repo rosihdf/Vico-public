@@ -118,17 +118,25 @@ const App = () => {
                   <Route path="historie" element={<Suspense fallback={<PageFallback />}><LicenseFeatureGuard feature="historie"><Historie /></LicenseFeatureGuard></Suspense>} />
                   <Route path="fehlerberichte" element={<Suspense fallback={<PageFallback />}><LicenseFeatureGuard feature="fehlerberichte"><Fehlerberichte /></LicenseFeatureGuard></Suspense>} />
                   <Route path="ladezeiten" element={<Suspense fallback={<PageFallback />}><LicenseFeatureGuard feature="ladezeiten"><Ladezeiten /></LicenseFeatureGuard></Suspense>} />
-                  <Route
-                    path="maengel"
-                    element={
-                      <Suspense fallback={<PageFallback />}>
-                        <LicenseFeatureGuard feature="wartungsprotokolle">
-                          <OffeneMaengel />
-                        </LicenseFeatureGuard>
-                      </Suspense>
-                    }
-                  />
                 </Route>
+                <Route
+                  path="system/maengel"
+                  element={<Navigate to="/offene-maengel" replace />}
+                />
+                <Route
+                  path="offene-maengel"
+                  element={
+                    <Suspense fallback={<PageFallback />}>
+                      <LicenseFeatureGuard feature="wartungsprotokolle">
+                        <ComponentGuard componentKey="wartungsprotokolle">
+                          <ProtectedRoute>
+                            <OffeneMaengel />
+                          </ProtectedRoute>
+                        </ComponentGuard>
+                      </LicenseFeatureGuard>
+                    </Suspense>
+                  }
+                />
                 <Route path="historie" element={<Navigate to="/system/historie" replace />} />
                 <Route path="fehlerberichte" element={<Navigate to="/system/fehlerberichte" replace />} />
                 <Route path="ladezeiten" element={<Navigate to="/system/ladezeiten" replace />} />

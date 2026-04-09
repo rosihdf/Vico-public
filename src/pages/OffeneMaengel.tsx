@@ -175,7 +175,7 @@ const OffeneMaengel = () => {
               {filterObjekt ? ` · Tür/Tor` : ''}
               .{' '}
               <Link
-                to="/maengel"
+                to="/offene-maengel"
                 className="text-vico-primary hover:underline"
               >
                 Filter zurücksetzen

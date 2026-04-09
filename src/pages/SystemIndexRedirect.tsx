@@ -2,7 +2,7 @@ import { Navigate } from 'react-router-dom'
 import { useLicense } from '../LicenseContext'
 import { hasFeature } from '../lib/licenseService'
 
-/** Erste verfügbare System-Unterseite (Historie → Fehlerberichte → Ladezeiten → Start). */
+/** Erste verfügbare System-Unterseite (Historie → Fehlerberichte → Ladezeiten → Offene Mängel → Start). */
 const SystemIndexRedirect = () => {
   const { license } = useLicense()
   if (license && hasFeature(license, 'historie')) {
@@ -15,7 +15,7 @@ const SystemIndexRedirect = () => {
     return <Navigate to="/system/ladezeiten" replace />
   }
   if (license && hasFeature(license, 'wartungsprotokolle')) {
-    return <Navigate to="/system/maengel" replace />
+    return <Navigate to="/offene-maengel" replace />
   }
   return <Navigate to="/" replace />
 }

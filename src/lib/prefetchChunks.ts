@@ -14,6 +14,7 @@ const LAZY_IMPORTS = [
   () => import('../Einstellungen'),
   () => import('../Benutzerverwaltung'),
   () => import('../pages/System'),
+  () => import('../pages/OffeneMaengel'),
   () => import('../Historie'),
   () => import('../Fehlerberichte'),
   () => import('../pages/Ladezeiten'),

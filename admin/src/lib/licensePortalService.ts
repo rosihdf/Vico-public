@@ -122,7 +122,7 @@ export const fetchLicenses = async (signal?: AbortSignal): Promise<LicenseWithTe
 }
 
 export type LicenseWithModel = License & {
-  license_models: { id: string; name: string } | null
+  license_models: { id: string; name: string; features?: Record<string, boolean> } | null
 }
 
 export const fetchLicensesByTenant = async (tenantId: string): Promise<LicenseWithModel[]> => {
@@ -145,7 +145,7 @@ export const fetchLicensesByTenant = async (tenantId: string): Promise<LicenseWi
       client_config_version,
       created_at,
       updated_at,
-      license_models (id, name)
+      license_models (id, name, features)
     `)
     .eq('tenant_id', tenantId)
     .order('created_at', { ascending: false })
@@ -243,6 +243,14 @@ export const updateLicense = async (id: string, payload: LicenseUpdate): Promise
     })
     .eq('id', id)
   if (error) return { ok: false, error: error.message }
+  /** Mandanten-Apps pollen `client_config_version` an der Lizenz-API – Push erzwingt schnellen Reload der Konfiguration. */
+  const bump = await bumpClientConfigVersion(id)
+  if (!bump.ok) {
+    return {
+      ok: false,
+      error: `${bump.error ?? 'client_config_version konnte nicht erhöht werden'} (Lizenzdaten sind trotzdem gespeichert.)`,
+    }
+  }
   return { ok: true }
 }
 

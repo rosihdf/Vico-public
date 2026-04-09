@@ -20,6 +20,8 @@ import {
   LICENSE_FEATURE_LABELS,
   LICENSE_FEATURE_DESCRIPTIONS,
   emptyLicenseFeatures,
+  effectiveLicenseFeatures,
+  explicitLicenseFeaturesMap,
 } from '../../../shared/licenseFeatures'
 import AppVersionRowsEditor from '../components/AppVersionRowsEditor'
 import MandantReleaseAssignmentsSection from '../components/MandantReleaseAssignmentsSection'
@@ -272,11 +274,12 @@ const MandantForm = () => {
         setEditForm({
           tier: lic.tier,
           valid_until: lic.valid_until,
+          grace_period_days: lic.grace_period_days ?? 0,
           max_users: lic.max_users,
           max_customers: lic.max_customers,
           max_storage_mb: lic.max_storage_mb,
           check_interval: lic.check_interval ?? 'daily',
-          features: lic.features ?? {},
+          features: effectiveLicenseFeatures(lic.license_models?.features, lic.features),
         })
       }
       navigate(location.pathname, { replace: true, state: undefined })
@@ -506,7 +509,7 @@ const MandantForm = () => {
       max_customers: createForm.max_customers,
       max_storage_mb: createForm.max_storage_mb,
       check_interval: createForm.check_interval,
-      features: createForm.features,
+      features: explicitLicenseFeaturesMap(createForm.features),
     })
     if ('error' in result) {
       setError(result.error)
@@ -553,7 +556,7 @@ const MandantForm = () => {
     loadLicenses(id)
   }
 
-  const handleEditLicense = (lic: License) => {
+  const handleEditLicense = (lic: LicenseWithModel) => {
     setEditingLicenseId(lic.id)
     setEditForm({
       tier: lic.tier,
@@ -563,7 +566,7 @@ const MandantForm = () => {
       max_customers: lic.max_customers,
       max_storage_mb: lic.max_storage_mb,
       check_interval: lic.check_interval ?? 'daily',
-      features: lic.features ?? {},
+      features: effectiveLicenseFeatures(lic.license_models?.features, lic.features),
     })
   }
 
@@ -583,7 +586,10 @@ const MandantForm = () => {
       }
     }
     setError(null)
-    const result = await updateLicense(editingLicenseId, editForm)
+    const result = await updateLicense(editingLicenseId, {
+      ...editForm,
+      features: explicitLicenseFeaturesMap(editForm.features),
+    })
     if (result.ok) {
       setSuccessMessage('Lizenz aktualisiert.')
       setEditingLicenseId(null)

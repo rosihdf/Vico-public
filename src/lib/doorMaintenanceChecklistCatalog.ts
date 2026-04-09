@@ -117,6 +117,12 @@ export const checklistHasOpenMangel = (
 ): boolean =>
   getChecklistItemIdsForMode(mode).some((id) => items[id]?.status === 'mangel')
 
+export const countChecklistMangel = (
+  mode: ChecklistDisplayMode,
+  items: Record<string, { status?: ChecklistItemStatus; note?: string }>
+): number =>
+  getChecklistItemIdsForMode(mode).filter((id) => items[id]?.status === 'mangel').length
+
 export const validateChecklistComplete = (
   mode: ChecklistDisplayMode,
   items: Record<string, { status?: ChecklistItemStatus; note?: string }>

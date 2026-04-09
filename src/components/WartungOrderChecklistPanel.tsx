@@ -9,6 +9,7 @@ import type { Object as Obj } from '../types'
 import { getMaintenancePhotoUrl } from '../lib/dataService'
 import { getObjectDisplayName } from '../lib/objectUtils'
 import type { ChecklistMangelPhoto } from '../types/maintenance'
+import type { WartungChecklistObjectUiStatus } from '../lib/wartungOrderChecklistUiStatus'
 
 const MANGEL_NOTE_INPUT_CLASS =
   'mt-2 w-full px-2 py-1.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400'
@@ -53,6 +54,57 @@ type WartungOrderChecklistPanelProps = {
   ) => Promise<void>
   uploadingItemId: string | null
   showSaveControls?: boolean
+  /** Pro Tür: einheitlicher Status (Tür- + ggf. Feststell-Checkliste) für Dropdown/Badge */
+  doorStatusByObjectId?: Record<string, WartungChecklistObjectUiStatus>
+}
+
+const doorStatusOptionSuffix = (s: WartungChecklistObjectUiStatus | undefined): string => {
+  if (!s) return ''
+  if (s.kind === 'ok') return ' — ✓ ohne Mängel'
+  if (s.kind === 'mangel') {
+    return ` — ✕ ${s.count} ${s.count === 1 ? 'Mangel' : 'Mängel'}`
+  }
+  return ' — unvollständig'
+}
+
+const DoorChecklistStatusBadge = ({ status }: { status: WartungChecklistObjectUiStatus }) => {
+  if (status.kind === 'ok') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+        role="status"
+      >
+        <span className="text-base leading-none" aria-hidden>
+          ✓
+        </span>
+        ohne Mängel
+      </span>
+    )
+  }
+  if (status.kind === 'mangel') {
+    return (
+      <span
+        className="inline-flex items-center gap-1 shrink-0 text-xs font-medium text-red-700 dark:text-red-300"
+        role="status"
+      >
+        <span className="text-base leading-none" aria-hidden>
+          ✕
+        </span>
+        {status.count} {status.count === 1 ? 'Mangel' : 'Mängel'}
+      </span>
+    )
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 shrink-0 text-xs font-medium text-amber-800 dark:text-amber-200"
+      role="status"
+    >
+      <span className="text-base leading-none" aria-hidden>
+        ○
+      </span>
+      unvollständig
+    </span>
+  )
 }
 
 const WartungOrderChecklistPanel = ({
@@ -72,6 +124,7 @@ const WartungOrderChecklistPanel = ({
   onDeleteDefectPhoto,
   uploadingItemId,
   showSaveControls = true,
+  doorStatusByObjectId,
 }: WartungOrderChecklistPanelProps) => {
   const ids = getChecklistItemIdsForMode(mode)
 
@@ -93,25 +146,52 @@ const WartungOrderChecklistPanel = ({
           <label htmlFor="wartung-checklist-door" className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
             Tür/Tor für Checkliste
           </label>
-          <select
-            id="wartung-checklist-door"
-            value={selectedObjectId ?? ''}
-            onChange={(e) => onSelectObjectId(e.target.value)}
-            className="w-full max-w-md px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm"
-            aria-label="Tür für Wartungscheckliste wählen"
-          >
-            {objectIds.map((oid) => {
-              const o = objectsById[oid]
-              const label = o ? getObjectDisplayName(o) : 'Unbenannte Tür/Tor'
-              return (
-                <option key={oid} value={oid}>
-                  {label}
-                </option>
-              )
-            })}
-          </select>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 max-w-full">
+            <select
+              id="wartung-checklist-door"
+              value={selectedObjectId ?? ''}
+              onChange={(e) => onSelectObjectId(e.target.value)}
+              className="w-full max-w-md px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm"
+              aria-label={
+                selectedObjectId && doorStatusByObjectId?.[selectedObjectId]
+                  ? (() => {
+                      const st = doorStatusByObjectId[selectedObjectId]
+                      const tail =
+                        st.kind === 'ok'
+                          ? 'aktuell ohne Mängel'
+                          : st.kind === 'mangel'
+                            ? `aktuell ${st.count} dokumentierte Mängel`
+                            : 'aktuell unvollständig'
+                      return `Tür oder Tor für die Wartungscheckliste wählen; ${tail}`
+                    })()
+                  : 'Tür oder Tor für die Wartungscheckliste wählen'
+              }
+            >
+              {objectIds.map((oid) => {
+                const o = objectsById[oid]
+                const label = o ? getObjectDisplayName(o) : 'Unbenannte Tür/Tor'
+                const suff = doorStatusOptionSuffix(doorStatusByObjectId?.[oid])
+                return (
+                  <option key={oid} value={oid}>
+                    {label}
+                    {suff}
+                  </option>
+                )
+              })}
+            </select>
+            {selectedObjectId && doorStatusByObjectId?.[selectedObjectId] ? (
+              <DoorChecklistStatusBadge status={doorStatusByObjectId[selectedObjectId]} />
+            ) : null}
+          </div>
         </div>
       )}
+
+      {objectIds.length === 1 && selectedObjectId && doorStatusByObjectId?.[selectedObjectId] ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-medium text-slate-600 dark:text-slate-300">Checklistenstatus (diese Tür):</span>
+          <DoorChecklistStatusBadge status={doorStatusByObjectId[selectedObjectId]} />
+        </div>
+      ) : null}
 
       <p className="text-xs text-slate-500 dark:text-slate-400">
         Normen (Hinweis): DIN EN 1634, DIN EN 16034, DIN 4102, DIN 18040

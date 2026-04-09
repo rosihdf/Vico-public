@@ -168,6 +168,16 @@ export const checklistHasOpenMangelFeststell = (
     return items[id]?.status === 'mangel'
   })
 
+export const countFeststellMangel = (
+  mode: ChecklistDisplayMode,
+  items: Record<string, FeststellChecklistItemState>
+): number =>
+  getFeststellChecklistItemIdsForMode(mode).reduce((acc, id) => {
+    if (mode === 'compact' && id === INTERVAL_SECTION_ID) return acc
+    if (id === FESTSTELL_MELDER_INTERVAL_ITEM_ID) return acc
+    return items[id]?.status === 'mangel' ? acc + 1 : acc
+  }, 0)
+
 export const validateFeststellChecklistComplete = (
   mode: ChecklistDisplayMode,
   items: Record<string, FeststellChecklistItemState>

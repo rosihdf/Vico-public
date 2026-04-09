@@ -76,6 +76,8 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 | `/kunden/:id/bvs` | BVs |
 | `/kunden/:id/bvs/:bvId/objekte` | Objekte |
 | `/kunden/.../objekte/:objectId/wartung` | Wartungsprotokolle |
+| `/offene-maengel` | Offene Mängel (Übersicht Prüfberichte + Follow-ups; Komponente/Lizenz wie Wartungsprotokolle) |
+| `/system` | System: Historie, Fehlerberichte, Ladezeiten (Admin-Menü) |
 | `/suche` | Suche |
 | `/auftrag` | Auftrag anlegen |
 | `/scan` | QR-Scan |
@@ -159,6 +161,7 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 - Prüfgrund, Herstellerwartung, Feststellanlage, Rauchmelder
 - Mängel, Fotos, Unterschriften
 - PDF-Export, E-Mail-Versand
+- **Offene Mängel:** Eigener Punkt **„Offene Mängel“** im **Seitenmenü** (wenn Lizenz-Feature **`wartungsprotokolle`** und Komponente **Wartungsprotokolle** aktiv). Route **`/offene-maengel`** (`OffeneMaengel.tsx`). Früher nur unter **System** erreichbar; **`/system/maengel`** leitet auf **`/offene-maengel`** um. **System-Start** (`/system`) nutzt bei fehlenden anderen System-Tabs dieselbe Ziel-URL als Fallback.
 
 ### Offline & Sync
 
@@ -2077,3 +2080,9 @@ Grober **Mehraufwand** gegenüber **nur manuell (A):** ca. **1,5–3 T** zusätz
 **Production-Deploy aus dem LP (2026-04-05):** Freigegebenes Release → Button in **`AppReleaseEditor`** und zentrale Seite **`/release-rollout`** („Rollout & Deploy“) → Supabase Edge **`trigger-github-deploy`** (JWT, nur **`profiles.role = admin`**) → **`workflow_dispatch`** auf **`.github/workflows/deploy-pages-from-release.yml`** (Checkout per Tag/SHA aus **`ci_metadata`** bzw. Fallback **`Kanal/Version`**). Build + **`wrangler pages deploy`**; GitHub-Repo-Secrets für **CF** und **VITE_*** pro App. Audit-Action **`release.deploy_triggered`**. **Phase 2:** Rollout-Assistent (**`RolloutChecklistModal`**) mit Schritten Freigabe → Notes → Deploy → GitHub → Incoming → Go-Live; gemeinsame Logik **`useReleaseDeployTrigger`** / **`ReleaseDeployPanel`**. Geplanter Ausbau: zentrale Env-Quelle (JSON/ Skript, Fragerunde 2).
 
 **Stand Code (2026-04-05):** Lizenzportal **`supabase-license-portal.sql`** (Abschnitt 7: `app_releases`, Zuweisungen, Audit, RLS, `is_test_mandant`, `can_manage_app_releases`), Admin-UI **`/app-releases`**, **`/release-rollout`**, **`MandantForm`** (Testmandant + Zuweisungen), Lizenz-API **Supabase Edge** **`supabase-license-portal/supabase/functions/license`** (`mandantenReleases` inkl. **`releaseAssignmentUpdatedAt`** + Overlay `appVersions` pro Kanal; Parität mit `admin/netlify/functions/license.ts`). **Deploy:** Edge **`trigger-github-deploy`**, GitHub **`deploy-pages-from-release.yml`**. Nach Zuweisung/Rollback: **`bumpClientConfigVersionsForTenantLicenses`** (alle Lizenzen des Mandanten). Mandanten-Apps: Parsing in **`licensePortalApi`** / **`fetchDesignFromLicense`**, **`LicenseContext`** / Portal-**`DesignContext`**, Banner **`shared/MandantenIncomingReleaseBanner.tsx`**, Hinweis bei geänderter Zuweisung **`shared/MandantenReleaseRolloutRefreshBanner.tsx`**, Pflicht-Reload bei **`active.forceHardReload`**: **`shared/MandantenReleaseHardReloadGate.tsx`** + **`shared/mandantenReleaseReloadBridge.ts`** (Haupt-App: **`PwaUpdatePrompt`** / `registerSW(true)`). **Offen/Feinschliff:** **WP-REL-03** (strukturierte Notes/CI-Tags).
+
+### 11.21 Offene Mängel: eigener Menüpunkt (Stand 2026-04-09)
+
+**Entscheidung:** Die Übersicht **Offene Mängel** ist nicht mehr nur Unterpunkt von **System**, sondern **eigener Eintrag im Seitenmenü** der Haupt-App, sobald Lizenz-Feature **`wartungsprotokolle`** und Komponente **Wartungsprotokolle** aktiv sind.
+
+**Technik:** Route **`/offene-maengel`**, **`/system/maengel`** → Redirect; **`SystemIndexRedirect`** fallback auf **`/offene-maengel`** wo zuvor **`/system/maengel`**. Betroffene Dateien: **`src/App.tsx`**, **`src/Layout.tsx`**, **`src/pages/System.tsx`**, **`src/pages/SystemIndexRedirect.tsx`**, **`src/pages/OffeneMaengel.tsx`**, **`src/lib/prefetchChunks.ts`**. Siehe **§3** *Wartungsprotokolle* und **§2** *Routen*.

@@ -83,6 +83,7 @@ import {
   type FeststellChecklistItemState,
 } from './lib/feststellChecklistCatalog'
 import WartungOrderChecklistPanel, { initEmptyChecklistItems } from './components/WartungOrderChecklistPanel'
+import { getWartungChecklistObjectUiStatus } from './lib/wartungOrderChecklistUiStatus'
 import FeststellOrderChecklistPanel from './components/FeststellOrderChecklistPanel'
 import { getOrderObjectIds } from './lib/orderUtils'
 import { getObjectDisplayName } from './lib/objectUtils'
@@ -459,6 +460,19 @@ const Auftragsdetail = () => {
       }),
     [orderObjectIds, objectsById]
   )
+
+  const doorChecklistStatusByObjectId = useMemo(() => {
+    const out: Record<string, ReturnType<typeof getWartungChecklistObjectUiStatus>> = {}
+    if (order?.order_type !== 'wartung') return out
+    for (const oid of orderObjectIds) {
+      const ob = objectsById[oid]
+      const doorItems = checklistItemsByObject[oid] ?? {}
+      const festItems = feststellItemsByObject[oid] ?? {}
+      const hasHold = Boolean(ob?.has_hold_open)
+      out[oid] = getWartungChecklistObjectUiStatus(checklistMode, doorItems, hasHold ? festItems : null, hasHold)
+    }
+    return out
+  }, [order?.order_type, orderObjectIds, objectsById, checklistItemsByObject, feststellItemsByObject, checklistMode])
 
   orderRef.current = order
   extraRef.current = extra
@@ -1834,6 +1848,7 @@ const Auftragsdetail = () => {
               }
               uploadingItemId={uploadingDefectPhotoItem}
               showSaveControls={false}
+              doorStatusByObjectId={doorChecklistStatusByObjectId}
             />
             {selectedChecklistObjectId && objectsById[selectedChecklistObjectId]?.has_hold_open ? (
               <FeststellOrderChecklistPanel

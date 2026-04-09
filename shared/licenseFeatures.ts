@@ -98,6 +98,41 @@ export const normalizeLicenseFeatures = (f: Record<string, boolean> | undefined 
   return base
 }
 
+/** Wie Lizenz-API (`supabase-license-portal` Edge `license`): Modell, dann Zeile überschreibt. */
+export const mergeLicenseModelAndRowFeatures = (
+  modelFeatures: Record<string, boolean> | null | undefined,
+  licenseFeatures: Record<string, boolean> | null | undefined
+): Record<string, boolean> => ({
+  ...(modelFeatures ?? {}),
+  ...(licenseFeatures ?? {}),
+})
+
+/**
+ * Effektive Flags für Admin-/UI-Stand (nur bekannte Keys), identisch zur Mandanten-Lizenz-API nach Merge.
+ * Ohne das zeigen Checkboxen „aus“, obwohl das Modell z. B. `degraded_banner: true` liefert und die Zeile den Key nicht setzt.
+ */
+export const effectiveLicenseFeatures = (
+  modelFeatures: Record<string, boolean> | null | undefined,
+  licenseFeatures: Record<string, boolean> | null | undefined
+): Record<string, boolean> => {
+  const merged = mergeLicenseModelAndRowFeatures(modelFeatures, licenseFeatures)
+  const base = emptyLicenseFeatures()
+  for (const k of LICENSE_FEATURE_KEYS) {
+    base[k] = isLicenseFeatureEnabled(merged, k)
+  }
+  return base
+}
+
+/** Alle bekannten Keys explizit setzen (z. B. `licenses.features` speichern – inkl. `false`, damit Merge nicht vom Modell überschreibt). */
+export const explicitLicenseFeaturesMap = (f: Record<string, boolean> | null | undefined): Record<string, boolean> => {
+  const base = emptyLicenseFeatures()
+  if (!f) return base
+  for (const k of LICENSE_FEATURE_KEYS) {
+    base[k] = Boolean(f[k])
+  }
+  return base
+}
+
 /**
  * Tier-Fallbacks wenn Lizenzmodell keine Features hat (Edge Function).
  * free: minimal; professional/enterprise: volles Paket inkl. Add-ons.
