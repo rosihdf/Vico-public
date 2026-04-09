@@ -96,7 +96,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
 
   const showOrderActivityBanner =
     orderActivityBannerWorthy && orderActivityFingerprint !== dismissedOrderActivityFingerprint
-  const showDegradedBanner = isLicenseFeatureEnabledWithDefault(features, 'degraded_banner', true)
+  const showDegradedBanner = isLicenseFeatureEnabledWithDefault(features, 'degraded_banner', false)
 
   const handleDismissOrderActivityBanner = useCallback(() => {
     try {

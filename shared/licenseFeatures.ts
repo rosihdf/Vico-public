@@ -47,7 +47,7 @@ export const LICENSE_FEATURE_LABELS: Record<string, string> = {
 /** Kurzhinweise für Admin-UI (Tooltip/Title an Feature-Checkboxen). */
 export const LICENSE_FEATURE_DESCRIPTIONS: Record<string, string> = {
   degraded_banner:
-    'Steuert den Hinweis „Lizenzportal oder Mandanten-Datenbank nicht erreichbar“. false = Hinweis ausblenden.',
+    'Steuert beide Hinweise: Mandanten-Datenbank instabil und Lizenz-API nur aus Cache (Lizenz-Portal nicht erreichbar). false = beide ausblenden.',
 }
 
 /** Default false für alle bekannten Keys (z. B. Formulare) */

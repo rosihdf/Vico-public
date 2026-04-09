@@ -165,7 +165,7 @@ const Layout = () => {
   ]
 
   const isOffline = syncStatus === 'offline'
-  const showDegradedBanner = isLicenseFeatureEnabledWithDefault(license?.features, 'degraded_banner', true)
+  const showDegradedBanner = isLicenseFeatureEnabledWithDefault(license?.features, 'degraded_banner', false)
   const isAuthPage = location.pathname === '/login' || location.pathname === '/reset-password'
 
   if (isAuthPage) {
@@ -281,7 +281,7 @@ const Layout = () => {
           Offline – Änderungen werden lokal gespeichert und beim nächsten Sync hochgeladen.
         </div>
       )}
-      <LicensePortalStaleBanner visible={licensePortalStale} suppress={isOffline} />
+      <LicensePortalStaleBanner visible={licensePortalStale && showDegradedBanner} suppress={isOffline} />
       {showDegradedBanner ? <MandantDegradedBanner suppress={isOffline} /> : null}
 
       {/* Hamburger Overlay (unter Kopfzeile, damit Hamburger immer bedienbar bleibt) */}

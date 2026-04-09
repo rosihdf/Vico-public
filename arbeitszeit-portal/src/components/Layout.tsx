@@ -47,7 +47,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
 
   const showStandort = features.standortabfrage === true
   const showUrlaub = features.urlaub === true
-  const showDegradedBanner = isLicenseFeatureEnabledWithDefault(features, 'degraded_banner', true)
+  const showDegradedBanner = isLicenseFeatureEnabledWithDefault(features, 'degraded_banner', false)
 
   const navItems: NavItem[] = [
     { to: '/', label: 'Übersicht', isActive: (p) => p === '/' || p === '/uebersicht' },
