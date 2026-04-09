@@ -1736,10 +1736,10 @@ const Einstellungen = () => {
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
             <strong className="text-slate-700 dark:text-slate-300">PNG, JPEG</strong> oder{' '}
-            <strong className="text-slate-700 dark:text-slate-300">PDF</strong> (einseitig, ideal A4) – wird beim
-            PDF-Export als Hintergrund jeder Seite genutzt. Bei PDF wird nur die{' '}
-            <strong className="text-slate-700 dark:text-slate-300">erste Seite</strong> gerendert; der Protokollinhalt
-            liegt darüber – freie Bereiche in der Vorlage sinnvoll planen.
+            <strong className="text-slate-700 dark:text-slate-300">PDF</strong> (ideal A4).{' '}
+            <strong className="text-slate-700 dark:text-slate-300">PDF mit zwei Seiten:</strong> Seite 1 = Deckblatt
+            (Logo/Kopf), Seite 2 = Folgeseiten (z. B. nur Fußzeile). Einseitiges PDF oder Bild: gleiche
+            Vorlage auf allen Seiten. Der Export liegt textlich über dem Briefbogen.
           </p>
           {briefbogenError && (
             <p className="mb-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg" role="alert">

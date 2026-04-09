@@ -1,4 +1,8 @@
 {
+  "1.2.0": [
+    "Mandanten-Briefbogen: PDF-Vorlage möglich; optional zweite PDF-Seite als Folgeseiten-Hintergrund (z. B. nur Fußzeile, ohne großes Logo).",
+    "Prüfberichte und Auftrags-PDFs nutzen den Briefbogen konsistent; Arbeitszeitportal-Zoll-PDF mit Erst- und Folge-Vorlage."
+  ],
   "1.1.0": [
     "Großes Wartungs-/Checklisten-Update: neue Tür- und Feststellanlagen-Checklisten mit gespeicherten Protokollblöcken, Mangel-Logik und PDF-Erweiterungen.",
     "Objekt-/Mangel-Fotofluss erweitert (inkl. Defektfotos) sowie verbesserte Auftragsdarstellung, Konflikt-Hinweise und UI-Bausteine."

@@ -16,3 +16,32 @@ export const paintLetterheadOnCurrentPage = (doc: jsPDF, dataUrl: string): void 
     /* Briefbogen optional – bei fehlerhaftem Bild einfach ohne Hintergrund weiter */
   }
 }
+
+/** Erstseite + optional Folgeseite (z. B. PDF-Vorlage: Seite 1 mit Logo, Seite 2 nur Fußzeile). */
+export type LetterheadRasterPages = {
+  firstPage: string | null
+  /** Wenn null/leer: gleiche Rasterfläche wie firstPage (z. B. einseitiges PNG). */
+  followPage: string | null
+}
+
+export const pickLetterheadDataUrlForPage = (
+  pages: LetterheadRasterPages,
+  isFirstPageOfDocument: boolean
+): string | null => {
+  if (isFirstPageOfDocument) {
+    return pages.firstPage
+  }
+  return pages.followPage ?? pages.firstPage
+}
+
+/** Briefbogen auf aktueller jsPDF-Seite – `isFirstPageOfDocument` steuert Erst- vs. Folge-Vorlage. */
+export const paintLetterheadRasterOnCurrentPage = (
+  doc: jsPDF,
+  pages: LetterheadRasterPages,
+  isFirstPageOfDocument: boolean
+): void => {
+  const url = pickLetterheadDataUrlForPage(pages, isFirstPageOfDocument)
+  if (url) {
+    paintLetterheadOnCurrentPage(doc, url)
+  }
+}

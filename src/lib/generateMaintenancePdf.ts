@@ -1,7 +1,10 @@
 import { jsPDF } from 'jspdf'
 import { getMaintenancePhotoUrl } from './dataService'
 import { getObjectDisplayName } from './objectUtils'
-import { paintLetterheadOnCurrentPage } from '../../shared/pdfLetterhead'
+import {
+  paintLetterheadRasterOnCurrentPage,
+  type LetterheadRasterPages,
+} from '../../shared/pdfLetterhead'
 import type {
   MaintenanceReport,
   Customer,
@@ -65,8 +68,8 @@ export type MaintenancePdfData = {
   photos: MaintenancePdfPhoto[]
   technicianSignaturePath: string | null
   customerSignaturePath: string | null
-  /** Optional: Data-URL PNG/JPEG – Hintergrund pro Seite (Mandanten-Briefbogen). */
-  letterheadDataUrl?: string | null
+  /** Optional: Erst- und Folge-Briefbogen (PDF-Vorlage mit 2 Seiten oder gleiches Bild). */
+  letterheadPages?: LetterheadRasterPages | null
 }
 
 export const generateMaintenancePdf = async (
@@ -81,7 +84,7 @@ export const generateMaintenancePdf = async (
     photos,
     technicianSignaturePath,
     customerSignaturePath,
-    letterheadDataUrl,
+    letterheadPages,
   } = data
 
   const doc = new jsPDF({ format: 'a4', unit: 'mm' })
@@ -90,8 +93,8 @@ export const generateMaintenancePdf = async (
   let y = margin
   const lineH = 6
 
-  if (letterheadDataUrl) {
-    paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+  if (letterheadPages) {
+    paintLetterheadRasterOnCurrentPage(doc, letterheadPages, true)
   }
 
   const addText = (text: string, opts?: { fontSize?: number; fontStyle?: string }) => {
@@ -205,6 +208,9 @@ export const generateMaintenancePdf = async (
     y += 4
     if (y > 250) {
       doc.addPage()
+      if (letterheadPages) {
+        paintLetterheadRasterOnCurrentPage(doc, letterheadPages, false)
+      }
       y = margin
     }
     addText('Fotos', { fontStyle: 'bold' })
@@ -220,8 +226,8 @@ export const generateMaintenancePdf = async (
       if (!hasImage) continue
       if (y + rowH > 285) {
         doc.addPage()
-        if (letterheadDataUrl) {
-          paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+        if (letterheadPages) {
+          paintLetterheadRasterOnCurrentPage(doc, letterheadPages, false)
         }
         y = margin
         col = 0

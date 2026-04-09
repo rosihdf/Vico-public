@@ -1,4 +1,7 @@
 {
+  "1.2.0": [
+    "Briefbogen fortgeführt: Bei PDF mit zweiter Seite wird diese auf Folgeseiten des Zoll-PDF-Exports genutzt (wie Haupt-App)."
+  ],
   "1.1.0": [
     "Kompatibilitäts-Release 1.1.0: gemeinsame API-/Release-Metadaten und Rollout-Basis mit der Haupt-App synchronisiert."
   ],

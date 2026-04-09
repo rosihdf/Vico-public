@@ -7,8 +7,8 @@ import { jsPDF } from 'jspdf'
 import type { TimeEntry, TimeBreak } from '../types/time'
 import { calcWorkMinutes } from '../../../shared/timeUtils'
 import { formatDateTimeShort } from '../../../shared/format'
-import { paintLetterheadOnCurrentPage } from '../../../shared/pdfLetterhead'
-import { fetchBriefbogenDataUrlForPdf } from '../../../shared/briefbogenClient'
+import { paintLetterheadRasterOnCurrentPage } from '../../../shared/pdfLetterhead'
+import { fetchBriefbogenLetterheadPagesForPdf } from '../../../shared/briefbogenClient'
 
 /** CSV für Zoll-/Mindestlohnprüfung (MiLoG § 17): Beginn, Ende, Dauer, Pausen */
 export const exportZollCsv = (
@@ -49,10 +49,10 @@ export const exportZollPdf = async (
   toDate: string,
   supabase: unknown
 ): Promise<void> => {
-  const letterheadDataUrl = await fetchBriefbogenDataUrlForPdf(supabase)
+  const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf(supabase)
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-  if (letterheadDataUrl) {
-    paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+  if (letterheadPages) {
+    paintLetterheadRasterOnCurrentPage(doc, letterheadPages, true)
   }
   doc.setFontSize(10)
   doc.text(`Zeiterfassung für Zoll-/Mindestlohnprüfung (MiLoG § 17)`, 14, 10)
@@ -73,8 +73,8 @@ export const exportZollPdf = async (
   for (const e of entries) {
     if (y > 180) {
       doc.addPage('a4', 'landscape')
-      if (letterheadDataUrl) {
-        paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+      if (letterheadPages) {
+        paintLetterheadRasterOnCurrentPage(doc, letterheadPages, false)
       }
       y = 20
     }
@@ -113,10 +113,10 @@ export const exportUrlaubsbescheinigungPdf = async (
   supabase: unknown
 ): Promise<void> => {
   const totalDays = approvedLeaves.reduce((s, l) => s + (l.days_count ?? 0), 0)
-  const letterheadDataUrl = await fetchBriefbogenDataUrlForPdf(supabase)
+  const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf(supabase)
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-  if (letterheadDataUrl) {
-    paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+  if (letterheadPages) {
+    paintLetterheadRasterOnCurrentPage(doc, letterheadPages, true)
   }
   doc.setFontSize(14)
   doc.text('Urlaubsbescheinigung', 105, 25, { align: 'center' })

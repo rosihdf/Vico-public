@@ -46,8 +46,15 @@ const bufferToImageDataUrl = (buf: ArrayBuffer, mime: string): Promise<string | 
     reader.readAsDataURL(new Blob([buf], { type: mime || 'image/png' }))
   })
 
-/** Data-URL für jsPDF (PNG/JPEG), oder null wenn nicht konfiguriert / nicht ladbar. PDF: erste Seite → PNG. */
-export const fetchBriefbogenDataUrlForPdf = async (client: unknown): Promise<string | null> => {
+/** Raster-Erst- und Folgeseite für PDF-Hintergrund (Bild: beide gleich; PDF: optional 2. Seite). */
+export type BriefbogenLetterheadPages = {
+  firstPage: string | null
+  followPage: string | null
+}
+
+export const fetchBriefbogenLetterheadPagesForPdf = async (
+  client: unknown
+): Promise<BriefbogenLetterheadPages | null> => {
   const sb = asSb(client)
   const path = await fetchBriefbogenStoragePath(client)
   if (!path) return null
@@ -60,14 +67,26 @@ export const fetchBriefbogenDataUrlForPdf = async (client: unknown): Promise<str
     const buf = await blob.arrayBuffer()
     const pathLower = path.toLowerCase()
     const mimePdf = blob.type === 'application/pdf' || blob.type === 'application/x-pdf'
-    const { isPdfMagicBytes, renderPdfFirstPageToPngDataUrl } = await import('./renderPdfFirstPageToPngDataUrl')
+    const { isPdfMagicBytes, rasterizePdfBriefbogenToLetterheadPages } = await import(
+      './renderPdfFirstPageToPngDataUrl'
+    )
     if (pathLower.endsWith('.pdf') || mimePdf || isPdfMagicBytes(buf)) {
-      return await renderPdfFirstPageToPngDataUrl(buf)
+      const pages = await rasterizePdfBriefbogenToLetterheadPages(buf)
+      if (!pages?.firstPage) return null
+      return pages
     }
-    return await bufferToImageDataUrl(buf, blob.type || 'image/png')
+    const imageUrl = await bufferToImageDataUrl(buf, blob.type || 'image/png')
+    if (!imageUrl) return null
+    return { firstPage: imageUrl, followPage: imageUrl }
   } catch {
     return null
   }
+}
+
+/** Nur Erstseite – Abwärtskompatibel; bei PDF mit 2 Seiten besser `fetchBriefbogenLetterheadPagesForPdf`. */
+export const fetchBriefbogenDataUrlForPdf = async (client: unknown): Promise<string | null> => {
+  const pages = await fetchBriefbogenLetterheadPagesForPdf(client)
+  return pages?.firstPage ?? null
 }
 
 /** Kurz gültige Signed-URL für Vorschau (Einstellungen). */

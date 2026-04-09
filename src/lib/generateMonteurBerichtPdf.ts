@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
 import QRCode from 'qrcode'
-import { paintLetterheadOnCurrentPage } from '../../shared/pdfLetterhead'
+import { paintLetterheadRasterOnCurrentPage, type LetterheadRasterPages } from '../../shared/pdfLetterhead'
 import type { Order, OrderCompletion } from '../types'
 import { materialLinesToText, type OrderCompletionExtraV1 } from '../types/orderCompletionExtra'
 import { sumWorkMinutes } from './monteurReportTime'
@@ -15,7 +15,7 @@ export type MonteurBerichtPdfInput = {
   orderTypeLabel: string
   /** Vollständige URL für QR (z. B. Link zum Auftrag) */
   scanUrl: string
-  letterheadDataUrl?: string | null
+  letterheadPages?: LetterheadRasterPages | null
   /** Wartung: automatische Liste geprüfter Türen (§7.2.4.4 / P2). */
   wartungInspectedDoorLabels?: string[]
   /** P8.F: Verweis, wenn Prüfprotokoll separat existiert. */
@@ -32,7 +32,7 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
     objectLabel,
     orderTypeLabel,
     scanUrl,
-    letterheadDataUrl,
+    letterheadPages,
     wartungInspectedDoorLabels,
     pruefprotokollKurzverweis,
   } = input
@@ -42,13 +42,13 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
   const margin = 14
   let y = margin
 
-  const applyLetterheadIfSet = () => {
-    if (letterheadDataUrl) {
-      paintLetterheadOnCurrentPage(doc, letterheadDataUrl)
+  const applyLetterheadIfSet = (isFirstPageOfDocument: boolean) => {
+    if (letterheadPages) {
+      paintLetterheadRasterOnCurrentPage(doc, letterheadPages, isFirstPageOfDocument)
     }
   }
 
-  applyLetterheadIfSet()
+  applyLetterheadIfSet(true)
 
   doc.setFontSize(16)
   doc.text('Monteursbericht / Auftragsnachweis', margin, y)
@@ -89,7 +89,7 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
     if (y > 270) {
       doc.addPage()
       y = margin
-      applyLetterheadIfSet()
+      applyLetterheadIfSet(false)
     }
     doc.text(line, margin, y)
     y += 5
@@ -104,7 +104,7 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
       if (y > 270) {
         doc.addPage()
         y = margin
-        applyLetterheadIfSet()
+        applyLetterheadIfSet(false)
       }
       doc.text(
         `${z.name}: ${z.start || '—'} – ${z.end || '—'}, Pause ${z.pause_minuten} Min.`,
@@ -120,7 +120,7 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
     if (y > 250) {
       doc.addPage()
       y = margin
-      applyLetterheadIfSet()
+      applyLetterheadIfSet(false)
     }
     doc.setFont('helvetica', 'bold')
     doc.text('Material:', margin, y)

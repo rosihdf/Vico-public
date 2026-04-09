@@ -59,7 +59,7 @@ import SignatureField from './SignatureField'
 import PdfPreviewOverlay, { type PdfPreviewState } from './components/PdfPreviewOverlay'
 import { generateMonteurBerichtPdf } from './lib/generateMonteurBerichtPdf'
 import { generatePruefprotokollPdf } from './lib/generatePruefprotokollPdf'
-import { fetchBriefbogenDataUrlForPdf } from './lib/briefbogenService'
+import { fetchBriefbogenLetterheadPagesForPdf } from './lib/briefbogenService'
 import { sumWorkMinutes } from './lib/monteurReportTime'
 import {
   parseOrderCompletionExtra,
@@ -1259,7 +1259,7 @@ const Auftragsdetail = () => {
     }
     const scanUrl = `${window.location.origin}/auftrag/${order.id}`
     try {
-      const letterheadDataUrl = await fetchBriefbogenDataUrlForPdf()
+      const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf()
       const extraSnap = { ...payload.completion_extra, parked: false, portal_teilen: false }
       const wartungInspectedDoorLabels =
         order.order_type === 'wartung' && oidsComplete.length > 0
@@ -1277,7 +1277,7 @@ const Auftragsdetail = () => {
         objectLabel,
         orderTypeLabel: ORDER_TYPE_LABELS[order.order_type],
         scanUrl,
-        letterheadDataUrl,
+        letterheadPages: letterheadPages ?? undefined,
         wartungInspectedDoorLabels,
         pruefprotokollKurzverweis: order.order_type === 'wartung' && oidsComplete.length > 0,
       })
@@ -1307,7 +1307,7 @@ const Auftragsdetail = () => {
                   v.map((p) => ({ storage_path: p.storage_path, caption: p.caption })),
                 ])
               ),
-              letterheadDataUrl,
+              letterheadPages: letterheadPages ?? undefined,
             })
             const att = await attachPruefprotokollPdfToOrderChecklistProtocol(order.id, oid, prBlob)
             if (att.error) showToast(`Prüfprotokoll: ${att.error.message}`, 'info')
@@ -1531,7 +1531,7 @@ const Auftragsdetail = () => {
     const payload = buildPayload(extra.parked ?? false)
     const scanUrl = `${window.location.origin}/auftrag/${order.id}`
     try {
-      const letterheadDataUrl = await fetchBriefbogenDataUrlForPdf()
+      const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf()
       const oids = getOrderObjectIds(order).filter(Boolean)
       const wartungInspectedDoorLabels =
         order.order_type === 'wartung' && oids.length > 0
@@ -1549,7 +1549,7 @@ const Auftragsdetail = () => {
         objectLabel,
         orderTypeLabel: ORDER_TYPE_LABELS[order.order_type],
         scanUrl,
-        letterheadDataUrl,
+        letterheadPages: letterheadPages ?? undefined,
         wartungInspectedDoorLabels,
         pruefprotokollKurzverweis: order.order_type === 'wartung' && oids.length > 0,
       })
@@ -1586,7 +1586,7 @@ const Auftragsdetail = () => {
         }
       }
       const mode = per.checklist_modus === 'compact' ? 'compact' : 'detail'
-      const letterheadDataUrl = await fetchBriefbogenDataUrlForPdf()
+      const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf()
       const prBlob = await generatePruefprotokollPdf({
         order,
         customerName: getCustomerName(order.customer_id),
@@ -1605,7 +1605,7 @@ const Auftragsdetail = () => {
             v.map((p) => ({ storage_path: p.storage_path, caption: p.caption })),
           ])
         ),
-        letterheadDataUrl,
+        letterheadPages: letterheadPages ?? undefined,
       })
       openBlobPdfViewer(prBlob, `Prüfprotokoll – ${getObjectDisplayName(obj)}`)
     } catch {
