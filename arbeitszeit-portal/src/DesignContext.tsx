@@ -48,6 +48,17 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
   const [mandantenReleases, setMandantenReleases] = useState<MandantenReleasesApiPayload | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
+  const applyFavicon = useCallback((faviconUrl: string | null) => {
+    if (typeof document === 'undefined') return
+    let faviconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    if (!faviconLink) {
+      faviconLink = document.createElement('link')
+      faviconLink.rel = 'icon'
+      document.head.appendChild(faviconLink)
+    }
+    faviconLink.href = faviconUrl?.trim() ? faviconUrl.trim() : '/favicon.svg'
+  }, [])
+
   const load = useCallback(async () => {
     const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
     const licenseNumber = (import.meta.env.VITE_LICENSE_NUMBER ?? '').trim()
@@ -59,6 +70,7 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
       setMandantenReleases(null)
       setFeatures(TIER_DEFAULT_FEATURES.professional)
       applyVicoPrimaryCssVars('#5b7895')
+      applyFavicon(null)
       setIsLoading(false)
       return
     }
@@ -75,6 +87,7 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
       setMandantenReleases(null)
       setFeatures({})
       applyVicoPrimaryCssVars('#5b7895')
+      applyFavicon(null)
     } else {
       setMaintenance(full.maintenance ?? null)
       setMandantenReleases(full.mandantenReleases ?? null)
@@ -82,10 +95,11 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
       if (full.design.app_name) setAppName(full.design.app_name)
       setLogoUrl(full.design.logo_url?.trim() ? full.design.logo_url.trim() : null)
       applyVicoPrimaryCssVars(full.design.primary_color)
+      applyFavicon(full.design.favicon_url?.trim() ? full.design.favicon_url.trim() : null)
       setFeatures(full.license.features ?? {})
     }
     setIsLoading(false)
-  }, [])
+  }, [applyFavicon])
 
   const fetchClientConfigVersion = useCallback(async (): Promise<number | null> => {
     const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
@@ -119,6 +133,20 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
       clearVicoPrimaryCssVars()
     }
   }, [])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void load()
+    }, 60_000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void load()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [load])
 
   return (
     <DesignContext.Provider
