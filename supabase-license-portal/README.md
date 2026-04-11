@@ -18,6 +18,8 @@ npm run lp:deploy:mandanten-update -- --project-ref ojryoosqwfbzlmdeywzs
 
 **CI:** Workflow **„LP – Deploy Mandanten-Update (license)“** (`workflow_dispatch`) – Secrets siehe `.github/workflows/supabase-license-portal-deploy-mandanten-update.yml`.
 
+**Nach Schema-Deploy:** Mandanten-Update-Banner / `mandantenReleases` – siehe Repo **`docs/Lizenzportal-Update-Rollout.md`** und optional **`docs/sql/license-portal-app-releases-2026-04-10-bundle.sql`** (veröffentlichte `app_releases`-Zeilen; Zuweisung im Admin).
+
 **Manuell im Ordner:**
 
 ```bash

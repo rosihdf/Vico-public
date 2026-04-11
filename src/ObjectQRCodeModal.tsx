@@ -7,8 +7,6 @@ import { getObjectDisplayName } from './lib/objectUtils'
 import { getObjectDeepLinkUrl } from './lib/objectQrUrl'
 import { useLicense } from './LicenseContext'
 
-const DEFAULT_LOGO_SRC = '/logo_vico.png'
-
 type ObjectQRCodeModalProps = {
   object: Obj
   customerName: string
@@ -34,7 +32,7 @@ const ObjectQRCodeModal = ({
     () => (design?.app_name ? `${design.app_name} Türen & Tore` : 'AMRtech Türen & Tore'),
     [design?.app_name]
   )
-  const logoSrc = design?.logo_url?.trim() || DEFAULT_LOGO_SRC
+  const logoSrc = design?.logo_url?.trim() || ''
   const printRef = useRef<HTMLDivElement>(null)
   const [btStatus, setBtStatus] = useState<'idle' | 'connecting' | 'printing' | 'done' | 'error'>('idle')
   const [btMessage, setBtMessage] = useState<string>('')
@@ -139,7 +137,9 @@ const ObjectQRCodeModal = ({
             className="print-content bg-white p-4 rounded-lg border border-slate-200 flex flex-col items-center print:border-0 print:p-0"
           >
             <div className="hidden print:flex print:justify-center print:mb-2">
-              <img src={logoSrc} alt={brandLine} className="h-10 object-contain max-w-[200px]" />
+              {logoSrc ? (
+                <img src={logoSrc} alt={brandLine} className="h-10 object-contain max-w-[200px]" />
+              ) : null}
             </div>
             <QRCodeCanvas
               value={url}

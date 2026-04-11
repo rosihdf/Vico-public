@@ -80,8 +80,13 @@ const AppShell = () => {
     setUser(null)
   }, [])
 
-  const { isLoading: licenseDesignLoading, kundenportalAllowed, licenseLoadError, refresh: refreshLicenseDesign } =
-    useDesign()
+  const {
+    isLoading: licenseDesignLoading,
+    kundenportalAllowed,
+    licenseLoadError,
+    refresh: refreshLicenseDesign,
+    appVersionInfo,
+  } = useDesign()
 
   if (isLoading) {
     return (
@@ -127,7 +132,10 @@ const AppShell = () => {
   return (
     <BrowserRouter>
       <ThemePreferenceSync user={user} />
-      <UpdateBanner />
+      <UpdateBanner
+        licenseAdvertisedVersion={appVersionInfo?.version ?? null}
+        licenseAdvertisedReleaseNotes={appVersionInfo?.releaseNotes ?? null}
+      />
       <Suspense fallback={fallback}>
         <Routes>
           <Route path="/auth/callback" element={<AuthCallback />} />

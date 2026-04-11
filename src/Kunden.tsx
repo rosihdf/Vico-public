@@ -42,7 +42,6 @@ import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
 import { AddressLookupFields } from './components/AddressLookupFields'
 import ObjectFormModal from './components/ObjectFormModal'
 import { LoadingSpinner } from './components/LoadingSpinner'
-import PortalInviteSection from './components/PortalInviteSection'
 import ConfirmDialog from './components/ConfirmDialog'
 import EmptyState from '../shared/EmptyState'
 import MaintenanceContractModal from './components/MaintenanceContractModal'
@@ -70,7 +69,7 @@ const ObjectProfileThumbInline = ({ path }: { path?: string | null }) => {
 
 const ProtocolMangelCustomerBadge = ({ count }: { count: number }) => {
   if (count <= 0) return null
-  const label = `${count} offene Protokoll-Mängel (letzter abgeschlossener Wartungsauftrag)`
+  const label = `${count} offene Protokoll-Mängel (letzter abgeschlossener Prüfungsauftrag)`
   return (
     <span
       className="ml-2 inline-flex min-h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full bg-rose-100 px-2 text-xs font-bold text-rose-900 dark:bg-rose-900/45 dark:text-rose-100"
@@ -174,16 +173,21 @@ const Kunden = () => {
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [portalUserCountForForm, setPortalUserCountForForm] = useState(0)
+  const hasKundenportalFeature = Boolean(license && hasFeature(license, 'kundenportal'))
+  const canOpenBenutzerverwaltung = userRole === 'admin'
+  const canEditPortalConfig = userRole === 'admin'
   const showPortalDeliveryToggles =
-    Boolean(license && hasFeature(license, 'kundenportal')) &&
+    hasKundenportalFeature &&
     portalUserCountForForm > 0 &&
-    showMonteurCustomerZustellung
+    showMonteurCustomerZustellung &&
+    canEditPortalConfig
 
   const [portalUserCountForBvForm, setPortalUserCountForBvForm] = useState(0)
   const showBvPortalDeliveryToggles =
-    Boolean(license && hasFeature(license, 'kundenportal')) &&
+    hasKundenportalFeature &&
     portalUserCountForBvForm > 0 &&
-    showMonteurCustomerZustellung
+    showMonteurCustomerZustellung &&
+    canEditPortalConfig
 
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null)
   const [expandedBvs, setExpandedBvs] = useState<BV[]>([])
@@ -1403,9 +1407,9 @@ const Kunden = () => {
                         type="button"
                         onClick={() => handleOpenEdit(customer)}
                         className="inline-flex min-h-[36px] items-center rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/40"
-                        aria-label={`${customer.name} bearbeiten`}
+                        aria-label={`${customer.name} öffnen`}
                       >
-                        Bearbeiten
+                        Öffnen
                       </button>
                     )}
                     {canDelete && (
@@ -1525,9 +1529,9 @@ const Kunden = () => {
                                         type="button"
                                         onClick={() => { setEditingObject(obj); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
                                         className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                        aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
+                                        aria-label={`${getObjectDisplayName(obj)} öffnen`}
                                       >
-                                        Bearbeiten
+                                        Öffnen
                                       </button>
                                     )}
                                     {canEdit && (
@@ -1607,9 +1611,9 @@ const Kunden = () => {
                                         type="button"
                                         onClick={() => setContractModal({ open: true, customerId: customer.id, bvId: null, contract: c })}
                                         className="px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                        aria-label="Vertrag bearbeiten"
+                                        aria-label="Vertrag öffnen"
                                       >
-                                        Bearbeiten
+                                        Öffnen
                                       </button>
                                     )}
                                     {canDelete && (
@@ -1660,7 +1664,7 @@ const Kunden = () => {
                               Türen/Tore direkt unter Kunde (noch keinem Objekt/BV zugeordnet)
                             </h4>
                             <p className="text-xs text-amber-700 dark:text-amber-300/90 mb-2">
-                              Diese Türen einem Objekt/BV zuordnen: Bearbeiten → Zuordnung auswählen → Speichern.
+                              Diese Türen einem Objekt/BV zuordnen: Öffnen → Zuordnung auswählen → Speichern.
                             </p>
                             {isDirectObjectsLoading ? (
                               <LoadingSpinner message="Lade…" size="sm" className="py-2" />
@@ -1722,9 +1726,9 @@ const Kunden = () => {
                                           type="button"
                                           onClick={() => { setEditingObject(obj); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
                                           className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                          aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
+                                          aria-label={`${getObjectDisplayName(obj)} öffnen`}
                                         >
-                                          Bearbeiten (Objekt/BV zuordnen)
+                                          Öffnen (Objekt/BV zuordnen)
                                         </button>
                                       )}
                                       {canEdit && (
@@ -1815,9 +1819,9 @@ const Kunden = () => {
                                         type="button"
                                         onClick={() => handleOpenBvEdit(bv)}
                                         className="inline-flex min-h-[32px] items-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/40"
-                                        aria-label={`${bv.name} bearbeiten`}
+                                        aria-label={`${bv.name} öffnen`}
                                       >
-                                        Bearbeiten
+                                        Öffnen
                                       </button>
                                     )}
                                     {canDelete && (
@@ -1948,9 +1952,9 @@ const Kunden = () => {
                                                       setEditingObjectCustomerId(customer.id)
                                                     }}
                                                     className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                                    aria-label={`${getObjectDisplayName(obj)} bearbeiten`}
+                                                    aria-label={`${getObjectDisplayName(obj)} öffnen`}
                                                   >
-                                                    Bearbeiten
+                                                    Öffnen
                                                   </button>
                                                 )}
                                                 {canEdit && (
@@ -2040,9 +2044,9 @@ const Kunden = () => {
                                                     type="button"
                                                     onClick={(e) => { e.stopPropagation(); setContractModal({ open: true, customerId: null, bvId: bv.id, contract: c }) }}
                                                     className="px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                                    aria-label="Vertrag bearbeiten"
+                                                    aria-label="Vertrag öffnen"
                                                   >
-                                                    Bearbeiten
+                                                    Öffnen
                                                   </button>
                                                 )}
                                                 {canDelete && (
@@ -2102,8 +2106,16 @@ const Kunden = () => {
                         )}
                       </>
                     )}
-                    {userRole === 'admin' && (
-                      <PortalInviteSection customerId={customer.id} customerName={customer.name} />
+                    {hasKundenportalFeature && (
+                      <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 p-3">
+                        <p className="text-xs text-slate-600 dark:text-slate-400">
+                          Kundenportal-Zugänge & Sichtbarkeit: zentrale Konfiguration in der Benutzerverwaltung.
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Freigabe Kunde: Monteursbericht {customer.monteur_report_portal !== false ? 'aktiv' : 'inaktiv'} ·
+                          Wartungsbericht {customer.maintenance_report_portal !== false ? 'aktiv' : 'inaktiv'}.
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -2307,7 +2319,7 @@ const Kunden = () => {
           >
             <div className="p-4 sticky top-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
               <h3 id="form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                {editingId ? 'Kunde bearbeiten' : 'Kunde anlegen'}
+                {editingId ? 'Kunde öffnen' : 'Kunde anlegen'}
               </h3>
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
@@ -2367,32 +2379,67 @@ const Kunden = () => {
               <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
                 <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Ansprechpartner</p>
                 <div className="space-y-2">
-                  <input
-                    type="text"
-                    placeholder="Name"
-                    value={formData.contact_name}
-                    onChange={(e) => handleFormChange('contact_name', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
+                  <div className="min-w-0">
+                    <label
+                      htmlFor="customer-contact-name"
+                      className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
+                    >
+                      Name
+                    </label>
+                    <input
+                      id="customer-contact-name"
+                      type="text"
+                      placeholder="Name"
+                      value={formData.contact_name}
+                      onChange={(e) => handleFormChange('contact_name', e.target.value)}
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    />
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="email"
-                      placeholder="E-Mail"
-                      value={formData.contact_email}
-                      onChange={(e) => handleFormChange('contact_email', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Telefon"
-                      value={formData.contact_phone}
-                      onChange={(e) => handleFormChange('contact_phone', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                    />
+                    <div className="min-w-0">
+                      <label
+                        htmlFor="customer-contact-email"
+                        className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
+                      >
+                        E-Mail
+                      </label>
+                      <input
+                        id="customer-contact-email"
+                        type="email"
+                        placeholder="E-Mail"
+                        value={formData.contact_email}
+                        onChange={(e) => handleFormChange('contact_email', e.target.value)}
+                        className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label
+                        htmlFor="customer-contact-phone"
+                        className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
+                      >
+                        Telefon
+                      </label>
+                      <input
+                        id="customer-contact-phone"
+                        type="tel"
+                        placeholder="Telefon"
+                        value={formData.contact_phone}
+                        onChange={(e) => handleFormChange('contact_phone', e.target.value)}
+                        className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                    Zustellweg: E-Mail direkt
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
+                    Quelle: Kunde
+                  </span>
+                </div>
                 <div className="flex items-center justify-between gap-3">
                   <p
                     id="wartungs-email-kunde-label"
@@ -2428,6 +2475,10 @@ const Kunden = () => {
                     />
                   </button>
                 </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Ist diese Option aktiv, wird der Wartungsbericht direkt an die hier hinterlegte E-Mail-Adresse
+                  zugestellt.
+                </p>
                 {formData.maintenance_report_email && (
                   <input
                     type="email"
@@ -2440,9 +2491,21 @@ const Kunden = () => {
               </div>
               {showPortalDeliveryToggles && (
                 <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                      Zustellweg: Portal
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
+                      Wirkung: Benachrichtigung + Abruf im Portal
+                    </span>
+                  </div>
                   <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Für diesen Kunden bestehen Portal-Zugänge. Die Schalter unten steuern, ob Wartungs- und
+                    Für diesen Kunden bestehen Kundenportal-Zugänge. Die Schalter unten steuern, ob Wartungs- und
                     Monteursberichte zusätzlich im Kundenportal sichtbar werden.
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Bei aktiver Portal-Freigabe erhalten Portal-Benutzer eine Information, dass ein neuer Bericht im
+                    Kundenportal verfügbar ist.
                   </p>
                   <div className="flex items-center justify-between gap-3">
                     <p
@@ -2490,7 +2553,7 @@ const Kunden = () => {
                       type="button"
                       role="switch"
                       tabIndex={0}
-                      aria-checked={formData.monteur_report_portal}
+                      aria-checked={formData.maintenance_report_portal}
                       aria-labelledby="wartungs-portal-kunde-label"
                       onClick={() =>
                         handleMaintenanceReportPortalToggle(!formData.maintenance_report_portal)
@@ -2515,6 +2578,39 @@ const Kunden = () => {
                         aria-hidden
                       />
                     </button>
+                  </div>
+                </div>
+              )}
+              {hasKundenportalFeature && editingId && (
+                <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Kundenportal</p>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 p-3 space-y-2">
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      Weitere Einstellungen für Kundenportal-Zugänge & Sichtbarkeit (Benutzerzuordnung und Objekt/BV)
+                      erfolgen zentral in der Benutzerverwaltung.
+                    </p>
+                    {canOpenBenutzerverwaltung ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Zugeordnete Portal-Benutzer: {portalUserCountForForm}
+                        </p>
+                        <Link
+                          to="/benutzerverwaltung#portal-zugaenge"
+                          className="inline-flex items-center rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50"
+                          aria-label="Benutzerverwaltung öffnen"
+                        >
+                          Zur Benutzerverwaltung
+                        </Link>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Die Administration verwaltet Kundenportal-Zugänge zentral in der Benutzerverwaltung.
+                      </p>
+                    )}
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Aktuelle Freigabe Kunde: Monteursbericht {formData.monteur_report_portal ? 'aktiv' : 'inaktiv'} ·
+                      Wartungsbericht {formData.maintenance_report_portal ? 'aktiv' : 'inaktiv'}.
+                    </p>
                   </div>
                 </div>
               )}
@@ -2568,7 +2664,7 @@ const Kunden = () => {
           >
             <div className="p-4 sticky top-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
               <h3 id="bv-form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                {bvEditingId ? 'Objekt/BV bearbeiten' : 'Objekt/BV anlegen'}
+                {bvEditingId ? 'Objekt/BV öffnen' : 'Objekt/BV anlegen'}
               </h3>
             </div>
             <form onSubmit={handleBvSubmit} className="p-4 space-y-4 min-w-0">
@@ -2644,32 +2740,67 @@ const Kunden = () => {
               <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
                 <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Ansprechpartner</p>
                 <div className="space-y-2">
-                  <input
-                    type="text"
-                    placeholder="Name"
-                    value={bvFormData.contact_name}
-                    onChange={(e) => handleBvFormChange('contact_name', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
+                  <div className="min-w-0">
+                    <label
+                      htmlFor="bv-contact-name"
+                      className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
+                    >
+                      Name
+                    </label>
+                    <input
+                      id="bv-contact-name"
+                      type="text"
+                      placeholder="Name"
+                      value={bvFormData.contact_name}
+                      onChange={(e) => handleBvFormChange('contact_name', e.target.value)}
+                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                    />
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="email"
-                      placeholder="E-Mail"
-                      value={bvFormData.contact_email}
-                      onChange={(e) => handleBvFormChange('contact_email', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Telefon"
-                      value={bvFormData.contact_phone}
-                      onChange={(e) => handleBvFormChange('contact_phone', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                    />
+                    <div className="min-w-0">
+                      <label
+                        htmlFor="bv-contact-email"
+                        className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
+                      >
+                        E-Mail
+                      </label>
+                      <input
+                        id="bv-contact-email"
+                        type="email"
+                        placeholder="E-Mail"
+                        value={bvFormData.contact_email}
+                        onChange={(e) => handleBvFormChange('contact_email', e.target.value)}
+                        className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label
+                        htmlFor="bv-contact-phone"
+                        className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
+                      >
+                        Telefon
+                      </label>
+                      <input
+                        id="bv-contact-phone"
+                        type="tel"
+                        placeholder="Telefon"
+                        value={bvFormData.contact_phone}
+                        onChange={(e) => handleBvFormChange('contact_phone', e.target.value)}
+                        className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
               <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                    Zustellweg: E-Mail direkt
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
+                    Quelle: Objekt/BV
+                  </span>
+                </div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -2681,6 +2812,10 @@ const Kunden = () => {
                     Wartungsbericht per E-Mail
                   </span>
                 </label>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Ist diese Option aktiv, wird der Wartungsbericht direkt an die hier hinterlegte E-Mail-Adresse
+                  zugestellt.
+                </p>
                 {bvFormData.maintenance_report_email && (
                   <input
                     type="email"
@@ -2691,8 +2826,16 @@ const Kunden = () => {
                   />
                 )}
               </div>
-              {showMonteurCustomerZustellung && (
+              {canEditPortalConfig && showMonteurCustomerZustellung && (
                 <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                      Zustellung: {bvFormData.uses_customer_report_delivery ? 'geerbt' : 'individuell'}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
+                      Quelle: {bvFormData.uses_customer_report_delivery ? 'Kunde' : 'Objekt/BV'}
+                    </span>
+                  </div>
                   <div className="flex items-center justify-between gap-3">
                     <p
                       id="bv-zustellung-wie-kunde-label"
@@ -2730,11 +2873,24 @@ const Kunden = () => {
                       />
                     </button>
                   </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Aktiv: BV übernimmt die Zustell-/Portal-Einstellungen vom Kunden. Inaktiv: dieses Objekt/BV hat
+                    eigene Freigaben.
+                  </p>
+                  {bvFormData.uses_customer_report_delivery && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Aktuell vom Kunden geerbt: Monteursbericht {formData.monteur_report_portal ? 'aktiv' : 'inaktiv'} ·
+                      Wartungsbericht {formData.maintenance_report_portal ? 'aktiv' : 'inaktiv'}.
+                    </p>
+                  )}
                   {!bvFormData.uses_customer_report_delivery && showBvPortalDeliveryToggles && (
                     <>
                       <p className="text-xs text-slate-600 dark:text-slate-400">
-                        Eigene Portal-Freigaben für dieses Objekt/BV (Kundenportal-Zugänge sind am Kunden
-                        hinterlegt).
+                        Eigene Portal-Freigaben für dieses Objekt/BV (Kundenportal-Zugänge sind am Kunden hinterlegt).
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        Bei aktiver Portal-Freigabe erhalten Portal-Benutzer eine Information, dass ein neuer Bericht im
+                        Kundenportal verfügbar ist.
                       </p>
                       <div className="flex items-center justify-between gap-3">
                         <p
@@ -2810,6 +2966,26 @@ const Kunden = () => {
                       </div>
                     </>
                   )}
+                </div>
+              )}
+              {!canEditPortalConfig && hasKundenportalFeature && (
+                <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                      Zustellung: nur Anzeige
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
+                      Quelle: Benutzerverwaltung
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                    Weitere Einstellungen für Kundenportal-Zugänge & Sichtbarkeit dieses Objekt/BV werden zentral in
+                    der Benutzerverwaltung verwaltet.
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Aktuelle Freigabe Objekt/BV: Monteursbericht {bvFormData.monteur_report_portal ? 'aktiv' : 'inaktiv'} ·
+                    Wartungsbericht {bvFormData.maintenance_report_portal ? 'aktiv' : 'inaktiv'}.
+                  </p>
                 </div>
               )}
               {bvFormError && (

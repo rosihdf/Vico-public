@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { fetchLicenseFull, getDefaultAppName } from '../../shared/fetchDesignFromLicense'
+import { installDocumentFavicon } from '../../shared/installDocumentFavicon'
 import { applyVicoPrimaryCssVars, clearVicoPrimaryCssVars } from '../../shared/vicoCssPrimary'
 import type { AppVersionEntry } from '../../shared/appVersions'
 import { useLicenseClientConfigVersionPoll } from '../../shared/useLicenseClientConfigVersionPoll'
@@ -58,32 +59,8 @@ export const DesignProvider = ({ children }: { children: React.ReactNode }) => {
   const [mandantenReleases, setMandantenReleases] = useState<MandantenReleasesApiPayload | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  const inferFaviconType = (url: string): string | null => {
-    const u = url.toLowerCase()
-    if (u.endsWith('.svg')) return 'image/svg+xml'
-    if (u.endsWith('.png')) return 'image/png'
-    if (u.endsWith('.ico')) return 'image/x-icon'
-    if (u.endsWith('.webp')) return 'image/webp'
-    if (u.endsWith('.jpg') || u.endsWith('.jpeg')) return 'image/jpeg'
-    return null
-  }
-
   const applyFavicon = useCallback((faviconUrl: string | null) => {
-    if (typeof document === 'undefined') return
-    const href = faviconUrl?.trim() ? faviconUrl.trim() : '/favicon.svg'
-    const type = inferFaviconType(href)
-    const rels: Array<'icon' | 'shortcut icon'> = ['icon', 'shortcut icon']
-    for (const rel of rels) {
-      let faviconLink = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`)
-      if (!faviconLink) {
-        faviconLink = document.createElement('link')
-        faviconLink.rel = rel
-        document.head.appendChild(faviconLink)
-      }
-      faviconLink.href = href
-      if (type) faviconLink.type = type
-      else faviconLink.removeAttribute('type')
-    }
+    installDocumentFavicon(faviconUrl, '/favicon.svg')
   }, [])
 
   const load = useCallback(async () => {

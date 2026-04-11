@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ChecklistDisplayMode, ChecklistItemStatus } from '../lib/doorMaintenanceChecklistCatalog'
 import {
   FESTSTELL_CHECKLIST_SECTIONS,
@@ -8,6 +9,7 @@ import {
 } from '../lib/feststellChecklistCatalog'
 import { getMaintenancePhotoUrl } from '../lib/dataService'
 import type { ChecklistMangelPhoto } from '../types/maintenance'
+import CameraCaptureModal from './CameraCaptureModal'
 
 const STATUS_OPTIONS: { value: ChecklistItemStatus; label: string }[] = [
   { value: 'ok', label: 'OK' },
@@ -76,7 +78,14 @@ const FeststellOrderChecklistPanel = ({
   uploadingItemId,
   showSaveControls = true,
 }: FeststellOrderChecklistPanelProps) => {
+  const [cameraTargetItemId, setCameraTargetItemId] = useState<string | null>(null)
   const ids = getFeststellChecklistItemIdsForMode(mode)
+  const handleCameraCapture = async (file: File) => {
+    if (!cameraTargetItemId) return false
+    await onUploadDefectPhoto(cameraTargetItemId, file)
+    setCameraTargetItemId(null)
+    return true
+  }
 
   const renderMelderRadios = () => (
     <div className="flex flex-col gap-2 mt-2">
@@ -171,36 +180,51 @@ const FeststellOrderChecklistPanel = ({
                               </label>
                             ))}
                           </div>
-                          {items[d.id]?.status === 'mangel' && (
+                          <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(items[d.id]?.advisory)}
+                              onChange={(e) => onChangeItem(d.id, { advisory: e.target.checked })}
+                              className="rounded border-slate-400 text-vico-primary"
+                            />
+                            Hinweis / empfohlene Maßnahme (ohne Mangel)
+                          </label>
+                          {(items[d.id]?.status === 'mangel' || items[d.id]?.advisory) && (
                             <div className="space-y-2">
-                              <textarea
-                                value={items[d.id]?.note ?? ''}
-                                onChange={(e) => onChangeItem(d.id, { note: e.target.value })}
-                                placeholder="Mangelbeschreibung (Pflicht)"
-                                rows={2}
-                                className={MANGEL_NOTE_INPUT_CLASS}
-                                aria-label={`Mangelbeschreibung ${d.label}`}
-                              />
-                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                                <input
-                                  id={`fst-photo-${d.id}`}
-                                  type="file"
-                                  accept="image/*"
-                                  capture="environment"
-                                  className="sr-only"
-                                  disabled={uploadingItemId === d.id}
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0]
-                                    if (file) void onUploadDefectPhoto(d.id, file)
-                                    e.currentTarget.value = ''
-                                  }}
+                              {items[d.id]?.status === 'mangel' && (
+                                <textarea
+                                  value={items[d.id]?.note ?? ''}
+                                  onChange={(e) => onChangeItem(d.id, { note: e.target.value })}
+                                  placeholder="Mangelbeschreibung (Pflicht)"
+                                  rows={2}
+                                  className={MANGEL_NOTE_INPUT_CLASS}
+                                  aria-label={`Mangelbeschreibung ${d.label}`}
                                 />
-                                <label
-                                  htmlFor={`fst-photo-${d.id}`}
-                                  className="inline-flex px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 cursor-pointer"
+                              )}
+                              {items[d.id]?.advisory && (
+                                <textarea
+                                  value={items[d.id]?.advisory_note ?? ''}
+                                  onChange={(e) => onChangeItem(d.id, { advisory_note: e.target.value })}
+                                  placeholder="Hinweis / empfohlene Maßnahme (Pflicht)"
+                                  rows={2}
+                                  className={MANGEL_NOTE_INPUT_CLASS}
+                                  aria-label={`Hinweis ${d.label}`}
+                                />
+                              )}
+                              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                <button
+                                  type="button"
+                                  onClick={() => setCameraTargetItemId(d.id)}
+                                  disabled={uploadingItemId === d.id}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-vico-primary text-vico-primary hover:bg-vico-primary/10 disabled:opacity-50"
+                                  aria-label="Foto aufnehmen"
+                                  title="Foto aufnehmen"
                                 >
-                                  Foto aufnehmen
-                                </label>
+                                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                                    <path d="M4 7h3l1.2-2h7.6L17 7h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+                                    <circle cx="12" cy="13" r="4" />
+                                  </svg>
+                                </button>
                                 <input
                                   id={`fst-file-${d.id}`}
                                   type="file"
@@ -217,7 +241,7 @@ const FeststellOrderChecklistPanel = ({
                                   htmlFor={`fst-file-${d.id}`}
                                   className="inline-flex px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 cursor-pointer"
                                 >
-                                  Datei hinzufügen
+                                  Hochladen
                                 </label>
                                 <span>optional (max. 3)</span>
                               </div>
@@ -305,36 +329,51 @@ const FeststellOrderChecklistPanel = ({
                         </label>
                       ))}
                     </div>
-                    {items[sec.id]?.status === 'mangel' && (
+                    <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(items[sec.id]?.advisory)}
+                        onChange={(e) => onChangeItem(sec.id, { advisory: e.target.checked })}
+                        className="rounded border-slate-400 text-vico-primary"
+                      />
+                      Hinweis / empfohlene Maßnahme (ohne Mangel)
+                    </label>
+                    {(items[sec.id]?.status === 'mangel' || items[sec.id]?.advisory) && (
                       <div className="space-y-2">
-                        <textarea
-                          value={items[sec.id]?.note ?? ''}
-                          onChange={(e) => onChangeItem(sec.id, { note: e.target.value })}
-                          placeholder="Mangelbeschreibung (Pflicht)"
-                          rows={2}
-                          className={MANGEL_NOTE_INPUT_CLASS}
-                          aria-label={`Mangelbeschreibung ${sec.title}`}
-                        />
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                          <input
-                            id={`fst-photo-${sec.id}`}
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            className="sr-only"
-                            disabled={uploadingItemId === sec.id}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0]
-                              if (file) void onUploadDefectPhoto(sec.id, file)
-                              e.currentTarget.value = ''
-                            }}
+                        {items[sec.id]?.status === 'mangel' && (
+                          <textarea
+                            value={items[sec.id]?.note ?? ''}
+                            onChange={(e) => onChangeItem(sec.id, { note: e.target.value })}
+                            placeholder="Mangelbeschreibung (Pflicht)"
+                            rows={2}
+                            className={MANGEL_NOTE_INPUT_CLASS}
+                            aria-label={`Mangelbeschreibung ${sec.title}`}
                           />
-                          <label
-                            htmlFor={`fst-photo-${sec.id}`}
-                            className="inline-flex px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 cursor-pointer"
+                        )}
+                        {items[sec.id]?.advisory && (
+                          <textarea
+                            value={items[sec.id]?.advisory_note ?? ''}
+                            onChange={(e) => onChangeItem(sec.id, { advisory_note: e.target.value })}
+                            placeholder="Hinweis / empfohlene Maßnahme (Pflicht)"
+                            rows={2}
+                            className={MANGEL_NOTE_INPUT_CLASS}
+                            aria-label={`Hinweis ${sec.title}`}
+                          />
+                        )}
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                          <button
+                            type="button"
+                            onClick={() => setCameraTargetItemId(sec.id)}
+                            disabled={uploadingItemId === sec.id}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-vico-primary text-vico-primary hover:bg-vico-primary/10 disabled:opacity-50"
+                            aria-label="Foto aufnehmen"
+                            title="Foto aufnehmen"
                           >
-                            Foto aufnehmen
-                          </label>
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                              <path d="M4 7h3l1.2-2h7.6L17 7h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+                              <circle cx="12" cy="13" r="4" />
+                            </svg>
+                          </button>
                           <input
                             id={`fst-file-${sec.id}`}
                             type="file"
@@ -351,7 +390,7 @@ const FeststellOrderChecklistPanel = ({
                             htmlFor={`fst-file-${sec.id}`}
                             className="inline-flex px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 cursor-pointer"
                           >
-                            Datei hinzufügen
+                            Hochladen
                           </label>
                           <span>optional (max. 3)</span>
                         </div>
@@ -422,6 +461,12 @@ const FeststellOrderChecklistPanel = ({
       <p className="text-xs text-slate-400 dark:text-slate-500">
         Offene Prüfpunkte: {countFeststellIncompleteItems(mode, items)} / {ids.length}
       </p>
+      <CameraCaptureModal
+        open={cameraTargetItemId !== null}
+        onClose={() => setCameraTargetItemId(null)}
+        onCapture={handleCameraCapture}
+        title="Foto aufnehmen"
+      />
     </div>
   )
 }

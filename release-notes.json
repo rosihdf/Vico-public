@@ -1,4 +1,11 @@
 {
+  "1.2.1": [
+    "Prüfprotokoll-PDF: laufende Nummer (PP-…), Nummer in Titel und Fußzeile, QR unten rechts am Blatt (Portal-Link), Prüfobjekt, hervorgehobener Abschluss, Checklisten-Fortsetzung bei Seitenumbruch, Punktnummerierung wie in der App.",
+    "Checklisten Tür/Feststell: Hinweis / empfohlene Maßnahme ohne Mangel (parallel zu Mangel); PDF und Speicherung.",
+    "Lizenz/Design: Kundenportal-URL (design.kundenportal_url), optional VITE_KUNDENPORTAL_URL; Lizenz-Feature teamfunktion.",
+    "Aufträge: related_order_id; Kalender: useMemo-Import für verknüpfte Aufträge; diverse UI-Anpassungen (Auftragsdetail, Kunden, Einstellungen, QR-Auftrag, …).",
+    "Mandanten-DB (separates Rollout): u. a. pruefprotokoll_laufnummer – siehe supabase-complete.sql und docs/Lizenzportal-Update-Rollout.md."
+  ],
   "1.2.0": [
     "Mandanten-Briefbogen: PDF-Vorlage möglich; optional zweite PDF-Seite als Folgeseiten-Hintergrund (z. B. nur Fußzeile, ohne großes Logo).",
     "Prüfberichte und Auftrags-PDFs nutzen den Briefbogen konsistent; Arbeitszeitportal-Zoll-PDF mit Erst- und Folge-Vorlage."

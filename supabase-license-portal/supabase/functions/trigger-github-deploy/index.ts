@@ -9,7 +9,10 @@
  *   GITHUB_REPO_OWNER, GITHUB_REPO_NAME
  *   GITHUB_WORKFLOW_DEPLOY_FILE (Default: deploy-pages-from-release.yml)
  *   GITHUB_WORKFLOW_REF (Branch mit Workflow-Datei, Default: main)
- * Optional: DEPLOY_ALLOWED_ORIGINS (kommagetrennt; leer = *)
+ * Optional:
+ *   GITHUB_DEPLOY_CHECKOUT_REF – Git-Ref für actions/checkout, wenn Release kein tag/target_commitish hat (Default: wie GITHUB_WORKFLOW_REF)
+ *   GITHUB_DEPLOY_SYNTHETIC_TAG_REF=1 – stattdessen Kanal/Semver als Ref (z. B. main/1.2.1); nur sinnvoll, wenn diese Tags im Repo existieren
+ *   DEPLOY_ALLOWED_ORIGINS (kommagetrennt; leer = *)
  */
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -152,20 +155,18 @@ serve(async (req) => {
   const targetCommitish =
     typeof meta.target_commitish === 'string' ? meta.target_commitish.trim() : ''
   const versionSemver = typeof rel.version_semver === 'string' ? rel.version_semver.trim() : ''
-  // Wichtig: target_commitish zuerst (Sync-Workflow setzt github.sha). Ohne SHA/Tag in
-  // ci_metadata: Fallback „Kanal/Version“ – nur nutzbar, wenn im Repo ein gleichnamiger Git-Tag
-  // existiert (sonst actions/checkout@v4-Fehler). Manuell angelegte Releases: SHA in
-  // ci_metadata.target_commitish eintragen (siehe docs/sql/LP-app-release-*.sql).
+  // 1) target_commitish / tag aus „Sync release to license portal“ (GitHub Release)
+  // 2) Ohne beides: Checkout-Ref = Branch/SHA, nicht erfundene Tags wie main/1.2.1 (die existieren
+  //    oft nicht → actions/checkout „could not be found“). Optional: GITHUB_DEPLOY_SYNTHETIC_TAG_REF=1.
+  const syntheticAllowed = (Deno.env.get('GITHUB_DEPLOY_SYNTHETIC_TAG_REF') ?? '').trim() === '1'
+  const checkoutRefDefault = (Deno.env.get('GITHUB_DEPLOY_CHECKOUT_REF') ?? workflowRef).trim() || 'main'
+
   let gitRef = targetCommitish || tag
-  if (!gitRef && versionSemver) {
+  if (!gitRef && versionSemver && syntheticAllowed) {
     gitRef = `${channel}/${versionSemver}`
   }
   if (!gitRef) {
-    return json(req, 400, {
-      ok: false,
-      error:
-        'Kein Git-Ref: bitte Release mit „Sync release to license portal“ synchronisieren oder ci_metadata.target_commitish / ci_metadata.tag setzen.',
-    })
+    gitRef = checkoutRefDefault
   }
 
   const since = new Date(Date.now() - DUPLICATE_WINDOW_MS).toISOString()

@@ -8,6 +8,9 @@ import {
 export type WartungChecklistItemState = {
   status?: ChecklistItemStatus
   note?: string
+  /** Hinweis/empfohlene Maßnahme ohne Mangelbefund. */
+  advisory?: boolean
+  advisory_note?: string
 }
 
 export type WartungFeststellChecklistePerObject = {
@@ -167,6 +170,11 @@ const parseFeststellCheckliste = (raw: unknown): WartungFeststellChecklistePerOb
           typeof (row as FeststellChecklistItemState).note === 'string'
             ? (row as FeststellChecklistItemState).note
             : undefined,
+        advisory: Boolean((row as FeststellChecklistItemState).advisory),
+        advisory_note:
+          typeof (row as FeststellChecklistItemState).advisory_note === 'string'
+            ? (row as FeststellChecklistItemState).advisory_note
+            : undefined,
       }
     }
   }
@@ -195,6 +203,11 @@ const parseWartungCheckliste = (raw: unknown): WartungChecklistExtraV1 | undefin
           items[iid] = {
             status: st,
             note: typeof (row as WartungChecklistItemState).note === 'string' ? (row as WartungChecklistItemState).note : undefined,
+            advisory: Boolean((row as WartungChecklistItemState).advisory),
+            advisory_note:
+              typeof (row as WartungChecklistItemState).advisory_note === 'string'
+                ? (row as WartungChecklistItemState).advisory_note
+                : undefined,
           }
         }
       }

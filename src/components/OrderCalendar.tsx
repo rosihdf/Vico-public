@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { Order, OrderStatus } from '../types'
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -114,6 +115,13 @@ export const OrderCalendar = ({
   getBvName,
 }: OrderCalendarProps) => {
   const ordersByDate = getOrdersByDate(orders)
+  const parentOrderIdsWithChildren = useMemo(() => {
+    const ids = new Set<string>()
+    for (const o of orders) {
+      if (o.related_order_id) ids.add(o.related_order_id)
+    }
+    return ids
+  }, [orders])
   const year = currentMonth.getFullYear()
   const month = currentMonth.getMonth()
 
@@ -244,8 +252,22 @@ export const OrderCalendar = ({
                               {!o.assigned_to && (
                                 <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-300">(nicht zugewiesen)</span>
                               )}
+                              {(o.related_order_id || parentOrderIdsWithChildren.has(o.id)) && (
+                                <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[10px] font-medium text-sky-800 dark:text-sky-200">
+                                  verknüpft
+                                </span>
+                              )}
                             </p>
                             <p className="text-slate-600 dark:text-slate-400 text-xs">{o.order_type}</p>
+                            {o.related_order_id ? (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                Verknüpft mit Auftrag #{o.related_order_id.slice(0, 8)}
+                              </p>
+                            ) : parentOrderIdsWithChildren.has(o.id) ? (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                Hat verknüpfte Folgeaufträge
+                              </p>
+                            ) : null}
                           </div>
                         ))}
                       </li>

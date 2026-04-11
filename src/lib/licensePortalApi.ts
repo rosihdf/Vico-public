@@ -151,6 +151,7 @@ export type LicenseApiResponse = {
     /** Mandanten-„Name“ im Lizenzportal (Tabellenfeld `tenants.name`), vollständiger Anzeigetext */
     tenant_name?: string | null
     logo_url: string | null
+    kundenportal_url?: string | null
     primary_color: string
     secondary_color?: string | null
     favicon_url?: string | null
@@ -191,6 +192,7 @@ export type LicenseApiResponse = {
 const DEFAULT_DESIGN: LicenseApiResponse['design'] = {
   app_name: 'AMRtech',
   logo_url: null,
+  kundenportal_url: null,
   primary_color: '#5b7895',
   secondary_color: null,
   favicon_url: null,

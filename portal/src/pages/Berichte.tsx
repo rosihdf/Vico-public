@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useSearchParams } from 'react-router-dom'
 import type { User } from '@supabase/supabase-js'
 import type { PortalLayoutOutletContext } from '../components/Layout'
 import {
@@ -54,6 +54,7 @@ const formatDate = (dateStr: string): string => {
 
 const Berichte = ({ user }: BerichteProps) => {
   const { portalTimeline } = useOutletContext<PortalLayoutOutletContext>()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [reports, setReports] = useState<PortalReport[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -61,6 +62,7 @@ const Berichte = ({ user }: BerichteProps) => {
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [downloadingPruefId, setDownloadingPruefId] = useState<string | null>(null)
   const [pdfPreview, setPdfPreview] = useState<PdfPreviewState>(null)
+  const deepLinkPruefId = searchParams.get('pruefprotokoll')?.trim() || ''
 
   const loadReports = useCallback(async () => {
     if (!user) return
@@ -73,6 +75,17 @@ const Berichte = ({ user }: BerichteProps) => {
   useEffect(() => {
     loadReports()
   }, [loadReports])
+
+  useEffect(() => {
+    if (!deepLinkPruefId || reports.length === 0) return
+    const target = reports.find((r) => r.report_id === deepLinkPruefId && r.pruefprotokoll_pdf_path)
+    if (!target) return
+    void handleOpenPruefPdf(target)
+    const next = new URLSearchParams(searchParams)
+    next.delete('pruefprotokoll')
+    setSearchParams(next, { replace: true })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkPruefId, reports])
 
   const handleToggle = (reportId: string) => {
     setExpandedId((prev) => (prev === reportId ? null : reportId))

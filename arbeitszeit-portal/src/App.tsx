@@ -51,6 +51,7 @@ const UrlaubRoute = () => {
 }
 
 const App = () => {
+  const { appVersionInfo } = useDesign()
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [canAccess, setCanAccess] = useState(false)
@@ -192,7 +193,10 @@ const App = () => {
   return (
     <BrowserRouter>
       <ThemePreferenceSync userId={user?.id ?? null} enabled={Boolean(user && canAccess)} />
-      <UpdateBanner />
+      <UpdateBanner
+        licenseAdvertisedVersion={appVersionInfo?.version ?? null}
+        licenseAdvertisedReleaseNotes={appVersionInfo?.releaseNotes ?? null}
+      />
       <Suspense fallback={fallback}>
         <Routes>
           <Route path="/login" element={

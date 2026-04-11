@@ -44,6 +44,7 @@ export default defineConfig(({ mode }) => {
         'node_modules/@supabase/supabase-js'
       ),
       jspdf: path.resolve(__dirname, 'node_modules/jspdf'),
+      'pdfjs-dist': path.resolve(__dirname, 'node_modules/pdfjs-dist'),
     },
   },
   define: {

@@ -889,22 +889,33 @@ const ObjectFormModal = ({
       {canEdit ? (
         <div className="flex flex-col sm:flex-row flex-wrap gap-2">
           <input
+            id="object-profile-upload-input"
             type="file"
             accept="image/*"
             onChange={handleProfileFileInputChange}
             disabled={isUploadingProfile || (!!editingId && !isOnline())}
-            className="flex-1 min-w-0 text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50"
-            aria-label="Profilfoto aus Datei wählen"
+            className="sr-only"
+            aria-label="Profilfoto hochladen"
           />
+          <label
+            htmlFor="object-profile-upload-input"
+            className={`shrink-0 inline-flex items-center px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 ${isUploadingProfile || (!!editingId && !isOnline()) ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}
+          >
+            Hochladen
+          </label>
           <button
             type="button"
             onClick={() => setCameraTarget('profile')}
             disabled={isUploadingProfile || (!!editingId && !isOnline())}
-            className="shrink-0 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                    className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-vico-primary text-vico-primary hover:bg-vico-primary/10 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
             aria-label="Profilfoto mit Kamera aufnehmen"
-          >
-            Foto aufnehmen
-          </button>
+                    title="Profilfoto mit Kamera aufnehmen"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                      <path d="M4 7h3l1.2-2h7.6L17 7h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+                      <circle cx="12" cy="13" r="4" />
+                    </svg>
+                  </button>
         </div>
       ) : null}
       {isUploadingProfile ? (
@@ -1332,7 +1343,7 @@ const ObjectFormModal = ({
               <div className="rounded-lg border border-rose-200 dark:border-rose-900/45 bg-rose-50/50 dark:bg-rose-950/25 p-4 space-y-3">
                 <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100">Offene Mängel (Prüfprotokoll)</h3>
                 <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Aus dem letzten abgeschlossenen Wartungsauftrag mit gespeicherter Checkliste. Änderung durch erneute
+                  Aus dem letzten abgeschlossenen Prüfungsauftrag mit gespeicherter Checkliste. Änderung durch erneute
                   Wartung mit geändertem Prüfstand.
                 </p>
                 <ul className="space-y-3" aria-label="Offene Protokoll-Mängel">
@@ -1364,7 +1375,7 @@ const ObjectFormModal = ({
                             <Link
                               to={`/auftrag/${row.order_id}`}
                               className="text-xs font-medium text-vico-primary hover:underline dark:text-sky-400"
-                              aria-label="Zum abgeschlossenen Wartungsauftrag (Protokoll)"
+                              aria-label="Zum abgeschlossenen Prüfungsauftrag (Protokoll)"
                             >
                               Zum Auftrag
                             </Link>
@@ -1407,7 +1418,7 @@ const ObjectFormModal = ({
             {isEdit && protocolDraftRowsFetched.length > 0 ? (
               <div className="rounded-lg border border-sky-200 dark:border-sky-800/60 bg-sky-50/60 dark:bg-sky-950/30 p-4 space-y-3">
                 <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100">
-                  Entwurf (laufender Wartungsauftrag)
+                  Entwurf (laufender Prüfungsauftrag)
                 </h3>
                 <p className="text-xs text-slate-600 dark:text-slate-400">
                   Gespeicherter Prüfstand am noch nicht abgeschlossenen Auftrag. Er beeinflusst nicht die
@@ -1442,7 +1453,7 @@ const ObjectFormModal = ({
                             <Link
                               to={`/auftrag/${row.order_id}`}
                               className="text-xs font-medium text-vico-primary hover:underline dark:text-sky-400"
-                              aria-label="Zum laufenden Wartungsauftrag"
+                              aria-label="Zum laufenden Prüfungsauftrag"
                             >
                               Zum Auftrag
                             </Link>
@@ -1723,29 +1734,40 @@ const ObjectFormModal = ({
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Fotos</label>
                 {!isEdit ? (
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    Bilder können schon jetzt ausgewählt werden; sie werden direkt nach dem Speichern der Tür/Tor
+                    Bilder können schon jetzt hochgeladen werden; sie werden direkt nach dem Speichern der Tür/Tor
                     hochgeladen (offline: werden mit synchronisiert).
                   </p>
                 ) : null}
                 {canEdit && (
                   <div className="flex flex-col sm:flex-row flex-wrap gap-2 mb-2">
                     <input
+                      id="object-photo-upload-input"
                       type="file"
                       accept="image/*"
                       multiple
                       onChange={handlePhotoUpload}
                       disabled={isUploadingPhoto}
-                      className="flex-1 min-w-0 text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50"
-                      aria-label="Objekt-Fotos aus Dateien wählen"
+                      className="sr-only"
+                      aria-label="Objekt-Fotos hochladen"
                     />
+                    <label
+                      htmlFor="object-photo-upload-input"
+                      className={`shrink-0 inline-flex items-center px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 ${isUploadingPhoto ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}
+                    >
+                      Hochladen
+                    </label>
                     <button
                       type="button"
                       onClick={() => setCameraTarget('photo')}
                       disabled={isUploadingPhoto}
-                      className="shrink-0 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                      className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-vico-primary text-vico-primary hover:bg-vico-primary/10 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
                       aria-label="Foto mit Kamera aufnehmen"
+                      title="Foto mit Kamera aufnehmen"
                     >
-                      Foto aufnehmen
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                        <path d="M4 7h3l1.2-2h7.6L17 7h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
                     </button>
                   </div>
                 )}
@@ -1813,22 +1835,33 @@ const ObjectFormModal = ({
                       aria-label="Dokumenttitel"
                     />
                     <input
+                      id="object-document-upload-input"
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
                       multiple
                       onChange={handleDocumentUpload}
                       disabled={isUploadingDocument}
-                      className="flex-1 min-w-[140px] text-sm text-slate-600 dark:text-slate-300 file:mr-2 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-slate-100 dark:file:bg-slate-700 file:text-slate-700 dark:file:text-slate-200 hover:file:bg-slate-200 dark:hover:file:bg-slate-600 disabled:opacity-50"
-                      aria-label="Dokument aus Datei hochladen"
+                      className="sr-only"
+                      aria-label="Dokument hochladen"
                     />
+                    <label
+                      htmlFor="object-document-upload-input"
+                      className={`shrink-0 inline-flex items-center px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 ${isUploadingDocument ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}
+                    >
+                      Hochladen
+                    </label>
                     <button
                       type="button"
                       onClick={() => setCameraTarget('document')}
                       disabled={isUploadingDocument}
-                      className="shrink-0 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                      className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-vico-primary text-vico-primary hover:bg-vico-primary/10 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 dark:focus:ring-offset-slate-900"
                       aria-label="Dokument als Foto mit Kamera aufnehmen"
+                      title="Dokument als Foto mit Kamera aufnehmen"
                     >
-                      Foto aufnehmen
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                        <path d="M4 7h3l1.2-2h7.6L17 7h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
                     </button>
                   </div>
                 )}

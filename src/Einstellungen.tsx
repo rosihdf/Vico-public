@@ -41,9 +41,17 @@ import {
 import {
   createBriefbogenPreviewUrl,
   fetchBriefbogenStoragePath,
+  fetchBriefbogenPdfTextLayout,
+  saveBriefbogenPdfTextLayout,
+  removeBriefbogenPdfMargins,
   uploadBriefbogenFile,
   removeBriefbogen,
+  type BriefbogenDinMarginsMm,
 } from './lib/briefbogenService'
+import {
+  DEFAULT_BRIEFBOGEN_DIN_MARGINS_MM,
+  DEFAULT_BRIEFBOGEN_FOLLOW_PAGE_TOP_MM,
+} from '../shared/pdfBriefbogenLayout'
 import { isOnline } from '../shared/networkUtils'
 import {
   getMandantPingEnabled,
@@ -60,6 +68,7 @@ import {
 import { isEtikettendruckerAvailable } from './lib/etikettendrucker'
 import {
   fetchMonteurReportSettingsFull,
+  type PruefprotokollAddressMode,
   updateMonteurReportSettings,
   updateMonteurReportWartungChecklisteSettings,
   updateMonteurReportPortalPdfShareSettings,
@@ -119,6 +128,11 @@ const Einstellungen = () => {
   const [briefbogenUploading, setBriefbogenUploading] = useState(false)
   const [briefbogenRemoving, setBriefbogenRemoving] = useState(false)
   const [briefbogenError, setBriefbogenError] = useState<string | null>(null)
+  const [briefbogenPdfMargins, setBriefbogenPdfMargins] = useState<BriefbogenDinMarginsMm>(() => ({
+    ...DEFAULT_BRIEFBOGEN_DIN_MARGINS_MM,
+  }))
+  const [briefbogenPdfMarginsSaving, setBriefbogenPdfMarginsSaving] = useState(false)
+  const [briefbogenFollowPageCompactTop, setBriefbogenFollowPageCompactTop] = useState(false)
   const [maintEmailEnabled, setMaintEmailEnabled] = useState(false)
   const [maintEmailFrequency, setMaintEmailFrequency] = useState<'daily' | 'weekly'>('weekly')
   const [maintEmailSaving, setMaintEmailSaving] = useState(false)
@@ -145,6 +159,8 @@ const Einstellungen = () => {
   const [monteurDeliverySaving, setMonteurDeliverySaving] = useState(false)
   const [monteurDeliveryError, setMonteurDeliveryError] = useState<string | null>(null)
   const [wartungChecklisteModus, setWartungChecklisteModus] = useState<WartungChecklisteModus>('detail')
+  const [pruefprotokollAddressMode, setPruefprotokollAddressMode] =
+    useState<PruefprotokollAddressMode>('both')
   const [mangelNeuerAuftragDefault, setMangelNeuerAuftragDefault] = useState(true)
   const [wartungChecklisteSaving, setWartungChecklisteSaving] = useState(false)
   const [wartungChecklisteError, setWartungChecklisteError] = useState<string | null>(null)
@@ -234,6 +250,7 @@ const Einstellungen = () => {
       if (cancelled) return
       setMonteurDeliveryMode(row?.customer_delivery_mode ?? 'none')
       setWartungChecklisteModus(row?.wartung_checkliste_modus ?? 'detail')
+      setPruefprotokollAddressMode(row?.pruefprotokoll_address_mode ?? 'both')
       setMangelNeuerAuftragDefault(row?.mangel_neuer_auftrag_default ?? true)
       setPortalShareMonteurPdf(row?.portal_share_monteur_report_pdf ?? true)
       setPortalSharePruefPdf(row?.portal_share_pruefprotokoll_pdf ?? true)
@@ -254,7 +271,12 @@ const Einstellungen = () => {
     setBriefbogenLoading(true)
     setBriefbogenError(null)
     try {
-      const path = await fetchBriefbogenStoragePath()
+      const [path, textLayout] = await Promise.all([
+        fetchBriefbogenStoragePath(),
+        fetchBriefbogenPdfTextLayout(),
+      ])
+      setBriefbogenPdfMargins(textLayout.margins)
+      setBriefbogenFollowPageCompactTop(textLayout.followPageCompactTop)
       setBriefbogenConfigured(Boolean(path))
       setBriefbogenIsPdf(Boolean(path?.toLowerCase().endsWith('.pdf')))
       if (path) {
@@ -268,6 +290,8 @@ const Einstellungen = () => {
       setBriefbogenPreviewUrl(null)
       setBriefbogenConfigured(false)
       setBriefbogenIsPdf(false)
+      setBriefbogenPdfMargins({ ...DEFAULT_BRIEFBOGEN_DIN_MARGINS_MM })
+      setBriefbogenFollowPageCompactTop(false)
     } finally {
       setBriefbogenLoading(false)
     }
@@ -371,6 +395,60 @@ const Einstellungen = () => {
       return
     }
     await refreshBriefbogenPreview()
+  }
+
+  const handleBriefbogenPdfMarginChange =
+    (key: keyof BriefbogenDinMarginsMm) => (e: ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value.trim().replace(',', '.')
+      if (raw === '') {
+        setBriefbogenPdfMargins((prev) => ({ ...prev, [key]: 0 }))
+        return
+      }
+      const n = Number(raw)
+      if (!Number.isFinite(n)) return
+      setBriefbogenPdfMargins((prev) => ({ ...prev, [key]: n }))
+    }
+
+  const handleSaveBriefbogenPdfMargins = async () => {
+    if (briefbogenPdfMarginsSaving) return
+    if (!isOnline()) {
+      setBriefbogenError('Ränder speichern nur bei Internetverbindung möglich.')
+      return
+    }
+    setBriefbogenPdfMarginsSaving(true)
+    setBriefbogenError(null)
+    const res = await saveBriefbogenPdfTextLayout({
+      margins: briefbogenPdfMargins,
+      followPageCompactTop: briefbogenFollowPageCompactTop,
+    })
+    setBriefbogenPdfMarginsSaving(false)
+    if (!res.ok) {
+      setBriefbogenError(res.error ?? 'PDF-Ränder konnten nicht gespeichert werden.')
+      return
+    }
+    const t = await fetchBriefbogenPdfTextLayout()
+    setBriefbogenPdfMargins(t.margins)
+    setBriefbogenFollowPageCompactTop(t.followPageCompactTop)
+    showToast('PDF-Textlayout gespeichert.', 'success')
+  }
+
+  const handleResetBriefbogenPdfMargins = async () => {
+    if (briefbogenPdfMarginsSaving) return
+    if (!isOnline()) {
+      setBriefbogenError('Zurücksetzen nur bei Internetverbindung möglich.')
+      return
+    }
+    setBriefbogenPdfMarginsSaving(true)
+    setBriefbogenError(null)
+    const res = await removeBriefbogenPdfMargins()
+    setBriefbogenPdfMarginsSaving(false)
+    if (!res.ok) {
+      setBriefbogenError(res.error ?? 'Standardränder konnten nicht wiederhergestellt werden.')
+      return
+    }
+    setBriefbogenPdfMargins({ ...DEFAULT_BRIEFBOGEN_DIN_MARGINS_MM })
+    setBriefbogenFollowPageCompactTop(false)
+    showToast('Standardränder (DIN-orientiert) wiederhergestellt.', 'success')
   }
 
   const handleBriefbogenRemove = async () => {
@@ -524,6 +602,7 @@ const Einstellungen = () => {
     setWartungChecklisteError(null)
     const { error } = await updateMonteurReportWartungChecklisteSettings({
       wartung_checkliste_modus: wartungChecklisteModus,
+      pruefprotokoll_address_mode: pruefprotokollAddressMode,
       mangel_neuer_auftrag_default: mangelNeuerAuftragDefault,
     })
     setWartungChecklisteSaving(false)
@@ -847,7 +926,7 @@ const Einstellungen = () => {
                   {
                     value: 'none' as const,
                     label: 'Keine automatische Zustellung',
-                    hint: 'Nur PDF-Download und Speicherung in Vico; der Kunde erhält nichts automatisch.',
+                    hint: 'Nur PDF-Download und Speicherung; der Kunde erhält nichts automatisch.',
                   },
                   {
                     value: 'email_auto' as const,
@@ -1023,6 +1102,26 @@ const Einstellungen = () => {
                 />
                 Kompaktmodus
               </label>
+            </div>
+            <div className="mt-3">
+              <label
+                htmlFor="pruefprotokoll-address-mode"
+                className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1"
+              >
+                Prüfprotokoll: Adressblöcke
+              </label>
+              <select
+                id="pruefprotokoll-address-mode"
+                value={pruefprotokollAddressMode}
+                onChange={(e) => setPruefprotokollAddressMode(e.target.value as PruefprotokollAddressMode)}
+                className="w-full max-w-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-100"
+              >
+                <option value="both">Kunde + Objekt/BV anzeigen (Standard)</option>
+                <option value="bv_only">Nur Objekt/BV anzeigen</option>
+              </select>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Bei Türen direkt unter dem Kunden wird Objekt/BV automatisch ausgeblendet.
+              </p>
             </div>
             <label className="mt-3 flex items-start gap-3 cursor-pointer">
               <input
@@ -1739,8 +1838,141 @@ const Einstellungen = () => {
             <strong className="text-slate-700 dark:text-slate-300">PDF</strong> (ideal A4).{' '}
             <strong className="text-slate-700 dark:text-slate-300">PDF mit zwei Seiten:</strong> Seite 1 = Deckblatt
             (Logo/Kopf), Seite 2 = Folgeseiten (z. B. nur Fußzeile). Einseitiges PDF oder Bild: gleiche
-            Vorlage auf allen Seiten. Der Export liegt textlich über dem Briefbogen.
+            Vorlage auf allen Seiten.             PDF-Text wird im Brieffeld platziert. Standard sind DIN-5008-orientierte Ränder; darunter können Sie
+            die Abstände in Millimetern korrigieren (gilt für Prüfberichte, Monteur-PDF, Arbeitszeit-Exporte mit
+            Briefbogen).
           </p>
+          <div
+            className="mb-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-600"
+            aria-labelledby="briefbogen-margins-heading"
+          >
+            <h4
+              id="briefbogen-margins-heading"
+              className="text-sm font-medium text-slate-800 dark:text-slate-200 mb-2"
+            >
+              Textposition im PDF (mm)
+            </h4>
+            <p id="briefbogen-margins-hint" className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+              Oben, unten, links, rechts vom Blattrand bis zum Textbereich. Werte 0–120; Summe der Ränder muss auf
+              A4 Hoch- und Querformat einen sichtbaren Bereich lassen.
+            </p>
+            <label className="flex items-start gap-2 mb-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={briefbogenFollowPageCompactTop}
+                onChange={(e) => setBriefbogenFollowPageCompactTop(e.target.checked)}
+                disabled={briefbogenLoading || briefbogenPdfMarginsSaving}
+                className="mt-1 rounded border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                aria-describedby="briefbogen-follow-top-hint"
+              />
+              <span className="text-sm text-slate-700 dark:text-slate-300">
+                <span className="font-medium">Folgeseiten ohne Briefkopf:</span>{' '}
+                Ab Seite 2 den großen oberen Abstand nicht anwenden (Textrand oben{' '}
+                {DEFAULT_BRIEFBOGEN_FOLLOW_PAGE_TOP_MM} mm). Aktivieren, wenn Ihre zweite Briefbogen-Seite keinen
+                Kopfbereich zeigt.
+              </span>
+            </label>
+            <p id="briefbogen-follow-top-hint" className="sr-only">
+              Steuert den oberen Rand für PDF-Seiten ab der zweiten bei mehrseitigen Dokumenten mit Briefbogen.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+              <div>
+                <label htmlFor="briefbogen-margin-top" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                  Oben
+                </label>
+                <input
+                  id="briefbogen-margin-top"
+                  type="number"
+                  min={0}
+                  max={120}
+                  step={0.1}
+                  value={briefbogenPdfMargins.top}
+                  onChange={handleBriefbogenPdfMarginChange('top')}
+                  disabled={briefbogenLoading || briefbogenPdfMarginsSaving}
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100 disabled:opacity-50"
+                  aria-describedby="briefbogen-margins-hint"
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="briefbogen-margin-bottom"
+                  className="block text-xs text-slate-600 dark:text-slate-400 mb-1"
+                >
+                  Unten
+                </label>
+                <input
+                  id="briefbogen-margin-bottom"
+                  type="number"
+                  min={0}
+                  max={120}
+                  step={0.1}
+                  value={briefbogenPdfMargins.bottom}
+                  onChange={handleBriefbogenPdfMarginChange('bottom')}
+                  disabled={briefbogenLoading || briefbogenPdfMarginsSaving}
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100 disabled:opacity-50"
+                  aria-describedby="briefbogen-margins-hint"
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label htmlFor="briefbogen-margin-left" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                  Links
+                </label>
+                <input
+                  id="briefbogen-margin-left"
+                  type="number"
+                  min={0}
+                  max={120}
+                  step={0.1}
+                  value={briefbogenPdfMargins.left}
+                  onChange={handleBriefbogenPdfMarginChange('left')}
+                  disabled={briefbogenLoading || briefbogenPdfMarginsSaving}
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100 disabled:opacity-50"
+                  aria-describedby="briefbogen-margins-hint"
+                  autoComplete="off"
+                />
+              </div>
+              <div>
+                <label htmlFor="briefbogen-margin-right" className="block text-xs text-slate-600 dark:text-slate-400 mb-1">
+                  Rechts
+                </label>
+                <input
+                  id="briefbogen-margin-right"
+                  type="number"
+                  min={0}
+                  max={120}
+                  step={0.1}
+                  value={briefbogenPdfMargins.right}
+                  onChange={handleBriefbogenPdfMarginChange('right')}
+                  disabled={briefbogenLoading || briefbogenPdfMarginsSaving}
+                  className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-900 dark:text-slate-100 disabled:opacity-50"
+                  aria-describedby="briefbogen-margins-hint"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSaveBriefbogenPdfMargins()}
+                disabled={briefbogenLoading || briefbogenPdfMarginsSaving}
+                className="px-3 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
+                aria-label="PDF-Textfeldränder speichern"
+              >
+                {briefbogenPdfMarginsSaving ? 'Speichern…' : 'Ränder speichern'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleResetBriefbogenPdfMargins()}
+                disabled={briefbogenLoading || briefbogenPdfMarginsSaving}
+                className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                aria-label="PDF-Textfeldränder auf DIN-Standard zurücksetzen"
+              >
+                Standard wiederherstellen
+              </button>
+            </div>
+          </div>
           {briefbogenError && (
             <p className="mb-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg" role="alert">
               {briefbogenError}
@@ -1772,7 +2004,7 @@ const Einstellungen = () => {
               )}
               <div className="flex flex-wrap items-center gap-2">
                 <label className="inline-flex">
-                  <span className="sr-only">Briefbogen-Datei auswählen</span>
+                  <span className="sr-only">Briefbogen hochladen</span>
                   <input
                     type="file"
                     accept="image/png,image/jpeg,application/pdf,.jpg,.jpeg,.png,.pdf"

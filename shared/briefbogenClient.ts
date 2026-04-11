@@ -3,7 +3,18 @@
  * Client-Parameter als `unknown` + interner Cast: vermeidet TS-Konflikte bei parallelen
  * `node_modules/@supabase/supabase-js` (Haupt-App vs. Arbeitszeit-Portal).
  */
+import type { BriefbogenDinMarginsMm } from './pdfBriefbogenLayout'
+import {
+  DEFAULT_BRIEFBOGEN_DIN_MARGINS_MM,
+  clampBriefbogenPdfMargins,
+  briefbogenMarginsFitA4Portrait,
+  briefbogenMarginsFitA4Landscape,
+} from './pdfBriefbogenLayout'
+
 export const BRIEFBOGEN_CONFIG_KEY = 'briefbogen_storage_path'
+
+/** JSON in admin_config: { top, bottom, left, right } in mm (partial ok, fehlende Keys = Default). */
+export const BRIEFBOGEN_PDF_MARGINS_KEY = 'briefbogen_pdf_margins_mm'
 
 type Sb = import('@supabase/supabase-js').SupabaseClient
 
@@ -140,6 +151,109 @@ export const uploadBriefbogenFile = async (client: unknown, file: File): Promise
   if (cfgErr) {
     return { ok: false, error: cfgErr.message }
   }
+  return { ok: true }
+}
+
+const numLike = (v: unknown): number | null => {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v.replace(',', '.'))
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
+
+const FOLLOW_PAGE_COMPACT_TOP_KEY = 'follow_page_compact_top'
+
+const mergeMarginsWithDefaults = (raw: unknown): BriefbogenDinMarginsMm => {
+  const d = DEFAULT_BRIEFBOGEN_DIN_MARGINS_MM
+  if (raw == null || typeof raw !== 'object') return { ...d }
+  const o = raw as Record<string, unknown>
+  const pick = (k: keyof BriefbogenDinMarginsMm): number => {
+    const n = numLike(o[k as string])
+    return n != null ? n : d[k]
+  }
+  return clampBriefbogenPdfMargins({
+    top: pick('top'),
+    bottom: pick('bottom'),
+    left: pick('left'),
+    right: pick('right'),
+  })
+}
+
+const parseFollowPageCompactTop = (raw: unknown): boolean => {
+  if (raw == null || typeof raw !== 'object') return false
+  const v = (raw as Record<string, unknown>)[FOLLOW_PAGE_COMPACT_TOP_KEY]
+  return v === true || v === 'true'
+}
+
+export type BriefbogenPdfTextLayout = {
+  margins: BriefbogenDinMarginsMm
+  /** Ab Seite 2: oberen Rand wie ohne Briefkopf (klein), wenn die Vorlage dort keinen Kopf hat. */
+  followPageCompactTop: boolean
+}
+
+export const fetchBriefbogenPdfTextLayout = async (
+  client: unknown
+): Promise<BriefbogenPdfTextLayout> => {
+  const sb = asSb(client)
+  const { data, error } = await sb
+    .from('admin_config')
+    .select('value')
+    .eq('key', BRIEFBOGEN_PDF_MARGINS_KEY)
+    .maybeSingle()
+  if (error || data?.value == null) {
+    return {
+      margins: { ...DEFAULT_BRIEFBOGEN_DIN_MARGINS_MM },
+      followPageCompactTop: false,
+    }
+  }
+  return {
+    margins: mergeMarginsWithDefaults(data.value),
+    followPageCompactTop: parseFollowPageCompactTop(data.value),
+  }
+}
+
+/** Nur Ränder (Kompatibilität); für Folgeseiten-Option bitte fetchBriefbogenPdfTextLayout. */
+export const fetchBriefbogenPdfMarginsMm = async (
+  client: unknown
+): Promise<BriefbogenDinMarginsMm> => {
+  const { margins } = await fetchBriefbogenPdfTextLayout(client)
+  return margins
+}
+
+export const saveBriefbogenPdfTextLayout = async (
+  client: unknown,
+  layout: BriefbogenPdfTextLayout
+): Promise<{ ok: boolean; error?: string }> => {
+  const m = clampBriefbogenPdfMargins(layout.margins)
+  if (!briefbogenMarginsFitA4Portrait(m) || !briefbogenMarginsFitA4Landscape(m)) {
+    return {
+      ok: false,
+      error:
+        'Ränder zu groß: Der Textbereich muss auf A4 Hoch- und Querformat passen (z. B. Summe oben+unten unter ca. 195 mm für Quer).',
+    }
+  }
+  const value = {
+    ...m,
+    [FOLLOW_PAGE_COMPACT_TOP_KEY]: Boolean(layout.followPageCompactTop),
+  }
+  const sb = asSb(client)
+  const { error } = await sb.from('admin_config').upsert(
+    { key: BRIEFBOGEN_PDF_MARGINS_KEY, value },
+    { onConflict: 'key' }
+  )
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+/** Entfernt gespeicherte Korrektur → wieder reine Defaults. */
+export const removeBriefbogenPdfMargins = async (
+  client: unknown
+): Promise<{ ok: boolean; error?: string }> => {
+  const sb = asSb(client)
+  const { error } = await sb.from('admin_config').delete().eq('key', BRIEFBOGEN_PDF_MARGINS_KEY)
+  if (error) return { ok: false, error: error.message }
   return { ok: true }
 }
 

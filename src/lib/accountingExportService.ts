@@ -61,6 +61,9 @@ export const buildAccountingOrdersCsv = (
 
   const headers = [
     'Auftrag_ID',
+    'Verknuepft_mit_Auftrag_ID',
+    'Ist_verknuepft',
+    'Hat_Folgeauftraege',
     'Auftragsdatum',
     'Auftragszeit',
     'Typ',
@@ -85,6 +88,9 @@ export const buildAccountingOrdersCsv = (
   ]
 
   const lines = [headers.join(';')]
+  const parentIdsWithChildren = new Set(
+    orders.map((o) => o.related_order_id).filter((x): x is string => Boolean(x))
+  )
 
   for (const o of orders) {
     const cust = customerById.get(o.customer_id)
@@ -97,6 +103,9 @@ export const buildAccountingOrdersCsv = (
     lines.push(
       [
         escapeCsvCell(o.id),
+        escapeCsvCell(o.related_order_id ?? ''),
+        escapeCsvCell(Boolean(o.related_order_id) || parentIdsWithChildren.has(o.id) ? 'ja' : 'nein'),
+        escapeCsvCell(parentIdsWithChildren.has(o.id) ? 'ja' : 'nein'),
         escapeCsvCell(o.order_date),
         escapeCsvCell(o.order_time),
         escapeCsvCell(TYPE_DE[o.order_type] ?? o.order_type),

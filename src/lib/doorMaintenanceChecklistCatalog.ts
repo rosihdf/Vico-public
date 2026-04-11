@@ -95,18 +95,41 @@ export const getSectionAndLabelForItemId = (
   return null
 }
 
+/** Wie in der App: Kompakt „1.“, Detail „1.2“ (ohne nachgestelltes Leerzeichen). */
+export const getChecklistItemNumberPrefix = (
+  mode: ChecklistDisplayMode,
+  itemId: string
+): string | null => {
+  if (mode === 'compact') {
+    const i = DOOR_MAINTENANCE_CHECKLIST_SECTIONS.findIndex((s) => s.id === itemId)
+    return i >= 0 ? `${i + 1}.` : null
+  }
+  for (let si = 0; si < DOOR_MAINTENANCE_CHECKLIST_SECTIONS.length; si += 1) {
+    const sec = DOOR_MAINTENANCE_CHECKLIST_SECTIONS[si]
+    const di = sec.details.findIndex((d) => d.id === itemId)
+    if (di >= 0) return `${si + 1}.${di + 1}`
+  }
+  return null
+}
+
 export const buildDeficiencyTextFromChecklist = (
   mode: ChecklistDisplayMode,
-  items: Record<string, { status?: ChecklistItemStatus; note?: string }>
+  items: Record<string, { status?: ChecklistItemStatus; note?: string; advisory?: boolean; advisory_note?: string }>
 ): string => {
   const lines: string[] = []
   for (const id of getChecklistItemIdsForMode(mode)) {
     const row = items[id]
-    if (!row || row.status !== 'mangel') continue
+    if (!row) continue
     const meta = getSectionAndLabelForItemId(mode, id)
     const head = meta ? `${meta.sectionTitle}: ${meta.label}` : id
-    const note = (row.note ?? '').trim()
-    lines.push(note ? `${head}\n${note}` : head)
+    if (row.status === 'mangel') {
+      const note = (row.note ?? '').trim()
+      lines.push(note ? `${head}\n${note}` : head)
+    }
+    if (row.advisory) {
+      const adv = (row.advisory_note ?? '').trim()
+      if (adv) lines.push(`${head}\nHinweis/empfohlene Maßnahme: ${adv}`)
+    }
   }
   return lines.join('\n\n---\n\n')
 }
@@ -125,7 +148,7 @@ export const countChecklistMangel = (
 
 export const validateChecklistComplete = (
   mode: ChecklistDisplayMode,
-  items: Record<string, { status?: ChecklistItemStatus; note?: string }>
+  items: Record<string, { status?: ChecklistItemStatus; note?: string; advisory?: boolean; advisory_note?: string }>
 ): { ok: true } | { ok: false; message: string } => {
   const ids = getChecklistItemIdsForMode(mode)
   for (const id of ids) {
@@ -140,6 +163,57 @@ export const validateChecklistComplete = (
         message: `Bei „Mangel“ ist eine Beschreibung erforderlich${meta ? `: ${meta.label}` : ''}.`,
       }
     }
+    if (row.advisory && !(row.advisory_note ?? '').trim()) {
+      const meta = getSectionAndLabelForItemId(mode, id)
+      return {
+        ok: false,
+        message: `Bei „Hinweis/empfohlene Maßnahme“ ist eine Beschreibung erforderlich${meta ? `: ${meta.label}` : ''}.`,
+      }
+    }
   }
   return { ok: true }
+}
+
+export const normalizeDoorChecklistItemsForMode = (
+  mode: ChecklistDisplayMode,
+  items: Record<string, { status?: ChecklistItemStatus; note?: string; advisory?: boolean; advisory_note?: string }>
+): Record<string, { status?: ChecklistItemStatus; note?: string; advisory?: boolean; advisory_note?: string }> => {
+  const targetIds = getChecklistItemIdsForMode(mode)
+  const hasTarget = targetIds.some((id) => items[id]?.status || items[id]?.advisory)
+  if (hasTarget) return { ...items }
+
+  const out: Record<string, { status?: ChecklistItemStatus; note?: string; advisory?: boolean; advisory_note?: string }> = {}
+  if (mode === 'compact') {
+    for (const sec of DOOR_MAINTENANCE_CHECKLIST_SECTIONS) {
+      const detailRows = sec.details.map((d) => items[d.id]).filter(Boolean)
+      if (detailRows.length === 0) continue
+      const hasMangel = detailRows.some((r) => r?.status === 'mangel')
+      const hasNicht = detailRows.some((r) => r?.status === 'nicht_geprueft')
+      const hasOk = detailRows.some((r) => r?.status === 'ok')
+      const hasEnt = detailRows.some((r) => r?.status === 'entfaellt')
+      const note = detailRows.map((r) => (r?.note ?? '').trim()).find(Boolean)
+      const adv = detailRows.some((r) => Boolean(r?.advisory))
+      const advNote = detailRows.map((r) => (r?.advisory_note ?? '').trim()).find(Boolean)
+      out[sec.id] = {
+        status: hasMangel ? 'mangel' : hasNicht ? 'nicht_geprueft' : hasOk ? 'ok' : hasEnt ? 'entfaellt' : undefined,
+        note: note || undefined,
+        advisory: adv || undefined,
+        advisory_note: advNote || undefined,
+      }
+    }
+    return out
+  }
+
+  for (const sec of DOOR_MAINTENANCE_CHECKLIST_SECTIONS) {
+    const src = items[sec.id]
+    for (const d of sec.details) {
+      out[d.id] = {
+        status: src?.status,
+        note: src?.note,
+        advisory: src?.advisory,
+        advisory_note: src?.advisory_note,
+      }
+    }
+  }
+  return out
 }

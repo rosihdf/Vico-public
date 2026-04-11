@@ -26,9 +26,10 @@ on:
           - arbeitszeit_portal
           - admin
       git_ref:
-        description: 'Git-Tag oder Commit-SHA zum Checkout (gebauter Stand)'
+        description: 'Existierender Git-Ref: Branch (z. B. main), Tag oder volle SHA. Kein erfundener Name – Tags wie main/1.2.1 nur, wenn ihr sie wirklich gepusht habt.'
         required: true
         type: string
+        default: main
 
 jobs:
   build-and-deploy:
@@ -102,10 +103,10 @@ jobs:
             echo "CF_PAGES_PROJECT_ARBEITSZEIT oder CLOUDFLARE_* fehlt."
             exit 1
           fi
-          cd arbeitszeit-portal
-          npm ci
-          npm run build
-          cd ..
+          # Root npm ci: shared/*.ts wird von ../shared importiert; tsc löst pdfjs-dist von Vico/node_modules
+          # (Root package.json). Ohne Root-Install: TS2307 für pdfjs-dist trotz Abhängigkeit im AZ-Ordner.
+          npm ci --legacy-peer-deps
+          (cd arbeitszeit-portal && npm ci && npm run build)
           npx --yes wrangler@3 pages deploy arbeitszeit-portal/dist --project-name="$CF_PROJECT" --branch=main
 
       - name: Build and deploy (admin)

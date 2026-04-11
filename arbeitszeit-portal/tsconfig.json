@@ -23,7 +23,8 @@
       "react-dom": ["./node_modules/@types/react-dom/index.d.ts"],
       "react-dom/client": ["./node_modules/@types/react-dom/client.d.ts"],
       "@supabase/supabase-js": ["./node_modules/@supabase/supabase-js"],
-      "jspdf": ["./node_modules/jspdf"]
+      "jspdf": ["./node_modules/jspdf"],
+      "pdfjs-dist": ["./node_modules/pdfjs-dist"]
     }
   },
   "include": ["src"],

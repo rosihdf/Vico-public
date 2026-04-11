@@ -26,7 +26,7 @@ Einmalige Orientierung: **vier getrennte Netlify-Sites** aus einem Repo, jeweils
 1. **Git-Verbindung trennen:** **Project configuration** → **Build & deploy** → **Continuous deployment** → **Manage repository** / **Unlink** (Repository vom Projekt abhängen). Dann löst **kein** GitHub-Event mehr einen Build aus.
 2. **Build Hooks löschen:** **Project configuration** → **Build & deploy** → **Build hooks** → alle Hooks **entfernen** (sonst kann z. B. CI oder ein externes Tool weiter triggern).
 3. **GitHub:** Unter **Repository → Settings → Integrations / GitHub Apps** prüfen, ob die **Netlify**-App noch auf dieses Repo zugreift – bei Bedarf **Zugriff entziehen** oder nur für andere Repos behalten.
-4. **CI:** Kein Workflow mit `netlify deploy` / Deploy-Hooks auf diese Sites (im Repo liegt nur eine **Beispiel**-Workflow-Datei für Env-Skript, kein Auto-Deploy).
+4. **CI:** Kein Workflow mit `netlify deploy` / Deploy-Hooks auf diese Sites (keine Netlify-GitHub-Workflows im Repo; Mandanten-Env ggf. lokal per `scripts/netlify-apply-tenant-env.mjs`, siehe [`Netlify-Mandanten-Env-Skript.md`](./Netlify-Mandanten-Env-Skript.md)).
 
 **Später wieder deployen:** Repo erneut verknüpfen, Hooks anlegen, `ignore`-Zeilen in den `netlify.toml` entfernen (falls gewünscht).
 

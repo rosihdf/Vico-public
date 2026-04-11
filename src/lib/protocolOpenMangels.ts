@@ -1,5 +1,5 @@
 /**
- * §11.17#4: Kundenliste / Zähler aus letztem abgeschlossenen Wartungsauftrag
+ * §11.17#4: Kundenliste / Zähler aus letztem abgeschlossenen Prüfungsauftrag
  * mit gespeicherter Checkliste pro object_id (nur Status „Mangel“).
  */
 
@@ -109,7 +109,7 @@ export const extractFeststellMangelRowsFromFeststellBlock = (
 }
 
 /**
- * Pro object_id gewinnt der **neueste** erledigte Wartungsauftrag (updated_at),
+ * Pro object_id gewinnt der **neueste** erledigte Prüfungsauftrag (updated_at),
  * der für diese Tür eine Checkliste mit `saved_at` enthält.
  *
  * **Bypass (WP-MANG-05):** Steht `object_id` in `wartung_checkliste_abschluss_bypass.incomplete_object_ids`,
@@ -165,7 +165,7 @@ export const protocolOpenMangelRowsFromSnapshots = (
 }
 
 /**
- * §11.17#4 Tür-Detail: **neuester** laufender Wartungsauftrag (`offen` / `in_bearbeitung`) mit gespeicherter
+ * §11.17#4 Tür-Detail: **neuester** laufender Prüfungsauftrag (`offen` / `in_bearbeitung`) mit gespeicherter
  * Checkliste für diese `object_id` – nur Anzeige (Entwurf), **ohne** Einfluss auf Listen-Zähler.
  *
  * **Bypass:** Im Gegensatz zur maßgeblichen Aggregation wird `wartung_checkliste_abschluss_bypass` hier **nicht**

@@ -25,8 +25,10 @@ import {
   attachMonteurPdfToOrderChecklistProtocol,
   attachPruefprotokollPdfToOrderChecklistProtocol,
   createOrder,
+  fetchOrders,
   insertDefectFollowupsForCompletedWartungOrder,
   fetchMaintenanceReportIdByOrderObject,
+  fetchMaintenanceReportPruefprotokollMetaForOrderObject,
   fetchPruefprotokollPdfPathForOrderObject,
   fetchChecklistMangelPhotosGroupedForOrderObject,
   uploadChecklistDefectPhoto,
@@ -58,8 +60,11 @@ import { getAppDisplayNameFromLicenseCache } from './lib/appBranding'
 import SignatureField from './SignatureField'
 import PdfPreviewOverlay, { type PdfPreviewState } from './components/PdfPreviewOverlay'
 import { generateMonteurBerichtPdf } from './lib/generateMonteurBerichtPdf'
-import { generatePruefprotokollPdf } from './lib/generatePruefprotokollPdf'
-import { fetchBriefbogenLetterheadPagesForPdf } from './lib/briefbogenService'
+import { formatPruefprotokollNummerForPdf, generatePruefprotokollPdf } from './lib/generatePruefprotokollPdf'
+import {
+  fetchBriefbogenLetterheadPagesForPdf,
+  fetchBriefbogenPdfTextLayout,
+} from './lib/briefbogenService'
 import { sumWorkMinutes } from './lib/monteurReportTime'
 import {
   parseOrderCompletionExtra,
@@ -73,6 +78,7 @@ import {
 import {
   buildDeficiencyTextFromChecklist,
   checklistHasOpenMangel,
+  normalizeDoorChecklistItemsForMode,
   validateChecklistComplete,
   type ChecklistDisplayMode,
 } from './lib/doorMaintenanceChecklistCatalog'
@@ -80,6 +86,7 @@ import {
   buildDeficiencyTextFromFeststellChecklist,
   checklistHasOpenMangelFeststell,
   initEmptyFeststellChecklistItems,
+  normalizeFeststellChecklistItemsForMode,
   validateFeststellChecklistComplete,
   type FeststellChecklistItemState,
 } from './lib/feststellChecklistCatalog'
@@ -130,7 +137,7 @@ type WartungChecklistGateBad = {
 
 type WartungChecklistGateResult = { ok: true } | WartungChecklistGateBad
 
-/** Wartungsauftrag: alle am Auftrag hängenden Türen müssen für den Standard-Abschluss checklisten-fertig sein. */
+/** Prüfungsauftrag: alle am Auftrag hängenden Türen müssen für den Standard-Abschluss checklisten-fertig sein. */
 const evaluateWartungChecklistGate = (
   order: Order,
   wc: WartungChecklistExtraV1 | undefined,
@@ -201,6 +208,8 @@ const Auftragsdetail = () => {
   const [allBvs, setAllBvs] = useState<BV[]>([])
   const [objectLabel, setObjectLabel] = useState<string>('—')
   const [profiles, setProfiles] = useState<Profile[]>([])
+  const [relatedParentOrder, setRelatedParentOrder] = useState<Order | null>(null)
+  const [relatedChildOrders, setRelatedChildOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -283,6 +292,21 @@ const Auftragsdetail = () => {
   const getCustomerName = (id: string) => customers.find((c) => c.id === id)?.name ?? '-'
   const getBvName = (id: string | null | undefined) =>
     !id ? '—' : allBvs.find((b) => b.id === id)?.name ?? '-'
+  const customerAddressLines = (id: string): string[] => {
+    const c = customers.find((x) => x.id === id)
+    if (!c) return []
+    const l1 = [c.street, c.house_number].filter(Boolean).join(' ').trim()
+    const l2 = [c.postal_code, c.city].filter(Boolean).join(' ').trim()
+    return [l1, l2].filter(Boolean)
+  }
+  const bvAddressLines = (id: string | null | undefined): string[] => {
+    if (!id) return []
+    const b = allBvs.find((x) => x.id === id)
+    if (!b) return []
+    const l1 = [b.street, b.house_number].filter(Boolean).join(' ').trim()
+    const l2 = [b.postal_code, b.city].filter(Boolean).join(' ').trim()
+    return [l1, l2].filter(Boolean)
+  }
 
   const profilesForZusatz = useMemo(
     () =>
@@ -297,13 +321,14 @@ const Auftragsdetail = () => {
     checklistDraftAutosaveReadyRef.current = false
     setIsLoading(true)
     setFormError(null)
-    const [orderData, completionData, customerData, bvData, profileData, allProfiles] = await Promise.all([
+    const [orderData, completionData, customerData, bvData, profileData, allProfiles, allOrders] = await Promise.all([
       fetchOrderById(orderId),
       fetchCompletionByOrderId(orderId),
       fetchCustomers(),
       fetchAllBvs(),
       user ? fetchMyProfile(user.id) : Promise.resolve(null),
       fetchProfiles(),
+      fetchOrders(),
     ])
     setOrder(orderData ?? null)
     setCompletion(completionData ?? null)
@@ -311,6 +336,18 @@ const Auftragsdetail = () => {
     setAllBvs(bvData ?? [])
     setProfiles(allProfiles ?? [])
     setMyProfile(profileData ?? null)
+    if (orderData?.related_order_id) {
+      const parent = (allOrders ?? []).find((o) => o.id === orderData.related_order_id) ?? null
+      setRelatedParentOrder(parent)
+    } else {
+      setRelatedParentOrder(null)
+    }
+    if (orderData?.id) {
+      const children = (allOrders ?? []).filter((o) => o.related_order_id === orderData.id)
+      setRelatedChildOrders(children)
+    } else {
+      setRelatedChildOrders([])
+    }
 
     const monteurName = profileData
       ? [profileData.first_name, profileData.last_name].filter(Boolean).join(' ') || profileData.email || 'Monteur'
@@ -380,7 +417,9 @@ const Auftragsdetail = () => {
         for (const oid of oids) {
           const saved = wc[oid]?.items
           map[oid] =
-            saved && Object.keys(saved).length > 0 ? { ...saved } : initEmptyChecklistItems(mode)
+            saved && Object.keys(saved).length > 0
+              ? normalizeDoorChecklistItemsForMode(mode, { ...saved })
+              : initEmptyChecklistItems(mode)
         }
         setChecklistItemsByObject(map)
         const festMap: Record<string, Record<string, FeststellChecklistItemState>> = {}
@@ -389,7 +428,9 @@ const Auftragsdetail = () => {
           if (!o?.has_hold_open) continue
           const fs = wc[oid]?.feststell_checkliste?.items
           festMap[oid] =
-            fs && Object.keys(fs).length > 0 ? { ...fs } : initEmptyFeststellChecklistItems(mode)
+            fs && Object.keys(fs).length > 0
+              ? normalizeFeststellChecklistItemsForMode(mode, { ...fs })
+              : initEmptyFeststellChecklistItems(mode)
         }
         setFeststellItemsByObject(festMap)
         setSelectedChecklistObjectId(oids[0] ?? null)
@@ -397,12 +438,14 @@ const Auftragsdetail = () => {
       for (const oid of oids) {
         const saved = wc[oid]?.items
         const doorItems =
-          saved && Object.keys(saved).length > 0 ? { ...saved } : initEmptyChecklistItems(mode)
+          saved && Object.keys(saved).length > 0
+            ? normalizeDoorChecklistItemsForMode(mode, { ...saved })
+            : initEmptyChecklistItems(mode)
         const o = objs.find((x) => x.id === oid)
         const fs = wc[oid]?.feststell_checkliste?.items
         const festForFp =
           o?.has_hold_open && fs && Object.keys(fs).length > 0
-            ? { ...fs }
+            ? normalizeFeststellChecklistItemsForMode(mode, { ...fs })
             : o?.has_hold_open
               ? initEmptyFeststellChecklistItems(mode)
               : {}
@@ -1259,13 +1302,41 @@ const Auftragsdetail = () => {
     }
     const scanUrl = `${window.location.origin}/auftrag/${order.id}`
     try {
-      const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf()
+      const [letterheadPages, pdfTextLayout] = await Promise.all([
+        fetchBriefbogenLetterheadPagesForPdf(),
+        fetchBriefbogenPdfTextLayout(),
+      ])
       const extraSnap = { ...payload.completion_extra, parked: false, portal_teilen: false }
+      const protocolPortalBase = (
+        design?.kundenportal_url ??
+        import.meta.env.VITE_KUNDENPORTAL_URL ??
+        ''
+      )
+        .trim()
+        .replace(/\/$/, '')
+      const protocolAddressMode = monteurSettingsFull?.pruefprotokoll_address_mode ?? 'both'
       const wartungInspectedDoorLabels =
         order.order_type === 'wartung' && oidsComplete.length > 0
           ? oidsComplete.map((oid) => {
               const o = orderObjects.find((x) => x.id === oid)
               return o ? getObjectDisplayName(o) : oid.slice(0, 8)
+            })
+          : undefined
+      const wartungDoorSummaries =
+        order.order_type === 'wartung' && oidsComplete.length > 0
+          ? oidsComplete.map((oid) => {
+              const o = orderObjects.find((x) => x.id === oid)
+              const per = extraSnap.wartung_checkliste?.by_object_id[oid]
+              const d = Object.values(per?.items ?? {}).filter((r) => r?.status === 'mangel').length
+              const f = Object.values(per?.feststell_checkliste?.items ?? {}).filter((r) => r?.status === 'mangel').length
+              const defects = d + f
+              const label = o ? getObjectDisplayName(o) : oid.slice(0, 8)
+              return {
+                doorLabel: label,
+                passed: defects === 0,
+                defects,
+                protocolRef: `Prüfprotokoll: ${label}`,
+              }
             })
           : undefined
       const pdfBlob = await generateMonteurBerichtPdf({
@@ -1278,7 +1349,10 @@ const Auftragsdetail = () => {
         orderTypeLabel: ORDER_TYPE_LABELS[order.order_type],
         scanUrl,
         letterheadPages: letterheadPages ?? undefined,
+        letterheadContentMargins: pdfTextLayout.margins,
+        letterheadFollowPageCompactTop: pdfTextLayout.followPageCompactTop,
         wartungInspectedDoorLabels,
+        wartungDoorSummaries,
         pruefprotokollKurzverweis: order.order_type === 'wartung' && oidsComplete.length > 0,
       })
       const { monteurPath } = await runAfterSavePdfAndPortal(comp, pdfBlob, doPortal, extraSnap)
@@ -1289,13 +1363,27 @@ const Auftragsdetail = () => {
           if (!obj || !per?.saved_at) continue
           const mode = per.checklist_modus === 'compact' ? 'compact' : 'detail'
           try {
+            const prMeta = await fetchMaintenanceReportPruefprotokollMetaForOrderObject(order.id, oid)
+            const reportId = prMeta?.id ?? null
+            const portalProtocolUrl = reportId
+              ? `${protocolPortalBase || window.location.origin}/berichte?pruefprotokoll=${encodeURIComponent(reportId)}`
+              : null
             const prBlob = await generatePruefprotokollPdf({
+              pruefprotokollNummer: formatPruefprotokollNummerForPdf(
+                prMeta?.pruefprotokoll_laufnummer,
+                order.id,
+                oid
+              ),
               order,
               customerName: getCustomerName(order.customer_id),
               bvName: getBvName(order.bv_id),
               object: obj,
               berichtDatum: extraSnap.bericht_datum,
               monteurName: (printedTech.trim() || extraSnap.monteur_name || 'Monteur').trim(),
+              customerAddressLines: customerAddressLines(order.customer_id),
+              bvAddressLines: bvAddressLines(order.bv_id),
+              showAddressMode: protocolAddressMode,
+              portalProtocolUrl,
               doorMode: mode,
               doorItems: per.items ?? {},
               feststellMode: mode,
@@ -1308,6 +1396,10 @@ const Auftragsdetail = () => {
                 ])
               ),
               letterheadPages: letterheadPages ?? undefined,
+              letterheadContentMargins: pdfTextLayout.margins,
+              letterheadFollowPageCompactTop: pdfTextLayout.followPageCompactTop,
+              technicianSignaturePath: comp.unterschrift_mitarbeiter_path ?? null,
+              technicianSignatureDate: comp.unterschrift_mitarbeiter_date ?? null,
             })
             const att = await attachPruefprotokollPdfToOrderChecklistProtocol(order.id, oid, prBlob)
             if (att.error) showToast(`Prüfprotokoll: ${att.error.message}`, 'info')
@@ -1397,7 +1489,7 @@ const Auftragsdetail = () => {
               })
               .join(', ')
             setFollowUpDialogMessage(
-              `Folgende Türen waren nicht vollständig geprüft: ${labels}. Soll ein neuer Wartungsauftrag mit genau diesen Türen angelegt werden?`
+              `Folgende Türen waren nicht vollständig geprüft: ${labels}. Soll ein neuer Prüfungsauftrag mit genau diesen Türen angelegt werden?`
             )
             setFollowUpDialogOpen(true)
           }
@@ -1476,6 +1568,7 @@ const Auftragsdetail = () => {
         status: 'offen',
         description: `Nacharbeit / nicht vollständig geprüft (Folge zu Auftrag ${order.id.slice(0, 8)})`,
         assigned_to: order.assigned_to ?? null,
+        related_order_id: order.id,
       },
       user?.id ?? null
     )
@@ -1489,7 +1582,7 @@ const Auftragsdetail = () => {
       return
     }
     if (data) {
-      showToast('Folge-Wartungsauftrag angelegt.', 'success')
+      showToast('Folge-Prüfungsauftrag angelegt.', 'success')
       navigate(`/auftrag/${data.id}`)
     }
   }
@@ -1531,13 +1624,33 @@ const Auftragsdetail = () => {
     const payload = buildPayload(extra.parked ?? false)
     const scanUrl = `${window.location.origin}/auftrag/${order.id}`
     try {
-      const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf()
+      const [letterheadPages, pdfTextLayout] = await Promise.all([
+        fetchBriefbogenLetterheadPagesForPdf(),
+        fetchBriefbogenPdfTextLayout(),
+      ])
       const oids = getOrderObjectIds(order).filter(Boolean)
       const wartungInspectedDoorLabels =
         order.order_type === 'wartung' && oids.length > 0
           ? oids.map((oid) => {
               const o = orderObjects.find((x) => x.id === oid)
               return o ? getObjectDisplayName(o) : oid.slice(0, 8)
+            })
+          : undefined
+      const wartungDoorSummaries =
+        order.order_type === 'wartung' && oids.length > 0
+          ? oids.map((oid) => {
+              const o = orderObjects.find((x) => x.id === oid)
+              const per = payload.completion_extra.wartung_checkliste?.by_object_id[oid]
+              const d = Object.values(per?.items ?? {}).filter((r) => r?.status === 'mangel').length
+              const f = Object.values(per?.feststell_checkliste?.items ?? {}).filter((r) => r?.status === 'mangel').length
+              const defects = d + f
+              const label = o ? getObjectDisplayName(o) : oid.slice(0, 8)
+              return {
+                doorLabel: label,
+                passed: defects === 0,
+                defects,
+                protocolRef: `Prüfprotokoll: ${label}`,
+              }
             })
           : undefined
       const pdfBlob = await generateMonteurBerichtPdf({
@@ -1550,7 +1663,10 @@ const Auftragsdetail = () => {
         orderTypeLabel: ORDER_TYPE_LABELS[order.order_type],
         scanUrl,
         letterheadPages: letterheadPages ?? undefined,
+        letterheadContentMargins: pdfTextLayout.margins,
+        letterheadFollowPageCompactTop: pdfTextLayout.followPageCompactTop,
         wartungInspectedDoorLabels,
+        wartungDoorSummaries,
         pruefprotokollKurzverweis: order.order_type === 'wartung' && oids.length > 0,
       })
       openBlobPdfViewer(pdfBlob, 'Monteursbericht')
@@ -1586,14 +1702,41 @@ const Auftragsdetail = () => {
         }
       }
       const mode = per.checklist_modus === 'compact' ? 'compact' : 'detail'
-      const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf()
+      const [letterheadPages, pdfTextLayout] = await Promise.all([
+        fetchBriefbogenLetterheadPagesForPdf(),
+        fetchBriefbogenPdfTextLayout(),
+      ])
+      const prMeta = await fetchMaintenanceReportPruefprotokollMetaForOrderObject(
+        order.id,
+        selectedChecklistObjectId
+      )
+      const reportId = prMeta?.id ?? null
+      const protocolPortalBase = (
+        design?.kundenportal_url ??
+        import.meta.env.VITE_KUNDENPORTAL_URL ??
+        ''
+      )
+        .trim()
+        .replace(/\/$/, '')
+      const portalProtocolUrl = reportId
+        ? `${protocolPortalBase || window.location.origin}/berichte?pruefprotokoll=${encodeURIComponent(reportId)}`
+        : null
       const prBlob = await generatePruefprotokollPdf({
+        pruefprotokollNummer: formatPruefprotokollNummerForPdf(
+          prMeta?.pruefprotokoll_laufnummer,
+          order.id,
+          selectedChecklistObjectId
+        ),
         order,
         customerName: getCustomerName(order.customer_id),
         bvName: getBvName(order.bv_id),
         object: obj,
         berichtDatum: extra.bericht_datum,
         monteurName: (printedTech.trim() || extra.monteur_name || 'Monteur').trim(),
+        customerAddressLines: customerAddressLines(order.customer_id),
+        bvAddressLines: bvAddressLines(order.bv_id),
+        showAddressMode: monteurSettingsFull?.pruefprotokoll_address_mode ?? 'both',
+        portalProtocolUrl,
         doorMode: mode,
         doorItems: per.items ?? {},
         feststellMode: mode,
@@ -1606,6 +1749,10 @@ const Auftragsdetail = () => {
           ])
         ),
         letterheadPages: letterheadPages ?? undefined,
+        letterheadContentMargins: pdfTextLayout.margins,
+        letterheadFollowPageCompactTop: pdfTextLayout.followPageCompactTop,
+        technicianSignaturePath: completion?.unterschrift_mitarbeiter_path ?? null,
+        technicianSignatureDate: completion?.unterschrift_mitarbeiter_date ?? null,
       })
       openBlobPdfViewer(prBlob, `Prüfprotokoll – ${getObjectDisplayName(obj)}`)
     } catch {
@@ -1731,6 +1878,20 @@ const Auftragsdetail = () => {
               {order.order_time ? ` ${order.order_time.slice(0, 5)}` : ''}
             </dd>
           </div>
+          {order.related_order_id ? (
+            <div>
+              <dt className="text-slate-500 dark:text-slate-400">Verknüpfter Auftrag</dt>
+              <dd className="font-medium text-slate-800 dark:text-slate-100">
+                <Link
+                  to={`/auftrag/${relatedParentOrder?.id ?? order.related_order_id}`}
+                  className="text-vico-primary hover:underline dark:text-sky-400"
+                  aria-label="Verknüpften Auftrag öffnen"
+                >
+                  Auftrag #{(relatedParentOrder?.id ?? order.related_order_id).slice(0, 8)}
+                </Link>
+              </dd>
+            </div>
+          ) : null}
           {order.description && (
             <div>
               <dt className="text-slate-500 dark:text-slate-400">Beschreibung</dt>
@@ -1738,6 +1899,23 @@ const Auftragsdetail = () => {
             </div>
           )}
         </dl>
+        {relatedChildOrders.length > 0 ? (
+          <div className="mt-4 border-t border-slate-200 dark:border-slate-600 pt-3">
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Verknüpfte Folgeaufträge</p>
+            <div className="flex flex-wrap gap-2">
+              {relatedChildOrders.map((child) => (
+                <Link
+                  key={child.id}
+                  to={`/auftrag/${child.id}`}
+                  className="inline-flex items-center rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-vico-primary hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                  aria-label={`Folgeauftrag ${child.id.slice(0, 8)} öffnen`}
+                >
+                  #{child.id.slice(0, 8)} · {ORDER_TYPE_LABELS[child.order_type]}
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {order.status === 'erledigt' && extra.wartung_checkliste_abschluss_bypass ? (
@@ -2036,6 +2214,7 @@ const Auftragsdetail = () => {
                   onChange={(e) => handleZusatzChange(i, { name: e.target.value })}
                   placeholder="Name"
                   className="text-sm"
+                  aria-label={`Name Mitarbeiter ${i + 1}`}
                 />
                 <div className="grid grid-cols-3 gap-2">
                   <AppInput
@@ -2292,7 +2471,7 @@ const Auftragsdetail = () => {
 
       <ConfirmDialog
         open={followUpDialogOpen}
-        title="Folge-Wartungsauftrag?"
+        title="Folge-Prüfungsauftrag?"
         message={followUpDialogMessage}
         confirmLabel="Ja, anlegen"
         cancelLabel="Nein"

@@ -1096,10 +1096,12 @@ export const updateMonteurReportSettings = async (
 }
 
 export type WartungChecklisteModus = 'compact' | 'detail'
+export type PruefprotokollAddressMode = 'both' | 'bv_only'
 
 export type MonteurReportSettingsFull = {
   customer_delivery_mode: MonteurReportCustomerDeliveryMode
   wartung_checkliste_modus: WartungChecklisteModus
+  pruefprotokoll_address_mode: PruefprotokollAddressMode
   mangel_neuer_auftrag_default: boolean
   portal_share_monteur_report_pdf: boolean
   portal_share_pruefprotokoll_pdf: boolean
@@ -1113,6 +1115,7 @@ export const fetchMonteurReportSettingsFull = async (): Promise<MonteurReportSet
     return {
       customer_delivery_mode: 'none',
       wartung_checkliste_modus: 'detail',
+      pruefprotokoll_address_mode: 'both',
       mangel_neuer_auftrag_default: true,
       portal_share_monteur_report_pdf: true,
       portal_share_pruefprotokoll_pdf: true,
@@ -1124,7 +1127,7 @@ export const fetchMonteurReportSettingsFull = async (): Promise<MonteurReportSet
   const { data, error } = await supabase
     .from('monteur_report_settings')
     .select(
-      'customer_delivery_mode, wartung_checkliste_modus, mangel_neuer_auftrag_default, portal_share_monteur_report_pdf, portal_share_pruefprotokoll_pdf, portal_timeline_show_planned, portal_timeline_show_termin, portal_timeline_show_in_progress'
+      'customer_delivery_mode, wartung_checkliste_modus, pruefprotokoll_address_mode, mangel_neuer_auftrag_default, portal_share_monteur_report_pdf, portal_share_pruefprotokoll_pdf, portal_timeline_show_planned, portal_timeline_show_termin, portal_timeline_show_in_progress'
     )
     .eq('id', 1)
     .maybeSingle()
@@ -1133,11 +1136,13 @@ export const fetchMonteurReportSettingsFull = async (): Promise<MonteurReportSet
   const m = String(row.customer_delivery_mode ?? 'none')
   const allowed: MonteurReportCustomerDeliveryMode[] = ['none', 'email_auto', 'email_manual', 'portal_notify']
   const mod = row.wartung_checkliste_modus === 'compact' ? 'compact' : 'detail'
+  const addrMode = row.pruefprotokoll_address_mode === 'bv_only' ? 'bv_only' : 'both'
   return {
     customer_delivery_mode: allowed.includes(m as MonteurReportCustomerDeliveryMode)
       ? (m as MonteurReportCustomerDeliveryMode)
       : 'none',
     wartung_checkliste_modus: mod,
+    pruefprotokoll_address_mode: addrMode,
     mangel_neuer_auftrag_default: Boolean(row.mangel_neuer_auftrag_default ?? true),
     portal_share_monteur_report_pdf: Boolean(row.portal_share_monteur_report_pdf ?? true),
     portal_share_pruefprotokoll_pdf: Boolean(row.portal_share_pruefprotokoll_pdf ?? true),
@@ -1149,6 +1154,7 @@ export const fetchMonteurReportSettingsFull = async (): Promise<MonteurReportSet
 
 export const updateMonteurReportWartungChecklisteSettings = async (patch: {
   wartung_checkliste_modus?: WartungChecklisteModus
+  pruefprotokoll_address_mode?: PruefprotokollAddressMode
   mangel_neuer_auftrag_default?: boolean
 }): Promise<{ error: { message: string } | null }> => {
   if (!isOnline()) return { error: { message: 'Nur online speicherbar.' } }
@@ -1285,6 +1291,25 @@ export const fetchMaintenanceReportIdByOrderObject = async (
   return String(data.id)
 }
 
+/** Für Prüfprotokoll-PDF: Report-UUID und laufende Nummer (nach Migration immer gesetzt). */
+export const fetchMaintenanceReportPruefprotokollMetaForOrderObject = async (
+  orderId: string,
+  objectId: string
+): Promise<{ id: string; pruefprotokoll_laufnummer: number | null } | null> => {
+  if (!isOnline()) return null
+  const { data, error } = await supabase
+    .from('maintenance_reports')
+    .select('id, pruefprotokoll_laufnummer')
+    .eq('source_order_id', orderId)
+    .eq('object_id', objectId)
+    .maybeSingle()
+  if (error || !data?.id) return null
+  const n = data.pruefprotokoll_laufnummer
+  const num = typeof n === 'number' ? n : n != null ? Number(n) : NaN
+  if (!Number.isFinite(num) || num <= 0) return { id: String(data.id), pruefprotokoll_laufnummer: null }
+  return { id: String(data.id), pruefprotokoll_laufnummer: Math.trunc(num) }
+}
+
 /** Gespeicherter Pfad zum Checklisten-Prüfprotokoll-PDF (Storage), falls vorhanden. */
 export const fetchPruefprotokollPdfPathForOrderObject = async (
   orderId: string,
@@ -1406,7 +1431,7 @@ export const fetchDefectFollowupBadgeMaps = async (): Promise<{
   return { totalByCustomerId, byBvCompositeKey, byObjectId }
 }
 
-/** §11.17#4: offene Protokoll-Mängel für Listen-Zähler (letzter erledigter Wartungsauftrag mit Checkliste). Offline: leer (WP-MANG-04). */
+/** §11.17#4: offene Protokoll-Mängel für Listen-Zähler (letzter erledigter Prüfungsauftrag mit Checkliste). Offline: leer (WP-MANG-04). */
 export type ProtocolOpenMangelsListCounters = {
   rows: ProtocolOpenMangelRow[]
   countByObjectId: Record<string, number>
@@ -1543,7 +1568,7 @@ const buildProtocolDraftInputsForObjectFromOrders = (
   return inputs
 }
 
-/** §11.17#4: Protokoll-Mängel aus **laufendem** Wartungsauftrag (Entwurf) für eine Tür – online oder aus Cache. */
+/** §11.17#4: Protokoll-Mängel aus **laufendem** Prüfungsauftrag (Entwurf) für eine Tür – online oder aus Cache. */
 export const fetchProtocolOpenMangelsDraftForObject = async (objectId: string): Promise<ProtocolOpenMangelRow[]> => {
   if (!objectId) return []
   const activeStatuses = new Set<Order['status']>(['offen', 'in_bearbeitung'])
@@ -3196,16 +3221,19 @@ export const fetchOrders = async (): Promise<Order[]> => {
 }
 
 export const fetchOrderById = async (orderId: string): Promise<Order | null> => {
-  if (!isOnline()) {
+  const fromCache = () => {
     const cached = getCachedOrders() as Order[]
     return cached.find((o) => o.id === orderId) ?? null
+  }
+  if (!isOnline()) {
+    return fromCache()
   }
   const { data, error } = await supabase
     .from('orders')
     .select(ORDER_COLUMNS)
     .eq('id', orderId)
     .single()
-  if (error || !data) return null
+  if (error || !data) return fromCache()
   return data as unknown as Order
 }
 

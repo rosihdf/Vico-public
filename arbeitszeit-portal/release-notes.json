@@ -1,4 +1,7 @@
 {
+  "1.2.1": [
+    "Zoll-/Compliance-PDF: Briefbogen-Textlayout (Ränder, Folgeseite) wie Haupt-App 1.2.1."
+  ],
   "1.2.0": [
     "Briefbogen fortgeführt: Bei PDF mit zweiter Seite wird diese auf Folgeseiten des Zoll-PDF-Exports genutzt (wie Haupt-App)."
   ],

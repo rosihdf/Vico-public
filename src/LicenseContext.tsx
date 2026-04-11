@@ -29,6 +29,7 @@ export type DesignConfig = {
   /** Mandanten-Name aus Lizenzportal (`tenants.name`) */
   tenant_name?: string | null
   logo_url: string | null
+  kundenportal_url?: string | null
   primary_color: string
   secondary_color?: string | null
   favicon_url?: string | null
@@ -75,6 +76,7 @@ const LicenseContext = createContext<LicenseContextType | null>(null)
 const DEFAULT_DESIGN: DesignConfig = {
   app_name: 'AMRtech',
   logo_url: null,
+  kundenportal_url: null,
   primary_color: '#5b7895',
   secondary_color: null,
   favicon_url: null,

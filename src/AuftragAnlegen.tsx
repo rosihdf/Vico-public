@@ -132,6 +132,7 @@ const AuftragAnlegen = () => {
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
   const [archiveMode, setArchiveMode] = useState<'active' | 'archive'>('active')
+  const [relationFilter, setRelationFilter] = useState<'all' | 'linked' | 'unlinked'>('all')
   const [calendarMonth, setCalendarMonth] = useState(() => new Date())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [formData, setFormData] = useState<OrderFormState>(INITIAL_FORM)
@@ -541,11 +542,33 @@ const AuftragAnlegen = () => {
         ? orders.filter((o) => o.assigned_to === user.id)
         : []
 
-  const displayOrders = filteredByRole.filter(statusFilter)
+  const parentOrderIdsWithChildren = useMemo(() => {
+    const ids = new Set<string>()
+    for (const row of orders) {
+      if (row.related_order_id) ids.add(row.related_order_id)
+    }
+    return ids
+  }, [orders])
+
+  const isLinkedOrder = useCallback(
+    (o: Order) => Boolean(o.related_order_id) || parentOrderIdsWithChildren.has(o.id),
+    [parentOrderIdsWithChildren]
+  )
+
+  const displayOrders = filteredByRole
+    .filter(statusFilter)
+    .filter((o) => {
+      if (relationFilter === 'linked') return isLinkedOrder(o)
+      if (relationFilter === 'unlinked') return !isLinkedOrder(o)
+      return true
+    })
+
   const ordersWithNames = displayOrders.map((o) => ({
     ...o,
     customerName: getCustomerName(o.customer_id),
     bvName: getBvName(o.bv_id),
+    isLinked: isLinkedOrder(o),
+    hasChildren: parentOrderIdsWithChildren.has(o.id),
   }))
 
   return (
@@ -611,6 +634,41 @@ const AuftragAnlegen = () => {
               Kalender
             </button>
           </div>
+          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setRelationFilter('all')}
+              className={`px-3 py-2 text-sm font-medium ${
+                relationFilter === 'all'
+                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              Alle
+            </button>
+            <button
+              type="button"
+              onClick={() => setRelationFilter('linked')}
+              className={`px-3 py-2 text-sm font-medium ${
+                relationFilter === 'linked'
+                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              Verknüpft
+            </button>
+            <button
+              type="button"
+              onClick={() => setRelationFilter('unlinked')}
+              className={`px-3 py-2 text-sm font-medium ${
+                relationFilter === 'unlinked'
+                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              Ohne Verknüpfung
+            </button>
+          </div>
           {canEdit && archiveMode === 'active' && (
             <button
               type="button"
@@ -662,6 +720,11 @@ const AuftragAnlegen = () => {
                   {!o.assigned_to && (
                     <span className="ml-2 text-sm font-normal text-amber-700 dark:text-amber-300">(nicht zugewiesen)</span>
                   )}
+                  {o.isLinked ? (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200">
+                      verknüpft
+                    </span>
+                  ) : null}
                 </p>
                 <p className="text-sm text-slate-600 dark:text-slate-300">
                   {o.order_date}{o.order_time ? ` ${o.order_time.slice(0, 5)}` : ''} · {ORDER_TYPE_LABELS[o.order_type]} · {ORDER_STATUS_LABELS[o.status]}
@@ -670,6 +733,19 @@ const AuftragAnlegen = () => {
                     <span className="ml-2 text-slate-500 dark:text-slate-400">→ {getProfileLabel(o.assigned_to)}</span>
                   )}
                 </p>
+                {o.related_order_id ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Verknüpft mit{' '}
+                    <Link
+                      to={`/auftrag/${o.related_order_id}`}
+                      className="text-vico-primary hover:underline dark:text-sky-400"
+                    >
+                      Auftrag #{o.related_order_id.slice(0, 8)}
+                    </Link>
+                  </p>
+                ) : o.hasChildren ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Hat verknüpfte Folgeaufträge.</p>
+                ) : null}
                 {o.description && (
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 truncate max-w-md">{o.description}</p>
                 )}

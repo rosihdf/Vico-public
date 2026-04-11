@@ -3,12 +3,27 @@
 -- Supabase SQL Editor: Inhalt einfügen und Run ausführen. Idempotent.
 -- Zuletzt strukturell aufgeräumt: 2026-03 (Header, keine fachliche Logik geändert).
 -- -----------------------------------------------------------------------------
+-- Zuständigkeit / Source of Truth
+--   • Diese Datei: Mandanten-Haupt-App-DB (Stammdaten, Aufträge, Protokolle, Portal-Daten).
+--   • Lizenzportal-DB: `supabase-license-portal.sql` (tenants, licenses, Branding/Domain-Mapping).
+--   • Werte wie `design.kundenportal_url` kommen über die Lizenz-API aus der Lizenzportal-DB.
+-- Drift-Matrix (Kurz)
+--   • Haupt-App-DB (`supabase-complete.sql`):
+--       customers, bvs, objects, orders, maintenance_reports, customer_portal_users,
+--       admin_config, location_requests, push_subscriptions, app_maintenance_mode, monteur_report_settings
+--   • Lizenzportal-DB (`supabase-license-portal.sql`):
+--       tenants, licenses, license_models, platform_config, app_releases,
+--       release_incoming_tenants, tenant_release_assignments, beta_feedback, roadmap_items
+--   • Brücke:
+--       Mandanten-Apps lesen Lizenz-/Brandingdaten ausschließlich über die Lizenz-API (`design.*`, `license.*`).
+-- -----------------------------------------------------------------------------
 --
 -- Inhaltsverzeichnis (Reihenfolge = Abhängigkeiten)
 --   1. Profiles & Rollen, RLS, Trigger (inkl. maintenance_reminder_* / Urlaub-Spalten)
 --   2. Stammdaten: customers, bvs, objects, Fotos/Dokumente, maintenance_contracts, …
 --   3. Wartungsprotokolle (Reports, Fotos, Rauchmelder)
 --   4. orders, time_*, leave_*, work_*, component_settings, audit_log (+ Trigger)
+--   4b. Soll-Berechnung: Feiertage, Arbeitseinstellungen, freie Tage
 --   5. RPCs (Zeit, Urlaub, Audit, Suche, …)
 --   5b. Lizenz: license, get_license_status, Grenz-Checks
 --   5c. Standortabfrage: admin_config, location_requests, push_subscriptions, …
@@ -24,6 +39,17 @@
 --     „nah an der Tabelle“ für Lesbarkeit bei großen Blöcken, Abschn. 8 für Überblick & Realtime.
 --   • Laufzeit-Optimierung: EXPLAIN/ANALYZE in Staging; ggf. pg_stat_statements; keine
 --     Index-Löschungen hier ohne Messung (Partial Indizes z. B. demo_user_id bewusst gesetzt).
+--   • Namenskonventionen:
+--       - Constraints: <tabelle>_<spalte/zweck>_(check|fkey|key)
+--       - Indizes: idx_<tabelle>_<spalte/zweck>
+--       - Policies: "<Rolle/Ziel> <Aktion> <tabelle>"
+--       - Trigger-Funktionen: <tabelle>_<regel_verb>
+--   • Pflege-Checkliste bei neuen SQL-Änderungen:
+--       1) Im passenden Abschnitt einsortieren (nicht nur am Dateiende anhängen)
+--       2) Falls nötig: Nachmigration (add column if not exists / do $$) direkt unter der Tabelle
+--       3) Constraints + Default-Backfill im selben Block dokumentieren
+--       4) RLS/Policies unmittelbar beim betroffenen Objekt anpassen
+--       5) Indexe entweder lokal am Objekt oder bewusst im Abschnitt 8 ergänzen
 
 -- -----------------------------------------------------------------------------
 -- 1. PROFILES & ROLLEN
@@ -218,6 +244,7 @@ alter table public.customers add column if not exists house_number text;
 alter table public.customers add column if not exists demo_user_id uuid references auth.users(id) on delete cascade;
 alter table public.customers enable row level security;
 
+-- 2.1a Kundenportal-Zuordnung (Basis für Portal-Login-Mapping)
 -- Kundenportal-Tabelle: hier anlegen, da handle_new_user (Trigger auth.users) darauf zugreift.
 -- RLS, Unique-Constraint, Policies und Portal-RPCs folgen in Sektion 6.
 create table if not exists public.customer_portal_users (
@@ -646,6 +673,33 @@ create policy "Non-leser can insert maintenance_report_smoke_detectors" on publi
 alter table public.maintenance_reports add column if not exists source_order_id uuid references public.orders(id) on delete set null;
 alter table public.maintenance_reports add column if not exists checklist_protocol jsonb not null default '{}'::jsonb;
 alter table public.maintenance_reports add column if not exists pruefprotokoll_pdf_path text;
+
+-- Laufende Prüfprotokoll-Nummer (mandantenweit fortlaufend, bei INSERT automatisch)
+create sequence if not exists public.maintenance_reports_pruefprotokoll_laufnummer_seq;
+alter table public.maintenance_reports add column if not exists pruefprotokoll_laufnummer bigint;
+do $$
+declare r record;
+begin
+  for r in
+    select id from public.maintenance_reports
+    where pruefprotokoll_laufnummer is null
+    order by created_at nulls last, id
+  loop
+    update public.maintenance_reports
+    set pruefprotokoll_laufnummer = nextval('public.maintenance_reports_pruefprotokoll_laufnummer_seq')
+    where id = r.id;
+  end loop;
+end $$;
+select setval(
+  'public.maintenance_reports_pruefprotokoll_laufnummer_seq',
+  coalesce((select max(pruefprotokoll_laufnummer) from public.maintenance_reports), 0)
+);
+alter table public.maintenance_reports
+  alter column pruefprotokoll_laufnummer set default nextval('public.maintenance_reports_pruefprotokoll_laufnummer_seq'::regclass);
+alter table public.maintenance_reports alter column pruefprotokoll_laufnummer set not null;
+create unique index if not exists idx_maintenance_reports_pruefprotokoll_laufnummer
+  on public.maintenance_reports (pruefprotokoll_laufnummer);
+
 create unique index if not exists idx_maintenance_reports_order_object
   on public.maintenance_reports (source_order_id, object_id)
   where source_order_id is not null;
@@ -678,11 +732,13 @@ create policy "Non-leser manage defect_followups" on public.defect_followups
 -- -----------------------------------------------------------------------------
 -- 4. AUFTRÄGE, ZEIT, URLAUB (leave_*), WORK SETTINGS, COMPONENT SETTINGS, AUDIT
 -- -----------------------------------------------------------------------------
+-- 4a. Orders
 
 create table if not exists public.orders (
   id uuid default gen_random_uuid() primary key,
   customer_id uuid references public.customers(id) on delete cascade not null,
   bv_id uuid references public.bvs(id) on delete cascade not null,
+  related_order_id uuid references public.orders(id) on delete set null,
   object_id uuid references public.objects(id) on delete set null,
   order_date date not null,
   order_type text not null check (order_type in ('wartung', 'reparatur', 'montage', 'sonstiges')),
@@ -698,6 +754,7 @@ begin
 exception
   when duplicate_object then null;
 end $$;
+-- 4a.1 Nachmigrationen (Legacy-DBs)
 do $$
 begin
   alter table public.orders drop constraint if exists orders_created_by_fkey;
@@ -720,10 +777,27 @@ begin
     alter table public.orders add column object_ids uuid[];
   end if;
 end $$;
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'orders' and column_name = 'related_order_id') then
+    alter table public.orders add column related_order_id uuid;
+  end if;
+end $$;
+do $$
+begin
+  alter table public.orders drop constraint if exists orders_related_order_id_fkey;
+  alter table public.orders
+    add constraint orders_related_order_id_fkey
+    foreign key (related_order_id) references public.orders(id) on delete set null;
+exception
+  when duplicate_object then null;
+end $$;
+create index if not exists idx_orders_related_order_id on public.orders(related_order_id);
 update public.orders o
 set object_ids = array[o.object_id]::uuid[]
 where o.object_id is not null
   and (o.object_ids is null or cardinality(o.object_ids) = 0);
+-- 4a.2 RLS / Policies
 alter table public.orders enable row level security;
 
 do $$ declare r record; begin
@@ -736,6 +810,7 @@ create policy "Mitarbeiter/Admin can insert orders" on public.orders for insert 
 create policy "Mitarbeiter/Admin can update orders" on public.orders for update using (auth.uid() is not null and public.can_write_master_data());
 create policy "Mitarbeiter/Admin can delete orders" on public.orders for delete using (auth.uid() is not null and public.can_write_master_data());
 
+-- 4a.3 Business-Regeln / Trigger
 -- Demo- und Portal-Benutzer dürfen keinen Aufträgen zugewiesen werden
 drop function if exists public.check_order_assigned_to_not_demo() cascade;
 create or replace function public.check_order_assigned_to_valid_role()
@@ -971,7 +1046,7 @@ create policy "Teamleiter can insert time_entry_edit_log for team" on public.tim
 );
 
 -- -----------------------------------------------------------------------------
--- Soll-Berechnung: Feiertage, Arbeitseinstellungen, freie Tage
+-- 4b. SOLL-BERECHNUNG: FEIERTAGE, ARBEITSEINSTELLUNGEN, FREIE TAGE
 -- -----------------------------------------------------------------------------
 
 create table if not exists public.public_holidays (
@@ -1371,32 +1446,41 @@ create policy "Authenticated users can read component_settings" on public.compon
 create policy "Authenticated users can manage component_settings" on public.component_settings for all using (auth.uid() is not null);
 
 -- Firmenweite Zustellung Monteursbericht an Kunden (Abschluss-Auftrag)
+-- 4x.1 Basistabelle
 create table if not exists public.monteur_report_settings (
   id int primary key default 1 check (id = 1),
   customer_delivery_mode text not null default 'none'
   check (customer_delivery_mode in ('none', 'email_auto', 'email_manual', 'portal_notify')),
   updated_at timestamptz default now()
 );
+-- 4x.2 Nachmigrationen (Legacy-DBs)
 alter table public.monteur_report_settings add column if not exists maintenance_digest_local_time text default '07:00';
 alter table public.monteur_report_settings add column if not exists maintenance_digest_timezone text default 'Europe/Berlin';
 alter table public.monteur_report_settings add column if not exists app_public_url text default null;
 alter table public.monteur_report_settings add column if not exists wartung_checkliste_modus text default 'detail';
+alter table public.monteur_report_settings add column if not exists pruefprotokoll_address_mode text default 'both';
 alter table public.monteur_report_settings add column if not exists mangel_neuer_auftrag_default boolean default true;
 alter table public.monteur_report_settings add column if not exists portal_share_monteur_report_pdf boolean default true;
 alter table public.monteur_report_settings add column if not exists portal_share_pruefprotokoll_pdf boolean default true;
 alter table public.monteur_report_settings add column if not exists portal_timeline_show_planned boolean default false;
 alter table public.monteur_report_settings add column if not exists portal_timeline_show_termin boolean default true;
 alter table public.monteur_report_settings add column if not exists portal_timeline_show_in_progress boolean default true;
+-- 4x.3 Constraints / Defaults
 do $$
 begin
   alter table public.monteur_report_settings drop constraint if exists monteur_report_settings_wartung_checkliste_modus_check;
+  alter table public.monteur_report_settings drop constraint if exists monteur_report_settings_pruefprotokoll_address_mode_check;
   alter table public.monteur_report_settings
     add constraint monteur_report_settings_wartung_checkliste_modus_check
     check (wartung_checkliste_modus is null or wartung_checkliste_modus in ('compact', 'detail'));
+  alter table public.monteur_report_settings
+    add constraint monteur_report_settings_pruefprotokoll_address_mode_check
+    check (pruefprotokoll_address_mode is null or pruefprotokoll_address_mode in ('both', 'bv_only'));
 exception
   when others then null;
 end $$;
 update public.monteur_report_settings set wartung_checkliste_modus = coalesce(wartung_checkliste_modus, 'detail') where id = 1;
+update public.monteur_report_settings set pruefprotokoll_address_mode = coalesce(pruefprotokoll_address_mode, 'both') where id = 1;
 update public.monteur_report_settings set mangel_neuer_auftrag_default = coalesce(mangel_neuer_auftrag_default, true) where id = 1;
 update public.monteur_report_settings
 set
@@ -1409,6 +1493,7 @@ where id = 1;
 insert into public.monteur_report_settings (id, customer_delivery_mode)
 values (1, 'none')
 on conflict (id) do nothing;
+-- 4x.4 RLS / Policies
 alter table public.monteur_report_settings enable row level security;
 do $$ declare r record; begin
   for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'monteur_report_settings' loop
@@ -2328,6 +2413,10 @@ grant execute on function public.cleanup_demo_customers_older_than_24h() to auth
 -- -----------------------------------------------------------------------------
 -- 5b. LIZENZMODELL
 -- -----------------------------------------------------------------------------
+-- Hinweis zur Konsistenz:
+-- Mandantenweites Branding/Portal-URLs (z. B. `tenants.kundenportal_url`) liegen in der
+-- Lizenzportal-DB (`supabase-license-portal.sql`), nicht in der Haupt-App-DB.
+-- Die Haupt-App erhält diese Werte über die Lizenz-API (`design.kundenportal_url`).
 
 create table if not exists public.license (
   id uuid primary key default gen_random_uuid(),
@@ -2463,6 +2552,7 @@ grant execute on function public.set_license_number(text) to authenticated;
 -- -----------------------------------------------------------------------------
 -- 5c. Standortabfrage (Mitarbeiter senden Standort, Admin/Teamleiter können abrufen)
 -- -----------------------------------------------------------------------------
+-- 5c.1 admin_config + Feature-Flag-RPCs
 
 -- admin_config muss vor employee_current_location-Policies existieren (Policy referenziert get_standortabfrage_teamleiter_allowed)
 create table if not exists public.admin_config (
@@ -2515,6 +2605,7 @@ end;
 $$;
 grant execute on function public.set_standortabfrage_teamleiter_allowed(boolean) to authenticated;
 
+-- 5c.2 Standorttabellen (Snapshot + Requests)
 create table if not exists public.employee_current_location (
   user_id uuid references public.profiles(id) on delete cascade primary key,
   lat double precision not null,
@@ -2546,6 +2637,7 @@ create policy "Teamleiter can manage team location_requests" on public.location_
 );
 create policy "User can read own pending requests" on public.location_requests for select using (auth.uid() = requested_user_id and fulfilled_at is null);
 
+-- 5c.3 Web-Push-Abos
 -- Web Push: Abonnements für Standortanfrage-Benachrichtigungen
 create table if not exists public.push_subscriptions (
   id uuid primary key default gen_random_uuid(),

@@ -4,6 +4,19 @@
 -- Eigenes Supabase-Projekt für Mandanten & Lizenzen.
 -- Im Supabase SQL Editor ausführen (neues Projekt anlegen oder bestehendes).
 -- Idempotent. Zuletzt strukturell aufgeräumt: 2026-03.
+-- Zuständigkeit / Source of Truth
+--   • Diese Datei: Lizenzportal-DB (Mandantenstamm, Lizenzmodell, Domains, Branding).
+--   • Haupt-App-DB: `supabase-complete.sql` (operative Daten je Mandant).
+--   • Mandanten-Apps lesen Branding/Portal-URLs über die Lizenz-API (`design.*`).
+-- Drift-Matrix (Kurz)
+--   • Lizenzportal-DB (`supabase-license-portal.sql`):
+--       tenants, licenses, license_models, platform_config, app_releases,
+--       release_incoming_tenants, tenant_release_assignments, beta_feedback, roadmap_items
+--   • Haupt-App-DB (`supabase-complete.sql`):
+--       customers, bvs, objects, orders, maintenance_reports, customer_portal_users,
+--       admin_config, location_requests, push_subscriptions, app_maintenance_mode, monteur_report_settings
+--   • Brücke:
+--       Mandanten-Apps lesen Lizenz-/Brandingdaten ausschließlich über die Lizenz-API (`design.*`, `license.*`).
 --
 -- RLS: is_admin() als SECURITY DEFINER verhindert Rekursion (Policies lesen
 -- profiles nicht direkt, sondern über die Funktion).
@@ -17,9 +30,21 @@
 --   5. platform_config, get_storage_summary()
 --   5b. Storage: tenant_logos (L4)
 --   6. Indizes
+--   7. Mandanten-App-Releases (incoming/go-live je Kanal)
+--   8. Feedback & Roadmap (beta_feedback, roadmap_items)
+--   9. Kanonische default_app_versions + app_releases-Katalog (Lizenz-API / Admin)
 --
 -- Optimierung (Kurz): Indizes an FKs/Listen; Speicher-RPC nutzt license_models-
 -- Fallback. Kein zweites „Analytics“-Schema – bei Bedarf pg_stat_statements im Betrieb.
+-- -----------------------------------------------------------------------------
+-- Struktur-Konvention
+--   • Tabelle -> nachträgliche Spalten (idempotent) -> RLS/Policies -> Trigger/RPC -> Indizes.
+--   • Neue Migrationen immer in den passenden Abschnitt einsortieren (nicht nur unten anhängen).
+--   • Namenskonventionen:
+--       - Constraints: <tabelle>_<spalte/zweck>_(check|fkey|key)
+--       - Indizes: idx_<tabelle>_<spalte/zweck> (bestehende Alt-Indizes bleiben gültig)
+--       - Policies: "<Rolle/Ziel> <Aktion> <tabelle>"
+--       - Trigger-Funktionen: <tabelle>_<regel_verb>
 -- -----------------------------------------------------------------------------
 
 -- -----------------------------------------------------------------------------
@@ -78,12 +103,14 @@ create trigger on_auth_user_created
 -- -----------------------------------------------------------------------------
 -- 2. TENANTS (Mandanten)
 -- -----------------------------------------------------------------------------
+-- 2a. Basistabelle
 
 create table if not exists public.tenants (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   app_domain text,
   portal_domain text,
+  kundenportal_url text,
   arbeitszeitenportal_domain text,
   logo_url text,
   primary_color text default '#5b7895',
@@ -112,6 +139,7 @@ create table if not exists public.tenants (
   updated_at timestamptz default now()
 );
 
+-- 2b. Nachmigrationen (Legacy-DBs)
 -- allowed_domains: Spalte nachträglich hinzufügen
 do $$
 begin
@@ -120,6 +148,17 @@ begin
     where table_schema = 'public' and table_name = 'tenants' and column_name = 'allowed_domains'
   ) then
     alter table public.tenants add column allowed_domains jsonb default '[]'::jsonb;
+  end if;
+end $$;
+
+-- kundenportal_url: optionale vollständige URL (z. B. https://portal.kunde.de)
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'tenants' and column_name = 'kundenportal_url'
+  ) then
+    alter table public.tenants add column kundenportal_url text;
   end if;
 end $$;
 
@@ -134,7 +173,7 @@ begin
   end if;
 end $$;
 
--- Wartungsmodus pro Mandant (LP-Schalter)
+-- 2c. Wartungs-/Ankündigungsfelder (LP-Schalter)
 do $$
 begin
   if not exists (
@@ -242,6 +281,7 @@ begin
   end if;
 end $$;
 
+-- 2d. App-Versionen pro Mandant
 -- app_versions: optional pro Mandant (Version/Release Notes je Frontend-App)
 do $$
 begin
@@ -253,6 +293,7 @@ begin
   end if;
 end $$;
 
+-- 2e. RLS / Policies
 alter table public.tenants enable row level security;
 
 do $$ declare r record; begin
@@ -566,6 +607,7 @@ create index if not exists limit_exceeded_log_tenant_created_idx on public.limit
 -- -----------------------------------------------------------------------------
 -- 7. MANDANTEN-APP-RELEASES (§11.20 / WP-REL) – Entwürfe, Incoming, Go-Live pro Kanal
 -- -----------------------------------------------------------------------------
+-- 7a. Rollen/Flags + Tabellen
 
 -- Release-Verwalter: Admins mit Flag (Standard an = bestehende Installationen unverändert)
 do $$
@@ -653,6 +695,7 @@ create table if not exists public.release_audit_log (
 
 create index if not exists release_audit_log_created_idx on public.release_audit_log (created_at desc);
 
+-- 7a.1 RLS / Policies
 alter table public.app_releases enable row level security;
 alter table public.release_incoming_tenants enable row level security;
 alter table public.tenant_release_assignments enable row level security;
@@ -687,9 +730,9 @@ end $$;
 create policy "Release managers read release_audit_log" on public.release_audit_log for select using (public.can_manage_app_releases());
 create policy "Release managers insert release_audit_log" on public.release_audit_log for insert with check (public.can_manage_app_releases());
 
--- ---------------------------------------------------------------------------
--- app_releases.status – Nachziehen auf bestehenden Lizenzportal-DBs (GitHub → LP)
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+-- 7b. app_releases.status – Nachziehen auf bestehenden Lizenzportal-DBs (GitHub → LP)
+-- -----------------------------------------------------------------------------
 alter table public.app_releases add column if not exists status text;
 update public.app_releases set status = 'published' where status is null;
 alter table public.app_releases alter column status set default 'published';
@@ -701,9 +744,14 @@ exception
 end $$;
 create index if not exists app_releases_status_channel_idx on public.app_releases (status, channel, created_at desc);
 
--- ---------------------------------------------------------------------------
--- Beta-Feedback (Mandanten-Apps → Lizenzportal-Auswertung)
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+-- 8. FEEDBACK & ROADMAP (Mandanten-Apps → Lizenzportal-Auswertung)
+-- -----------------------------------------------------------------------------
+
+-- -----------------------------------------------------------------------------
+-- 8.1 Beta-Feedback
+-- -----------------------------------------------------------------------------
+-- 8.1a Tabelle + Backfill
 create table if not exists public.beta_feedback (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
@@ -738,6 +786,7 @@ create table if not exists public.beta_feedback (
 );
 alter table public.beta_feedback add column if not exists archived_at timestamptz;
 
+-- 8.1b Indizes
 create index if not exists beta_feedback_tenant_created_idx on public.beta_feedback (tenant_id, created_at desc);
 create index if not exists beta_feedback_tenant_user_day_idx on public.beta_feedback (tenant_id, mandant_user_id, created_at desc);
 create index if not exists beta_feedback_status_idx on public.beta_feedback (status);
@@ -745,6 +794,7 @@ create index if not exists beta_feedback_archived_idx on public.beta_feedback (a
 
 alter table public.beta_feedback enable row level security;
 
+-- 8.1c RLS / Policies
 do $$ declare r record; begin
   for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'beta_feedback' loop
     execute format('drop policy if exists %I on public.beta_feedback', r.policyname);
@@ -754,9 +804,10 @@ end $$;
 create policy "Admins read beta_feedback" on public.beta_feedback for select using (public.is_admin());
 create policy "Admins update beta_feedback" on public.beta_feedback for update using (public.is_admin());
 
--- ---------------------------------------------------------------------------
--- Roadmap-Board (Lizenzportal-Admin)
--- ---------------------------------------------------------------------------
+-- -----------------------------------------------------------------------------
+-- 8.2 Roadmap-Board (Lizenzportal-Admin)
+-- -----------------------------------------------------------------------------
+-- 8.2a Tabelle
 create table if not exists public.roadmap_items (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid references public.tenants(id) on delete set null,
@@ -777,12 +828,14 @@ create table if not exists public.roadmap_items (
   updated_at timestamptz not null default now()
 );
 
+-- 8.2b Indizes
 create index if not exists roadmap_items_status_idx on public.roadmap_items (status, created_at desc);
 create index if not exists roadmap_items_priority_idx on public.roadmap_items (priority, created_at desc);
 create index if not exists roadmap_items_tenant_idx on public.roadmap_items (tenant_id, created_at desc);
 
 alter table public.roadmap_items enable row level security;
 
+-- 8.2c RLS / Policies
 do $$ declare r record; begin
   for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'roadmap_items' loop
     execute format('drop policy if exists %I on public.roadmap_items', r.policyname);
@@ -793,3 +846,120 @@ create policy "Admins read roadmap_items" on public.roadmap_items for select usi
 create policy "Admins insert roadmap_items" on public.roadmap_items for insert with check (public.is_admin());
 create policy "Admins update roadmap_items" on public.roadmap_items for update using (public.is_admin());
 create policy "Admins delete roadmap_items" on public.roadmap_items for delete using (public.is_admin());
+
+-- -----------------------------------------------------------------------------
+-- 9. KANONISCHE APP-VERSIONEN (Lizenz-API) + KATALOG app_releases (Admin)
+-- -----------------------------------------------------------------------------
+-- Ohne Eintrag in platform_config.default_app_versions bleiben appVersions in der
+-- Lizenz-API leer bzw. nur aus tenants.app_versions – u. a. admin fehlt oft komplett.
+-- app_releases füllt die Admin-Oberfläche „Releases / Go-Live“; Mandanten sehen
+-- mandantenReleases.active erst nach tenant_release_assignments.
+-- Versionen: Root/portal/arbeitszeit package.json + admin/package.json (Stand Repo).
+-- -----------------------------------------------------------------------------
+
+insert into public.platform_config (key, value)
+values (
+  'default_app_versions',
+  $def${
+    "main": {
+      "version": "1.2.1",
+      "releaseLabel": "Beta",
+      "releaseNotes": [
+        "Prüfprotokoll-PDF: laufende Nummer (PP-…), QR unten rechts, Prüfobjekt, Checklisten bei Seitenumbruch.",
+        "Checklisten Tür/Feststell: Hinweis ohne Mangel; Lizenz design.kundenportal_url, Feature teamfunktion.",
+        "Mandanten-DB separat: u. a. pruefprotokoll_laufnummer (supabase-complete.sql)."
+      ]
+    },
+    "kundenportal": {
+      "version": "1.1.1",
+      "releaseLabel": "Beta",
+      "releaseNotes": [
+        "Berichte / Prüfprotokoll: Anpassungen zur Haupt-App 1.2.1; gemeinsame Release-Metadaten."
+      ]
+    },
+    "arbeitszeit_portal": {
+      "version": "1.2.1",
+      "releaseLabel": "Beta",
+      "releaseNotes": [
+        "Zoll-/Compliance-PDF: Briefbogen-Textlayout (Ränder, Folgeseite) wie Haupt-App 1.2.1."
+      ]
+    },
+    "admin": {
+      "version": "1.0.7",
+      "releaseLabel": "Beta",
+      "releaseNotes": [
+        "Mandanten: Kundenportal-URL (design.kundenportal_url); Rollout: app_releases / tenant_release_assignments."
+      ]
+    }
+  }$def$::jsonb
+)
+on conflict (key) do update set
+  value = coalesce(public.platform_config.value, '{}'::jsonb) || excluded.value;
+
+insert into public.app_releases (
+  channel,
+  version_semver,
+  release_type,
+  title,
+  notes,
+  module_tags,
+  incoming_enabled,
+  incoming_all_mandanten,
+  force_hard_reload,
+  ci_metadata,
+  status
+) values
+  (
+    'main',
+    '1.2.1',
+    'feature',
+    'Haupt-App 1.2.1',
+    'Prüfprotokoll-PDF: laufende Nummer (PP-…), Nummer im Titel und in der Fußzeile, QR unten rechts am Blatt (Portal-Link), Prüfobjekt, deutlicher Abschluss, Checklisten-Fortsetzung bei Seitenumbruch, Punktnummerierung wie in der App.' || chr(10) ||
+    'Checklisten Tür/Feststell: Hinweis / empfohlene Maßnahme ohne Mangel (parallel zu Mangel möglich); PDF und Speicherung.' || chr(10) ||
+    'Lizenz/Design: Kundenportal-URL (design.kundenportal_url), optionales VITE_KUNDENPORTAL_URL; Feature teamfunktion.' || chr(10) ||
+    'Aufträge: related_order_id; diverse UI (Auftragsdetail, Kunden, Einstellungen, QR-Auftrag, …).' || chr(10) ||
+    'Mandanten-DB separat: u. a. pruefprotokoll_laufnummer (siehe supabase-complete.sql).',
+    array['pruefprotokoll', 'checklisten', 'lizenz', 'pdf']::text[],
+    false,
+    false,
+    false,
+    '{"bundle": "2026-04-10", "source": "supabase-license-portal.sql §9"}'::jsonb,
+    'published'
+  ),
+  (
+    'kundenportal',
+    '1.1.1',
+    'feature',
+    'Kundenportal 1.1.1',
+    'Berichte / Prüfprotokoll: Anzeige und Kompatibilität zum aktuellen Haupt-App-Bundle; gemeinsame Release-Metadaten.',
+    array['portal', 'berichte']::text[],
+    false,
+    false,
+    false,
+    '{"bundle": "2026-04-10", "source": "supabase-license-portal.sql §9"}'::jsonb,
+    'published'
+  ),
+  (
+    'arbeitszeit_portal',
+    '1.2.1',
+    'feature',
+    'Arbeitszeit-Portal 1.2.1',
+    'Zoll-/Compliance-PDF: Briefbogen-Textlayout (Ränder, Folgeseite) wie in der Haupt-App; gemeinsame Layout-Hilfen.',
+    array['pdf', 'briefbogen', 'export']::text[],
+    false,
+    false,
+    false,
+    '{"bundle": "2026-04-10", "source": "supabase-license-portal.sql §9"}'::jsonb,
+    'published'
+  )
+on conflict (channel, version_semver) do update set
+  release_type = excluded.release_type,
+  title = excluded.title,
+  notes = excluded.notes,
+  module_tags = excluded.module_tags,
+  incoming_enabled = excluded.incoming_enabled,
+  incoming_all_mandanten = excluded.incoming_all_mandanten,
+  force_hard_reload = excluded.force_hard_reload,
+  ci_metadata = excluded.ci_metadata,
+  status = excluded.status,
+  updated_at = now();

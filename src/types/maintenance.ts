@@ -41,6 +41,8 @@ export type MaintenanceReport = {
   pdf_path: string | null
   /** Separates Prüfprotokoll-PDF (Checklisten), optional. */
   pruefprotokoll_pdf_path?: string | null
+  /** Fortlaufende Nummer fürs Prüfprotokoll-PDF (je Mandanten-DB). */
+  pruefprotokoll_laufnummer?: number | null
   synced: boolean
   /** Gesetzlich/revisionssicheres Protokoll aus Auftrags-Wartungscheckliste */
   source_order_id?: string | null

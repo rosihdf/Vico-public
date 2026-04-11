@@ -5,6 +5,13 @@ import {
   paintLetterheadRasterOnCurrentPage,
   type LetterheadRasterPages,
 } from '../../shared/pdfLetterhead'
+import {
+  DEFAULT_BRIEFBOGEN_DIN_MARGINS_MM,
+  layoutForBriefbogenDin,
+  layoutForBriefbogenDinFollowPage,
+  layoutPlain,
+} from '../../shared/pdfBriefbogenLayout'
+import type { BriefbogenDinMarginsMm } from '../../shared/pdfBriefbogenLayout'
 import type {
   MaintenanceReport,
   Customer,
@@ -70,6 +77,10 @@ export type MaintenancePdfData = {
   customerSignaturePath: string | null
   /** Optional: Erst- und Folge-Briefbogen (PDF-Vorlage mit 2 Seiten oder gleiches Bild). */
   letterheadPages?: LetterheadRasterPages | null
+  /** Ränder für Text im Brieffeld (mm), nur mit letterheadPages. */
+  letterheadContentMargins?: BriefbogenDinMarginsMm | null
+  /** Ab PDF-Seite 2: kleinerer oberer Rand, wenn die Folge-Vorlage keinen Briefkopf hat. */
+  letterheadFollowPageCompactTop?: boolean
 }
 
 export const generateMaintenancePdf = async (
@@ -85,12 +96,23 @@ export const generateMaintenancePdf = async (
     technicianSignaturePath,
     customerSignaturePath,
     letterheadPages,
+    letterheadContentMargins,
+    letterheadFollowPageCompactTop,
   } = data
 
   const doc = new jsPDF({ format: 'a4', unit: 'mm' })
   const pageW = doc.internal.pageSize.getWidth()
-  const margin = 15
-  let y = margin
+  const pageH = doc.internal.pageSize.getHeight()
+  const dinMargins = letterheadContentMargins ?? DEFAULT_BRIEFBOGEN_DIN_MARGINS_MM
+  const box = letterheadPages
+    ? layoutForBriefbogenDin(pageW, pageH, dinMargins)
+    : layoutPlain(pageW, pageH, 15)
+  const yStartAfterBreak =
+    letterheadPages && letterheadFollowPageCompactTop
+      ? layoutForBriefbogenDinFollowPage(pageW, pageH, dinMargins).yStart
+      : box.yStart
+  const margin = box.left
+  let y = box.yStart
   const lineH = 6
 
   if (letterheadPages) {
@@ -98,7 +120,15 @@ export const generateMaintenancePdf = async (
   }
 
   const addText = (text: string, opts?: { fontSize?: number; fontStyle?: string }) => {
-    doc.setFontSize(opts?.fontSize ?? 10)
+    const fs = opts?.fontSize ?? 10
+    if (y > box.yMax - fs * 0.55) {
+      doc.addPage()
+      if (letterheadPages) {
+        paintLetterheadRasterOnCurrentPage(doc, letterheadPages, false)
+      }
+      y = yStartAfterBreak
+    }
+    doc.setFontSize(fs)
     doc.setFont('helvetica', (opts?.fontStyle as 'normal' | 'bold') ?? 'normal')
     doc.text(text, margin, y)
     y += opts?.fontSize ? opts.fontSize * 0.5 : lineH
@@ -126,7 +156,7 @@ export const generateMaintenancePdf = async (
   y += 4
 
   doc.setDrawColor(200, 200, 200)
-  doc.line(margin, y, pageW - margin, y)
+  doc.line(margin, y, margin + box.textWidth, y)
   y += 6
 
   addText(`Datum: ${report.maintenance_date}${report.maintenance_time ? ` · ${report.maintenance_time}` : ''}`, { fontStyle: 'bold' })
@@ -206,12 +236,12 @@ export const generateMaintenancePdf = async (
 
   if (photos.length > 0) {
     y += 4
-    if (y > 250) {
+    if (y > box.yMax - 40) {
       doc.addPage()
       if (letterheadPages) {
         paintLetterheadRasterOnCurrentPage(doc, letterheadPages, false)
       }
-      y = margin
+      y = yStartAfterBreak
     }
     addText('Fotos', { fontStyle: 'bold' })
     const imgW = 40
@@ -224,12 +254,12 @@ export const generateMaintenancePdf = async (
     for (const p of photos) {
       const hasImage = p.storage_path || p.localDataUrl
       if (!hasImage) continue
-      if (y + rowH > 285) {
+      if (y + rowH > box.yMax) {
         doc.addPage()
         if (letterheadPages) {
           paintLetterheadRasterOnCurrentPage(doc, letterheadPages, false)
         }
-        y = margin
+        y = yStartAfterBreak
         col = 0
       }
       const x = margin + col * (imgW + imgGap)

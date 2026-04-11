@@ -66,7 +66,7 @@ const CameraCaptureModal = ({
       } catch {
         if (!cancelled) {
           setStreamError(
-            'Kamera konnte nicht geöffnet werden. Bitte Berechtigung erteilen oder ein Foto über „Datei wählen“ hochladen.'
+            'Kamera konnte nicht geöffnet werden. Bitte Berechtigung erteilen oder ein Foto über „Hochladen“ hinzufügen.'
           )
         }
       }

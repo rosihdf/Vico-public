@@ -5,6 +5,8 @@ export type Order = {
   id: string
   customer_id: string
   bv_id: string | null
+  /** Optionale Verknüpfung auf fachlich zusammenhängenden Auftrag (Modell C). */
+  related_order_id?: string | null
   object_id: string | null
   /** Mehrere Türen/Tore (optional); object_id bleibt erste ID für Abwärtskompatibilität */
   object_ids?: string[] | null

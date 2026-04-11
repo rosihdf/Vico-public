@@ -40,6 +40,7 @@ export default defineConfig(function (_a) {
                 'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
                 '@supabase/supabase-js': path.resolve(__dirname, 'node_modules/@supabase/supabase-js'),
                 jspdf: path.resolve(__dirname, 'node_modules/jspdf'),
+                'pdfjs-dist': path.resolve(__dirname, 'node_modules/pdfjs-dist'),
             },
         },
         define: {

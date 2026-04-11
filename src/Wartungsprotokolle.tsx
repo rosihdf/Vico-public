@@ -26,7 +26,10 @@ import EmptyState from '../shared/EmptyState'
 import { fetchMyProfile, getProfileDisplayName } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
 import { WARTUNG_CHECKLIST_ITEMS, emptyWartungChecklistState, mergeWartungChecklistState } from './lib/wartungChecklistCatalog'
-import { fetchBriefbogenLetterheadPagesForPdf } from './lib/briefbogenService'
+import {
+  fetchBriefbogenLetterheadPagesForPdf,
+  fetchBriefbogenPdfTextLayout,
+} from './lib/briefbogenService'
 import type {
   Object as Obj,
   Customer,
@@ -316,7 +319,10 @@ const Wartungsprotokolle = () => {
       created_at: '',
       updated_at: '',
     } as BV
-    const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf()
+    const [letterheadPages, pdfTextLayout] = await Promise.all([
+      fetchBriefbogenLetterheadPagesForPdf(),
+      fetchBriefbogenPdfTextLayout(),
+    ])
     const { generateMaintenancePdf } = await import('./lib/generateMaintenancePdf')
     const blob = await generateMaintenancePdf({
       report: r,
@@ -328,6 +334,8 @@ const Wartungsprotokolle = () => {
       technicianSignaturePath: r.technician_signature_path,
       customerSignaturePath: r.customer_signature_path,
       letterheadPages: letterheadPages ?? undefined,
+      letterheadContentMargins: pdfTextLayout.margins,
+      letterheadFollowPageCompactTop: pdfTextLayout.followPageCompactTop,
     })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -370,7 +378,10 @@ const Wartungsprotokolle = () => {
     } as BV
     setSendingEmailFor(r.id)
     try {
-      const letterheadPages = await fetchBriefbogenLetterheadPagesForPdf()
+      const [letterheadPages, pdfTextLayout] = await Promise.all([
+        fetchBriefbogenLetterheadPagesForPdf(),
+        fetchBriefbogenPdfTextLayout(),
+      ])
       const { generateMaintenancePdf } = await import('./lib/generateMaintenancePdf')
       const details = reportDetails[r.id]
       const blob = await generateMaintenancePdf({
@@ -383,6 +394,8 @@ const Wartungsprotokolle = () => {
         technicianSignaturePath: r.technician_signature_path,
         customerSignaturePath: r.customer_signature_path,
         letterheadPages: letterheadPages ?? undefined,
+        letterheadContentMargins: pdfTextLayout.margins,
+        letterheadFollowPageCompactTop: pdfTextLayout.followPageCompactTop,
       })
       const filename = `Pruefbericht_${r.maintenance_date}_${getObjectDisplayName(object)}.pdf`
       const subject = `Prüfbericht ${getObjectDisplayName(object)} – ${r.maintenance_date}`

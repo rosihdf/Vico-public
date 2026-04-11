@@ -219,7 +219,10 @@ const Layout = () => {
           <SyncStatusIndicator status={syncStatus} pendingCount={pendingCount} />
         </div>
       </header>
-      <UpdateBanner />
+      <UpdateBanner
+        licenseAdvertisedVersion={appVersions?.main?.version ?? null}
+        licenseAdvertisedReleaseNotes={appVersions?.main?.releaseNotes ?? null}
+      />
       <MandantenReleaseHardReloadGate releases={mandantenReleases} />
       <MandantenReleaseRolloutRefreshBanner releases={mandantenReleases} />
       <MandantenIncomingReleaseBanner releases={mandantenReleases} />

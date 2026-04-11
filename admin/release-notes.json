@@ -1,4 +1,8 @@
 {
+  "1.0.7": [
+    "Mandanten: Feld Kundenportal-URL (vollständig) – Auslieferung über Lizenz-API (design.kundenportal_url) für QR/Deep-Links in der Haupt-App.",
+    "Rollout-Hinweis: docs/Lizenzportal-Update-Rollout.md und docs/sql/license-portal-app-releases-2026-04-10-bundle.sql für app_releases."
+  ],
   "1.0.6": [
     "Beta-Feedback: Menüeintrag und Seite zur Übersicht – Status, Priorität, interne Notizen; Meldungen aus Haupt-App, Kundenportal und Arbeitszeitenportal."
   ],

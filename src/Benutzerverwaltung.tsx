@@ -47,6 +47,7 @@ const Benutzerverwaltung = () => {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [showTeamForm, setShowTeamForm] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [newFirstName, setNewFirstName] = useState('')
@@ -72,6 +73,7 @@ const Benutzerverwaltung = () => {
   const [newTeamName, setNewTeamName] = useState('')
   const [isCreatingTeam, setIsCreatingTeam] = useState(false)
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null)
+  const teamFeatureEnabled = !!license && hasFeature(license, 'teamfunktion')
 
   const handleTeamChange = async (profileId: string, teamId: string | null) => {
     setSavingTeamId(profileId)
@@ -81,9 +83,9 @@ const Benutzerverwaltung = () => {
     else setFormError(getSupabaseErrorMessage(error.message))
   }
 
-  const handleCreateTeam = async () => {
-    const name = newTeamName.trim()
-    if (!name) return
+  const handleCreateTeam = async (providedName?: string): Promise<boolean> => {
+    const name = (providedName ?? newTeamName).trim()
+    if (!name) return false
     setIsCreatingTeam(true)
     setFormError(null)
     const { error } = await createTeam(name)
@@ -94,8 +96,32 @@ const Benutzerverwaltung = () => {
       await loadProfiles()
       setFormMessage(`Team „${name}" wurde angelegt.`)
       setTimeout(() => setFormMessage(null), 3000)
+      return true
     } else {
       setFormError(getSupabaseErrorMessage(error.message))
+      return false
+    }
+  }
+
+  const handleOpenTeamForm = () => {
+    if (!teamFeatureEnabled) return
+    setNewTeamName('')
+    setFormError(null)
+    setFormMessage(null)
+    setShowTeamForm(true)
+  }
+
+  const handleCloseTeamForm = () => {
+    setShowTeamForm(false)
+    setFormError(null)
+    setFormMessage(null)
+  }
+
+  const handleCreateTeamSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const ok = await handleCreateTeam()
+    if (ok) {
+      setShowTeamForm(false)
     }
   }
 
@@ -143,11 +169,14 @@ const Benutzerverwaltung = () => {
   }, [])
 
   useEffect(() => {
-    if (userRole === 'admin') {
-      loadCustomersAndAssignments()
+    if (userRole !== 'admin') return
+    loadCustomersAndAssignments()
+    if (teamFeatureEnabled) {
       loadTeams()
+      return
     }
-  }, [userRole, loadCustomersAndAssignments, loadTeams])
+    setTeams([])
+  }, [userRole, teamFeatureEnabled, loadCustomersAndAssignments, loadTeams])
 
   const handleOpenCreate = async () => {
     const allowed = await checkCanInviteUser()
@@ -411,8 +440,24 @@ const Benutzerverwaltung = () => {
           }`}
           aria-label="Neuen Benutzer anlegen"
         >
-          + Benutzer anlegen
+          + Benutzer
         </button>
+        {teamFeatureEnabled && (
+          <button
+            type="button"
+            onClick={handleOpenTeamForm}
+            disabled={isOffline || isCreatingTeam}
+            title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
+            className={`px-4 py-2 rounded-lg font-medium border border-slate-700 ${
+              isOffline || isCreatingTeam
+                ? 'bg-slate-300 dark:bg-slate-600 text-slate-500 cursor-not-allowed'
+                : 'bg-vico-primary text-white hover:bg-vico-primary-hover'
+            }`}
+            aria-label="Neues Team anlegen"
+          >
+            + Team
+          </button>
+        )}
       </div>
 
       {isLoading ? (
@@ -493,7 +538,7 @@ const Benutzerverwaltung = () => {
                         </span>
                       )}
                     </div>
-                    {canChangeRole && (
+                    {canChangeRole && teamFeatureEnabled && (
                       <div className="flex items-center gap-1">
                         <label htmlFor={`team-${p.id}`} className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                           Team
@@ -523,35 +568,16 @@ const Benutzerverwaltung = () => {
 
             return (
               <div className="mt-4 space-y-6">
+                {teamFeatureEnabled && (
                 <section aria-labelledby="teams-heading">
                   {teams.length === 0 ? (
                     <>
                       <h3 id="teams-heading" className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-2">
                         Teams
                       </h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Noch keine Teams. Neues Team anlegen:</p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="text"
-                          value={newTeamName}
-                          onChange={(e) => setNewTeamName(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleCreateTeam()}
-                          placeholder="Neues Team (Name)"
-                          className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 w-48"
-                          aria-label="Name für neues Team"
-                          disabled={isCreatingTeam || isOffline}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleCreateTeam}
-                          disabled={!newTeamName.trim() || isCreatingTeam || isOffline}
-                          title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
-                          className="px-3 py-1.5 text-sm rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:pointer-events-none"
-                          aria-label="Team anlegen"
-                        >
-                          Team anlegen
-                        </button>
-                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                        Noch keine Teams. Neues Team über „+ Team“ erstellen.
+                      </p>
                     </>
                   ) : (
                     <>
@@ -561,28 +587,9 @@ const Benutzerverwaltung = () => {
                       <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                         Teamleiter sehen nur Zeiten ihres Teams. Mitglieder pro Team zuweisen.
                       </p>
-                      <div className="flex flex-wrap items-center gap-2 mb-3">
-                        <input
-                          type="text"
-                          value={newTeamName}
-                          onChange={(e) => setNewTeamName(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleCreateTeam()}
-                          placeholder="Neues Team (Name)"
-                          className="px-3 py-1.5 text-sm rounded border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 w-48"
-                          aria-label="Name für neues Team"
-                          disabled={isCreatingTeam || isOffline}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleCreateTeam}
-                          disabled={!newTeamName.trim() || isCreatingTeam || isOffline}
-                          title={isOffline ? 'Offline – erst bei Verbindung möglich' : undefined}
-                          className="px-3 py-1.5 text-sm rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:pointer-events-none"
-                          aria-label="Team anlegen"
-                        >
-                          Team anlegen
-                        </button>
-                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                        Neues Team über den Button „+ Team“ oben anlegen.
+                      </p>
                       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         {teams.map((team) => {
                           const members = appProfiles.filter((p) => p.team_id === team.id)
@@ -640,23 +647,29 @@ const Benutzerverwaltung = () => {
                     </>
                   )}
                 </section>
+                )}
                 <section>
                   <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-2">
                     App-Benutzer ({appProfiles.length})
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    Zugriff auf die AMRtech Web-App (Admin, Mitarbeiter, Operator, Leser, Demo). Team-Zuordnung für Teamleiter und Mitarbeiter.
+                    Zugriff auf die AMRtech Web-App (Admin, Mitarbeiter, Operator, Leser, Demo).
+                    {teamFeatureEnabled ? ' Team-Zuordnung für Teamleiter und Mitarbeiter.' : ''}
                   </p>
                   {renderUserList(appProfiles, APP_ROLES, true)}
                 </section>
-                <section>
-                  <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-2">
-                    Portal-Benutzer ({portalProfiles.length})
+                <section aria-labelledby="portal-zugaenge">
+                  <h3
+                    id="portal-zugaenge"
+                    className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide mb-2"
+                  >
+                    Kundenportal-Zugänge & Sichtbarkeit ({portalProfiles.length})
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    Zugriff auf das Kundenportal (Wartungsberichte). Kunden zuweisen und Sichtbarkeit Objekte/BV einschränken.
+                    Zugriff auf das Kundenportal (Wartungsberichte). Hier verwalten Sie zentral Kundenportal-Zugänge &
+                    Sichtbarkeit (Kundenzuordnung und Objekt/BV-Freigaben).
                   </p>
-                  <ul className="space-y-2" aria-label="Portal-Benutzerliste">
+                  <ul className="space-y-2" aria-label="Kundenportal-Zugänge und Sichtbarkeit">
                     {portalProfiles.map((p) => {
                       const assignments = assignmentsForUser(p.id)
                       const assignedCustomerIds = assignments.map((a) => a.customer_id)
@@ -853,6 +866,65 @@ const Benutzerverwaltung = () => {
             )
           })()}
         </>
+      )}
+
+      {showTeamForm && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
+          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
+          onClick={handleCloseTeamForm}
+          onKeyDown={(e) => e.key === 'Escape' && handleCloseTeamForm()}
+          role="dialog"
+          aria-modal
+          aria-labelledby="create-team-title"
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full min-w-0 max-h-[min(90vh,90dvh)] overflow-y-auto overflow-x-hidden p-6 border border-slate-200 dark:border-slate-600"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="create-team-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
+              Neues Team anlegen
+            </h3>
+            <form onSubmit={handleCreateTeamSubmit} className="mt-4 flex min-w-0 flex-col gap-4">
+              <div className="min-w-0">
+                <label htmlFor="team-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Team-Name
+                </label>
+                <input
+                  id="team-name"
+                  type="text"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                  placeholder="z. B. Nord"
+                  className="box-border w-full min-w-0 max-w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
+                  disabled={isCreatingTeam}
+                  autoFocus
+                />
+              </div>
+              {formError && (
+                <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+                  {formError}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={isCreatingTeam || !newTeamName.trim()}
+                  className="px-4 py-2 rounded-lg font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
+                >
+                  {isCreatingTeam ? 'Erstelle…' : 'Anlegen'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCloseTeamForm}
+                  className="px-4 py-2 rounded-lg font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {showForm && (

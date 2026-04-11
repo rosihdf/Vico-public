@@ -211,7 +211,7 @@ const OffeneMaengel = () => {
               internal_id: r.object_internal_id,
             })
             const wartung = buildWartungPath(r)
-            const sourceLabel = r.source === 'followup' ? 'Follow-up (Wartungsauftrag)' : 'Protokoll'
+            const sourceLabel = r.source === 'followup' ? 'Follow-up (Prüfungsauftrag)' : 'Protokoll'
             const draft = followupDrafts[r.id]
             return (
               <li

@@ -6,6 +6,7 @@ export type Tenant = {
   name: string
   app_domain: string | null
   portal_domain: string | null
+  kundenportal_url: string | null
   arbeitszeitenportal_domain: string | null
   logo_url: string | null
   primary_color: string | null
@@ -77,6 +78,7 @@ export const createTenant = async (payload: Partial<Tenant>): Promise<{ id: stri
       name: payload.name ?? '',
       app_domain: payload.app_domain ?? null,
       portal_domain: payload.portal_domain ?? null,
+      kundenportal_url: payload.kundenportal_url ?? null,
       arbeitszeitenportal_domain: payload.arbeitszeitenportal_domain ?? null,
       logo_url: payload.logo_url ?? null,
       primary_color: payload.primary_color ?? '#5b7895',

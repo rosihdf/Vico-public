@@ -172,6 +172,7 @@ type LicenseResponse = {
     app_name: string
     tenant_name?: string | null
     logo_url: string | null
+    kundenportal_url?: string | null
     primary_color: string
     secondary_color?: string | null
     favicon_url?: string | null
@@ -403,6 +404,7 @@ serve(async (req) => {
           name,
           app_name,
           logo_url,
+          kundenportal_url,
           primary_color,
           secondary_color,
           favicon_url,
@@ -560,6 +562,7 @@ serve(async (req) => {
         tenant_name:
           tenant?.name != null && String(tenant.name).trim() ? String(tenant.name).trim() : null,
         logo_url: (tenant?.logo_url as string) ?? null,
+        kundenportal_url: (tenant?.kundenportal_url as string) ?? null,
         primary_color: (tenant?.primary_color as string) ?? '#5b7895',
         secondary_color: (tenant?.secondary_color as string) ?? null,
         favicon_url: (tenant?.favicon_url as string) ?? null,

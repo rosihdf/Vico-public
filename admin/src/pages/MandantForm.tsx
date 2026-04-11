@@ -108,6 +108,7 @@ const MandantForm = () => {
     name: '',
     app_domain: '',
     portal_domain: '',
+    kundenportal_url: '',
     arbeitszeitenportal_domain: '',
     primary_color: '#5b7895',
     app_name: 'AMRtech',
@@ -192,6 +193,7 @@ const MandantForm = () => {
             name: t.name ?? '',
             app_domain: t.app_domain ?? '',
             portal_domain: t.portal_domain ?? '',
+            kundenportal_url: t.kundenportal_url ?? '',
             arbeitszeitenportal_domain: t.arbeitszeitenportal_domain ?? '',
             primary_color: t.primary_color ?? '#5b7895',
             app_name: t.app_name ?? 'AMRtech',
@@ -333,6 +335,7 @@ const MandantForm = () => {
           name: form.name,
           app_domain: form.app_domain || null,
           portal_domain: form.portal_domain || null,
+          kundenportal_url: form.kundenportal_url.trim() || null,
           arbeitszeitenportal_domain: form.arbeitszeitenportal_domain || null,
           allowed_domains: form.allowed_domains
             ? form.allowed_domains
@@ -429,6 +432,7 @@ const MandantForm = () => {
           name: form.name,
           app_domain: form.app_domain || null,
           portal_domain: form.portal_domain || null,
+          kundenportal_url: form.kundenportal_url.trim() || null,
           arbeitszeitenportal_domain: form.arbeitszeitenportal_domain || null,
           allowed_domains: form.allowed_domains
             ? form.allowed_domains
@@ -1166,6 +1170,23 @@ const MandantForm = () => {
           />
         </div>
         <div>
+          <label htmlFor="kundenportal_url" className="block text-sm font-medium text-slate-700 mb-1">
+            Kundenportal-URL (vollständig)
+          </label>
+          <input
+            id="kundenportal_url"
+            type="url"
+            inputMode="url"
+            value={form.kundenportal_url}
+            onChange={(e) => setForm((f) => ({ ...f, kundenportal_url: e.target.value }))}
+            placeholder="https://portal.amrtech.de"
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Wird in der Lizenz-API an die Haupt-App ausgeliefert (z. B. für QR-Deep-Links ins Kundenportal).
+          </p>
+        </div>
+        <div>
           <label htmlFor="arbeitszeitenportal_domain" className="block text-sm font-medium text-slate-700 mb-1">Arbeitszeitenportal-Domain</label>
           <input
             id="arbeitszeitenportal_domain"
@@ -1289,13 +1310,13 @@ const MandantForm = () => {
               accept="image/*"
               className="sr-only"
               onChange={handleLogoFileChange}
-              aria-label="Logo-Datei auswählen"
+              aria-label="Logo hochladen"
             />
             <label
               htmlFor="logo_file"
               className="inline-flex px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 cursor-pointer"
             >
-              Datei wählen (PNG/JPG …)
+              Hochladen (PNG/JPG …)
             </label>
             {logoFilePending ? (
               <span className="text-xs text-slate-600 truncate max-w-[12rem]" title={logoFilePending.name}>
@@ -1354,14 +1375,14 @@ const MandantForm = () => {
             accept="image/*,.ico"
             className="sr-only"
             onChange={handleFaviconFileChange}
-            aria-label="Favicon-Datei auswählen"
+            aria-label="Favicon hochladen"
           />
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <label
               htmlFor="favicon_file"
               className="inline-flex px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 cursor-pointer"
             >
-              Datei wählen (PNG/ICO …)
+              Hochladen (PNG/ICO …)
             </label>
             {faviconFilePending ? (
               <span className="text-xs text-slate-600 truncate max-w-[12rem]" title={faviconFilePending.name}>

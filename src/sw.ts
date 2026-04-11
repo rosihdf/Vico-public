@@ -1,11 +1,21 @@
 /// <reference lib="webworker" />
-import { NetworkFirst } from 'workbox-strategies'
+import { NetworkFirst, NetworkOnly } from 'workbox-strategies'
 import { registerRoute, setCatchHandler } from 'workbox-routing'
 import { clientsClaim } from 'workbox-core'
 
 declare let self: ServiceWorkerGlobalScope
 
 const RUNTIME_CACHE = 'vico-runtime-v1'
+
+// version.json: immer Netzwerk (UpdateBanner / Versionsvergleich; kein SW-Cache-Stale)
+registerRoute(
+  ({ request, url }) => {
+    if (request.method !== 'GET') return false
+    if (url.origin !== self.location.origin) return false
+    return url.pathname.endsWith('/version.json')
+  },
+  new NetworkOnly()
+)
 
 // Runtime-Caching: Alle App-Assets (HTML, JS, CSS) – NetworkFirst = bei Nutzung cachen, bei Offline aus Cache
 // Cache wächst mit der Nutzung; bei Online wird er mit frischen Daten aktualisiert
