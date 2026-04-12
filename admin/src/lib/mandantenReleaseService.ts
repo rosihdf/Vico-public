@@ -380,6 +380,53 @@ export const setTenantChannelActiveRelease = async (
   return { ok: true }
 }
 
+export type AssignReleaseBulkResult = {
+  ok: true
+  channel: ReleaseChannel
+  releaseId: string
+  version_semver: string
+  updated: number
+  errors: { tenantId: string; error: string }[]
+}
+
+/**
+ * Viele Mandanten: dasselbe **published** Release für den **Kanal dieses Releases** zuweisen.
+ * Pro Mandant wie `setTenantChannelActiveRelease` (Audit + `client_config_version` der Lizenzen).
+ */
+export const assignPublishedReleaseToTenantIds = async (
+  releaseId: string,
+  tenantIds: string[],
+  actorId: string | null
+): Promise<AssignReleaseBulkResult | { error: string }> => {
+  const rel = await fetchAppRelease(releaseId)
+  if (!rel) return { error: 'Release nicht gefunden.' }
+  if (rel.status !== 'published') {
+    return { error: 'Nur freigegebene Releases (published) dürfen zugewiesen werden.' }
+  }
+  const channel = rel.channel
+  const uniqueIds = [...new Set(tenantIds.map((id) => id.trim()).filter(Boolean))]
+  if (uniqueIds.length === 0) return { error: 'Keine Mandanten ausgewählt.' }
+
+  const errors: { tenantId: string; error: string }[] = []
+  let updated = 0
+  for (const tenantId of uniqueIds) {
+    const res = await setTenantChannelActiveRelease(tenantId, channel, releaseId, actorId)
+    if ('error' in res) {
+      errors.push({ tenantId, error: res.error })
+    } else {
+      updated++
+    }
+  }
+  return {
+    ok: true,
+    channel,
+    releaseId,
+    version_semver: rel.version_semver,
+    updated,
+    errors,
+  }
+}
+
 export const rollbackTenantChannelRelease = async (
   tenantId: string,
   channel: ReleaseChannel,

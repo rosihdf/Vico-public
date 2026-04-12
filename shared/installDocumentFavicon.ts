@@ -44,6 +44,13 @@ const resolveHref = (raw: string): string => {
 const withFaviconCacheBust = (href: string): string => {
   if (!href || typeof window === 'undefined') return href
   if (!href.startsWith('http://') && !href.startsWith('https://')) return href
+  try {
+    const u = new URL(href)
+    // Signierte Storage-URLs: Query nicht verändern (Signatur würde brechen).
+    if (u.searchParams.has('token')) return href
+  } catch {
+    /* ignore */
+  }
   let h = 0
   for (let i = 0; i < href.length; i++) h = (Math.imul(31, h) + href.charCodeAt(i)) | 0
   const v = (h >>> 0).toString(36)
@@ -52,12 +59,18 @@ const withFaviconCacheBust = (href: string): string => {
 }
 
 const applyToLink = (link: HTMLLinkElement, href: string, mime: string | null): void => {
+  // Kurz leeren + neu setzen: einige Browser/WebKit laden Cross-Origin-Favicons sonst nicht zuverlässig.
+  link.removeAttribute('href')
   link.href = href
-  link.removeAttribute('sizes')
+  link.setAttribute('sizes', 'any')
   if (mime) {
     link.type = mime
   } else {
     link.removeAttribute('type')
+  }
+  // Link ans Ende von <head>: Tab-Icon-Priorität / erneute Auswertung wie bei frischem Insert.
+  if (typeof document !== 'undefined' && link.parentNode === document.head) {
+    document.head.appendChild(link)
   }
 }
 

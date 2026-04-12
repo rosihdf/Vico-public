@@ -26,6 +26,11 @@ export type WartungChecklistPerObject = {
   items: Record<string, WartungChecklistItemState>
   /** Nur bei `has_hold_open` am Objekt; gleicher Modus wie Tür-Checkliste. */
   feststell_checkliste?: WartungFeststellChecklistePerObject
+  /** Pflicht: Prüfer-Unterschrift für diese Tür (Storage-Pfad, Mandanten-Bucket). */
+  pruefer_signature_path?: string | null
+  pruefer_signature_at?: string | null
+  /** Profil-UUID des Unterzeichners; bei Bearbeitung durch anderen Nutzer ungültig → neu signieren. */
+  pruefer_profile_id?: string | null
 }
 
 export type WartungChecklistExtraV1 = {
@@ -212,20 +217,64 @@ const parseWartungCheckliste = (raw: unknown): WartungChecklistExtraV1 | undefin
         }
       }
     }
+    const poTyped = po as WartungChecklistPerObject
     const entry: WartungChecklistPerObject = {
-      saved_at: typeof (po as WartungChecklistPerObject).saved_at === 'string' ? (po as WartungChecklistPerObject).saved_at : undefined,
+      saved_at: typeof poTyped.saved_at === 'string' ? poTyped.saved_at : undefined,
       checklist_modus:
-        (po as WartungChecklistPerObject).checklist_modus === 'compact' ||
-        (po as WartungChecklistPerObject).checklist_modus === 'detail'
-          ? (po as WartungChecklistPerObject).checklist_modus
+        poTyped.checklist_modus === 'compact' || poTyped.checklist_modus === 'detail'
+          ? poTyped.checklist_modus
           : undefined,
       items,
+      pruefer_signature_path:
+        typeof poTyped.pruefer_signature_path === 'string' && poTyped.pruefer_signature_path.trim()
+          ? poTyped.pruefer_signature_path.trim()
+          : poTyped.pruefer_signature_path === null
+            ? null
+            : undefined,
+      pruefer_signature_at:
+        typeof poTyped.pruefer_signature_at === 'string' ? poTyped.pruefer_signature_at : undefined,
+      pruefer_profile_id:
+        typeof poTyped.pruefer_profile_id === 'string' && poTyped.pruefer_profile_id.trim()
+          ? poTyped.pruefer_profile_id.trim()
+          : poTyped.pruefer_profile_id === null
+            ? null
+            : undefined,
     }
     const fest = parseFeststellCheckliste((po as WartungChecklistPerObject).feststell_checkliste)
     if (fest) entry.feststell_checkliste = fest
     by_object_id[oid] = entry
   }
   return { v: 1, by_object_id }
+}
+
+/** Prüfer-Signatur und Freigabe zurücksetzen (z. B. anderer Bearbeiter bearbeitet die Prüfliste). */
+export const stripWartungChecklistInspectorSignatureForObject = (
+  ex: OrderCompletionExtraV1,
+  oid: string
+): OrderCompletionExtraV1 => {
+  const wc = ex.wartung_checkliste
+  if (!wc?.by_object_id[oid]) return ex
+  const per = wc.by_object_id[oid]
+  const nextPer: WartungChecklistPerObject = {
+    ...per,
+    pruefer_signature_path: null,
+    pruefer_signature_at: null,
+    pruefer_profile_id: null,
+    saved_at: undefined,
+    feststell_checkliste: per.feststell_checkliste
+      ? { ...per.feststell_checkliste, saved_at: undefined }
+      : undefined,
+  }
+  return {
+    ...ex,
+    wartung_checkliste: {
+      v: 1,
+      by_object_id: {
+        ...wc.by_object_id,
+        [oid]: nextPer,
+      },
+    },
+  }
 }
 
 export const materialLinesToText = (lines: OrderCompletionExtraV1['material_lines']): string =>

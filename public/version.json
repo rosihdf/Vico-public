@@ -1,9 +1,12 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.2",
   "buildTime": "",
   "releaseNotes": [
-    "Großes Wartungs-/Checklisten-Update: neue Tür- und Feststellanlagen-Checklisten mit gespeicherten Protokollblöcken, Mangel-Logik und PDF-Erweiterungen.",
-    "Objekt-/Mangel-Fotofluss erweitert (inkl. Defektfotos) sowie verbesserte Auftragsdarstellung, Konflikt-Hinweise und UI-Bausteine."
+    "Haupt-App 1.2.2 – Wartung & Monteursbericht.",
+    "Wartungs-Prüfliste: Pflicht-Unterschrift Prüfer pro Tür; Signatur nur bei gleichem Bearbeiter gültig.",
+    "Unterschrift unter Feststell-Checkliste wenn aktiv.",
+    "Monteursbericht-PDF: Kunde/BV mit Adressen wie Prüfprotokoll; Unterschriften Monteur/Kunde; PDF mit Entwurfs-Signaturen.",
+    "Formular: Material- und Unterschriften-Layout."
   ],
   "releaseLabel": "Beta"
 }

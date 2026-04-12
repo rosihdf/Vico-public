@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import ReleaseDeployPanel from '../components/ReleaseDeployPanel'
+import ReleaseGoLivePanel from '../components/ReleaseGoLivePanel'
 import RolloutChecklistModal from '../components/RolloutChecklistModal'
 import type { DeployOutcomeOk } from '../hooks/useReleaseDeployTrigger'
 import {
@@ -60,8 +61,8 @@ const ReleaseRollout = () => {
         <div>
           <h1 className="text-xl font-bold text-slate-800">Rollout &amp; Deploy</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Freigegebenes Release wählen, Production-Deploy nach GitHub/Cloudflare anstoßen und die
-            Rollout-Checkliste nutzen (Mandanten: Incoming → Go-Live).
+            Freigegebenes Release wählen, Production-Deploy anstoßen, Go-Live für Mandanten zuweisen
+            (ohne SQL) und die Rollout-Checkliste nutzen.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -139,11 +140,14 @@ const ReleaseRollout = () => {
           ) : null}
 
           {selected && selected.status === 'published' ? (
-            <ReleaseDeployPanel
-              releaseId={selected.id}
-              channel={selected.channel}
-              onDeploySuccess={handleDeploySuccess}
-            />
+            <div className="space-y-6">
+              <ReleaseDeployPanel
+                releaseId={selected.id}
+                channel={selected.channel}
+                onDeploySuccess={handleDeploySuccess}
+              />
+              <ReleaseGoLivePanel release={selected} />
+            </div>
           ) : null}
         </>
       )}

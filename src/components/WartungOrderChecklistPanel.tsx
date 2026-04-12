@@ -9,6 +9,7 @@ import type { WartungChecklistItemState } from '../types/orderCompletionExtra'
 import type { Object as Obj } from '../types'
 import { getMaintenancePhotoUrl } from '../lib/dataService'
 import { getObjectDisplayName } from '../lib/objectUtils'
+import SignatureField from '../SignatureField'
 import type { ChecklistMangelPhoto } from '../types/maintenance'
 import type { WartungChecklistObjectUiStatus } from '../lib/wartungOrderChecklistUiStatus'
 import CameraCaptureModal from './CameraCaptureModal'
@@ -58,6 +59,90 @@ type WartungOrderChecklistPanelProps = {
   showSaveControls?: boolean
   /** Pro Tür: einheitlicher Status (Tür- + ggf. Feststell-Checkliste) für Dropdown/Badge */
   doorStatusByObjectId?: Record<string, WartungChecklistObjectUiStatus>
+}
+
+export type WartungInspectorSignatureSectionProps = {
+  selectedObjectId: string | null
+  inspectorSignaturePath?: string | null
+  inspectorSignatureAt?: string | null
+  signedByProfileId?: string | null
+  currentUserId?: string | null
+  onInspectorSignatureChange: (dataUrl: string | null) => void
+  onRequestReplaceInspectorSignature?: () => void
+}
+
+/** Prüfer-Unterschrift: außerhalb der Tür-Checkliste platzieren (z. B. unter Feststell-Checkliste). */
+export const WartungInspectorSignatureSection = ({
+  selectedObjectId,
+  inspectorSignaturePath,
+  inspectorSignatureAt,
+  signedByProfileId,
+  currentUserId,
+  onInspectorSignatureChange,
+  onRequestReplaceInspectorSignature,
+}: WartungInspectorSignatureSectionProps) => {
+  if (!selectedObjectId) return null
+  const hasPath = Boolean(inspectorSignaturePath?.trim())
+  const ownSigned =
+    hasPath && Boolean(currentUserId) && signedByProfileId != null && signedByProfileId === currentUserId
+  const foreignSigned =
+    hasPath &&
+    Boolean(currentUserId) &&
+    Boolean(signedByProfileId) &&
+    signedByProfileId !== currentUserId
+  const showPad = Boolean(currentUserId) && !foreignSigned && !ownSigned
+  const sigUrl = inspectorSignaturePath?.trim() ? getMaintenancePhotoUrl(inspectorSignaturePath) : ''
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+      <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Unterschrift Prüfer (Pflicht)</p>
+      {foreignSigned ? (
+        <p
+          className="text-xs text-amber-900 dark:text-amber-100 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-lg p-2"
+          role="status"
+        >
+          Unterschrift eines anderen Prüfers. Sobald Sie die Checkliste bearbeiten, wird sie verworfen –
+          anschließend können Sie hier neu unterschreiben.
+        </p>
+      ) : null}
+      {ownSigned && sigUrl ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-600 dark:text-slate-400">Aktuell gespeicherte Unterschrift</p>
+          <img
+            src={sigUrl}
+            alt="Unterschrift Prüfer"
+            className="max-h-28 border border-slate-200 dark:border-slate-600 rounded-lg bg-white object-contain"
+          />
+          {inspectorSignatureAt ? (
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              {new Date(inspectorSignatureAt).toLocaleString('de-DE')}
+            </p>
+          ) : null}
+          {onRequestReplaceInspectorSignature ? (
+            <button
+              type="button"
+              onClick={onRequestReplaceInspectorSignature}
+              className="text-sm font-medium text-vico-primary hover:underline dark:text-sky-400"
+              aria-label="Unterschrift ersetzen"
+            >
+              Unterschrift ersetzen
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {showPad ? (
+        <SignatureField
+          key={selectedObjectId}
+          label="Hier unterschreiben (Prüfer)"
+          value={null}
+          onChange={onInspectorSignatureChange}
+          disabled={false}
+        />
+      ) : null}
+      {!currentUserId ? (
+        <p className="text-xs text-slate-500 dark:text-slate-300">Anmeldung erforderlich zum Unterschreiben.</p>
+      ) : null}
+    </div>
+  )
 }
 
 const doorStatusOptionSuffix = (s: WartungChecklistObjectUiStatus | undefined): string => {

@@ -60,8 +60,14 @@ const DesignApplier = () => {
     } else {
       clearDesignFromDom()
     }
-    return () => clearDesignFromDom()
+    // Kein clear im Cleanup bei jedem design-Wechsel: sonst kurz Standard-Favicon + Tab bricht Update oft ab.
   }, [design])
+
+  useEffect(() => {
+    return () => {
+      clearDesignFromDom()
+    }
+  }, [])
 
   return null
 }

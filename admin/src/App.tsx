@@ -177,7 +177,7 @@ const App = () => {
 
   return (
     <BrowserRouter>
-      <AdminUpdateBanner enabled={Boolean(user && isAdmin)} />
+      <AdminUpdateBanner />
       <Routes>
         <Route path="/login" element={
           user && isAdmin ? (

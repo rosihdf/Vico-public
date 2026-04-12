@@ -2541,6 +2541,23 @@ export const uploadOrderCompletionSignature = async (
   return { path: error ? null : path, error: error ? { message: error.message } : null }
 }
 
+/** Prüfer-Unterschrift für Wartungs-Prüfliste pro Tür (completion_extra / Prüfprotokoll-PDF). */
+export const uploadWartungChecklistInspectorSignature = async (
+  completionId: string,
+  objectId: string,
+  dataUrl: string
+): Promise<{ path: string | null; error: { message: string } | null }> => {
+  const base64 = dataUrl.split(',')[1]
+  if (!base64) return { path: null, error: { message: 'Ungültige Signatur' } }
+  const byteChars = atob(base64)
+  const bytes = new Uint8Array(byteChars.length)
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+  const blob = new Blob([bytes], { type: 'image/png' })
+  const path = `order-completion-checklist-signatures/${completionId}/${objectId}/inspector.png`
+  const { error } = await supabase.storage.from(MAINTENANCE_PHOTOS_BUCKET).upload(path, blob, { upsert: true })
+  return { path: error ? null : path, error: error ? { message: error.message } : null }
+}
+
 export const uploadMonteurBerichtPdf = async (
   completionId: string,
   blob: Blob

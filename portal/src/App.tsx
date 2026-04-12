@@ -85,7 +85,6 @@ const AppShell = () => {
     kundenportalAllowed,
     licenseLoadError,
     refresh: refreshLicenseDesign,
-    appVersionInfo,
   } = useDesign()
 
   if (isLoading) {
@@ -132,10 +131,7 @@ const AppShell = () => {
   return (
     <BrowserRouter>
       <ThemePreferenceSync user={user} />
-      <UpdateBanner
-        licenseAdvertisedVersion={appVersionInfo?.version ?? null}
-        licenseAdvertisedReleaseNotes={appVersionInfo?.releaseNotes ?? null}
-      />
+      <UpdateBanner />
       <Suspense fallback={fallback}>
         <Routes>
           <Route path="/auth/callback" element={<AuthCallback />} />

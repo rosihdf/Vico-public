@@ -171,6 +171,12 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
   const margin = box.left
   let y = box.yStart
 
+  /** Abstand Blattunterkante → untere Kante QR (mm). Größer = QR höher; inkl. Platz für „Portal-Link“ unter dem QR oberhalb der Fußzeile. */
+  const bottomBandForQrMm = 32
+  const portalQrTopY = pageH - bottomBandForQrMm - PORTAL_QR_SIZE_MM
+  /** Mit Portal-QR: Texthöhe begrenzen, sonst läuft der Fließtext in den QR-Bereich (Überlappung mit QR/Fuß). */
+  const contentYMax = willDrawPortalQr ? Math.min(box.yMax, portalQrTopY - 4) : box.yMax
+
   const applyLetterheadIfSet = (isFirstPageOfDocument: boolean) => {
     if (letterheadPages) {
       paintLetterheadRasterOnCurrentPage(doc, letterheadPages, isFirstPageOfDocument)
@@ -183,7 +189,7 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
     const minSpaceAfterSeparator = 10
     // Verhindert "verwaiste" Trennlinien am Seitenende:
     // Linie und nachfolgender Inhalt bleiben zusammen.
-    if (y > box.yMax - (8 + minSpaceAfterSeparator)) {
+    if (y > contentYMax - (8 + minSpaceAfterSeparator)) {
       doc.addPage()
       y = yStartAfterBreak
       applyLetterheadIfSet(false)
@@ -195,7 +201,7 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
   }
 
   const addSectionHeader = (title: string) => {
-    if (y > box.yMax - 10) {
+    if (y > contentYMax - 10) {
       doc.addPage()
       y = yStartAfterBreak
       applyLetterheadIfSet(false)
@@ -211,7 +217,7 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
   }
 
   const addLine = (text: string, size = 10) => {
-    if (y > box.yMax - 8) {
+    if (y > contentYMax - 8) {
       doc.addPage()
       y = yStartAfterBreak
       applyLetterheadIfSet(false)
@@ -219,7 +225,7 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
     doc.setFontSize(size)
     const lines = doc.splitTextToSize(text, box.textWidth)
     for (const ln of lines) {
-      if (y > box.yMax - 6) {
+      if (y > contentYMax - 6) {
         doc.addPage()
         y = yStartAfterBreak
         applyLetterheadIfSet(false)
@@ -231,7 +237,7 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
   }
 
   const ensureSpaceForBlock = (requiredHeight: number) => {
-    if (y + requiredHeight <= box.yMax) return
+    if (y + requiredHeight <= contentYMax) return
     doc.addPage()
     y = yStartAfterBreak
     applyLetterheadIfSet(false)
@@ -239,7 +245,7 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
 
   /** Seitenumbruch mitten in der Checkliste: neue Seite beginnt mit derselben Sektion (Fortsetzung). */
   const ensureSpaceForChecklistItem = (requiredHeight: number, checklistSectionTitle: string) => {
-    if (y + requiredHeight <= box.yMax) return
+    if (y + requiredHeight <= contentYMax) return
     doc.addPage()
     y = yStartAfterBreak
     applyLetterheadIfSet(false)
@@ -726,12 +732,10 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
     }
   }
 
-  const bottomBandForQrMm = 19
-  const qrYOnPage = pageH - bottomBandForQrMm - PORTAL_QR_SIZE_MM
   if (portalQrDataUrl) {
     const tpBefore = doc.getNumberOfPages()
     doc.setPage(tpBefore)
-    if (y > qrYOnPage - 2) {
+    if (y > portalQrTopY - 2) {
       doc.addPage()
       y = yStartAfterBreak
       applyLetterheadIfSet(false)
@@ -744,7 +748,7 @@ export const generatePruefprotokollPdf = async (input: PruefprotokollPdfInput): 
     const tp = doc.getNumberOfPages()
     doc.setPage(tp)
     const qrX = pageW - PORTAL_QR_MARGIN_MM - PORTAL_QR_SIZE_MM
-    const qrY = pageH - bottomBandForQrMm - PORTAL_QR_SIZE_MM
+    const qrY = portalQrTopY
     doc.addImage(portalQrDataUrl, 'PNG', qrX, qrY, PORTAL_QR_SIZE_MM, PORTAL_QR_SIZE_MM)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6)

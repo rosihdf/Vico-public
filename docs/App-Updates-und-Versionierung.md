@@ -28,7 +28,7 @@
 | **Beta-Kennzeichnung (optional)** | `package.json` → `vico.releaseLabel` (z. B. `"Beta"`) – erscheint in **`version.json`** als `releaseLabel` und in der **Info-UI** neben der Versionsnummer; bei `Beta` zusätzlich Hinweisbox. |
 | **Build-Zeit** | Gemeinsames Script `scripts/vite-plugin-version.mjs` (`vicoVersionPlugin`): schreibt **`version.json`** ins Build-Root (`version`, `buildTime`, `releaseNotes`, optional `releaseLabel`) |
 | **Client** | `__APP_VERSION__` (gleicher Wert wie `package.json`) |
-| **Update-Hinweis** | `shared/UpdateBanner.tsx`: lädt `version.json` (no-cache), vergleicht mit `isNewerVersion` → Banner „Neu laden“ |
+| **Update-Hinweis** | `shared/UpdateBanner.tsx`: lädt `version.json` (no-cache), vergleicht **nur** mit `__APP_VERSION__` (SemVer) – kein Lizenz-API-Vergleich; Rollout/Incoming über andere Banner |
 | **Release Notes im Build** | **Haupt-App:** `release-notes.json` im Repo-Root. **Portal / Arbeitszeit-Portal / Admin:** je `release-notes.json` im jeweiligen App-Ordner – Einträge für **genau die gebaute** Version werden ins `version.json` übernommen |
 
 **Ablauf pro Release (Haupt-App):**

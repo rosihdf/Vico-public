@@ -38,6 +38,7 @@ import {
   promoteChecklistDefectPhotoDrafts,
   mapDefectPhotoToMangel,
   getMaintenancePhotoUrl,
+  uploadWartungChecklistInspectorSignature,
   type MonteurReportCustomerDeliveryMode,
   type MonteurReportSettingsFull,
 } from './lib/dataService'
@@ -70,6 +71,7 @@ import {
   parseOrderCompletionExtra,
   materialLinesToText,
   defaultOrderCompletionExtra,
+  stripWartungChecklistInspectorSignatureForObject,
   type OrderCompletionExtraV1,
   type WartungChecklistExtraV1,
   type WartungChecklistItemState,
@@ -90,7 +92,10 @@ import {
   validateFeststellChecklistComplete,
   type FeststellChecklistItemState,
 } from './lib/feststellChecklistCatalog'
-import WartungOrderChecklistPanel, { initEmptyChecklistItems } from './components/WartungOrderChecklistPanel'
+import WartungOrderChecklistPanel, {
+  initEmptyChecklistItems,
+  WartungInspectorSignatureSection,
+} from './components/WartungOrderChecklistPanel'
 import { getWartungChecklistObjectUiStatus } from './lib/wartungOrderChecklistUiStatus'
 import FeststellOrderChecklistPanel from './components/FeststellOrderChecklistPanel'
 import { getOrderObjectIds } from './lib/orderUtils'
@@ -185,6 +190,13 @@ const evaluateWartungChecklistGate = (
       if (!fv.ok) {
         incomplete.push(oid)
         if (!firstMessage) firstMessage = fv.message
+        continue
+      }
+    }
+    if (!per.pruefer_signature_path?.trim() || !per.pruefer_profile_id) {
+      incomplete.push(oid)
+      if (!firstMessage) {
+        firstMessage = 'Für mindestens eine Tür fehlt die Pflicht-Unterschrift des Prüfers.'
       }
     }
   }
@@ -270,6 +282,8 @@ const Auftragsdetail = () => {
   const printedCustRef = useRef(printedCust)
   const checklistSyncingRef = useRef(false)
   const checklistReportIdByObjectRef = useRef<Record<string, string>>({})
+  const checklistInspectorSigDraftRef = useRef<Record<string, string | null>>({})
+  const [checklistSigDraftTick, setChecklistSigDraftTick] = useState(0)
 
   const handleClosePdfViewer = () => {
     setPdfViewer((prev) => {
@@ -630,7 +644,8 @@ const Auftragsdetail = () => {
     let techPath = payloadBase.unterschrift_mitarbeiter_path
     let custPath = payloadBase.unterschrift_kunde_path
 
-    const extraJson = payloadBase.completion_extra as unknown as OrderCompletion['completion_extra']
+    let mergedExtra: OrderCompletionExtraV1 = { ...payloadBase.completion_extra }
+    const extraJson = mergedExtra as unknown as OrderCompletion['completion_extra']
 
     if (!id) {
       const { data, error } = await createOrderCompletion({
@@ -665,12 +680,11 @@ const Auftragsdetail = () => {
       if (up.path) custPath = up.path
       else if (up.error) showError(up.error.message)
     }
-
     const finalPayload = {
       ausgeführte_arbeiten: payloadBase.ausgeführte_arbeiten,
       material: payloadBase.material,
       arbeitszeit_minuten: payloadBase.arbeitszeit_minuten,
-      completion_extra: extraJson,
+      completion_extra: mergedExtra as unknown as OrderCompletion['completion_extra'],
       unterschrift_mitarbeiter_name: payloadBase.unterschrift_mitarbeiter_name,
       unterschrift_mitarbeiter_date: payloadBase.unterschrift_mitarbeiter_date,
       unterschrift_kunde_name: payloadBase.unterschrift_kunde_name,
@@ -692,9 +706,32 @@ const Auftragsdetail = () => {
       updated_at: new Date().toISOString(),
       monteur_pdf_path: completion?.monteur_pdf_path ?? null,
       ...finalPayload,
-      completion_extra: payloadBase.completion_extra,
+      completion_extra: mergedExtra,
     } as OrderCompletion
   }
+
+  const maybeInvalidateForeignInspectorSignature = useCallback((oid: string) => {
+    const uid = userRef.current?.id
+    if (!uid) return
+    const per = extraRef.current.wartung_checkliste?.by_object_id[oid]
+    if (!per?.pruefer_signature_path?.trim()) return
+    if (per.pruefer_profile_id === uid) return
+    const next = stripWartungChecklistInspectorSignatureForObject(extraRef.current, oid)
+    extraRef.current = next
+    setExtra(next)
+    checklistInspectorSigDraftRef.current[oid] = null
+    setChecklistSigDraftTick((t) => t + 1)
+    if (checklistReportIdByObjectRef.current[oid]) {
+      setChecklistReportIdByObject((prev) => {
+        if (!prev[oid]) return prev
+        const n = { ...prev }
+        delete n[oid]
+        checklistReportIdByObjectRef.current = n
+        return n
+      })
+    }
+    checklistDraftFingerprintByOidRef.current[oid] = ''
+  }, [])
 
   persistChecklistDraftForObjectRef.current = async (oid: string): Promise<string | null> => {
     const orderL = orderRef.current
@@ -719,18 +756,24 @@ const Auftragsdetail = () => {
     const festV = ob?.has_hold_open ? validateFeststellChecklistComplete(mode, festItems) : { ok: true as const, message: '' }
     const fullyOk = doorV.ok && festV.ok
 
+    const prevPer = extraL.wartung_checkliste?.by_object_id[oid]
+    const draftSigRaw = checklistInspectorSigDraftRef.current[oid]
+    const hasNewSignatureDraft =
+      typeof draftSigRaw === 'string' && draftSigRaw.trim().startsWith('data:image')
+
     const fp = JSON.stringify({
       m: mode,
       door: items,
       fest: festItems,
+      sigDraftHead: hasNewSignatureDraft ? draftSigRaw.slice(0, 96) : '',
+      sigPath: prevPer?.pruefer_signature_path ?? '',
+      sigProfile: prevPer?.pruefer_profile_id ?? '',
     })
     const existingRid = checklistReportIdByObjectRef.current[oid]
     if (checklistDraftFingerprintByOidRef.current[oid] === fp) {
       if (!fullyOk) return existingRid ?? null
       if (existingRid) return existingRid
     }
-
-    const prevPer = extraL.wartung_checkliste?.by_object_id[oid]
     const stamp = new Date().toISOString()
 
     const draftPer: WartungChecklistPerObject = {
@@ -823,6 +866,69 @@ const Auftragsdetail = () => {
       return null
     }
 
+    const uid = userRef.current?.id ?? null
+    const storedSigValid =
+      Boolean(prevPer?.pruefer_signature_path?.trim()) && prevPer?.pruefer_profile_id === uid
+    const hasValidInspectorSig = Boolean(uid) && (hasNewSignatureDraft || storedSigValid)
+
+    if (!hasValidInspectorSig) {
+      setChecklistSaveError(
+        uid
+          ? 'Unterschrift Prüfer (Pflicht): Bitte unten unterschreiben.'
+          : 'Anmeldung erforderlich für die Prüfer-Unterschrift.'
+      )
+      if (checklistReportIdByObjectRef.current[oid]) {
+        setChecklistReportIdByObject((prev) => {
+          if (!prev[oid]) return prev
+          const next = { ...prev }
+          delete next[oid]
+          checklistReportIdByObjectRef.current = next
+          return next
+        })
+      }
+      checklistDraftFingerprintByOidRef.current[oid] = fp
+      checklistSyncingRef.current = false
+      setChecklistSyncing(false)
+      return null
+    }
+
+    let perForUpsert: WartungChecklistPerObject = { ...draftPer }
+
+    if (hasNewSignatureDraft) {
+      if (!isOnline()) {
+        showError('Unterschrift: Bitte mit Verbindung speichern (Upload).')
+        checklistSyncingRef.current = false
+        setChecklistSyncing(false)
+        return null
+      }
+      const sigUp = await uploadWartungChecklistInspectorSignature(compDraft.id, oid, draftSigRaw)
+      if (!sigUp.path) {
+        if (sigUp.error) showError(sigUp.error.message)
+        checklistSyncingRef.current = false
+        setChecklistSyncing(false)
+        return null
+      }
+      checklistInspectorSigDraftRef.current[oid] = null
+      const sigAt = new Date().toISOString()
+      perForUpsert = {
+        ...draftPer,
+        pruefer_signature_path: sigUp.path,
+        pruefer_signature_at: sigAt,
+        pruefer_profile_id: uid,
+      }
+      const signedExtra = mergeExtraWithPer(perForUpsert)
+      setExtra(signedExtra)
+      extraRef.current = signedExtra
+      const compSigned = await persistCompletion(compDraft.id, buildCompletionPayload(signedExtra))
+      if (!compSigned) {
+        checklistSyncingRef.current = false
+        setChecklistSyncing(false)
+        return null
+      }
+      setCompletion(compSigned)
+      completionRef.current = compSigned
+    }
+
     const hadReportBefore = Boolean(checklistReportIdByObjectRef.current[oid])
     const festProto = ob?.has_hold_open
       ? {
@@ -856,12 +962,12 @@ const Auftragsdetail = () => {
     }
 
     const completePer: WartungChecklistPerObject = {
-      ...draftPer,
+      ...perForUpsert,
       saved_at: prevPer?.saved_at ?? stamp,
     }
-    if (ob?.has_hold_open && draftPer.feststell_checkliste) {
+    if (ob?.has_hold_open && perForUpsert.feststell_checkliste) {
       completePer.feststell_checkliste = {
-        ...draftPer.feststell_checkliste,
+        ...perForUpsert.feststell_checkliste,
         saved_at: prevPer?.feststell_checkliste?.saved_at ?? stamp,
       }
     }
@@ -917,6 +1023,7 @@ const Auftragsdetail = () => {
     order?.id,
     order?.order_type,
     license?.read_only,
+    checklistSigDraftTick,
   ])
 
   const buildPayload = useCallback(
@@ -1025,15 +1132,49 @@ const Auftragsdetail = () => {
     setIsSaving(false)
     if (comp) {
       setCompletion(comp)
+      setExtra(
+        parseOrderCompletionExtra(
+          comp.completion_extra,
+          printedTech.trim() || comp.unterschrift_mitarbeiter_name || extra.monteur_name
+        )
+      )
       setSigTechDataUrl(null)
       setSigCustDataUrl(null)
       showToast('Bericht gespeichert.', 'success')
     }
   }
 
+  const handleReplaceInspectorSignature = () => {
+    const oid = selectedChecklistObjectId
+    if (!oid) return
+    const next = stripWartungChecklistInspectorSignatureForObject(extraRef.current, oid)
+    extraRef.current = next
+    setExtra(next)
+    checklistInspectorSigDraftRef.current[oid] = null
+    setChecklistSigDraftTick((t) => t + 1)
+    if (checklistReportIdByObjectRef.current[oid]) {
+      setChecklistReportIdByObject((prev) => {
+        if (!prev[oid]) return prev
+        const n = { ...prev }
+        delete n[oid]
+        checklistReportIdByObjectRef.current = n
+        return n
+      })
+    }
+    checklistDraftFingerprintByOidRef.current[oid] = ''
+  }
+
+  const handleInspectorSignatureChange = (dataUrl: string | null) => {
+    const oid = selectedChecklistObjectId
+    if (!oid) return
+    checklistInspectorSigDraftRef.current[oid] = dataUrl
+    setChecklistSigDraftTick((t) => t + 1)
+  }
+
   const handleChecklistItemChange = (itemId: string, patch: Partial<WartungChecklistItemState>) => {
     const oid = selectedChecklistObjectId
     if (!oid) return
+    maybeInvalidateForeignInspectorSignature(oid)
     setChecklistItemsByObject((prev) => {
       const cur = prev[oid] ?? {}
       return {
@@ -1049,6 +1190,7 @@ const Auftragsdetail = () => {
   const handleFeststellItemChange = (itemId: string, patch: Partial<FeststellChecklistItemState>) => {
     const oid = selectedChecklistObjectId
     if (!oid) return
+    maybeInvalidateForeignInspectorSignature(oid)
     setFeststellItemsByObject((prev) => {
       const cur = prev[oid] ?? {}
       return {
@@ -1064,6 +1206,7 @@ const Auftragsdetail = () => {
   const handleUploadDoorDefectPhoto = async (itemId: string, file: File) => {
     if (!order || !selectedChecklistObjectId) return
     const oid = selectedChecklistObjectId
+    maybeInvalidateForeignInspectorSignature(oid)
     const reportId = checklistReportIdByObject[oid]
     const key = `door:${itemId}`
     if ((defectPhotosByObject[oid]?.[key] ?? []).length >= 3) {
@@ -1117,6 +1260,7 @@ const Auftragsdetail = () => {
   const handleUploadFeststellDefectPhoto = async (itemId: string, file: File) => {
     if (!order || !selectedChecklistObjectId) return
     const oid = selectedChecklistObjectId
+    maybeInvalidateForeignInspectorSignature(oid)
     const reportId = checklistReportIdByObject[oid]
     const key = `feststell:${itemId}`
     if ((defectPhotosByObject[oid]?.[key] ?? []).length >= 3) {
@@ -1176,6 +1320,7 @@ const Auftragsdetail = () => {
   ) => {
     if (!selectedChecklistObjectId) return
     const oid = selectedChecklistObjectId
+    maybeInvalidateForeignInspectorSignature(oid)
     const key = `${scope}:${itemId}`
     const { error } = isDraft
       ? await deleteChecklistDefectPhotoDraft(photoId, storagePath)
@@ -1354,6 +1499,11 @@ const Auftragsdetail = () => {
         wartungInspectedDoorLabels,
         wartungDoorSummaries,
         pruefprotokollKurzverweis: order.order_type === 'wartung' && oidsComplete.length > 0,
+        customerAddressLines: customerAddressLines(order.customer_id),
+        bvAddressLines: bvAddressLines(order.bv_id),
+        showAddressMode: monteurSettingsFull?.pruefprotokoll_address_mode ?? 'both',
+        pendingTechnicianSignatureDataUrl: sigTechDataUrl,
+        pendingCustomerSignatureDataUrl: sigCustDataUrl,
       })
       const { monteurPath } = await runAfterSavePdfAndPortal(comp, pdfBlob, doPortal, extraSnap)
       if (order.order_type === 'wartung' && isOnline()) {
@@ -1398,8 +1548,10 @@ const Auftragsdetail = () => {
               letterheadPages: letterheadPages ?? undefined,
               letterheadContentMargins: pdfTextLayout.margins,
               letterheadFollowPageCompactTop: pdfTextLayout.followPageCompactTop,
-              technicianSignaturePath: comp.unterschrift_mitarbeiter_path ?? null,
-              technicianSignatureDate: comp.unterschrift_mitarbeiter_date ?? null,
+              technicianSignaturePath:
+                per.pruefer_signature_path?.trim() ?? comp.unterschrift_mitarbeiter_path ?? null,
+              technicianSignatureDate:
+                per.pruefer_signature_at?.trim() ?? comp.unterschrift_mitarbeiter_date ?? null,
             })
             const att = await attachPruefprotokollPdfToOrderChecklistProtocol(order.id, oid, prBlob)
             if (att.error) showToast(`Prüfprotokoll: ${att.error.message}`, 'info')
@@ -1668,6 +1820,11 @@ const Auftragsdetail = () => {
         wartungInspectedDoorLabels,
         wartungDoorSummaries,
         pruefprotokollKurzverweis: order.order_type === 'wartung' && oids.length > 0,
+        customerAddressLines: customerAddressLines(order.customer_id),
+        bvAddressLines: bvAddressLines(order.bv_id),
+        showAddressMode: monteurSettingsFull?.pruefprotokoll_address_mode ?? 'both',
+        pendingTechnicianSignatureDataUrl: sigTechDataUrl,
+        pendingCustomerSignatureDataUrl: sigCustDataUrl,
       })
       openBlobPdfViewer(pdfBlob, 'Monteursbericht')
       const { path } = await uploadMonteurBerichtPdf(completion.id, pdfBlob)
@@ -1685,6 +1842,10 @@ const Auftragsdetail = () => {
     const per = extra.wartung_checkliste?.by_object_id[selectedChecklistObjectId]
     if (!per?.saved_at) {
       showError('Bitte die Prüfcheckliste vollständig ausfüllen; das Prüfprotokoll wird dann automatisch angelegt.')
+      return
+    }
+    if (!per.pruefer_signature_path?.trim() || !per.pruefer_profile_id) {
+      showError('Für diese Tür fehlt die Pflicht-Unterschrift des Prüfers.')
       return
     }
     const obj = orderObjects.find((x) => x.id === selectedChecklistObjectId)
@@ -1751,8 +1912,10 @@ const Auftragsdetail = () => {
         letterheadPages: letterheadPages ?? undefined,
         letterheadContentMargins: pdfTextLayout.margins,
         letterheadFollowPageCompactTop: pdfTextLayout.followPageCompactTop,
-        technicianSignaturePath: completion?.unterschrift_mitarbeiter_path ?? null,
-        technicianSignatureDate: completion?.unterschrift_mitarbeiter_date ?? null,
+        technicianSignaturePath:
+          per.pruefer_signature_path?.trim() ?? completion?.unterschrift_mitarbeiter_path ?? null,
+        technicianSignatureDate:
+          per.pruefer_signature_at?.trim() ?? completion?.unterschrift_mitarbeiter_date ?? null,
       })
       openBlobPdfViewer(prBlob, `Prüfprotokoll – ${getObjectDisplayName(obj)}`)
     } catch {
@@ -1972,6 +2135,12 @@ const Auftragsdetail = () => {
               value={checklistModeOverride ?? ''}
               onChange={(e) => {
                 const v = e.target.value
+                if (order.order_type === 'wartung') {
+                  const oids = getOrderObjectIds(order).filter(Boolean)
+                  for (const oid of oids) {
+                    maybeInvalidateForeignInspectorSignature(oid)
+                  }
+                }
                 setChecklistModeOverride(v === 'compact' || v === 'detail' ? v : null)
               }}
               className="px-2 py-1 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100"
@@ -2056,6 +2225,27 @@ const Auftragsdetail = () => {
                 showSaveControls={false}
               />
             ) : null}
+            <WartungInspectorSignatureSection
+              selectedObjectId={selectedChecklistObjectId}
+              inspectorSignaturePath={
+                selectedChecklistObjectId
+                  ? extra.wartung_checkliste?.by_object_id[selectedChecklistObjectId]?.pruefer_signature_path ?? null
+                  : null
+              }
+              inspectorSignatureAt={
+                selectedChecklistObjectId
+                  ? extra.wartung_checkliste?.by_object_id[selectedChecklistObjectId]?.pruefer_signature_at ?? null
+                  : null
+              }
+              signedByProfileId={
+                selectedChecklistObjectId
+                  ? extra.wartung_checkliste?.by_object_id[selectedChecklistObjectId]?.pruefer_profile_id ?? null
+                  : null
+              }
+              currentUserId={user?.id ?? null}
+              onInspectorSignatureChange={handleInspectorSignatureChange}
+              onRequestReplaceInspectorSignature={handleReplaceInspectorSignature}
+            />
             {(checklistSaveError || feststellSaveError) && (
               <p className="text-sm text-red-600 dark:text-red-400" role="alert">
                 {checklistSaveError || feststellSaveError}
@@ -2253,16 +2443,19 @@ const Auftragsdetail = () => {
               + Zeile
             </AppButton>
           </div>
-          <ul className="space-y-2">
+          <ul className="space-y-2 min-w-0">
             {extra.material_lines.map((row, i) => (
-              <li key={i} className="flex gap-2">
+              <li
+                key={i}
+                className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-2 w-full min-w-0"
+              >
                 <AppInput
                   type="text"
                   inputMode="decimal"
                   value={row.anzahl}
                   onChange={(e) => handleMaterialChange(i, 'anzahl', e.target.value)}
                   placeholder="Anzahl"
-                  className="w-24 shrink-0 text-sm"
+                  className="w-full sm:w-24 sm:shrink-0 text-sm min-w-0"
                   aria-label={`Material Anzahl ${i + 1}`}
                 />
                 <AppInput
@@ -2270,7 +2463,7 @@ const Auftragsdetail = () => {
                   value={row.artikel}
                   onChange={(e) => handleMaterialChange(i, 'artikel', e.target.value)}
                   placeholder="Artikel / Bezeichnung"
-                  className="flex-1 min-w-0 text-sm"
+                  className="w-full min-w-0 flex-1 text-sm"
                   aria-label={`Material Artikel ${i + 1}`}
                 />
               </li>
@@ -2278,34 +2471,43 @@ const Auftragsdetail = () => {
           </ul>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SignatureField
-            label="Unterschrift Monteur"
-            value={null}
-            onChange={setSigTechDataUrl}
-            printedName={printedTech}
-            onPrintedNameChange={setPrintedTech}
-          />
-          <SignatureField
-            label="Unterschrift Kunde"
-            value={null}
-            onChange={setSigCustDataUrl}
-            printedName={printedCust}
-            onPrintedNameChange={setPrintedCust}
-          />
+        <div className="rounded-lg border border-slate-200 dark:border-slate-600 p-4 space-y-4 min-w-0">
+          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Unterschriften</p>
+          <div className="grid gap-4 sm:grid-cols-2 min-w-0">
+            <div className="min-w-0">
+              <SignatureField
+                label="Unterschrift Monteur"
+                value={null}
+                onChange={setSigTechDataUrl}
+                printedName={printedTech}
+                onPrintedNameChange={setPrintedTech}
+              />
+            </div>
+            <div className="min-w-0">
+              <SignatureField
+                label="Unterschrift Kunde"
+                value={null}
+                onChange={setSigCustDataUrl}
+                printedName={printedCust}
+                onPrintedNameChange={setPrintedCust}
+              />
+            </div>
+            {!printedCust.trim() ? (
+              <div className="min-w-0 sm:col-span-2">
+                <AppField label="Grund ohne Kundenunterschrift" htmlFor="cust-sign-reason">
+                  <AppTextarea
+                    id="cust-sign-reason"
+                    value={extra.customer_signature_reason ?? ''}
+                    onChange={(e) => setExtraField('customer_signature_reason', e.target.value)}
+                    placeholder="z. B. Kunde nicht anwesend oder Unterschrift abgelehnt"
+                    rows={2}
+                    className="text-base sm:text-sm max-w-full w-full min-w-0"
+                  />
+                </AppField>
+              </div>
+            ) : null}
+          </div>
         </div>
-        {!printedCust.trim() && (
-          <AppField label="Grund ohne Kundenunterschrift" htmlFor="cust-sign-reason">
-            <AppTextarea
-              id="cust-sign-reason"
-              value={extra.customer_signature_reason ?? ''}
-              onChange={(e) => setExtraField('customer_signature_reason', e.target.value)}
-              placeholder="z. B. Kunde nicht anwesend oder Unterschrift abgelehnt"
-              rows={2}
-              className="text-base sm:text-sm max-w-full"
-            />
-          </AppField>
-        )}
 
         </fieldset>
 

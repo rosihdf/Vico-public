@@ -1,4 +1,11 @@
 {
+  "1.2.2": [
+    "Haupt-App 1.2.2 – Wartung & Monteursbericht.",
+    "Wartungs-Prüfliste: Pflicht-Unterschrift Prüfer pro Tür; Signatur nur bei gleichem Bearbeiter gültig.",
+    "Unterschrift unter Feststell-Checkliste wenn aktiv.",
+    "Monteursbericht-PDF: Kunde/BV mit Adressen wie Prüfprotokoll; Unterschriften Monteur/Kunde; PDF mit Entwurfs-Signaturen.",
+    "Formular: Material- und Unterschriften-Layout."
+  ],
   "1.2.1": [
     "Prüfprotokoll-PDF: laufende Nummer (PP-…), Nummer in Titel und Fußzeile, QR unten rechts am Blatt (Portal-Link), Prüfobjekt, hervorgehobener Abschluss, Checklisten-Fortsetzung bei Seitenumbruch, Punktnummerierung wie in der App.",
     "Checklisten Tür/Feststell: Hinweis / empfohlene Maßnahme ohne Mangel (parallel zu Mangel); PDF und Speicherung.",

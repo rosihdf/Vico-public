@@ -28,10 +28,10 @@ const SignatureField = ({ label, value: _value, onChange, disabled, printedName,
   }, [onChange])
 
   return (
-    <div>
-      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+    <div className="min-w-0 w-full">
+      <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">{label}</label>
       <div
-        className={`border border-slate-300 rounded-lg overflow-hidden bg-white ${disabled ? 'pointer-events-none opacity-60' : ''}`}
+        className={`border border-slate-300 dark:border-slate-600 rounded-lg overflow-hidden bg-white dark:bg-slate-900 max-w-full ${disabled ? 'pointer-events-none opacity-60' : ''}`}
       >
         <SignatureCanvas
           ref={padRef}
@@ -59,7 +59,7 @@ const SignatureField = ({ label, value: _value, onChange, disabled, printedName,
           onChange={(e) => onPrintedNameChange(e.target.value)}
           placeholder="Name in Druckschrift"
           disabled={disabled}
-          className="mt-2 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:opacity-50"
+          className="mt-2 w-full min-w-0 max-w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 disabled:opacity-50"
           aria-label={`${label} – Name in Druckschrift`}
         />
       )}

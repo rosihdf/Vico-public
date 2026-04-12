@@ -862,12 +862,12 @@ values (
   'default_app_versions',
   $def${
     "main": {
-      "version": "1.2.1",
+      "version": "1.2.2",
       "releaseLabel": "Beta",
       "releaseNotes": [
-        "Prüfprotokoll-PDF: laufende Nummer (PP-…), QR unten rechts, Prüfobjekt, Checklisten bei Seitenumbruch.",
-        "Checklisten Tür/Feststell: Hinweis ohne Mangel; Lizenz design.kundenportal_url, Feature teamfunktion.",
-        "Mandanten-DB separat: u. a. pruefprotokoll_laufnummer (supabase-complete.sql)."
+        "Wartung: Pflicht-Unterschrift Prüfer pro Tür; anderer Bearbeiter → Signatur ungültig.",
+        "Monteursbericht-PDF: Adressen Kunde/BV wie Prüfprotokoll; Unterschriften mit Bild/Zeit; Vorschau auch ohne Zwischenspeichern.",
+        "UI: Unterschrift unter Feststell-Checkliste; Material/Unterschriften-Layout."
       ]
     },
     "kundenportal": {
@@ -920,6 +920,22 @@ insert into public.app_releases (
     'Aufträge: related_order_id; diverse UI (Auftragsdetail, Kunden, Einstellungen, QR-Auftrag, …).' || chr(10) ||
     'Mandanten-DB separat: u. a. pruefprotokoll_laufnummer (siehe supabase-complete.sql).',
     array['pruefprotokoll', 'checklisten', 'lizenz', 'pdf']::text[],
+    false,
+    false,
+    false,
+    '{"bundle": "2026-04-10", "source": "supabase-license-portal.sql §9"}'::jsonb,
+    'published'
+  ),
+  (
+    'main',
+    '1.2.2',
+    'feature',
+    'Haupt-App 1.2.2 – Wartung & Monteursbericht',
+    'Wartungs-Prüfliste: Pflicht-Unterschrift Prüfer pro Tür; Signatur nur bei gleichem Bearbeiter gültig.' || chr(10) ||
+    'Unterschrift unter Feststell-Checkliste wenn aktiv.' || chr(10) ||
+    'Monteursbericht-PDF: Kunde/BV mit Adressen wie Prüfprotokoll; Unterschriften Monteur/Kunde; PDF mit Entwurfs-Signaturen.' || chr(10) ||
+    'Formular: Material- und Unterschriften-Layout.',
+    array['wartung', 'checklisten', 'monteurbericht', 'pdf']::text[],
     false,
     false,
     false,
