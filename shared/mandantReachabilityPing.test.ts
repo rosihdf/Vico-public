@@ -8,7 +8,8 @@ import {
 import {
   getMandantDegradedSnapshot,
   resetMandantDegradedForTests,
-  reportMandantTransportFailure,
+  MANDANT_DEGRADED_FAILURE_THRESHOLD,
+  reportMandantTransportFailureBatch,
 } from './mandantDegradedStore'
 
 const memoryStore: Record<string, string> = {}
@@ -37,7 +38,7 @@ describe('mandantReachabilityPing', () => {
   })
 
   it('Ping Erfolg setzt Degraded zurück', async () => {
-    reportMandantTransportFailure()
+    reportMandantTransportFailureBatch(MANDANT_DEGRADED_FAILURE_THRESHOLD)
     expect(getMandantDegradedSnapshot()).toBe(true)
     vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }))
     await pingMandantSupabaseOnce('https://x.supabase.co', 'anon')

@@ -3,7 +3,11 @@
  * Mindestens 2 relevante Fehler innerhalb von 2 Minuten; einmal SUBSCRIBED setzt zurück.
  */
 
-import { reportMandantTransportFailure, reportMandantTransportSuccess } from './mandantDegradedStore'
+import {
+  MANDANT_DEGRADED_FAILURE_THRESHOLD,
+  reportMandantTransportFailureBatch,
+  reportMandantTransportSuccess,
+} from './mandantDegradedStore'
 
 const FAILURE_WINDOW_MS = 120_000
 const FAILURES_REQUIRED = 2
@@ -36,6 +40,6 @@ export const recordMandantRealtimeSubscribeStatus = (status: string, _err?: Erro
   failureTimestamps.push(now)
   pruneOldFailures(now)
   if (failureTimestamps.length >= FAILURES_REQUIRED) {
-    reportMandantTransportFailure()
+    reportMandantTransportFailureBatch(MANDANT_DEGRADED_FAILURE_THRESHOLD)
   }
 }

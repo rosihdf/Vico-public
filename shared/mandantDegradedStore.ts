@@ -42,22 +42,42 @@ const pruneFailureTimestamps = (now: number): void => {
   )
 }
 
-export const reportMandantTransportFailure = (): void => {
+/**
+ * Mehrere Treffer in einem Schritt (z. B. Modul hat schon entprellt).
+ * Fetch-Wrap nutzt weiter `reportMandantTransportFailure()` (= 1).
+ */
+export const reportMandantTransportFailureBatch = (count: number): void => {
+  const n = Math.max(0, Math.floor(Number(count) || 0))
+  if (n === 0) return
   const now = Date.now()
   pruneFailureTimestamps(now)
-  mandantFailureTimestamps.push(now)
+  for (let i = 0; i < n; i++) {
+    mandantFailureTimestamps.push(now)
+  }
   if (mandantFailureTimestamps.length >= MANDANT_DEGRADED_FAILURE_THRESHOLD && !mandantDegraded) {
     mandantDegraded = true
     emit()
   }
 }
 
+export const reportMandantTransportFailure = (): void => {
+  reportMandantTransportFailureBatch(1)
+}
+
+/**
+ * Ist bereits degraded: alles zurücksetzen.
+ * Sonst nur alte Einträge aus dem Fenster werfen – parallele erfolgreiche Requests löschen
+ * keine frischen Einzelfehler (False Negative).
+ */
 export const reportMandantTransportSuccess = (): void => {
-  mandantFailureTimestamps = []
+  const now = Date.now()
   if (mandantDegraded) {
+    mandantFailureTimestamps = []
     mandantDegraded = false
     emit()
+    return
   }
+  pruneFailureTimestamps(now)
 }
 
 /** Nur für Tests. */
@@ -166,9 +186,10 @@ const mergeAbortWithTimeout = (
 }
 
 /**
- * Wrappt fetch: bei erfolgreichem Response (kein throw) → Degraded beenden;
- * bei endgültigem Throw (Netzwerk, Timeout, …) → Degraded setzen.
+ * Wrappt fetch: bei erfolgreichem Response (kein throw) → bei Bedarf Degraded beenden bzw. Fenster prunen;
+ * bei endgültigem Throw → Fehler zählen (Schwelle: zwei Treffer im Zeitfenster).
  * HTTP-Status 4xx/5xx zählen als erfolgreiche Transport-Schicht (Server erreichbar).
+ * Realtime/Ping: `reportMandantTransportFailureBatch` im jeweiligen Modul.
  */
 export const createMandantDegradedAwareFetch = (
   mandantSupabaseBaseUrl: string,

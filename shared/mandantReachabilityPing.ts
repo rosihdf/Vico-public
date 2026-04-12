@@ -3,7 +3,11 @@
  * Speicherung: localStorage (pro Browser). Kein Lizenz-Host (§11.18#6/#8).
  */
 
-import { reportMandantTransportFailure, reportMandantTransportSuccess } from './mandantDegradedStore'
+import {
+  MANDANT_DEGRADED_FAILURE_THRESHOLD,
+  reportMandantTransportFailureBatch,
+  reportMandantTransportSuccess,
+} from './mandantDegradedStore'
 
 export const MANDANT_PING_STORAGE_KEY = 'vico.mandantReachabilityPing.enabled'
 
@@ -50,7 +54,7 @@ export const pingMandantSupabaseOnce = async (
     reportMandantTransportSuccess()
     return { ok: res.ok }
   } catch {
-    reportMandantTransportFailure()
+    reportMandantTransportFailureBatch(MANDANT_DEGRADED_FAILURE_THRESHOLD)
     return { ok: false }
   } finally {
     globalThis.clearTimeout(tid)

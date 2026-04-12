@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   getMandantDegradedSnapshot,
   reportMandantTransportFailure,
+  reportMandantTransportFailureBatch,
   reportMandantTransportSuccess,
   resetMandantDegradedForTests,
   createMandantDegradedAwareFetch,
@@ -23,6 +24,18 @@ describe('mandantDegradedStore', () => {
 
   it('zwei Failures im Fenster setzen Degraded', () => {
     reportMandantTransportFailure()
+    reportMandantTransportFailure()
+    expect(getMandantDegradedSnapshot()).toBe(true)
+  })
+
+  it('FailureBatch(2) setzt Degraded (für vorab entprellte Module)', () => {
+    reportMandantTransportFailureBatch(MANDANT_DEGRADED_FAILURE_THRESHOLD)
+    expect(getMandantDegradedSnapshot()).toBe(true)
+  })
+
+  it('Success ohne Degraded löscht keine frischen Fehler (nur Fenster-Prune)', () => {
+    reportMandantTransportFailure()
+    reportMandantTransportSuccess()
     reportMandantTransportFailure()
     expect(getMandantDegradedSnapshot()).toBe(true)
   })
