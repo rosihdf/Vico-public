@@ -29,7 +29,13 @@ const persistDismissedServerVersion = (serverVersion: string): void => {
  * Kein Abgleich mit Lizenz-API – sonst „Neu laden“ ohne neues Bundle (Portal vor CDN).
  * Rollout / Zuweisung: `MandantenReleaseRolloutRefreshBanner`, Incoming: `MandantenIncomingReleaseBanner`.
  */
-const UpdateBanner = () => {
+/** Früher an `Layout`/`App` übergeben; wird ignoriert (Abwärtskompatibilität für Branches/CI). */
+export type UpdateBannerProps = {
+  licenseAdvertisedVersion?: string | null
+  licenseAdvertisedReleaseNotes?: string[] | null
+}
+
+const UpdateBanner = (_props: UpdateBannerProps = {}) => {
   const [updateInfo, setUpdateInfo] = useState<{
     version: string
     releaseNotes: string[]
