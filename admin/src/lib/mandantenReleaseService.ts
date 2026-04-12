@@ -247,6 +247,81 @@ export type TenantReleaseAssignmentRow = {
   previous_release_id: string | null
 }
 
+/** Pro Mandant/Kanal: zugewiesenes Release (Lizenz-API), nicht gemessene „Installation“ im Browser. */
+export type TenantChannelAssignedVersion = {
+  channel: ReleaseChannel
+  version_semver: string | null
+  release_title: string | null
+  assignment_updated_at: string | null
+}
+
+/**
+ * Alle Zeilen `tenant_release_assignments` mit aufgelöster `version_semver` des aktiven Releases.
+ * Für Mandantenübersicht (Go-Live / Rollout).
+ */
+export const fetchAllTenantsAssignedReleaseVersions = async (
+  signal?: AbortSignal
+): Promise<Map<string, TenantChannelAssignedVersion[]>> => {
+  let q = supabase.from('tenant_release_assignments').select('tenant_id, channel, updated_at, active_release_id')
+  if (signal) q = q.abortSignal(signal)
+  const { data: rows, error } = await q
+  if (error) throw new Error(error.message)
+  const list = (rows ?? []) as {
+    tenant_id: string
+    channel: string
+    updated_at: string
+    active_release_id: string | null
+  }[]
+  const ids = [...new Set(list.map((r) => r.active_release_id).filter((x): x is string => Boolean(x)))]
+  const relById = new Map<string, { version_semver: string; title: string | null }>()
+  if (ids.length > 0) {
+    let rq = supabase.from('app_releases').select('id, version_semver, title').in('id', ids)
+    if (signal) rq = rq.abortSignal(signal)
+    const { data: rels, error: e2 } = await rq
+    if (e2) throw new Error(e2.message)
+    for (const r of rels ?? []) {
+      const row = r as { id: string; version_semver?: string | null; title?: string | null }
+      relById.set(String(row.id), {
+        version_semver: row.version_semver != null ? String(row.version_semver).trim() : '',
+        title: row.title != null ? String(row.title) : null,
+      })
+    }
+  }
+  const map = new Map<string, TenantChannelAssignedVersion[]>()
+  for (const r of list) {
+    if (!CHANNELS.includes(r.channel as ReleaseChannel)) continue
+    const ch = r.channel as ReleaseChannel
+    const rel = r.active_release_id ? relById.get(r.active_release_id) : undefined
+    const semver = rel?.version_semver?.trim() ? rel.version_semver.trim() : null
+    const entry: TenantChannelAssignedVersion = {
+      channel: ch,
+      version_semver: semver,
+      release_title: rel?.title?.trim() ? rel.title.trim() : null,
+      assignment_updated_at: r.updated_at ?? null,
+    }
+    const arr = map.get(r.tenant_id) ?? []
+    arr.push(entry)
+    map.set(r.tenant_id, arr)
+  }
+  return map
+}
+
+/** Feste Reihenfolge für Anzeige in der Mandantenliste. */
+export const getTenantAssignedVersionDisplayParts = (
+  entries: TenantChannelAssignedVersion[] | undefined
+): { label: string; version: string; title: string | null }[] => {
+  const byCh = new Map((entries ?? []).map((e) => [e.channel, e]))
+  return CHANNELS.map((ch) => {
+    const e = byCh.get(ch)
+    const v = e?.version_semver?.trim()
+    return {
+      label: RELEASE_CHANNEL_LABELS[ch],
+      version: v || '–',
+      title: e?.release_title?.trim() ? e.release_title.trim() : null,
+    }
+  })
+}
+
 export const fetchTenantReleaseAssignments = async (tenantId: string): Promise<TenantReleaseAssignmentRow[]> => {
   const { data, error } = await supabase.from('tenant_release_assignments').select('*').eq('tenant_id', tenantId)
   if (error) throw new Error(error.message)

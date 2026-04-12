@@ -263,7 +263,7 @@ So siehst du, ob der Flaschenhals beim ersten Datenblock (Stammdaten), beim zwei
 **Lizenzportal (Admin-App, `admin/`):** Gleiches Vorgehen wie in der Haupt-App – parallele Abfragen und Ladezeit-Logs in der Konsole:
 
 - **Auth:** `[Lizenzportal] Auth: getSession Xms, checkRole Yms, gesamt Zms`
-- **Mandanten:** `[Lizenzportal] Mandanten load: Xms` (Tenants, Lizenzen, Grenzüberschreitungs-Log bereits in einem `Promise.all`)
+- **Mandanten:** `[Lizenzportal] Mandanten load: Xms` (Tenants, Lizenzen, Grenzüberschreitungs-Log, **zugewiesene App-Version je Kanal** aus `tenant_release_assignments` in einem `Promise.all`; Hinweistext **Deploy vs. Zuweisung**: ein CF-Pages-Build pro App-Typ für alle Mandanten)
 - **Mandant bearbeiten:** Mandant + Lizenzen + Lizenzmodelle in einem `Promise.all` → `[Lizenzportal] MandantForm load: Xms`
 - **Grenzüberschreitungen / Lizenzmodelle / Export:** je eigene Log-Zeile
 
@@ -1086,7 +1086,7 @@ App nutzt Templates für Impressum/Datenschutz, gefüllt mit Stammdaten aus der 
 
 **Clients:** Haupt-App (`LicenseContext` + `Info`), Kundenportal und Arbeitszeitenportal (`DesignContext` + `AppInfoContent`) zeigen die Angaben unter **„Lizenzportal (Anzeige)“**, sobald Inhalt gepflegt ist. Die **Build-Version** (`__APP_VERSION__` / `version.json`) bleibt die technische Referenz.
 
-**Update-Banner (oben, „Neue Version … neu laden“):** `shared/UpdateBanner.tsx` vergleicht die **Build-Version** (`__APP_VERSION__`) per SemVer mit der **höheren** von (a) **`version.json`** vom Hosting und (b) der **Lizenz-API** bzw. Portal-Quelle: Haupt-App `appVersions.main` (`Layout.tsx`), Kundenportal / Arbeitszeitenportal `appVersionInfo` aus `DesignContext`, Lizenz-Admin **`platform_config.default_app_versions.admin`** (`admin/src/components/AdminUpdateBanner.tsx`). Service Worker: **`version.json`** nur **NetworkOnly** (`src/sw.ts`), damit kein veralteter Cache den Hinweis unterdrückt; bei Start offline wird nach **`online`** erneut geprüft.
+**Update-Banner (oben, neu laden):** `shared/UpdateBanner.tsx` vergleicht nur **Build-Version** (`__APP_VERSION__`) mit **`version.json`** vom gleichen Hosting (SemVer) – damit „Neu laden“ immer ein **tatsächlich ausgeliefertes** neues Build meint. **Nicht** mehr Abgleich mit der Lizenz-API (die kann vor dem CDN-Deploy voraus sein und wirkte verwirrend). **Zuweisungs-/Rollout-Hinweise:** `MandantenReleaseRolloutRefreshBanner` (teal); **Incoming:** `MandantenIncomingReleaseBanner` (indigo). Service Worker: **`version.json`** nur **NetworkOnly** (`src/sw.ts`); bei Start offline nach **`online`** erneut prüfen.
 
 **SemVer: Build vs. Lizenzportal-Anzeige:** Wenn sowohl Build als auch die im Portal gepflegte **Anzeigeversion** als SemVer lesbar sind (`x.y.z`), zeigt die UI optional einen Hinweis (`SemVerPortalBuildHint`):
 - **Portal vor Build:** dokumentierte Version im Portal ist höher als der aktuelle Client-Build → typisch vor Rollout oder wenn Mandant früher gepflegt hat.

@@ -3,6 +3,11 @@ import { Link } from 'react-router-dom'
 import { fetchTenants, deleteTenant, type Tenant } from '../lib/tenantService'
 import { fetchLicenses, fetchLimitExceededLog, fetchStorageSummary, updateTotalStorageMb, type LicenseWithTenant, type LimitExceededEntry, type StorageSummary } from '../lib/licensePortalService'
 import { exportTenantData, downloadTenantExport } from '../lib/exportService'
+import {
+  fetchAllTenantsAssignedReleaseVersions,
+  getTenantAssignedVersionDisplayParts,
+  type TenantChannelAssignedVersion,
+} from '../lib/mandantenReleaseService'
 
 const prefetchMandantForm = () => {
   import('./MandantForm')
@@ -61,6 +66,9 @@ const Mandanten = () => {
   const [exportingId, setExportingId] = useState<string | null>(null)
   const [editingStorageTotal, setEditingStorageTotal] = useState(false)
   const [storageTotalInput, setStorageTotalInput] = useState('')
+  const [assignedVersionsByTenant, setAssignedVersionsByTenant] = useState(
+    () => new Map<string, TenantChannelAssignedVersion[]>()
+  )
 
   const licensesMap = useMemo(() => licensesByTenant(licenses), [licenses])
   const statusByTenant = useMemo(() => latestByTenant(limitExceededEntries), [limitExceededEntries])
@@ -72,17 +80,19 @@ const Mandanten = () => {
     try {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 20_000)
-      const [tenantsData, licensesData, logData, storageData] = await Promise.all([
+      const [tenantsData, licensesData, logData, storageData, assignedMap] = await Promise.all([
         fetchTenants(controller.signal),
         fetchLicenses(controller.signal),
         fetchLimitExceededLog(controller.signal),
         fetchStorageSummary(),
+        fetchAllTenantsAssignedReleaseVersions(controller.signal),
       ])
       clearTimeout(timeoutId)
       setTenants(tenantsData)
       setLicenses(licensesData)
       setLimitExceededEntries(logData)
       setStorageSummary(storageData)
+      setAssignedVersionsByTenant(assignedMap)
       console.info(`[Lizenzportal] Mandanten load: ${Math.round(performance.now() - loadStart)}ms`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Laden fehlgeschlagen. Supabase-Verbindung prüfen.'
@@ -261,10 +271,29 @@ const Mandanten = () => {
         </div>
       ) : !isLoading && tenants.length > 0 ? (
         <div className="space-y-3">
+          <div
+            className="p-3 rounded-xl border border-sky-200 bg-sky-50/90 text-sm text-slate-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-slate-200"
+            role="note"
+          >
+            <p className="font-semibold text-slate-800 dark:text-slate-100">Deploy vs. Mandanten-Zuweisung</p>
+            <p className="mt-1.5 leading-relaxed">
+              Auf Cloudflare Pages gibt es <strong>ein gebautes Frontend pro App-Typ</strong> (Haupt-App, Kundenportal,
+              Arbeitszeitenportal, Lizenzportal-Admin) –{' '}
+              <strong>alle Mandanten teilen sich dieselbe ausgelieferte Datei</strong> jeweils. Ein GitHub-Deploy-Job
+              aktualisiert genau dieses eine Projekt.
+            </p>
+            <p className="mt-2 leading-relaxed">
+              Die <strong>„Zugewiesene App-Version“</strong> je Mandant unten kommt aus dem Rollout im Lizenzportal
+              (welches Release die <strong>Lizenz-API</strong> für diesen Mandanten meldet). Wenn du mehrere Mandanten
+              beim Update anwählst, werden typischerweise <strong>mehrere Zuweisungen</strong> gesetzt – nicht mehrere
+              separate CF-Builds pro Mandant.
+            </p>
+          </div>
           {tenants.map((t) => {
             const tenantLicenses = licensesMap.get(t.id) ?? []
             const primaryLicense = tenantLicenses[0]
             const expired = primaryLicense?.valid_until ? new Date(primaryLicense.valid_until) < new Date() : false
+            const versionParts = getTenantAssignedVersionDisplayParts(assignedVersionsByTenant.get(t.id))
             return (
               <div
                 key={t.id}
@@ -299,6 +328,21 @@ const Mandanten = () => {
                   ) : (
                     <p className="mt-2 text-xs text-amber-600">Keine Lizenz</p>
                   )}
+                  <div className="mt-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                    <span className="font-medium text-slate-700 dark:text-slate-300">Zugewiesene App-Version (Lizenz-API):</span>{' '}
+                    {versionParts.map((p, i) => (
+                      <span key={p.label}>
+                        {i > 0 ? ' · ' : null}
+                        <span className="text-slate-500 dark:text-slate-500">{p.label}</span>{' '}
+                        <span
+                          className="font-mono text-slate-800 dark:text-slate-200"
+                          title={p.title ? `${p.title}` : undefined}
+                        >
+                          {p.version}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
                   {(() => {
                     const statusEntries = statusByTenant.get(t.id) ?? []
                     if (statusEntries.length === 0) return null
