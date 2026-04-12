@@ -3,64 +3,59 @@ import { isNewerVersion, isSemverComparable } from './versionUtils'
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.1'
 
-export type UpdateBannerProps = {
-  /**
-   * Lizenz-API (`appVersions` für diesen Kanal): oft neuer als das gebaute `version.json`,
-   * bis das Hosting nachgezogen ist — sonst kein „Neue Version“ trotz Portal-Rollout.
-   */
-  licenseAdvertisedVersion?: string | null
-  licenseAdvertisedReleaseNotes?: string[] | null
+/** User hat für diese in `version.json` gemeldete Version geschlossen (überdauert Reload; typisch: alter JS-Cache vs. neue version.json). */
+const DISMISS_STORAGE_KEY = 'vico.updateBanner.dismissedForServerVersion'
+
+const readDismissedServerVersion = (): string | null => {
+  try {
+    if (typeof localStorage === 'undefined') return null
+    const s = localStorage.getItem(DISMISS_STORAGE_KEY)?.trim()
+    return s || null
+  } catch {
+    return null
+  }
 }
 
-type VersionCandidate = { version: string; releaseNotes: string[] }
-
-const deriveUpdateFromCandidates = (
-  appVer: string,
-  candidates: VersionCandidate[]
-): { version: string; releaseNotes: string[] } | null => {
-  const normalized: VersionCandidate[] = []
-  for (const c of candidates) {
-    const v = c.version.trim()
-    if (!v || !isSemverComparable(v)) continue
-    normalized.push({ version: v, releaseNotes: Array.isArray(c.releaseNotes) ? c.releaseNotes : [] })
+const persistDismissedServerVersion = (serverVersion: string): void => {
+  try {
+    localStorage.setItem(DISMISS_STORAGE_KEY, serverVersion.trim())
+  } catch {
+    /* ignore */
   }
-  const newerThanBuild = normalized.filter((c) => isNewerVersion(appVer, c.version))
-  if (newerThanBuild.length === 0) return null
-  let best = newerThanBuild[0]
-  for (let i = 1; i < newerThanBuild.length; i++) {
-    if (isNewerVersion(best.version, newerThanBuild[i].version)) {
-      best = newerThanBuild[i]
-    }
-  }
-  return { version: best.version, releaseNotes: best.releaseNotes }
 }
 
-const UpdateBanner = ({
-  licenseAdvertisedVersion = null,
-  licenseAdvertisedReleaseNotes = null,
-}: UpdateBannerProps) => {
+/**
+ * Nur Hosting-Realität: `version.json` (vom gleichen Origin wie die App) vs. Build.
+ * Kein Abgleich mit Lizenz-API – sonst „Neu laden“ ohne neues Bundle (Portal vor CDN).
+ * Rollout / Zuweisung: `MandantenReleaseRolloutRefreshBanner`, Incoming: `MandantenIncomingReleaseBanner`.
+ */
+const UpdateBanner = () => {
   const [updateInfo, setUpdateInfo] = useState<{
     version: string
     releaseNotes: string[]
   } | null>(null)
   const [dismissed, setDismissed] = useState(false)
-  const lastJsonRef = useRef<VersionCandidate>({ version: '', releaseNotes: [] })
-
-  const licenseVersion = licenseAdvertisedVersion?.trim() ?? ''
-  const licenseNotes = Array.isArray(licenseAdvertisedReleaseNotes) ? licenseAdvertisedReleaseNotes : []
+  const lastJsonRef = useRef<{ version: string; releaseNotes: string[] }>({ version: '', releaseNotes: [] })
 
   const applyDerived = useCallback(() => {
-    const fromJson = lastJsonRef.current
-    const candidates: VersionCandidate[] = []
-    if (fromJson.version.trim()) {
-      candidates.push({ version: fromJson.version, releaseNotes: fromJson.releaseNotes })
+    const v = lastJsonRef.current.version.trim()
+    if (!v || !isSemverComparable(v)) {
+      setUpdateInfo(null)
+      return
     }
-    if (licenseVersion) {
-      candidates.push({ version: licenseVersion, releaseNotes: licenseNotes })
+    if (!isNewerVersion(APP_VERSION, v)) {
+      setUpdateInfo(null)
+      return
     }
-    const next = deriveUpdateFromCandidates(APP_VERSION, candidates)
-    setUpdateInfo(next)
-  }, [licenseVersion, licenseNotes])
+    if (readDismissedServerVersion() === v) {
+      setUpdateInfo(null)
+      return
+    }
+    setUpdateInfo({
+      version: v,
+      releaseNotes: Array.isArray(lastJsonRef.current.releaseNotes) ? lastJsonRef.current.releaseNotes : [],
+    })
+  }, [])
 
   const checkForUpdate = useCallback(async () => {
     try {
@@ -110,7 +105,7 @@ const UpdateBanner = ({
       aria-live="polite"
     >
       <span className="font-medium">
-        Neue Version {updateInfo.version} verfügbar – bitte neu laden.
+        Neues App-Build (Version {updateInfo.version}) liegt auf dem Server – bitte neu laden.
       </span>
       <div className="flex items-center gap-2 shrink-0">
         <button
@@ -123,7 +118,10 @@ const UpdateBanner = ({
         </button>
         <button
           type="button"
-          onClick={() => setDismissed(true)}
+          onClick={() => {
+            persistDismissedServerVersion(updateInfo.version)
+            setDismissed(true)
+          }}
           className="px-2 py-1 rounded text-amber-950 dark:text-white hover:bg-amber-400/50 dark:hover:bg-amber-600/50"
           aria-label="Schließen"
         >
