@@ -690,10 +690,18 @@ begin
     where id = r.id;
   end loop;
 end $$;
-select setval(
-  'public.maintenance_reports_pruefprotokoll_laufnummer_seq',
-  coalesce((select max(pruefprotokoll_laufnummer) from public.maintenance_reports), 0)
-);
+-- Sequenz an bestehende Nummern anbinden (0 ist für setval ungültig → leere Tabelle: 1, is_called false)
+do $setval_pruefprotokoll_laufnummer$
+declare
+  mx bigint;
+begin
+  select max(pruefprotokoll_laufnummer) into mx from public.maintenance_reports;
+  if mx is null then
+    perform setval('public.maintenance_reports_pruefprotokoll_laufnummer_seq', 1, false);
+  else
+    perform setval('public.maintenance_reports_pruefprotokoll_laufnummer_seq', mx, true);
+  end if;
+end $setval_pruefprotokoll_laufnummer$;
 alter table public.maintenance_reports
   alter column pruefprotokoll_laufnummer set default nextval('public.maintenance_reports_pruefprotokoll_laufnummer_seq'::regclass);
 alter table public.maintenance_reports alter column pruefprotokoll_laufnummer set not null;
