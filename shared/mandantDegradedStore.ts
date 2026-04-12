@@ -1,8 +1,9 @@
 /**
  * §11.18: Mandanten-Supabase-Transport (fetch).
- * - WP-NET-01: Degraded bei Transport-Fehler / Erfolg zurücksetzen
- * - WP-NET-03: Lesen GET/HEAD mit 3s Timeout (§11.18#9)
+ * - WP-NET-01: Degraded bei wiederholten Transport-Fehlern / Erfolg zurücksetzen
+ * - WP-NET-03: Lesen GET/HEAD mit Timeout (§11.18#9, aktuell 6s)
  * - WP-NET-04: Schreiben POST/PATCH/PUT/DELETE mit 3 Retries à 500ms (§11.18#9); Outbox danach weiter in der App (dataService), nicht im fetch
+ * - Banner erst nach mindestens zwei Fehlern innerhalb eines kurzen Zeitfensters (weniger False Positives).
  */
 
 type Listener = () => void
@@ -10,12 +11,19 @@ type Listener = () => void
 let mandantDegraded = false
 const listeners = new Set<Listener>()
 
-/** §11.18#9 Lesen */
-export const MANDANT_READ_TIMEOUT_MS = 3000
+/** §11.18#9 Lesen (RPC-POST zählt wie Lesen) */
+export const MANDANT_READ_TIMEOUT_MS = 6000
 
 /** §11.18#9 Schreiben: Erstversuch + 3 Retries = 4 Versuche insgesamt. */
 export const MANDANT_WRITE_ATTEMPT_COUNT = 4
 export const MANDANT_WRITE_RETRY_DELAY_MS = 500
+
+/** So viele Mandanten-Transportfehler im Fenster → Hinweis „instabil“. */
+export const MANDANT_DEGRADED_FAILURE_THRESHOLD = 2
+/** Fehler älter als diese ms zählen nicht mehr (gleitendes Fenster). */
+export const MANDANT_DEGRADED_FAILURE_WINDOW_MS = 45_000
+
+let mandantFailureTimestamps: number[] = []
 
 export const getMandantDegradedSnapshot = (): boolean => mandantDegraded
 
@@ -28,14 +36,24 @@ const emit = (): void => {
   for (const l of listeners) l()
 }
 
+const pruneFailureTimestamps = (now: number): void => {
+  mandantFailureTimestamps = mandantFailureTimestamps.filter(
+    (t) => now - t <= MANDANT_DEGRADED_FAILURE_WINDOW_MS
+  )
+}
+
 export const reportMandantTransportFailure = (): void => {
-  if (!mandantDegraded) {
+  const now = Date.now()
+  pruneFailureTimestamps(now)
+  mandantFailureTimestamps.push(now)
+  if (mandantFailureTimestamps.length >= MANDANT_DEGRADED_FAILURE_THRESHOLD && !mandantDegraded) {
     mandantDegraded = true
     emit()
   }
 }
 
 export const reportMandantTransportSuccess = (): void => {
+  mandantFailureTimestamps = []
   if (mandantDegraded) {
     mandantDegraded = false
     emit()
@@ -45,6 +63,7 @@ export const reportMandantTransportSuccess = (): void => {
 /** Nur für Tests. */
 export const resetMandantDegradedForTests = (): void => {
   mandantDegraded = false
+  mandantFailureTimestamps = []
   emit()
 }
 
