@@ -13,7 +13,8 @@ export const executeMandantenReleaseReload = async (): Promise<void> => {
   try {
     if (pwaReload) {
       await pwaReload()
-      return
+      /* updateSW(true) lädt nur neu, wenn ein wartender SW existiert. Nach Go-Live ändert sich oft
+         nur die Lizenz-Zuweisung (gleiches Bundle) → Promise endet ohne Navigation. Immer hart nachziehen. */
     }
   } catch {
     /* PWA-Update fehlgeschlagen → harter Reload */

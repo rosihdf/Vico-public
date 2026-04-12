@@ -53,7 +53,9 @@ export type TenantUpdate = Partial<Omit<Tenant, 'id' | 'created_at'>>
 export const fetchTenants = async (signal?: AbortSignal): Promise<Tenant[]> => {
   let query = supabase
     .from('tenants')
-    .select('id, name, app_domain, portal_domain, arbeitszeitenportal_domain, app_name, primary_color')
+    .select(
+      'id, name, app_domain, portal_domain, arbeitszeitenportal_domain, app_name, primary_color, is_test_mandant'
+    )
     .order('name')
   if (signal) query = query.abortSignal(signal)
   const { data, error } = await query

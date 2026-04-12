@@ -132,7 +132,17 @@ const AppReleases = () => {
                   <td className="px-3 py-2">{RELEASE_TYPE_LABELS[r.release_type]}</td>
                   <td className="px-3 py-2">
                     {r.incoming_enabled ? (
-                      <span className="text-amber-700">{r.incoming_all_mandanten ? 'alle' : 'Pilot'}</span>
+                      <span className="text-amber-700">
+                        Pilot
+                        {r.incoming_all_mandanten ? (
+                          <span
+                            className="ml-1 text-xs font-normal text-slate-500"
+                            title="Legacy-Flag in der DB; im Release-Editor speichern, um es zu entfernen."
+                          >
+                            (Legacy: alle)
+                          </span>
+                        ) : null}
+                      </span>
                     ) : (
                       '—'
                     )}

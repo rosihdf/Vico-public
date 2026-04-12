@@ -26,7 +26,6 @@ const emptyForm = () => ({
   notes: '',
   module_tags_text: '',
   incoming_enabled: false,
-  incoming_all_mandanten: false,
   force_hard_reload: false,
 })
 
@@ -78,7 +77,6 @@ const AppReleaseEditor = () => {
         notes: r.notes ?? '',
         module_tags_text: (r.module_tags ?? []).join(', '),
         incoming_enabled: r.incoming_enabled,
-        incoming_all_mandanten: r.incoming_all_mandanten,
         force_hard_reload: r.force_hard_reload,
       })
       const ids = await fetchIncomingTenantIdsForRelease(releaseId)
@@ -124,11 +122,11 @@ const AppReleaseEditor = () => {
             notes: form.notes || null,
             module_tags: tags,
             incoming_enabled: form.incoming_enabled,
-            incoming_all_mandanten: form.incoming_all_mandanten,
+            incoming_all_mandanten: false,
             force_hard_reload: form.force_hard_reload,
             created_by: actorId,
           },
-          form.incoming_all_mandanten ? [] : tenantList,
+          tenantList,
           actorId
         )
         if ('error' in res) {
@@ -148,10 +146,10 @@ const AppReleaseEditor = () => {
           notes: form.notes || null,
           module_tags: tags,
           incoming_enabled: form.incoming_enabled,
-          incoming_all_mandanten: form.incoming_all_mandanten,
+          incoming_all_mandanten: false,
           force_hard_reload: form.force_hard_reload,
         },
-        form.incoming_all_mandanten ? [] : tenantList,
+        tenantList,
         actorId
       )
       if ('error' in up) {
@@ -395,16 +393,10 @@ const AppReleaseEditor = () => {
           />
           Incoming aktiv (Pilot sichtbar)
         </label>
-        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={form.incoming_all_mandanten}
-            onChange={(e) => setForm((f) => ({ ...f, incoming_all_mandanten: e.target.checked }))}
-            className="rounded border-slate-300"
-          />
-          Alle Mandanten (zweiter Schritt §11.20 #3)
-        </label>
-        {!form.incoming_all_mandanten && form.incoming_enabled ? (
+        <p className="text-xs text-slate-500 -mt-2">
+          In der Lizenz-API erscheint Incoming nur für eingetragene Pilot-Mandanten und für Mandanten mit Test-Flag – nicht mehr für „alle“.
+        </p>
+        {form.incoming_enabled ? (
           <div className="border border-slate-200 rounded-lg p-3 max-h-48 overflow-y-auto">
             <p className="text-xs font-medium text-slate-600 mb-2">Pilot-Mandanten</p>
             <ul className="space-y-1">

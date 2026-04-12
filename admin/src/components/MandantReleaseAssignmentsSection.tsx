@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import {
   fetchPublishedAppReleasesByChannel,
   fetchTenantReleaseAssignments,
@@ -122,7 +123,12 @@ const MandantReleaseAssignmentsSection = ({ tenantId }: MandantReleaseAssignment
         <h3 className="text-sm font-semibold text-slate-700">Gestaffelte App-Releases (§11.20)</h3>
         <p className="text-xs text-slate-500 mt-1">
           Aktiver Release pro Kanal überschreibt die Anzeige in der Lizenz-API (<code className="bg-slate-100 px-1 rounded">appVersions</code>).
-          Go-Live setzt den vorherigen Stand für Rollback.
+          Go-Live setzt den vorherigen Stand für Rollback. Für <strong>viele Mandanten</strong> oder{' '}
+          <strong>Mehrkanal-Rollouts</strong> den{' '}
+          <Link to="/release-rollout" className="text-vico-primary font-medium hover:underline">
+            Update-Assistenten
+          </Link>{' '}
+          nutzen; diese Sektion ist für Einzelfälle und Ausnahmen.
         </p>
       </div>
       {message ? (

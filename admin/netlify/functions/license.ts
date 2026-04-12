@@ -349,15 +349,25 @@ const mergeMandantenReleasesIntoResponse = async (
 
   const explicit = new Set((ritRows ?? []).map((x) => String(x.release_id)))
 
+  const { data: tMeta, error: tMetaErr } = await supabase
+    .from('tenants')
+    .select('is_test_mandant')
+    .eq('id', tenantId)
+    .maybeSingle()
+  if (tMetaErr) {
+    console.warn('tenants is_test_mandant', tMetaErr.message)
+  }
+  const isTestMandant = Boolean(tMeta?.is_test_mandant)
+
   const incoming: ReturnType<typeof mapAppReleaseRow>[] = []
   for (const row of incRows ?? []) {
     const r = row as Record<string, unknown>
     const rid = String(r.id)
     if (activeId && rid === activeId) continue
-    const allM = Boolean(r.incoming_all_mandanten)
-    if (!allM && !explicit.has(rid)) continue
-    incoming.push(mapAppReleaseRow(r))
-    if (incoming.length >= MANDANTEN_RELEASE_INCOMING_MAX) break
+    if (explicit.has(rid) || isTestMandant) {
+      incoming.push(mapAppReleaseRow(r))
+      if (incoming.length >= MANDANTEN_RELEASE_INCOMING_MAX) break
+    }
   }
 
   response.mandantenReleases = {

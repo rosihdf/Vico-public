@@ -27,6 +27,11 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
       label: 'Rollout & Deploy',
       isActive: (p) => p.startsWith('/release-rollout'),
     },
+    {
+      to: '/release-audit',
+      label: 'Release-Audit',
+      isActive: (p) => p.startsWith('/release-audit'),
+    },
     { to: '/roadmap', label: 'Roadmap', isActive: (p) => p.startsWith('/roadmap') },
     { to: '/beta-feedback', label: 'Beta-Feedback', isActive: (p) => p.startsWith('/beta-feedback') },
     { to: '/lizenzmodelle', label: 'Lizenzmodelle', isActive: (p) => p.startsWith('/lizenzmodelle') },

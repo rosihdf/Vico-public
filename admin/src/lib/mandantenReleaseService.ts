@@ -328,6 +328,30 @@ export const fetchTenantReleaseAssignments = async (tenantId: string): Promise<T
   return (data ?? []) as TenantReleaseAssignmentRow[]
 }
 
+export type AppReleaseMeta = {
+  id: string
+  version_semver: string
+  title: string | null
+}
+
+/** Für Rollback-Vorschau / Labels: Versionstitel zu vielen IDs in einem Request. */
+export const fetchAppReleasesMetaByIds = async (ids: string[]): Promise<Map<string, AppReleaseMeta>> => {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))]
+  if (unique.length === 0) return new Map()
+  const { data, error } = await supabase.from('app_releases').select('id, version_semver, title').in('id', unique)
+  if (error) throw new Error(error.message)
+  const m = new Map<string, AppReleaseMeta>()
+  for (const r of data ?? []) {
+    const row = r as { id: string; version_semver?: string | null; title?: string | null }
+    m.set(String(row.id), {
+      id: String(row.id),
+      version_semver: row.version_semver != null ? String(row.version_semver).trim() : '',
+      title: row.title != null ? String(row.title) : null,
+    })
+  }
+  return m
+}
+
 export const setTenantChannelActiveRelease = async (
   tenantId: string,
   channel: ReleaseChannel,
@@ -427,6 +451,52 @@ export const assignPublishedReleaseToTenantIds = async (
   }
 }
 
+export type RollbackChannelBulkResult = {
+  ok: true
+  channel: ReleaseChannel
+  rolledBack: number
+  skippedNoPrevious: number
+  errors: { tenantId: string; error: string }[]
+}
+
+/**
+ * Bulk-Rollback für einen Kanal: pro Mandant `rollbackTenantChannelRelease`.
+ * Ohne `previous_release_id`: **Übersprungen** (Zähler), kein Eintrag in `errors`.
+ */
+export const rollbackChannelForTenantIds = async (
+  channel: ReleaseChannel,
+  tenantIds: string[],
+  actorId: string | null
+): Promise<RollbackChannelBulkResult | { error: string }> => {
+  const uniqueIds = [...new Set(tenantIds.map((id) => id.trim()).filter(Boolean))]
+  if (uniqueIds.length === 0) return { error: 'Keine Mandanten ausgewählt.' }
+
+  let rolledBack = 0
+  let skippedNoPrevious = 0
+  const errors: { tenantId: string; error: string }[] = []
+
+  for (const tenantId of uniqueIds) {
+    const res = await rollbackTenantChannelRelease(tenantId, channel, actorId)
+    if ('error' in res) {
+      if (res.error === 'Kein vorheriger Release gespeichert.') {
+        skippedNoPrevious += 1
+      } else {
+        errors.push({ tenantId, error: res.error })
+      }
+    } else {
+      rolledBack += 1
+    }
+  }
+
+  return {
+    ok: true,
+    channel,
+    rolledBack,
+    skippedNoPrevious,
+    errors,
+  }
+}
+
 export const rollbackTenantChannelRelease = async (
   tenantId: string,
   channel: ReleaseChannel,
@@ -459,12 +529,27 @@ export const rollbackTenantChannelRelease = async (
   return { ok: true }
 }
 
-export const fetchReleaseAuditLog = async (limit = 100) => {
-  const { data, error } = await supabase
-    .from('release_audit_log')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(limit)
+export type ReleaseAuditLogFilters = {
+  action?: string
+  /** ISO-Datum (Anfang Tag) */
+  fromDate?: string
+  /** ISO-Datum (Ende Tag) */
+  toDate?: string
+}
+
+export const fetchReleaseAuditLog = async (limit = 100, filters?: ReleaseAuditLogFilters) => {
+  let q = supabase.from('release_audit_log').select('*').order('created_at', { ascending: false })
+  if (filters?.action?.trim()) {
+    q = q.eq('action', filters.action.trim())
+  }
+  if (filters?.fromDate?.trim()) {
+    q = q.gte('created_at', `${filters.fromDate.trim()}T00:00:00.000Z`)
+  }
+  if (filters?.toDate?.trim()) {
+    q = q.lte('created_at', `${filters.toDate.trim()}T23:59:59.999Z`)
+  }
+  q = q.limit(limit)
+  const { data, error } = await q
   if (error) throw new Error(error.message)
   return data ?? []
 }
