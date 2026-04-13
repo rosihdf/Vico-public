@@ -11,6 +11,8 @@ import {
   getStoredLicenseNumber,
   updateImpressum,
   isLicenseApiConfigured,
+  fetchLicenseFromApi,
+  setCachedLicenseResponse,
 } from './lib/licensePortalApi'
 import {
   fetchMyProfile,
@@ -114,6 +116,7 @@ const Einstellungen = () => {
   const [gpsRevoking, setGpsRevoking] = useState(false)
   const [showStammdatenEdit, setShowStammdatenEdit] = useState(false)
   const [stammdatenSaving, setStammdatenSaving] = useState(false)
+  const [stammdatenLoading, setStammdatenLoading] = useState(false)
   const [stammdatenError, setStammdatenError] = useState<string | null>(null)
   const [standortTeamleiterAllowed, setStandortTeamleiterAllowed] = useState(false)
   const [standortTeamleiterLoading, setStandortTeamleiterLoading] = useState(false)
@@ -468,26 +471,43 @@ const Einstellungen = () => {
     await refreshBriefbogenPreview()
   }
 
-  const handleOpenStammdatenEdit = () => {
-    const imp = cachedLicense?.impressum
-    const dat = cachedLicense?.datenschutz
+  const setStammdatenFormFromApi = useCallback((api: { impressum?: Record<string, unknown>; datenschutz?: Record<string, unknown> } | null) => {
+    const imp = api?.impressum
+    const dat = api?.datenschutz
     setStammdatenForm({
-      company_name: imp?.company_name ?? '',
-      address: imp?.address ?? '',
-      contact: imp?.contact ?? '',
-      represented_by: imp?.represented_by ?? '',
-      register: imp?.register ?? '',
-      vat_id: imp?.vat_id ?? '',
-      responsible: dat?.responsible ?? '',
-      contact_email: dat?.contact_email ?? '',
-      dsb_email: dat?.dsb_email ?? '',
+      company_name: typeof imp?.company_name === 'string' ? imp.company_name : '',
+      address: typeof imp?.address === 'string' ? imp.address : '',
+      contact: typeof imp?.contact === 'string' ? imp.contact : '',
+      represented_by: typeof imp?.represented_by === 'string' ? imp.represented_by : '',
+      register: typeof imp?.register === 'string' ? imp.register : '',
+      vat_id: typeof imp?.vat_id === 'string' ? imp.vat_id : '',
+      responsible: typeof dat?.responsible === 'string' ? dat.responsible : '',
+      contact_email: typeof dat?.contact_email === 'string' ? dat.contact_email : '',
+      dsb_email: typeof dat?.dsb_email === 'string' ? dat.dsb_email : '',
     })
+  }, [])
+
+  const handleOpenStammdatenEdit = async () => {
+    setStammdatenFormFromApi(cachedLicense)
     setStammdatenError(null)
     setShowStammdatenEdit(true)
+
+    if (!licenseNumber || !isLicenseApiConfigured() || !isOnline()) return
+
+    setStammdatenLoading(true)
+    const api = await fetchLicenseFromApi(licenseNumber, 8_000)
+    setStammdatenLoading(false)
+    if (!api) return
+    setCachedLicenseResponse(api, licenseNumber)
+    setStammdatenFormFromApi(api)
   }
 
   const handleSaveStammdaten = async () => {
-    if (!licenseNumber || stammdatenSaving) return
+    if (stammdatenSaving) return
+    if (!licenseNumber) {
+      setStammdatenError('Keine Lizenznummer hinterlegt. Bitte zuerst Lizenznummer prüfen.')
+      return
+    }
     setStammdatenSaving(true)
     setStammdatenError(null)
     const result = await updateImpressum(licenseNumber, {
@@ -507,8 +527,9 @@ const Einstellungen = () => {
     })
     setStammdatenSaving(false)
     if (result.ok) {
-      setShowStammdatenEdit(false)
       await refreshLicense({ force: true })
+      setShowStammdatenEdit(false)
+      showToast('Stammdaten wurden gespeichert.', 'success')
     } else {
       setStammdatenError(result.error ?? 'Speichern fehlgeschlagen')
     }
@@ -1689,7 +1710,7 @@ const Einstellungen = () => {
               role="dialog"
               aria-modal="true"
               aria-labelledby="stammdaten-modal-heading"
-              onClick={() => !stammdatenSaving && setShowStammdatenEdit(false)}
+              onClick={() => !stammdatenSaving && !stammdatenLoading && setShowStammdatenEdit(false)}
             >
               <div
                 className="max-w-lg w-full min-w-0 max-h-[min(90vh,90dvh)] overflow-auto p-6 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-xl"
@@ -1701,6 +1722,11 @@ const Einstellungen = () => {
                 {stammdatenError && (
                   <p className="mb-4 p-3 text-sm text-red-800 bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-lg" role="alert">
                     {stammdatenError}
+                  </p>
+                )}
+                {stammdatenLoading && (
+                  <p className="mb-4 p-3 text-sm text-slate-700 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg" role="status">
+                    Lade hinterlegte Stammdaten…
                   </p>
                 )}
                 <div className="space-y-4">
@@ -1804,7 +1830,7 @@ const Einstellungen = () => {
                   <button
                     type="button"
                     onClick={handleSaveStammdaten}
-                    disabled={stammdatenSaving}
+                    disabled={stammdatenSaving || stammdatenLoading}
                     className="px-4 py-2 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover disabled:opacity-50"
                   >
                     {stammdatenSaving ? 'Speichern…' : 'Speichern'}
@@ -1812,7 +1838,7 @@ const Einstellungen = () => {
                   <button
                     type="button"
                     onClick={() => setShowStammdatenEdit(false)}
-                    disabled={stammdatenSaving}
+                    disabled={stammdatenSaving || stammdatenLoading}
                     className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                   >
                     Abbrechen
