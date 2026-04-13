@@ -229,9 +229,9 @@ const ObjectFormModal = ({
     lock_manufacturers: [],
     lock_types: [],
   })
-  const [manufacturerUseFreeText, setManufacturerUseFreeText] = useState(true)
-  const [lockManufacturerUseFreeText, setLockManufacturerUseFreeText] = useState(true)
-  const [lockTypeUseFreeText, setLockTypeUseFreeText] = useState(true)
+  const [manufacturerUseFreeText, setManufacturerUseFreeText] = useState(false)
+  const [lockManufacturerUseFreeText, setLockManufacturerUseFreeText] = useState(false)
+  const [lockTypeUseFreeText, setLockTypeUseFreeText] = useState(false)
   /** Profil-Steuerung: öffnet per Klick auf Foto/Platzhalter im Kopfbereich */
   const [profilePanelOpen, setProfilePanelOpen] = useState(false)
   const pendingPreviewCleanupRef = useRef<string | null>(null)
