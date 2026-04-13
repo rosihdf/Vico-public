@@ -52,6 +52,7 @@ type PendingGalleryPhoto = {
 }
 
 const PENDING_GALLERY_PREFIX = 'pending-gallery-'
+const FREE_TEXT_OPTION = '__free_text__'
 
 const toPendingPhotoDisplay = (p: PendingGalleryPhoto): ObjectPhotoDisplay => ({
   id: p.id,
@@ -1222,11 +1223,18 @@ const ObjectFormModal = ({
                 ) : (
                   <select
                     value={formData.lock_manufacturer}
-                    onChange={(e) => handleFormChange('lock_manufacturer', e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === FREE_TEXT_OPTION) {
+                        setLockManufacturerUseFreeText(true)
+                        return
+                      }
+                      handleFormChange('lock_manufacturer', e.target.value)
+                    }}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                     aria-label="Schließmittel Hersteller aus Liste"
                   >
                     <option value="">— Bitte wählen —</option>
+                    <option value={FREE_TEXT_OPTION}>Freitext…</option>
                     {doorCatalog.lock_manufacturers.map((opt) => (
                       <option key={opt} value={opt}>
                         {opt}
@@ -1260,11 +1268,18 @@ const ObjectFormModal = ({
                 ) : (
                   <select
                     value={formData.lock_type}
-                    onChange={(e) => handleFormChange('lock_type', e.target.value)}
+                    onChange={(e) => {
+                      if (e.target.value === FREE_TEXT_OPTION) {
+                        setLockTypeUseFreeText(true)
+                        return
+                      }
+                      handleFormChange('lock_type', e.target.value)
+                    }}
                     className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
                     aria-label="Schließmittel Typ aus Liste"
                   >
                     <option value="">— Bitte wählen —</option>
+                    <option value={FREE_TEXT_OPTION}>Freitext…</option>
                     {doorCatalog.lock_types.map((opt) => (
                       <option key={opt} value={opt}>
                         {opt}
