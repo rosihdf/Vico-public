@@ -25,6 +25,32 @@ type ComponentSettingsContextType = {
 
 const ComponentSettingsContext = createContext<ComponentSettingsContextType | null>(null)
 
+const buildDefaultList = (settings: Record<string, boolean>): ComponentSetting[] =>
+  DEFAULT_SETTINGS_META.map((m) => ({
+    id: `default-${m.component_key}`,
+    component_key: m.component_key,
+    label: m.label,
+    enabled: settings[m.component_key] !== false,
+    sort_order: m.sort_order,
+    created_at: '',
+    updated_at: '',
+  }))
+
+const mergeSettingsListWithDefaults = (
+  settings: Record<string, boolean>,
+  settingsList: ComponentSetting[]
+): ComponentSetting[] => {
+  const defaults = buildDefaultList(settings)
+  const byKey = new Map(settingsList.map((row) => [row.component_key, row]))
+  const merged = defaults.map((fallback) => {
+    const existing = byKey.get(fallback.component_key)
+    return existing ? { ...fallback, ...existing } : fallback
+  })
+  const knownKeys = new Set(merged.map((row) => row.component_key))
+  const unknownRows = settingsList.filter((row) => !knownKeys.has(row.component_key))
+  return [...merged, ...unknownRows]
+}
+
 export const ComponentSettingsProvider = ({
   children,
 }: {
@@ -67,32 +93,13 @@ export const ComponentSettingsProvider = ({
     [settings]
   )
 
-  const displayList: ComponentSetting[] =
-    settingsList.length > 0
-      ? settingsList
-      : DEFAULT_SETTINGS_META.map((m) => ({
-          id: `default-${m.component_key}`,
-          component_key: m.component_key,
-          label: m.label,
-          enabled: settings[m.component_key] !== false,
-          sort_order: m.sort_order,
-          created_at: '',
-          updated_at: '',
-        }))
+  const displayList: ComponentSetting[] = mergeSettingsListWithDefaults(settings, settingsList)
 
   const updateSetting = useCallback(
     async (key: string, enabled: boolean): Promise<{ ok: boolean; error?: string }> => {
       setSettings((prev) => ({ ...prev, [key]: enabled }))
       setSettingsList((prev) => {
-        const base = prev.length > 0 ? prev : DEFAULT_SETTINGS_META.map((m) => ({
-          id: `default-${m.component_key}`,
-          component_key: m.component_key,
-          label: m.label,
-          enabled: m.component_key === key ? enabled : (settings[m.component_key] !== false),
-          sort_order: m.sort_order,
-          created_at: '',
-          updated_at: '',
-        }))
+        const base = mergeSettingsListWithDefaults(settings, prev)
         return base.map((s) =>
           s.component_key === key ? { ...s, enabled, updated_at: new Date().toISOString() } : s
         )
