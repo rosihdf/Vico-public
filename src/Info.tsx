@@ -17,6 +17,13 @@ import { hasAppVersionEntryContent } from '../shared/appVersions'
 
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.1'
 const RELEASE_LABEL = typeof __APP_RELEASE_LABEL__ !== 'undefined' ? __APP_RELEASE_LABEL__ : ''
+const HIDDEN_LICENSE_KEYS_IN_MAIN_APP = new Set([
+  'ladezeiten',
+  'fehlerberichte',
+  'degraded_banner',
+  'historie',
+  'beta_feedback',
+])
 
 const Info = () => {
   const { userRole, refreshUserRole } = useAuth()
@@ -309,7 +316,7 @@ const Info = () => {
                 <div className="text-slate-500 dark:text-slate-400 sm:col-span-2 font-medium pt-2 border-t border-slate-200 dark:border-slate-600">
                   Module (effektiv inkl. Tier-Defaults)
                 </div>
-                {LICENSE_FEATURE_KEYS.map((key) => {
+                {LICENSE_FEATURE_KEYS.filter((key) => !HIDDEN_LICENSE_KEYS_IN_MAIN_APP.has(key)).map((key) => {
                   const active = normalizeLicenseFeatures(license.features)[key] === true
                   return (
                     <div key={key} className="contents">
