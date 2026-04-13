@@ -352,7 +352,7 @@ const InfrastructurePingResultPanel = ({ loading, result, idPrefix }: Infrastruc
   if (rows.length === 0) {
     return (
       <p id={`${idPrefix}-empty`} className="text-sm text-slate-600 mt-2">
-        Keine Prüfungen ausgeführt (z. B. keine Supabase-URL und keine Preview-URLs).
+        Keine Prüfungen ausgeführt (z. B. keine Supabase-URL und keine Preview-URLs).
       </p>
     )
   }
