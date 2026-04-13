@@ -271,24 +271,6 @@ const Mandanten = () => {
         </div>
       ) : !isLoading && tenants.length > 0 ? (
         <div className="space-y-3">
-          <div
-            className="p-3 rounded-xl border border-sky-200 bg-sky-50/90 text-sm text-slate-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-slate-200"
-            role="note"
-          >
-            <p className="font-semibold text-slate-800 dark:text-slate-100">Deploy vs. Mandanten-Zuweisung</p>
-            <p className="mt-1.5 leading-relaxed">
-              Auf Cloudflare Pages gibt es <strong>ein gebautes Frontend pro App-Typ</strong> (Haupt-App, Kundenportal,
-              Arbeitszeitenportal, Lizenzportal-Admin) –{' '}
-              <strong>alle Mandanten teilen sich dieselbe ausgelieferte Datei</strong> jeweils. Ein GitHub-Deploy-Job
-              aktualisiert genau dieses eine Projekt.
-            </p>
-            <p className="mt-2 leading-relaxed">
-              Die <strong>„Zugewiesene App-Version“</strong> je Mandant unten kommt aus dem Rollout im Lizenzportal
-              (welches Release die <strong>Lizenz-API</strong> für diesen Mandanten meldet). Wenn du mehrere Mandanten
-              beim Update anwählst, werden typischerweise <strong>mehrere Zuweisungen</strong> gesetzt – nicht mehrere
-              separate CF-Builds pro Mandant.
-            </p>
-          </div>
           {tenants.map((t) => {
             const tenantLicenses = licensesMap.get(t.id) ?? []
             const primaryLicense = tenantLicenses[0]
@@ -376,21 +358,15 @@ const Mandanten = () => {
                   </button>
                   <Link
                     to={`/mandanten/${t.id}`}
-                    className="flex-1 min-w-[5rem] sm:flex-none text-center px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors min-h-[44px] sm:min-h-0 sm:py-1.5 flex items-center justify-center"
-                  >
-                    Bearbeiten
-                  </Link>
-                  <Link
-                    to={`/mandanten/${t.id}`}
                     state={
-                      tenantLicenses.length === 0
+                      tenantLicenses.length === 0 || !primaryLicense
                         ? { openCreateLicense: true }
                         : { editLicenseId: primaryLicense.id }
                     }
-                    className="flex-1 min-w-[5rem] sm:flex-none text-center px-3 py-2 text-sm font-medium text-vico-primary hover:bg-vico-primary/10 rounded-lg transition-colors min-h-[44px] sm:min-h-0 sm:py-1.5 flex items-center justify-center"
-                    aria-label={tenantLicenses.length === 0 ? 'Lizenz anlegen' : 'Lizenz bearbeiten'}
+                    className="flex-1 min-w-[5rem] sm:flex-none text-center px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors min-h-[44px] sm:min-h-0 sm:py-1.5 flex items-center justify-center"
+                    aria-label={tenantLicenses.length === 0 ? 'Öffnen und Lizenz anlegen' : 'Öffnen und Lizenz bearbeiten'}
                   >
-                    {tenantLicenses.length === 0 ? 'Lizenz anlegen' : 'Lizenz bearbeiten'}
+                    Öffnen
                   </Link>
                   <button
                     type="button"

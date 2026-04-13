@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useMatch, useLocation } from 'react-router-dom'
 import { fetchTenant, createTenant, updateTenant } from '../lib/tenantService'
 import {
@@ -10,18 +10,27 @@ import {
   generateLicenseNumber,
   fetchLicenseModels,
   fetchStorageSummary,
+  fetchTenantEmailMonthlyUsage,
+  invokeInfrastructurePing,
+  type InfrastructurePingResponse,
   type License,
   type LicenseUpdate,
   type LicenseModel,
   type LicenseWithModel,
+  type TenantEmailMonthlyUsage,
 } from '../lib/licensePortalService'
 import {
   LICENSE_FEATURE_KEYS,
   LICENSE_FEATURE_LABELS,
   LICENSE_FEATURE_DESCRIPTIONS,
+  LICENSE_FEATURE_GROUPS,
+  applyFeatureToggleWithDependencies,
   emptyLicenseFeatures,
   effectiveLicenseFeatures,
   explicitLicenseFeaturesMap,
+  getFeatureChildren,
+  isFeatureToggleEnabled,
+  type LicenseFeatureKey,
 } from '../../../shared/licenseFeatures'
 import AppVersionRowsEditor from '../components/AppVersionRowsEditor'
 import MandantReleaseAssignmentsSection from '../components/MandantReleaseAssignmentsSection'
@@ -57,6 +66,12 @@ const fromDatetimeLocal = (value: string): string | null => {
   return d.toISOString()
 }
 
+const toYearMonth = (value: Date): string => {
+  const y = value.getFullYear()
+  const m = String(value.getMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+}
+
 const DEFAULT_CREATE_FORM: {
   license_number: string
   license_model_id: string | null
@@ -83,6 +98,311 @@ const DEFAULT_CREATE_FORM: {
   features: emptyLicenseFeatures(),
 }
 
+type FeatureToggleListProps = {
+  idPrefix: string
+  features: Record<string, boolean>
+  onFeaturesChange: (next: Record<string, boolean>) => void
+}
+
+const FeatureToggleList = ({ idPrefix, features, onFeaturesChange }: FeatureToggleListProps) => {
+  return (
+    <div className="space-y-4">
+      {LICENSE_FEATURE_GROUPS.map((group) => (
+        <div key={group.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+          <h5 className="text-sm font-semibold text-slate-800 mb-2">{group.label}</h5>
+          <div className="space-y-2">
+            {group.features.map((parentKey) => {
+              const children = getFeatureChildren(parentKey)
+              const parentInputId = `${idPrefix}-feature-${parentKey}`
+              return (
+                <div key={parentKey} className="space-y-1">
+                  <label
+                    htmlFor={parentInputId}
+                    className="flex items-center gap-2 cursor-pointer"
+                    title={LICENSE_FEATURE_DESCRIPTIONS[parentKey] ?? ''}
+                  >
+                    <input
+                      id={parentInputId}
+                      type="checkbox"
+                      checked={features[parentKey] ?? false}
+                      onChange={(e) =>
+                        onFeaturesChange(
+                          applyFeatureToggleWithDependencies(
+                            features,
+                            parentKey as LicenseFeatureKey,
+                            e.target.checked
+                          )
+                        )
+                      }
+                      className="w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
+                    />
+                    <span className="text-sm font-medium text-slate-800">
+                      {LICENSE_FEATURE_LABELS[parentKey] ?? parentKey}
+                    </span>
+                  </label>
+
+                  {children.map((childKey) => {
+                    const childEnabled = isFeatureToggleEnabled(features, childKey)
+                    const childInputId = `${idPrefix}-feature-${childKey}`
+                    return (
+                      <label
+                        key={childKey}
+                        htmlFor={childInputId}
+                        className={`ml-7 flex items-center gap-2 ${childEnabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                        title={LICENSE_FEATURE_DESCRIPTIONS[childKey] ?? ''}
+                      >
+                        <input
+                          id={childInputId}
+                          type="checkbox"
+                          checked={features[childKey] ?? false}
+                          disabled={!childEnabled}
+                          onChange={(e) =>
+                            onFeaturesChange(
+                              applyFeatureToggleWithDependencies(
+                                features,
+                                childKey as LicenseFeatureKey,
+                                e.target.checked
+                              )
+                            )
+                          }
+                          className="w-4 h-4 rounded border-slate-300 text-vico-primary focus:ring-vico-primary disabled:opacity-60"
+                        />
+                        <span className="text-sm text-slate-700">
+                          {LICENSE_FEATURE_LABELS[childKey] ?? childKey}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+      <p className="text-xs text-slate-500">
+        Abhängigkeiten sind gekoppelt: Elternmodul aus = Untermodule aus; Untermodul an = Elternmodul wird automatisch aktiviert.
+      </p>
+    </div>
+  )
+}
+
+const WIZARD_TOTAL_STEPS = 6
+
+const isPlausibleEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+
+const isPlausibleSupabaseProjectUrl = (raw: string): boolean => {
+  const t = raw.trim()
+  if (!t) return true
+  try {
+    const u = new URL(t)
+    return u.protocol === 'https:' && /\.supabase\.co$/i.test(u.hostname)
+  } catch {
+    return false
+  }
+}
+
+const isOptionalHttpUrl = (raw: string): boolean => {
+  const t = raw.trim()
+  if (!t) return true
+  try {
+    const full = /^https?:\/\//i.test(t) ? t : `https://${t}`
+    const u = new URL(full)
+    return u.protocol === 'https:' || u.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+type WizardFormSlice = {
+  name: string
+  app_name: string
+  primary_color: string
+  datenschutz_contact_email: string
+  mail_monthly_limit: string
+  mail_from_email: string
+  supabase_url: string
+  cf_preview_main_url: string
+  cf_preview_portal_url: string
+  cf_preview_arbeitszeit_url: string
+}
+
+const getWizardStepComplete = (
+  f: WizardFormSlice,
+  step: number,
+  licenseModelId: string,
+  licenseModels: LicenseModel[]
+): boolean => {
+  switch (step) {
+    case 1:
+      return f.name.trim().length > 0
+    case 2:
+      return f.app_name.trim().length > 0 && /^#[0-9A-Fa-f]{6}$/.test(f.primary_color)
+    case 3: {
+      const de = f.datenschutz_contact_email.trim()
+      if (de.length > 0 && !isPlausibleEmail(de)) return false
+      return true
+    }
+    case 4: {
+      const lim = parseInt(f.mail_monthly_limit, 10)
+      if (Number.isNaN(lim) || lim < 1) return false
+      const fe = f.mail_from_email.trim()
+      if (fe.length > 0 && !isPlausibleEmail(fe)) return false
+      return true
+    }
+    case 5:
+      return (
+        isPlausibleSupabaseProjectUrl(f.supabase_url) &&
+        isOptionalHttpUrl(f.cf_preview_main_url) &&
+        isOptionalHttpUrl(f.cf_preview_portal_url) &&
+        isOptionalHttpUrl(f.cf_preview_arbeitszeit_url)
+      )
+    case 6:
+      return licenseModels.length === 0 || licenseModels.some((m) => m.id === licenseModelId)
+    default:
+      return false
+  }
+}
+
+const validateWizardStep = (
+  f: WizardFormSlice,
+  step: number,
+  licenseModelId: string,
+  licenseModels: LicenseModel[]
+): string | null => {
+  switch (step) {
+    case 1:
+      if (!f.name.trim()) return 'Bitte einen Mandanten-Namen eingeben.'
+      return null
+    case 2:
+      if (!f.app_name.trim()) return 'Bitte einen App-Namen eingeben.'
+      if (!/^#[0-9A-Fa-f]{6}$/.test(f.primary_color)) return 'Bitte eine gültige Primärfarbe wählen.'
+      return null
+    case 3: {
+      const de = f.datenschutz_contact_email.trim()
+      if (de.length > 0 && !isPlausibleEmail(de)) return 'Bitte eine gültige Datenschutz-Kontakt-E-Mail eingeben oder leer lassen.'
+      return null
+    }
+    case 4: {
+      const lim = parseInt(f.mail_monthly_limit, 10)
+      if (Number.isNaN(lim) || lim < 1) return 'Bitte ein gültiges Monatslimit (mindestens 1) eingeben.'
+      const fe = f.mail_from_email.trim()
+      if (fe.length > 0 && !isPlausibleEmail(fe)) return 'Bitte eine gültige Absender-E-Mail eingeben oder leer lassen.'
+      return null
+    }
+    case 5: {
+      if (!isPlausibleSupabaseProjectUrl(f.supabase_url)) {
+        return 'Supabase-URL leer lassen oder als https://…supabase.co angeben.'
+      }
+      if (!isOptionalHttpUrl(f.cf_preview_main_url)) return 'Preview-URL Haupt-App: leer oder gültige http(s)-URL.'
+      if (!isOptionalHttpUrl(f.cf_preview_portal_url)) return 'Preview-URL Kundenportal: leer oder gültige http(s)-URL.'
+      if (!isOptionalHttpUrl(f.cf_preview_arbeitszeit_url)) return 'Preview-URL Arbeitszeitportal: leer oder gültige http(s)-URL.'
+      return null
+    }
+    case 6:
+      if (licenseModels.length === 0) return 'Es ist kein Lizenzmodell vorhanden. Bitte zuerst unter Lizenzmodelle anlegen.'
+      if (!licenseModelId || !licenseModels.some((m) => m.id === licenseModelId)) return 'Bitte ein Lizenzmodell für die Initial-Lizenz auswählen.'
+      return null
+    default:
+      return null
+  }
+}
+
+type InfrastructurePingResultPanelProps = {
+  loading: boolean
+  result: InfrastructurePingResponse | null
+  idPrefix: string
+}
+
+const InfrastructurePingResultPanel = ({ loading, result, idPrefix }: InfrastructurePingResultPanelProps) => {
+  if (loading) {
+    return (
+      <p className="text-sm text-slate-600" role="status" aria-live="polite">
+        Verbindungen werden geprüft…
+      </p>
+    )
+  }
+  if (!result) return null
+  const rows: { key: string; label: string; ok: boolean; message: string; skipped?: boolean }[] = []
+  if (result.supabase_auth_health) {
+    rows.push({
+      key: 'sb-auth',
+      label: 'Supabase Auth (Health)',
+      ok: result.supabase_auth_health.ok,
+      message: result.supabase_auth_health.message,
+    })
+  }
+  if (result.supabase_rest) {
+    rows.push({
+      key: 'sb-rest',
+      label: 'Supabase REST (Anon-Key)',
+      ok: result.supabase_rest.skipped ? true : result.supabase_rest.ok,
+      message: result.supabase_rest.message,
+      skipped: result.supabase_rest.skipped,
+    })
+  }
+  for (const u of result.urls) {
+    rows.push({
+      key: u.label,
+      label: u.label,
+      ok: u.skipped ? true : u.ok,
+      message: u.message,
+      skipped: u.skipped,
+    })
+  }
+  if (rows.length === 0) {
+    return (
+      <p id={`${idPrefix}-empty`} className="text-sm text-slate-600 mt-2">
+        Keine Prüfungen ausgeführt (z. B. keine Supabase-URL und keine Preview-URLs).
+      </p>
+    )
+  }
+  return (
+    <ul
+      id={`${idPrefix}-list`}
+      className="mt-3 space-y-2 text-sm"
+      role="list"
+      aria-label="Ergebnisse Verbindungsprüfung"
+    >
+      {rows.map((r) => (
+        <li
+          key={r.key}
+          className="flex flex-wrap items-start gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5"
+        >
+          <span
+            className={`shrink-0 font-semibold min-w-[3.5rem] ${
+              r.skipped ? 'text-slate-500' : r.ok ? 'text-emerald-700' : 'text-red-700'
+            }`}
+          >
+            {r.skipped ? '—' : r.ok ? 'OK' : 'Fehler'}
+          </span>
+          <span className="text-slate-800">
+            <span className="font-medium">{r.label}:</span> {r.message}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+const SectionActionRow = ({ isSaving, onCancel }: { isSaving: boolean; onCancel: () => void }) => (
+  <div className="flex flex-col-reverse gap-2 pt-3 sm:flex-row sm:flex-wrap">
+    <button
+      type="submit"
+      disabled={isSaving}
+      className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover disabled:opacity-50 min-h-[44px] sm:min-h-0"
+    >
+      {isSaving ? 'Speichern…' : 'Speichern'}
+    </button>
+    <button
+      type="button"
+      onClick={onCancel}
+      className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 min-h-[44px] sm:min-h-0"
+    >
+      Abbrechen
+    </button>
+  </div>
+)
+
 type LocationState = { editLicenseId?: string; openCreateLicense?: boolean } | null
 
 const MandantForm = () => {
@@ -103,6 +423,8 @@ const MandantForm = () => {
   const [createForm, setCreateForm] = useState(DEFAULT_CREATE_FORM)
   const [editForm, setEditForm] = useState<LicenseUpdate>({})
   const [licenseModels, setLicenseModels] = useState<LicenseModel[]>([])
+  const [emailUsage, setEmailUsage] = useState<TenantEmailMonthlyUsage | null>(null)
+  const [emailUsageMonth] = useState(() => toYearMonth(new Date()))
 
   const [form, setForm] = useState({
     name: '',
@@ -121,11 +443,19 @@ const MandantForm = () => {
     impressum_contact: '',
     datenschutz_responsible: '',
     datenschutz_contact_email: '',
+    mail_provider: 'resend',
+    mail_from_name: '',
+    mail_from_email: '',
+    mail_reply_to: '',
+    mail_monthly_limit: '3000',
     allowed_domains: '',
     /** Kurzref aus Dashboard-URL (neues Mandanten-Supabase-Projekt) */
     supabase_project_ref: '',
     /** https://<ref>.supabase.co – für Deployment-Export / VITE_SUPABASE_URL */
     supabase_url: '',
+    cf_preview_main_url: '',
+    cf_preview_portal_url: '',
+    cf_preview_arbeitszeit_url: '',
     maintenance_mode_enabled: false,
     maintenance_mode_message: '',
     maintenance_mode_duration_min: '',
@@ -149,6 +479,13 @@ const MandantForm = () => {
   const [faviconFilePending, setFaviconFilePending] = useState<File | null>(null)
   const [faviconPreviewObjectUrl, setFaviconPreviewObjectUrl] = useState<string | null>(null)
   const [maintenanceExtendMinutes, setMaintenanceExtendMinutes] = useState('30')
+  const [wizardStep, setWizardStep] = useState(1)
+  const [wizardTenantId, setWizardTenantId] = useState<string | null>(null)
+  const [wizardLicenseModelId, setWizardLicenseModelId] = useState('')
+  /** Nur für Verbindungsprüfung (REST); wird nicht in der Datenbank gespeichert */
+  const [infrastructurePingAnonKey, setInfrastructurePingAnonKey] = useState('')
+  const [infrastructurePingLoading, setInfrastructurePingLoading] = useState(false)
+  const [infrastructurePingResult, setInfrastructurePingResult] = useState<InfrastructurePingResponse | null>(null)
 
   const loadLicenses = useCallback(async (tenantId: string) => {
     try {
@@ -166,12 +503,15 @@ const MandantForm = () => {
       try {
         const data = await fetchLicenseModels()
         setLicenseModels(data)
+        if (!wizardLicenseModelId && data.length > 0) {
+          setWizardLicenseModelId(data[0].id)
+        }
       } catch {
         setLicenseModels([])
       }
     }
     load()
-  }, [isNew])
+  }, [isNew, wizardLicenseModelId])
 
   // Beim Bearbeiten: Mandant, Lizenzen und Lizenzmodelle parallel laden (eine Roundtrip-Runde).
   useEffect(() => {
@@ -204,11 +544,19 @@ const MandantForm = () => {
             impressum_contact: t.impressum_contact ?? '',
             datenschutz_responsible: t.datenschutz_responsible ?? '',
             datenschutz_contact_email: t.datenschutz_contact_email ?? '',
+            mail_provider: t.mail_provider ?? 'resend',
+            mail_from_name: t.mail_from_name ?? '',
+            mail_from_email: t.mail_from_email ?? '',
+            mail_reply_to: t.mail_reply_to ?? '',
+            mail_monthly_limit: t.mail_monthly_limit != null ? String(t.mail_monthly_limit) : '3000',
             allowed_domains: Array.isArray(t.allowed_domains)
               ? t.allowed_domains.join('\n')
               : (t.allowed_domains ? String(t.allowed_domains) : ''),
             supabase_project_ref: t.supabase_project_ref ?? '',
             supabase_url: t.supabase_url ?? '',
+            cf_preview_main_url: t.cf_preview_main_url ?? '',
+            cf_preview_portal_url: t.cf_preview_portal_url ?? '',
+            cf_preview_arbeitszeit_url: t.cf_preview_arbeitszeit_url ?? '',
             maintenance_mode_enabled: Boolean(t.maintenance_mode_enabled),
             maintenance_mode_message: t.maintenance_mode_message ?? '',
             maintenance_mode_duration_min:
@@ -229,6 +577,8 @@ const MandantForm = () => {
           setAppVersionRows(appVersionRowsFromJson(av))
         }
         setTenantLicenses(licensesData)
+        const usage = await fetchTenantEmailMonthlyUsage(id, emailUsageMonth)
+        setEmailUsage(usage)
         setLicenseModels(modelsData ?? [])
         console.info(`[Lizenzportal] MandantForm load: ${Math.round(performance.now() - loadStart)}ms`)
       } catch (err) {
@@ -239,7 +589,7 @@ const MandantForm = () => {
       }
     }
     load()
-  }, [id, isNew])
+  }, [emailUsageMonth, id, isNew])
 
   useEffect(() => {
     if (!logoFilePending) {
@@ -352,8 +702,16 @@ const MandantForm = () => {
           impressum_contact: form.impressum_contact || null,
           datenschutz_responsible: form.datenschutz_responsible || null,
           datenschutz_contact_email: form.datenschutz_contact_email || null,
+          mail_provider: form.mail_provider || 'resend',
+          mail_from_name: form.mail_from_name.trim() || null,
+          mail_from_email: form.mail_from_email.trim() || null,
+          mail_reply_to: form.mail_reply_to.trim() || null,
+          mail_monthly_limit: Math.max(1, parseInt(form.mail_monthly_limit, 10) || 3000),
           supabase_project_ref: form.supabase_project_ref.trim() || null,
           supabase_url: form.supabase_url.trim() || null,
+          cf_preview_main_url: form.cf_preview_main_url.trim() || null,
+          cf_preview_portal_url: form.cf_preview_portal_url.trim() || null,
+          cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url.trim() || null,
           maintenance_mode_enabled: form.maintenance_mode_enabled,
           maintenance_mode_message: form.maintenance_mode_message.trim() || null,
           maintenance_mode_duration_min: form.maintenance_mode_duration_min
@@ -449,8 +807,16 @@ const MandantForm = () => {
           impressum_contact: form.impressum_contact || null,
           datenschutz_responsible: form.datenschutz_responsible || null,
           datenschutz_contact_email: form.datenschutz_contact_email || null,
+          mail_provider: form.mail_provider || 'resend',
+          mail_from_name: form.mail_from_name.trim() || null,
+          mail_from_email: form.mail_from_email.trim() || null,
+          mail_reply_to: form.mail_reply_to.trim() || null,
+          mail_monthly_limit: Math.max(1, parseInt(form.mail_monthly_limit, 10) || 3000),
           supabase_project_ref: form.supabase_project_ref.trim() || null,
           supabase_url: form.supabase_url.trim() || null,
+          cf_preview_main_url: form.cf_preview_main_url.trim() || null,
+          cf_preview_portal_url: form.cf_preview_portal_url.trim() || null,
+          cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url.trim() || null,
           maintenance_mode_enabled: form.maintenance_mode_enabled,
           maintenance_mode_message: form.maintenance_mode_message.trim() || null,
           maintenance_mode_duration_min: form.maintenance_mode_duration_min
@@ -660,11 +1026,667 @@ const MandantForm = () => {
     setForm((f) => ({ ...f, maintenance_mode_ends_at: local }))
   }
 
+  const buildTenantPayload = useCallback(() => {
+    return {
+      name: form.name,
+      app_domain: form.app_domain || null,
+      portal_domain: form.portal_domain || null,
+      kundenportal_url: form.kundenportal_url.trim() || null,
+      arbeitszeitenportal_domain: form.arbeitszeitenportal_domain || null,
+      allowed_domains: form.allowed_domains
+        ? form.allowed_domains
+            .split(/[\n,]/)
+            .map((d) => d.trim().toLowerCase())
+            .filter(Boolean)
+        : [],
+      primary_color: form.primary_color,
+      app_name: form.app_name,
+      logo_url: form.logo_url.trim() || null,
+      favicon_url: form.favicon_url.trim() || null,
+      impressum_company_name: form.impressum_company_name || null,
+      impressum_address: form.impressum_address || null,
+      impressum_contact: form.impressum_contact || null,
+      datenschutz_responsible: form.datenschutz_responsible || null,
+      datenschutz_contact_email: form.datenschutz_contact_email || null,
+      mail_provider: form.mail_provider || 'resend',
+      mail_from_name: form.mail_from_name.trim() || null,
+      mail_from_email: form.mail_from_email.trim() || null,
+      mail_reply_to: form.mail_reply_to.trim() || null,
+      mail_monthly_limit: Math.max(1, parseInt(form.mail_monthly_limit, 10) || 3000),
+      supabase_project_ref: form.supabase_project_ref.trim() || null,
+      supabase_url: form.supabase_url.trim() || null,
+      cf_preview_main_url: form.cf_preview_main_url.trim() || null,
+      cf_preview_portal_url: form.cf_preview_portal_url.trim() || null,
+      cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url.trim() || null,
+      maintenance_mode_enabled: form.maintenance_mode_enabled,
+      maintenance_mode_message: form.maintenance_mode_message.trim() || null,
+      maintenance_mode_duration_min: form.maintenance_mode_duration_min
+        ? Math.max(1, parseInt(form.maintenance_mode_duration_min, 10) || 0)
+        : null,
+      maintenance_mode_started_at: fromDatetimeLocal(form.maintenance_mode_started_at),
+      maintenance_mode_ends_at: fromDatetimeLocal(form.maintenance_mode_ends_at),
+      maintenance_mode_auto_end: form.maintenance_mode_auto_end,
+      maintenance_mode_apply_main_app: form.maintenance_mode_apply_main_app,
+      maintenance_mode_apply_arbeitszeit_portal: form.maintenance_mode_apply_arbeitszeit_portal,
+      maintenance_mode_apply_customer_portal: form.maintenance_mode_apply_customer_portal,
+      maintenance_announcement_enabled: form.maintenance_announcement_enabled,
+      maintenance_announcement_message: form.maintenance_announcement_message.trim() || null,
+      maintenance_announcement_from: fromDatetimeLocal(form.maintenance_announcement_from),
+      maintenance_announcement_until: fromDatetimeLocal(form.maintenance_announcement_until),
+      app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
+      is_test_mandant: form.is_test_mandant,
+    }
+  }, [appVersionRows, form])
+
+  const handleInfrastructurePing = useCallback(async () => {
+    setInfrastructurePingLoading(true)
+    setInfrastructurePingResult(null)
+    try {
+      const urls = [
+        { label: 'CF Preview Haupt-App', url: form.cf_preview_main_url },
+        { label: 'CF Preview Kundenportal', url: form.cf_preview_portal_url },
+        { label: 'CF Preview Arbeitszeitportal', url: form.cf_preview_arbeitszeit_url },
+      ]
+      const res = await invokeInfrastructurePing({
+        supabase_url: form.supabase_url.trim() || undefined,
+        supabase_anon_key: infrastructurePingAnonKey.trim() || undefined,
+        urls,
+      })
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
+      setInfrastructurePingResult(res.data)
+    } finally {
+      setInfrastructurePingLoading(false)
+    }
+  }, [
+    form.cf_preview_arbeitszeit_url,
+    form.cf_preview_main_url,
+    form.cf_preview_portal_url,
+    form.supabase_url,
+    infrastructurePingAnonKey,
+  ])
+
+  const saveWizardDraft = useCallback(async (): Promise<string | null> => {
+    if (!form.name.trim()) {
+      setError('Bitte zuerst einen Mandanten-Namen angeben.')
+      return null
+    }
+    setIsSaving(true)
+    setError(null)
+    const payload = buildTenantPayload()
+    try {
+      if (!wizardTenantId) {
+        const created = await createTenant(payload)
+        if ('error' in created) {
+          setError(created.error)
+          return null
+        }
+        setWizardTenantId(created.id)
+        return created.id
+      }
+      const updated = await updateTenant(wizardTenantId, payload)
+      if (!updated.ok) {
+        setError(updated.error ?? 'Speichern fehlgeschlagen')
+        return null
+      }
+      return wizardTenantId
+    } finally {
+      setIsSaving(false)
+    }
+  }, [buildTenantPayload, form.name, wizardTenantId])
+
+  const wizardProgress = useMemo(() => {
+    const slice: WizardFormSlice = {
+      name: form.name,
+      app_name: form.app_name,
+      primary_color: form.primary_color,
+      datenschutz_contact_email: form.datenschutz_contact_email,
+      mail_monthly_limit: form.mail_monthly_limit,
+      mail_from_email: form.mail_from_email,
+      supabase_url: form.supabase_url,
+      cf_preview_main_url: form.cf_preview_main_url,
+      cf_preview_portal_url: form.cf_preview_portal_url,
+      cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url,
+    }
+    const steps = [1, 2, 3, 4, 5, 6] as const
+    const stepComplete = steps.map((s) =>
+      getWizardStepComplete(slice, s, wizardLicenseModelId, licenseModels)
+    )
+    return {
+      completedCount: stepComplete.filter(Boolean).length,
+      stepComplete,
+    }
+  }, [
+    form.name,
+    form.app_name,
+    form.primary_color,
+    form.datenschutz_contact_email,
+    form.mail_monthly_limit,
+    form.mail_from_email,
+    form.supabase_url,
+    form.cf_preview_main_url,
+    form.cf_preview_portal_url,
+    form.cf_preview_arbeitszeit_url,
+    wizardLicenseModelId,
+    licenseModels,
+  ])
+
+  const handleWizardNext = async () => {
+    const slice: WizardFormSlice = {
+      name: form.name,
+      app_name: form.app_name,
+      primary_color: form.primary_color,
+      datenschutz_contact_email: form.datenschutz_contact_email,
+      mail_monthly_limit: form.mail_monthly_limit,
+      mail_from_email: form.mail_from_email,
+      supabase_url: form.supabase_url,
+      cf_preview_main_url: form.cf_preview_main_url,
+      cf_preview_portal_url: form.cf_preview_portal_url,
+      cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url,
+    }
+    const stepErr = validateWizardStep(slice, wizardStep, wizardLicenseModelId, licenseModels)
+    if (stepErr) {
+      setError(stepErr)
+      setSuccessMessage(null)
+      return
+    }
+    setError(null)
+    const savedId = await saveWizardDraft()
+    if (!savedId) return
+    setSuccessMessage('Schritt gespeichert.')
+    setWizardStep((prev) => Math.min(prev + 1, WIZARD_TOTAL_STEPS))
+  }
+
+  const handleWizardFinish = async () => {
+    const slice: WizardFormSlice = {
+      name: form.name,
+      app_name: form.app_name,
+      primary_color: form.primary_color,
+      datenschutz_contact_email: form.datenschutz_contact_email,
+      mail_monthly_limit: form.mail_monthly_limit,
+      mail_from_email: form.mail_from_email,
+      supabase_url: form.supabase_url,
+      cf_preview_main_url: form.cf_preview_main_url,
+      cf_preview_portal_url: form.cf_preview_portal_url,
+      cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url,
+    }
+    for (let s = 1; s <= WIZARD_TOTAL_STEPS; s++) {
+      const stepErr = validateWizardStep(slice, s, wizardLicenseModelId, licenseModels)
+      if (stepErr) {
+        setError(stepErr)
+        setWizardStep(s)
+        setSuccessMessage(null)
+        return
+      }
+    }
+    setError(null)
+    const tenantId = await saveWizardDraft()
+    if (!tenantId) return
+
+    const selectedModel = licenseModels.find((m) => m.id === wizardLicenseModelId) ?? licenseModels[0]
+    if (!selectedModel) {
+      setError('Für den Abschluss wird mindestens ein Lizenzmodell benötigt.')
+      return
+    }
+
+    const createResult = await createLicense({
+      tenant_id: tenantId,
+      license_number: generateLicenseNumber(),
+      license_model_id: selectedModel.id,
+      tier: selectedModel.tier,
+      max_users: selectedModel.max_users,
+      max_customers: selectedModel.max_customers,
+      max_storage_mb: selectedModel.max_storage_mb,
+      check_interval: selectedModel.check_interval,
+      features: explicitLicenseFeaturesMap(selectedModel.features ?? {}),
+    })
+    if ('error' in createResult) {
+      setError(createResult.error)
+      return
+    }
+    setSuccessMessage('Mandant angelegt und Initial-Lizenz erstellt.')
+    navigate('/mandanten')
+  }
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-4">
         <div className="w-8 h-8 border-4 border-vico-primary border-t-transparent rounded-full animate-spin" />
         <p className="text-sm text-slate-500">Lade Mandant…</p>
+      </div>
+    )
+  }
+
+  if (isNew) {
+    const stepTitles = [
+      'Basisdaten',
+      'Branding',
+      'Rechtliches',
+      'Mailversand',
+      'Hosting',
+      'Fertigstellen',
+    ]
+    return (
+      <div className="w-full max-w-2xl min-w-0 space-y-4">
+        <h2 className="text-xl font-bold text-slate-800">Neuer Mandant (Assistent)</h2>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-700" role="status" aria-live="polite">
+              Fortschritt:{' '}
+              <strong>
+                {wizardProgress.completedCount} von {WIZARD_TOTAL_STEPS}
+              </strong>{' '}
+              Schritte vollständig
+            </p>
+            <span className="text-xs text-slate-500">
+              Pflichtfelder je Schritt müssen stimmen, bevor gespeichert wird.
+            </span>
+          </div>
+          <div
+            className="h-2 w-full rounded-full bg-slate-100 overflow-hidden"
+            role="progressbar"
+            aria-valuenow={wizardProgress.completedCount}
+            aria-valuemin={0}
+            aria-valuemax={WIZARD_TOTAL_STEPS}
+            aria-label="Assistent-Fortschritt"
+          >
+            <div
+              className="h-full bg-vico-primary transition-[width] duration-300 ease-out"
+              style={{ width: `${(wizardProgress.completedCount / WIZARD_TOTAL_STEPS) * 100}%` }}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {stepTitles.map((title, idx) => {
+              const step = idx + 1
+              const active = wizardStep === step
+              const stepOk = wizardProgress.stepComplete[idx] ?? false
+              return (
+                <span
+                  key={title}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                    active
+                      ? 'bg-vico-primary text-white'
+                      : stepOk
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {stepOk && !active ? (
+                    <span className="text-emerald-700" aria-hidden>
+                      ✓
+                    </span>
+                  ) : null}
+                  {step}. {title}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+
+        {error && (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-800" role="alert">
+            {error}
+          </div>
+        )}
+        {successMessage && (
+          <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-green-800" role="status">
+            {successMessage}
+          </div>
+        )}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (wizardStep < WIZARD_TOTAL_STEPS) {
+              void handleWizardNext()
+            } else {
+              void handleWizardFinish()
+            }
+          }}
+          className="space-y-4"
+        >
+          {wizardStep === 1 && (
+            <div className="rounded-xl border-2 border-sky-200 bg-sky-50/60 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-800">Schritt 1: Basisdaten</h3>
+              <p className="text-xs text-slate-600" id="wizard-step1-hint">
+                Pflicht: <strong>Mandantenname</strong>. Domains sind optional und können später ergänzt werden.
+              </p>
+              <input
+                id="wizard-name"
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Mandantenname *"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+                required
+                aria-describedby="wizard-step1-hint"
+              />
+              <input
+                type="text"
+                value={form.app_domain}
+                onChange={(e) => setForm((f) => ({ ...f, app_domain: e.target.value }))}
+                placeholder="App-Domain"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              />
+              <input
+                type="text"
+                value={form.portal_domain}
+                onChange={(e) => setForm((f) => ({ ...f, portal_domain: e.target.value }))}
+                placeholder="Kundenportal-Domain"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              />
+              <input
+                type="text"
+                value={form.arbeitszeitenportal_domain}
+                onChange={(e) => setForm((f) => ({ ...f, arbeitszeitenportal_domain: e.target.value }))}
+                placeholder="Arbeitszeitportal-Domain"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              />
+            </div>
+          )}
+
+          {wizardStep === 2 && (
+            <div className="rounded-xl border-2 border-violet-200 bg-violet-50/60 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-800">Schritt 2: Branding</h3>
+              <p className="text-xs text-slate-600" id="wizard-step2-hint">
+                Pflicht: <strong>App-Name</strong>. Logo- und Favicon-URLs sind optional.
+              </p>
+              <input
+                id="wizard-app-name"
+                type="text"
+                value={form.app_name}
+                onChange={(e) => setForm((f) => ({ ...f, app_name: e.target.value }))}
+                placeholder="App-Name"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+                aria-describedby="wizard-step2-hint"
+              />
+              <input
+                type="color"
+                value={form.primary_color}
+                onChange={(e) => setForm((f) => ({ ...f, primary_color: e.target.value }))}
+                className="w-16 h-10 rounded border border-slate-300"
+              />
+              <input
+                type="url"
+                value={form.logo_url}
+                onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
+                placeholder="Logo-URL"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              />
+              <input
+                type="url"
+                value={form.favicon_url}
+                onChange={(e) => setForm((f) => ({ ...f, favicon_url: e.target.value }))}
+                placeholder="Favicon-URL"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              />
+            </div>
+          )}
+
+          {wizardStep === 3 && (
+            <div className="rounded-xl border-2 border-amber-200 bg-amber-50/60 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-800">Schritt 3: Rechtliches</h3>
+              <p className="text-xs text-slate-600" id="wizard-step3-hint">
+                Alles optional. Wenn Sie eine Datenschutz-E-Mail eintragen, muss sie gültig sein.
+              </p>
+              <input
+                type="text"
+                value={form.impressum_company_name}
+                onChange={(e) => setForm((f) => ({ ...f, impressum_company_name: e.target.value }))}
+                placeholder="Impressum: Firmenname"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              />
+              <textarea
+                value={form.impressum_address}
+                onChange={(e) => setForm((f) => ({ ...f, impressum_address: e.target.value }))}
+                placeholder="Impressum: Adresse"
+                rows={2}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              />
+              <input
+                type="email"
+                value={form.datenschutz_contact_email}
+                onChange={(e) => setForm((f) => ({ ...f, datenschutz_contact_email: e.target.value }))}
+                placeholder="Datenschutz Kontakt-E-Mail"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+                aria-describedby="wizard-step3-hint"
+              />
+            </div>
+          )}
+
+          {wizardStep === 4 && (
+            <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-800">Schritt 4: Mailversand</h3>
+              <p className="text-xs text-slate-600" id="wizard-step4-hint">
+                Monatslimit mindestens <strong>1</strong>. Absender-E-Mail nur ausfüllen, wenn sie gültig ist (sonst leer lassen).
+              </p>
+              <select
+                value={form.mail_provider}
+                onChange={(e) => setForm((f) => ({ ...f, mail_provider: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              >
+                <option value="resend">Resend</option>
+                <option value="custom">Eigener Provider (vorbereitet)</option>
+              </select>
+              <input
+                type="number"
+                min={1}
+                value={form.mail_monthly_limit}
+                onChange={(e) => setForm((f) => ({ ...f, mail_monthly_limit: e.target.value }))}
+                placeholder="Monatslimit"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+                aria-describedby="wizard-step4-hint"
+              />
+              <input
+                type="text"
+                value={form.mail_from_name}
+                onChange={(e) => setForm((f) => ({ ...f, mail_from_name: e.target.value }))}
+                placeholder="Absendername"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              />
+              <input
+                type="email"
+                value={form.mail_from_email}
+                onChange={(e) => setForm((f) => ({ ...f, mail_from_email: e.target.value }))}
+                placeholder="Absender-E-Mail"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+              />
+            </div>
+          )}
+
+          {wizardStep === 5 && (
+            <div className="rounded-xl border-2 border-cyan-200 bg-cyan-50/60 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-800">Schritt 5: Hosting (Supabase und Cloudflare)</h3>
+              <p className="text-xs text-slate-600" id="wizard-step5-hint">
+                Optional: Mandanten-<strong>Supabase</strong>-Projekt und <strong>CF-Pages-Preview-URLs</strong>. Der{' '}
+                <strong>Anon-Key</strong> dient nur der Live-Prüfung und wird nicht gespeichert. Supabase-URL leer lassen,
+                wenn das Projekt noch nicht existiert.
+              </p>
+              <input
+                id="wizard-supabase-ref"
+                type="text"
+                value={form.supabase_project_ref}
+                onChange={(e) => setForm((f) => ({ ...f, supabase_project_ref: e.target.value }))}
+                placeholder="Supabase-Projekt-Ref (Dashboard-URL)"
+                autoComplete="off"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
+                aria-describedby="wizard-step5-hint"
+              />
+              <input
+                id="wizard-supabase-url"
+                type="url"
+                inputMode="url"
+                value={form.supabase_url}
+                onChange={(e) => setForm((f) => ({ ...f, supabase_url: e.target.value }))}
+                placeholder="https://xxxxxxxx.supabase.co"
+                autoComplete="off"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
+              />
+              <div>
+                <label htmlFor="wizard-infra-anon" className="block text-xs font-medium text-slate-600 mb-1">
+                  Anon-Key (nur Prüfung, optional)
+                </label>
+                <input
+                  id="wizard-infra-anon"
+                  type="password"
+                  value={infrastructurePingAnonKey}
+                  onChange={(e) => setInfrastructurePingAnonKey(e.target.value)}
+                  placeholder="eyJ… (wird nicht gespeichert)"
+                  autoComplete="off"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
+                />
+              </div>
+              <input
+                type="url"
+                inputMode="url"
+                value={form.cf_preview_main_url}
+                onChange={(e) => setForm((f) => ({ ...f, cf_preview_main_url: e.target.value }))}
+                placeholder="CF Preview Haupt-App (https://…)"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
+              />
+              <input
+                type="url"
+                inputMode="url"
+                value={form.cf_preview_portal_url}
+                onChange={(e) => setForm((f) => ({ ...f, cf_preview_portal_url: e.target.value }))}
+                placeholder="CF Preview Kundenportal (https://…)"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
+              />
+              <input
+                type="url"
+                inputMode="url"
+                value={form.cf_preview_arbeitszeit_url}
+                onChange={(e) => setForm((f) => ({ ...f, cf_preview_arbeitszeit_url: e.target.value }))}
+                placeholder="CF Preview Arbeitszeitportal (https://…)"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => void handleInfrastructurePing()}
+                disabled={infrastructurePingLoading}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-cyan-400 bg-white text-cyan-900 font-medium hover:bg-cyan-50 disabled:opacity-50 min-h-[44px] sm:min-h-0"
+                aria-busy={infrastructurePingLoading}
+              >
+                {infrastructurePingLoading ? 'Prüfe…' : 'Verbindungen prüfen'}
+              </button>
+              <div
+                className="rounded-lg border border-slate-200 bg-white/90 p-3"
+                role="region"
+                aria-label="Ergebnis Verbindungsprüfung"
+              >
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Prüfergebnis</p>
+                <InfrastructurePingResultPanel
+                  loading={infrastructurePingLoading}
+                  result={infrastructurePingResult}
+                  idPrefix="wizard-infra"
+                />
+              </div>
+            </div>
+          )}
+
+          {wizardStep === 6 && (
+            <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-slate-800">Schritt 6: Fertigstellen</h3>
+              <p className="text-sm text-slate-600">Welche Initial-Lizenz soll angelegt werden?</p>
+              <div
+                className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-800 space-y-2"
+                role="region"
+                aria-label="Zusammenfassung Mandant"
+              >
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Kurzüberblick</p>
+                <dl className="grid grid-cols-1 gap-1.5 text-sm">
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="text-slate-500 shrink-0">Mandant</dt>
+                    <dd className="font-medium break-words">{form.name.trim() || '–'}</dd>
+                  </div>
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="text-slate-500 shrink-0">App</dt>
+                    <dd className="font-medium break-words">{form.app_name.trim() || '–'}</dd>
+                  </div>
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="text-slate-500 shrink-0">Domains</dt>
+                    <dd className="font-mono text-xs break-all">
+                      {[form.app_domain, form.portal_domain, form.arbeitszeitenportal_domain]
+                        .filter((d) => d?.trim())
+                        .join(' · ') || '–'}
+                    </dd>
+                  </div>
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="text-slate-500 shrink-0">Mail</dt>
+                    <dd className="break-words">
+                      {form.mail_provider} · Limit {Math.max(1, parseInt(form.mail_monthly_limit, 10) || 0)}
+                      {form.mail_from_email.trim() ? ` · Absender ${form.mail_from_email.trim()}` : ''}
+                    </dd>
+                  </div>
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="text-slate-500 shrink-0">Supabase</dt>
+                    <dd className="font-mono text-xs break-all">{form.supabase_url.trim() || '–'}</dd>
+                  </div>
+                  <div className="flex flex-wrap gap-x-2">
+                    <dt className="text-slate-500 shrink-0">CF Previews</dt>
+                    <dd className="font-mono text-xs break-all">
+                      {[form.cf_preview_main_url, form.cf_preview_portal_url, form.cf_preview_arbeitszeit_url]
+                        .filter((u) => u?.trim())
+                        .join(' · ') || '–'}
+                    </dd>
+                  </div>
+                  {wizardTenantId ? (
+                    <p className="text-xs text-slate-500 pt-1 border-t border-slate-100">
+                      Entwurf ist bereits gespeichert (technische ID:{' '}
+                      <span className="font-mono">{wizardTenantId}</span>).
+                    </p>
+                  ) : null}
+                </dl>
+              </div>
+              <select
+                id="wizard-license-model"
+                value={wizardLicenseModelId}
+                onChange={(e) => setWizardLicenseModelId(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300"
+                aria-label="Lizenzmodell für Initial-Lizenz"
+              >
+                {licenseModels.length === 0 ? (
+                  <option value="">Kein Lizenzmodell vorhanden</option>
+                ) : null}
+                {licenseModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.tier})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+            <button
+              type="button"
+              onClick={() => navigate('/mandanten')}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+            >
+              Abbrechen
+            </button>
+            <div className="flex gap-2">
+              {wizardStep > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setWizardStep((prev) => Math.max(1, prev - 1))}
+                  className="px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                >
+                  Zurück
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="px-4 py-2.5 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover disabled:opacity-50"
+              >
+                {isSaving ? 'Speichern…' : wizardStep < WIZARD_TOTAL_STEPS ? 'Speichern & Weiter' : 'Fertigstellen'}
+              </button>
+            </div>
+          </div>
+        </form>
       </div>
     )
   }
@@ -882,23 +1904,11 @@ const MandantForm = () => {
                 </div>
                 <div>
                   <span className="block text-sm font-medium text-slate-700 mb-2">Features</span>
-                  <div className="flex flex-wrap gap-4">
-                    {LICENSE_FEATURE_KEYS.map((key) => (
-                      <label
-                        key={key}
-                        className="flex items-center gap-2 cursor-pointer"
-                        title={LICENSE_FEATURE_DESCRIPTIONS[key] ?? ''}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={createForm.features[key] ?? false}
-                          onChange={(e) => setCreateForm((f) => ({ ...f, features: { ...f.features, [key]: e.target.checked } }))}
-                          className="w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
-                        />
-                        <span className="text-sm text-slate-700">{LICENSE_FEATURE_LABELS[key] ?? key}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <FeatureToggleList
+                    idPrefix="create"
+                    features={createForm.features}
+                    onFeaturesChange={(next) => setCreateForm((f) => ({ ...f, features: next }))}
+                  />
                 </div>
                 <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:flex-wrap">
                   <button
@@ -1020,23 +2030,16 @@ const MandantForm = () => {
                         </div>
                         <div>
                           <span className="block text-sm font-medium text-slate-700 mb-2">Features</span>
-                          <div className="flex flex-wrap gap-4">
-                            {LICENSE_FEATURE_KEYS.map((key) => (
-                              <label
-                                key={key}
-                                className="flex items-center gap-2 cursor-pointer"
-                                title={LICENSE_FEATURE_DESCRIPTIONS[key] ?? ''}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={editForm.features?.[key] ?? false}
-                                  onChange={(e) => setEditForm((f) => ({ ...f, features: { ...(f.features ?? {}), [key]: e.target.checked } }))}
-                                  className="w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
-                                />
-                                <span className="text-sm text-slate-700">{LICENSE_FEATURE_LABELS[key] ?? key}</span>
-                              </label>
-                            ))}
-                          </div>
+                          <FeatureToggleList
+                            idPrefix={`edit-${lic.id}`}
+                            features={editForm.features ?? emptyLicenseFeatures()}
+                            onFeaturesChange={(next) =>
+                              setEditForm((f) => ({
+                                ...f,
+                                features: next,
+                              }))
+                            }
+                          />
                         </div>
                         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap">
                           <button
@@ -1135,7 +2138,10 @@ const MandantForm = () => {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-4 [&>div]:rounded-xl [&>div]:border [&>div]:border-slate-200 [&>div]:bg-white [&>div]:p-4"
+      >
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
           <input
@@ -1227,6 +2233,7 @@ const MandantForm = () => {
             Kennzeichnung für Pilot-Mandanten; steuert u. a. die Zuordnung zu Incoming-Releases (siehe App-Releases).
           </p>
         </div>
+        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
         <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-3">
           <h3 className="text-sm font-semibold text-slate-800">Mandanten-Supabase (Haupt-App-Datenbank)</h3>
           <p className="text-xs text-slate-600">
@@ -1272,7 +2279,174 @@ const MandantForm = () => {
               Settings → API → Project URL (ohne Slash am Ende).
             </p>
           </div>
+          <div className="pt-3 mt-3 border-t border-slate-200 space-y-3">
+            <p className="text-xs font-semibold text-slate-700">Cloudflare Pages (Preview-URLs)</p>
+            <p className="text-xs text-slate-600" id="cf_preview_hint">
+              Optional: öffentliche Preview-Links aus Workers und Pages. Werden in{' '}
+              <code className="bg-white px-1 rounded border text-[11px]">tenants</code> gespeichert (keine Secrets).
+            </p>
+            <div>
+              <label htmlFor="cf_preview_main_url" className="block text-sm font-medium text-slate-700 mb-1">
+                Preview Haupt-App
+              </label>
+              <input
+                id="cf_preview_main_url"
+                type="url"
+                inputMode="url"
+                value={form.cf_preview_main_url}
+                onChange={(e) => setForm((f) => ({ ...f, cf_preview_main_url: e.target.value }))}
+                placeholder="https://….pages.dev"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
+                aria-describedby="cf_preview_hint"
+              />
+            </div>
+            <div>
+              <label htmlFor="cf_preview_portal_url" className="block text-sm font-medium text-slate-700 mb-1">
+                Preview Kundenportal
+              </label>
+              <input
+                id="cf_preview_portal_url"
+                type="url"
+                inputMode="url"
+                value={form.cf_preview_portal_url}
+                onChange={(e) => setForm((f) => ({ ...f, cf_preview_portal_url: e.target.value }))}
+                placeholder="https://….pages.dev"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label htmlFor="cf_preview_arbeitszeit_url" className="block text-sm font-medium text-slate-700 mb-1">
+                Preview Arbeitszeitportal
+              </label>
+              <input
+                id="cf_preview_arbeitszeit_url"
+                type="url"
+                inputMode="url"
+                value={form.cf_preview_arbeitszeit_url}
+                onChange={(e) => setForm((f) => ({ ...f, cf_preview_arbeitszeit_url: e.target.value }))}
+                placeholder="https://….pages.dev"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label htmlFor="edit-infra-anon" className="block text-sm font-medium text-slate-700 mb-1">
+                Anon-Key Mandanten-Supabase (nur Verbindungsprüfung)
+              </label>
+              <input
+                id="edit-infra-anon"
+                type="password"
+                value={infrastructurePingAnonKey}
+                onChange={(e) => setInfrastructurePingAnonKey(e.target.value)}
+                placeholder="Wird nicht gespeichert"
+                autoComplete="off"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleInfrastructurePing()}
+              disabled={infrastructurePingLoading}
+              className="px-4 py-2.5 rounded-lg border border-slate-400 bg-white text-slate-800 font-medium hover:bg-slate-50 disabled:opacity-50 min-h-[44px] sm:min-h-0"
+              aria-busy={infrastructurePingLoading}
+            >
+              {infrastructurePingLoading ? 'Prüfe…' : 'Verbindungen prüfen (Supabase und Previews)'}
+            </button>
+            <div
+              className="rounded-md border border-slate-200 bg-white p-3"
+              role="region"
+              aria-label="Ergebnis Verbindungsprüfung"
+            >
+              <InfrastructurePingResultPanel
+                loading={infrastructurePingLoading}
+                result={infrastructurePingResult}
+                idPrefix="edit-infra"
+              />
+            </div>
+          </div>
         </div>
+        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-slate-800">Mailversand (Resend / Provider-Vorbereitung)</h3>
+          {!isNew && (
+            <div className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-700">
+              <p>
+                Aktueller Monat ({emailUsageMonth}):{' '}
+                <strong>{emailUsage?.sent_ok ?? 0}</strong> erfolgreich /{' '}
+                <strong>{emailUsage?.sent_failed ?? 0}</strong> fehlgeschlagen / Limit{' '}
+                <strong>{Math.max(1, parseInt(form.mail_monthly_limit, 10) || 3000)}</strong>
+              </p>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="mail_provider" className="block text-sm font-medium text-slate-700 mb-1">
+                Provider
+              </label>
+              <select
+                id="mail_provider"
+                value={form.mail_provider}
+                onChange={(e) => setForm((f) => ({ ...f, mail_provider: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+              >
+                <option value="resend">Resend</option>
+                <option value="custom">Eigener Provider (vorbereitet)</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="mail_monthly_limit" className="block text-sm font-medium text-slate-700 mb-1">
+                Monatslimit
+              </label>
+              <input
+                id="mail_monthly_limit"
+                type="number"
+                min={1}
+                value={form.mail_monthly_limit}
+                onChange={(e) => setForm((f) => ({ ...f, mail_monthly_limit: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+              />
+            </div>
+            <div>
+              <label htmlFor="mail_from_name" className="block text-sm font-medium text-slate-700 mb-1">
+                Absendername
+              </label>
+              <input
+                id="mail_from_name"
+                type="text"
+                value={form.mail_from_name}
+                onChange={(e) => setForm((f) => ({ ...f, mail_from_name: e.target.value }))}
+                placeholder="Vico Türen & Tore"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+              />
+            </div>
+            <div>
+              <label htmlFor="mail_from_email" className="block text-sm font-medium text-slate-700 mb-1">
+                Absender-E-Mail
+              </label>
+              <input
+                id="mail_from_email"
+                type="email"
+                value={form.mail_from_email}
+                onChange={(e) => setForm((f) => ({ ...f, mail_from_email: e.target.value }))}
+                placeholder="noreply@firma.de"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="mail_reply_to" className="block text-sm font-medium text-slate-700 mb-1">
+                Reply-To
+              </label>
+              <input
+                id="mail_reply_to"
+                type="email"
+                value={form.mail_reply_to}
+                onChange={(e) => setForm((f) => ({ ...f, mail_reply_to: e.target.value }))}
+                placeholder="service@firma.de"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
+              />
+            </div>
+          </div>
+        </div>
+        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
         <div>
           <label htmlFor="primary_color" className="block text-sm font-medium text-slate-700 mb-1">Primärfarbe</label>
           <div className="flex flex-wrap items-center gap-2">
@@ -1424,6 +2598,7 @@ const MandantForm = () => {
             <p className="mt-2 text-xs text-slate-400">Kein Favicon gesetzt (Standard-Favicon bleibt aktiv).</p>
           )}
         </div>
+        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
         <div className="pt-4 border-t border-slate-200">
           <h3 className="text-sm font-semibold text-slate-700 mb-2">App-Versionen (optional, Mandant)</h3>
           <p className="text-xs text-slate-500 mb-4">
@@ -1438,6 +2613,7 @@ const MandantForm = () => {
             <MandantReleaseAssignmentsSection tenantId={id} />
           </div>
         ) : null}
+        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
         <div className="pt-4 border-t border-slate-200 space-y-3">
           <h3 className="text-sm font-semibold text-slate-700">Wartungsmodus (Mandanten-App)</h3>
           <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
@@ -1607,6 +2783,7 @@ const MandantForm = () => {
             </div>
           </div>
         </div>
+        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
         <div className="pt-4 border-t border-slate-200">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Impressum</h3>
           <div className="space-y-3">
@@ -1667,22 +2844,7 @@ const MandantForm = () => {
             </div>
           </div>
         </div>
-        <div className="flex flex-col-reverse gap-2 pt-4 sm:flex-row sm:flex-wrap">
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover disabled:opacity-50 min-h-[44px] sm:min-h-0"
-          >
-            {isSaving ? 'Speichern…' : 'Speichern'}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/mandanten')}
-            className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 min-h-[44px] sm:min-h-0"
-          >
-            Abbrechen
-          </button>
-        </div>
+        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
       </form>
 
       {!isNew && tenantLicenses.length > 0 && (

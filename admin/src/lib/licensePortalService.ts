@@ -381,6 +381,28 @@ export type StorageSummary = {
   remaining_mb: number
 }
 
+export type TenantEmailMonthlyUsage = {
+  tenant_id: string
+  year_month: string
+  sent_ok: number
+  sent_failed: number
+  updated_at: string
+}
+
+export const fetchTenantEmailMonthlyUsage = async (
+  tenantId: string,
+  yearMonth: string
+): Promise<TenantEmailMonthlyUsage | null> => {
+  const { data, error } = await supabase
+    .from('tenant_email_monthly_usage')
+    .select('tenant_id, year_month, sent_ok, sent_failed, updated_at')
+    .eq('tenant_id', tenantId)
+    .eq('year_month', yearMonth)
+    .maybeSingle()
+  if (error) return null
+  return (data as TenantEmailMonthlyUsage | null) ?? null
+}
+
 export const fetchStorageSummary = async (): Promise<StorageSummary> => {
   const { data, error } = await supabase.rpc('get_storage_summary')
   if (error) {
@@ -392,6 +414,51 @@ export const fetchStorageSummary = async (): Promise<StorageSummary> => {
     assigned_mb: raw.assigned_mb ?? 0,
     remaining_mb: raw.remaining_mb ?? 10000,
   }
+}
+
+export type InfrastructurePingUrlResult = {
+  label: string
+  ok: boolean
+  status: number
+  message: string
+  skipped?: boolean
+}
+
+export type InfrastructurePingHealth = {
+  ok: boolean
+  status: number
+  message: string
+  skipped?: boolean
+}
+
+export type InfrastructurePingResponse = {
+  success: true
+  supabase_auth_health: InfrastructurePingHealth | null
+  supabase_rest: InfrastructurePingHealth | null
+  urls: InfrastructurePingUrlResult[]
+}
+
+export const invokeInfrastructurePing = async (body: {
+  supabase_url?: string
+  supabase_anon_key?: string
+  urls?: { label: string; url: string }[]
+}): Promise<{ ok: true; data: InfrastructurePingResponse } | { ok: false; error: string }> => {
+  const { data, error } = await supabase.functions.invoke<InfrastructurePingResponse | { error: string }>(
+    'infrastructure-ping',
+    { body }
+  )
+  if (error) {
+    return { ok: false, error: error.message }
+  }
+  if (data && typeof data === 'object') {
+    if ('error' in data && typeof (data as { error: unknown }).error === 'string') {
+      return { ok: false, error: (data as { error: string }).error }
+    }
+    if ('success' in data && (data as InfrastructurePingResponse).success === true) {
+      return { ok: true, data: data as InfrastructurePingResponse }
+    }
+  }
+  return { ok: false, error: 'Unerwartete Antwort der Infrastruktur-Prüfung.' }
 }
 
 export const updateTotalStorageMb = async (mb: number): Promise<{ ok: boolean; error?: string }> => {

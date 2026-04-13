@@ -4,7 +4,12 @@ import { SemVerPortalBuildHint } from '../shared/SemVerPortalBuildHint'
 import { useAuth } from './AuthContext'
 import { useLicense } from './LicenseContext'
 import { formatLicenseDate, isLimitReached } from './lib/licenseService'
-import { LICENSE_FEATURE_KEYS, LICENSE_FEATURE_LABELS, normalizeLicenseFeatures } from '../shared/licenseFeatures'
+import {
+  LICENSE_FEATURE_LABELS,
+  LICENSE_FEATURE_GROUPS,
+  getFeatureChildren,
+  normalizeLicenseFeatures,
+} from '../shared/licenseFeatures'
 import {
   isLicenseApiConfigured,
   getStoredLicenseNumber,
@@ -24,6 +29,12 @@ const HIDDEN_LICENSE_KEYS_IN_MAIN_APP = new Set([
   'historie',
   'beta_feedback',
 ])
+
+const FEATURE_GROUP_CLASS: Record<string, string> = {
+  main: 'border-sky-200 bg-sky-50/70 dark:border-sky-800 dark:bg-sky-950/30',
+  kundenportal: 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-800 dark:bg-emerald-950/30',
+  arbeitszeit_portal: 'border-violet-200 bg-violet-50/70 dark:border-violet-800 dark:bg-violet-950/30',
+}
 
 const Info = () => {
   const { userRole, refreshUserRole } = useAuth()
@@ -314,19 +325,70 @@ const Info = () => {
                   </>
                 )}
                 <div className="text-slate-500 dark:text-slate-400 sm:col-span-2 font-medium pt-2 border-t border-slate-200 dark:border-slate-600">
-                  Module (effektiv inkl. Tier-Defaults)
+                  Module (gruppiert)
                 </div>
-                {LICENSE_FEATURE_KEYS.filter((key) => !HIDDEN_LICENSE_KEYS_IN_MAIN_APP.has(key)).map((key) => {
-                  const active = normalizeLicenseFeatures(license.features)[key] === true
-                  return (
-                    <div key={key} className="contents">
-                      <div className="text-slate-500 dark:text-slate-400">{LICENSE_FEATURE_LABELS[key] ?? key}</div>
-                      <div className="text-slate-800 dark:text-slate-100 font-medium">
-                        {active ? '✓ Aktiv' : '✗ Nicht enthalten'}
+                <div className="sm:col-span-2 space-y-3">
+                  {LICENSE_FEATURE_GROUPS.map((group) => {
+                    const normalized = normalizeLicenseFeatures(license.features)
+                    const parentKeys = group.features.filter((key) => !HIDDEN_LICENSE_KEYS_IN_MAIN_APP.has(key))
+                    if (parentKeys.length === 0) return null
+                    return (
+                      <div
+                        key={group.id}
+                        className={`rounded-lg border p-3 ${FEATURE_GROUP_CLASS[group.id] ?? 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/50'}`}
+                      >
+                        <p className="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-300 font-semibold mb-2">
+                          {group.label}
+                        </p>
+                        <div className="space-y-2">
+                          {parentKeys.map((parentKey) => {
+                            const parentActive = normalized[parentKey] === true
+                            const children = getFeatureChildren(parentKey).filter(
+                              (child) => !HIDDEN_LICENSE_KEYS_IN_MAIN_APP.has(child)
+                            )
+                            return (
+                              <div key={parentKey} className="space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm text-slate-800 dark:text-slate-100 font-medium">
+                                    {LICENSE_FEATURE_LABELS[parentKey] ?? parentKey}
+                                  </span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                      parentActive
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                        : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                    }`}
+                                  >
+                                    {parentActive ? 'Aktiv' : 'Inaktiv'}
+                                  </span>
+                                </div>
+                                {children.map((childKey) => {
+                                  const childActive = normalized[childKey] === true
+                                  return (
+                                    <div key={childKey} className="ml-4 flex items-center justify-between gap-2">
+                                      <span className="text-xs text-slate-600 dark:text-slate-300">
+                                        {LICENSE_FEATURE_LABELS[childKey] ?? childKey}
+                                      </span>
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                                          childActive
+                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                            : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                        }`}
+                                      >
+                                        {childActive ? 'Aktiv' : 'Inaktiv'}
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                </div>
               </div>
               <button
                 type="button"

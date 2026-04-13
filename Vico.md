@@ -193,6 +193,7 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 - **Fallback Rollout alle Mandanten (LP):** SQL **`docs/sql/LP-rollout-all-tenants-latest-published.sql`** – setzt `tenant_release_assignments` auf das jeweils **neueste published** Release pro Kanal und erhöht `client_config_version` für alle Lizenzen (nur Lizenzportal-DB); Alternative zur UI, z. B. für Automatisierung.
 - **Zielbild Update (einfach):** Vier-Schritte-Wunsch vs. IST + eine technische Grenze (CF-Build): **`docs/Update-fuer-Betrieb-in-vier-Schritten.md`**.
 - **Beta-Feedback (Live-Test):** Lizenz-Feature **`beta_feedback`**; schwebender Button in **Haupt-App**, **Kundenportal**, **Arbeitszeit-Portal** (nur eingeloggt, Lizenz-API konfiguriert). Submit über Edge **`submit-beta-feedback`** (Mandanten-JWT per JWKS). Auswertung im Admin unter **`/beta-feedback`** (Status, Priorität, interne Notiz) plus **Archiv-Funktion** (archivieren / aus Archiv holen, Ansicht aktiv/archiv/alle). Schema: **`beta_feedback`** in `supabase-license-portal.sql` (inkl. `archived_at`); deploy Function + SQL auf Lizenzportal-Supabase. **Smoke-Test & Kategorie-Mapping:** `docs/Beta-Feedback-Smoke-Test-und-Mapping.md`.
+- **Mandanten-Neuanlage (Assistent) & Hosting-Check:** Der Assistent enthält einen Schritt **Hosting** (Mandanten-Supabase-Ref/URL, optionale **CF-Pages-Preview-URLs** `cf_preview_*` in `tenants`). **Verbindungsprüfung** per Edge-Function **`infrastructure-ping`** (Supabase Auth-Health, optional REST mit **Anon-Key** nur im Formular, ohne Speicherung; öffentliche URLs per HEAD/GET). Gleiche Prüfung im Formular **Mandant bearbeiten** unter Mandanten-Supabase. Code: **`invokeInfrastructurePing`** in **`licensePortalService.ts`**, **`MandantForm.tsx`**, Function unter **`supabase-license-portal/supabase/functions/infrastructure-ping/`**; SQL-Ergänzung in **`supabase-license-portal.sql`** und Delta **`docs/sql/LP-tenants-cf-preview-urls.sql`** (SQL Editor). Function-Deploy: **`npm run lp:deploy:infrastructure-ping`**.
 
 ---
 
@@ -2090,3 +2091,73 @@ Grober **Mehraufwand** gegenüber **nur manuell (A):** ca. **1,5–3 T** zusätz
 **Entscheidung:** Die Übersicht **Offene Mängel** ist nicht mehr nur Unterpunkt von **System**, sondern **eigener Eintrag im Seitenmenü** der Haupt-App, sobald Lizenz-Feature **`wartungsprotokolle`** und Komponente **Wartungsprotokolle** aktiv sind.
 
 **Technik:** Route **`/offene-maengel`**, **`/system/maengel`** → Redirect; **`SystemIndexRedirect`** fallback auf **`/offene-maengel`** wo zuvor **`/system/maengel`**. Betroffene Dateien: **`src/App.tsx`**, **`src/Layout.tsx`**, **`src/pages/System.tsx`**, **`src/pages/SystemIndexRedirect.tsx`**, **`src/pages/OffeneMaengel.tsx`**, **`src/lib/prefetchChunks.ts`**. Siehe **§3** *Wartungsprotokolle* und **§2** *Routen*.
+
+### 11.22 Mailversand-Zaehler + Modulstruktur LP (Stand 2026-04-13)
+
+**Entscheidung (kompakt):**
+
+- Mailversand bekommt eine **Kombi-Datenhaltung**: Detail-Events in der Mandanten-DB, Monatsaggregation im Lizenzportal.
+- Verbrauch wird an **erfolgreichen Provider-Responses (`2xx`)** gemessen; Fehler separat fuer Transparenz erfasst.
+- Absenderdaten werden mandantenfaehig vorbereitet (`from_name`, `from_email`, `reply_to`) mit globalem Fallback.
+- Provider-Architektur wird als **Adapter** vorbereitet (jetzt Resend, spaeter optional eigener Provider).
+- Modulansicht im Lizenzportal wird nach **Main / Kundenportal / Arbeitszeit-Portal** gruppiert, Abhaengigkeiten als **Untermodule** mit harter Toggle-Logik.
+
+**Plan:** Umsetzung in 3 Phasen (LP-UI + Zaehlerbasis -> Hauptapp-Transparenz -> Provider-Erweiterung).
+
+**Doku:** `docs/Konzept-Mailversand-Zaehler-und-Modulstruktur.md`
+
+### 11.23 LP-Modulgruppen mit Untermodulen (Stand 2026-04-13)
+
+**Umgesetzt:** In `admin/src/pages/MandantForm.tsx` werden Feature-Toggles jetzt nach **Main / Kundenportal / Arbeitszeit-Portal** gruppiert dargestellt. Abhängigkeiten sind als Untermodule modelliert und technisch gekoppelt.
+
+**Logik:**
+- Elternmodul aus -> alle zugeordneten Untermodule werden aus.
+- Untermodul an -> benötigtes Elternmodul wird automatisch mit aktiviert.
+- Untermodul-Toggles sind deaktiviert, solange das Elternmodul aus ist.
+
+**Technik:** Gruppen-/Abhängigkeitsdefinition und Hilfsfunktionen in `shared/licenseFeatures.ts` (`LICENSE_FEATURE_GROUPS`, `LICENSE_FEATURE_DEPENDENCIES`, `applyFeatureToggleWithDependencies`, `isFeatureToggleEnabled`).
+
+### 11.24 LP Mandantenliste aufgeräumt (Stand 2026-04-13)
+
+**Umgesetzt in `admin/src/pages/Mandanten.tsx`:**
+- Aktionen pro Mandant vereinfacht: statt separatem „Bearbeiten“ + „Lizenz bearbeiten“ jetzt eine klare Hauptaktion **„Öffnen“**.
+- Neue Listen-Werkzeuge für Skalierung bei wachsender Funktionszahl:
+  - Volltextsuche (Name, Domains, Lizenznummer),
+  - Statusfilter (`Alle`, `Ohne Lizenz`, `Lizenz abgelaufen`, `Trial aktiv`, `Testmandant`),
+  - Trefferanzeige.
+- Leerergebnis-Zustand für Suche/Filter ergänzt.
+
+**Nachsteuerung (gleiches Datum):**
+- Schnellaktion **„Lizenz bearbeiten“** in der Mandantenliste wieder ergänzt, damit Lizenzpflege direkt aus der Liste startet (Sprung in den Lizenzbereich via `state.editLicenseId` bzw. `openCreateLicense`).
+- Danach vereinheitlicht: nur noch **ein Button „Öffnen“**; dieser startet direkt im Lizenz-Kontext (bei bestehender Lizenz Bearbeitungsmodus, sonst Lizenzanlage). Separater Lizenz-Button entfällt.
+
+### 11.25 Mailzaehler + Mandantenstruktur (Stand 2026-04-13)
+
+**Mailversand (Phase 1.2–1.4 umgesetzt):**
+- Mandanten-DB: neue Tabelle `email_delivery_events` + Funktion `log_email_delivery_event(...)`.
+- LP-DB: `tenants` um Mail-Konfig erweitert (`mail_provider`, `mail_from_name`, `mail_from_email`, `mail_reply_to`, `mail_monthly_limit`) sowie neue Tabelle `tenant_email_monthly_usage` + RPC `increment_tenant_email_monthly_usage(...)`.
+- Edge Functions `send-maintenance-report`, `notify-portal-on-report`, `send-maintenance-reminder-digest` schreiben Versand-Events und spiegeln optional in den LP-Monatszaehler (per Secrets).
+- Mandantenseite (`admin/src/pages/MandantForm.tsx`) zeigt Monatsverbrauch im Abschnitt **Mailversand** und erlaubt Konfiguration pro Mandant.
+
+**Mandantenformular neu gegliedert:**
+- In den zentralen Abschnitten sind jetzt jeweils lokale Aktionszeilen mit **Speichern/Abbrechen** vorhanden.
+- Speichern bleibt technisch wie bisher ein konsistentes Gesamtspeichern des Mandanten.
+
+### 11.26 Anzeige-Hierarchie in App + Neuanlage-Assistent (Stand 2026-04-13)
+
+**Haupt-App (`src/Info.tsx`):**
+- Lizenzmodule werden analog zum LP in Gruppen dargestellt (**Main**, **Kundenportal**, **Arbeitszeit-Portal**).
+- Eltern-/Untermodule werden visuell eingerückt und mit **Statuschips** (`Aktiv`/`Inaktiv`) angezeigt.
+- Systemmodule, die in der Haupt-App ausgeblendet bleiben sollen, werden weiterhin gefiltert.
+
+**Lizenzportal (`admin/src/pages/MandantForm.tsx`):**
+- Neuanlage als **Schritt-für-Schritt-Assistent** (kleine Schritte) umgesetzt:
+  1. Basisdaten
+  2. Branding
+  3. Rechtliches
+  4. Mailversand
+  5. Fertigstellen
+- Pro Schritt: **Sofort speichern** (`Speichern & Weiter`), am Ende **Fertigstellen** mit verpflichtender Auswahl des Lizenzmodells.
+- Beim Fertigstellen wird automatisch eine **Initial-Lizenz** für den neuen Mandanten angelegt.
+- Bestehende Mandanten-Bearbeitung intern grafisch stärker abgegrenzt (klarere Blockdarstellung).
+- Assistent: **Validierung je Schritt**, Fortschrittsbalken **„x von 5 Schritte vollständig“**, Schritt-Chips mit **Häkchen** bei erfüllten Pflichten, **Kurzüberblick** vor Lizenzwahl; vor **Fertigstellen** werden alle Schritte erneut geprüft (bei Fehler Sprung zum betroffenen Schritt).

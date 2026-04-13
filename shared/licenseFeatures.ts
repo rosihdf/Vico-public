@@ -53,6 +53,104 @@ export const LICENSE_FEATURE_DESCRIPTIONS: Record<string, string> = {
     'Steuert beide Hinweise: Mandanten-Datenbank instabil und Lizenz-API nur aus Cache (Lizenz-Portal nicht erreichbar). false = beide ausblenden.',
 }
 
+export const LICENSE_FEATURE_GROUPS = [
+  {
+    id: 'main',
+    label: 'Main',
+    features: ['wartungsprotokolle', 'historie'],
+  },
+  {
+    id: 'kundenportal',
+    label: 'Kundenportal',
+    features: ['kundenportal'],
+  },
+  {
+    id: 'arbeitszeit_portal',
+    label: 'Arbeitszeit-Portal',
+    features: ['arbeitszeiterfassung'],
+  },
+] as const satisfies ReadonlyArray<{ id: string; label: string; features: readonly LicenseFeatureKey[] }>
+
+export const LICENSE_FEATURE_DEPENDENCIES: Partial<Record<LicenseFeatureKey, readonly LicenseFeatureKey[]>> = {
+  wartungsprotokolle: ['qr_batch_a4'],
+  historie: ['fehlerberichte', 'ladezeiten', 'beta_feedback', 'degraded_banner', 'buchhaltung_export'],
+  arbeitszeiterfassung: ['urlaub', 'teamfunktion', 'standortabfrage'],
+}
+
+const buildFeatureParentMap = (): Partial<Record<LicenseFeatureKey, LicenseFeatureKey>> => {
+  const parentMap: Partial<Record<LicenseFeatureKey, LicenseFeatureKey>> = {}
+  for (const parent of Object.keys(LICENSE_FEATURE_DEPENDENCIES) as LicenseFeatureKey[]) {
+    const children = LICENSE_FEATURE_DEPENDENCIES[parent] ?? []
+    for (const child of children) {
+      parentMap[child] = parent
+    }
+  }
+  return parentMap
+}
+
+export const LICENSE_FEATURE_PARENT_MAP = buildFeatureParentMap()
+
+export const getFeatureChildren = (key: LicenseFeatureKey): readonly LicenseFeatureKey[] => {
+  return LICENSE_FEATURE_DEPENDENCIES[key] ?? []
+}
+
+export const getFeatureParent = (key: LicenseFeatureKey): LicenseFeatureKey | null => {
+  return LICENSE_FEATURE_PARENT_MAP[key] ?? null
+}
+
+const getFeatureAncestors = (key: LicenseFeatureKey): LicenseFeatureKey[] => {
+  const ancestors: LicenseFeatureKey[] = []
+  let current: LicenseFeatureKey | null = getFeatureParent(key)
+  while (current) {
+    ancestors.push(current)
+    current = getFeatureParent(current)
+  }
+  return ancestors
+}
+
+const getFeatureDescendants = (key: LicenseFeatureKey): LicenseFeatureKey[] => {
+  const descendants: LicenseFeatureKey[] = []
+  const stack = [...getFeatureChildren(key)]
+  while (stack.length > 0) {
+    const next = stack.pop()
+    if (!next || descendants.includes(next)) continue
+    descendants.push(next)
+    stack.push(...getFeatureChildren(next))
+  }
+  return descendants
+}
+
+export const isFeatureToggleEnabled = (
+  allFeatures: Record<string, boolean>,
+  key: LicenseFeatureKey
+): boolean => {
+  const ancestors = getFeatureAncestors(key)
+  return ancestors.every((ancestor) => Boolean(allFeatures[ancestor]))
+}
+
+export const applyFeatureToggleWithDependencies = (
+  allFeatures: Record<string, boolean>,
+  key: LicenseFeatureKey,
+  nextEnabled: boolean
+): Record<string, boolean> => {
+  const next = { ...allFeatures }
+  next[key] = nextEnabled
+
+  if (nextEnabled) {
+    const ancestors = getFeatureAncestors(key)
+    for (const ancestor of ancestors) {
+      next[ancestor] = true
+    }
+    return next
+  }
+
+  const descendants = getFeatureDescendants(key)
+  for (const descendant of descendants) {
+    next[descendant] = false
+  }
+  return next
+}
+
 /** Default false für alle bekannten Keys (z. B. Formulare) */
 export const emptyLicenseFeatures = (): Record<string, boolean> => {
   const o: Record<string, boolean> = {}

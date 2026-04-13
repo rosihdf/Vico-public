@@ -979,3 +979,102 @@ on conflict (channel, version_semver) do update set
   ci_metadata = excluded.ci_metadata,
   status = excluded.status,
   updated_at = now();
+
+-- -----------------------------------------------------------------------------
+-- 10. MAILVERSAND: PROVIDER-KONFIG + MONATSZAEHLER
+-- -----------------------------------------------------------------------------
+
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='mail_provider') then
+    alter table public.tenants add column mail_provider text not null default 'resend';
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='mail_from_name') then
+    alter table public.tenants add column mail_from_name text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='mail_from_email') then
+    alter table public.tenants add column mail_from_email text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='mail_reply_to') then
+    alter table public.tenants add column mail_reply_to text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='mail_monthly_limit') then
+    alter table public.tenants add column mail_monthly_limit integer not null default 3000;
+  end if;
+end $$;
+
+create table if not exists public.tenant_email_monthly_usage (
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  year_month text not null,
+  sent_ok integer not null default 0,
+  sent_failed integer not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, year_month)
+);
+
+alter table public.tenant_email_monthly_usage enable row level security;
+
+do $$
+declare r record;
+begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'tenant_email_monthly_usage' loop
+    execute format('drop policy if exists %I on public.tenant_email_monthly_usage', r.policyname);
+  end loop;
+end $$;
+
+create policy "Admins read tenant_email_monthly_usage"
+  on public.tenant_email_monthly_usage
+  for select
+  using (public.is_admin());
+
+create policy "Admins manage tenant_email_monthly_usage"
+  on public.tenant_email_monthly_usage
+  for all
+  using (public.is_admin());
+
+create index if not exists idx_tenant_email_monthly_usage_year_month
+  on public.tenant_email_monthly_usage(year_month);
+
+drop function if exists public.increment_tenant_email_monthly_usage(uuid, text, text);
+create or replace function public.increment_tenant_email_monthly_usage(
+  p_tenant_id uuid,
+  p_status text,
+  p_year_month text default to_char(now(), 'YYYY-MM')
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.tenant_email_monthly_usage (tenant_id, year_month, sent_ok, sent_failed, updated_at)
+  values (
+    p_tenant_id,
+    p_year_month,
+    case when lower(coalesce(p_status, '')) = 'ok' then 1 else 0 end,
+    case when lower(coalesce(p_status, '')) = 'failed' then 1 else 0 end,
+    now()
+  )
+  on conflict (tenant_id, year_month) do update set
+    sent_ok = public.tenant_email_monthly_usage.sent_ok + case when lower(coalesce(p_status, '')) = 'ok' then 1 else 0 end,
+    sent_failed = public.tenant_email_monthly_usage.sent_failed + case when lower(coalesce(p_status, '')) = 'failed' then 1 else 0 end,
+    updated_at = now();
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 11. DEPLOYMENT: OPTIONALE CF-PREVIEW-URLS (Assistent / Dokumentation)
+-- -----------------------------------------------------------------------------
+
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='cf_preview_main_url') then
+    alter table public.tenants add column cf_preview_main_url text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='cf_preview_portal_url') then
+    alter table public.tenants add column cf_preview_portal_url text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='cf_preview_arbeitszeit_url') then
+    alter table public.tenants add column cf_preview_arbeitszeit_url text;
+  end if;
+end $$;

@@ -3572,3 +3572,88 @@ begin
     alter publication supabase_realtime add table public.orders;
   end if;
 end $$;
+
+-- -----------------------------------------------------------------------------
+-- 9. MAILVERSAND: EVENTLOG + MONATSZAEHLER-BASIS
+-- -----------------------------------------------------------------------------
+
+create table if not exists public.email_delivery_events (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null default 'resend',
+  channel text not null,
+  status text not null check (status in ('ok', 'failed')),
+  recipient_email text,
+  provider_message_id text,
+  error_code text,
+  error_text text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.email_delivery_events enable row level security;
+
+do $$
+declare r record;
+begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'email_delivery_events' loop
+    execute format('drop policy if exists %I on public.email_delivery_events', r.policyname);
+  end loop;
+end $$;
+
+create policy "Authenticated read email_delivery_events"
+  on public.email_delivery_events
+  for select
+  using (auth.role() = 'authenticated');
+
+create policy "Service role insert email_delivery_events"
+  on public.email_delivery_events
+  for insert
+  with check (auth.role() = 'service_role');
+
+create index if not exists idx_email_delivery_events_created_at
+  on public.email_delivery_events(created_at desc);
+create index if not exists idx_email_delivery_events_channel_created_at
+  on public.email_delivery_events(channel, created_at desc);
+create index if not exists idx_email_delivery_events_status_created_at
+  on public.email_delivery_events(status, created_at desc);
+
+drop function if exists public.log_email_delivery_event(text, text, text, text, text, text, text);
+create or replace function public.log_email_delivery_event(
+  p_provider text,
+  p_channel text,
+  p_status text,
+  p_recipient_email text default null,
+  p_provider_message_id text default null,
+  p_error_code text default null,
+  p_error_text text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_id uuid;
+begin
+  insert into public.email_delivery_events (
+    provider,
+    channel,
+    status,
+    recipient_email,
+    provider_message_id,
+    error_code,
+    error_text
+  ) values (
+    coalesce(nullif(trim(p_provider), ''), 'resend'),
+    coalesce(nullif(trim(p_channel), ''), 'unknown'),
+    case when lower(coalesce(trim(p_status), '')) = 'ok' then 'ok' else 'failed' end,
+    nullif(trim(p_recipient_email), ''),
+    nullif(trim(p_provider_message_id), ''),
+    nullif(trim(p_error_code), ''),
+    nullif(trim(p_error_text), '')
+  )
+  returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
+grant execute on function public.log_email_delivery_event(text, text, text, text, text, text, text) to authenticated;

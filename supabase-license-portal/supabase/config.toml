@@ -1,5 +1,5 @@
 # Lizenzportal Supabase – Projekt ojryoosqwfbzlmdeywzs
-# Nur Update/Lizenz-API: npm run lp:deploy:mandanten-update (Repo-Root)
+# Repo-Root: npm run lp:deploy:mandanten-update (license) · npm run lp:deploy:infrastructure-ping
 # Alle Functions: cd supabase-license-portal && supabase link --project-ref … && supabase functions deploy
 
 [api]
@@ -22,3 +22,6 @@ verify_jwt = false
 
 [functions.submit-beta-feedback]
 verify_jwt = false
+
+[functions.infrastructure-ping]
+verify_jwt = true

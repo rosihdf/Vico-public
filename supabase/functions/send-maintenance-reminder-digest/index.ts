@@ -17,6 +17,33 @@ type DigestRow = {
   days_until_due: number | null
 }
 
+const toYearMonth = (value: Date): string => {
+  const y = value.getUTCFullYear()
+  const m = String(value.getUTCMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+}
+
+const mirrorUsageToLicensePortal = async (status: 'ok' | 'failed'): Promise<void> => {
+  const lpUrl = (Deno.env.get('LP_SUPABASE_URL') ?? '').trim()
+  const lpServiceRole = (Deno.env.get('LP_SERVICE_ROLE_KEY') ?? '').trim()
+  const lpTenantId = (Deno.env.get('LP_TENANT_ID') ?? '').trim()
+  if (!lpUrl || !lpServiceRole || !lpTenantId) return
+
+  await fetch(`${lpUrl}/rest/v1/rpc/increment_tenant_email_monthly_usage`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: lpServiceRole,
+      Authorization: `Bearer ${lpServiceRole}`,
+    },
+    body: JSON.stringify({
+      p_tenant_id: lpTenantId,
+      p_status: status,
+      p_year_month: toYearMonth(new Date()),
+    }),
+  })
+}
+
 const isDueForSend = (
   frequency: string,
   lastSent: string | null,
@@ -75,6 +102,18 @@ serve(async (req) => {
       })
     }
     const supabase = createClient(supabaseUrl, serviceRoleKey)
+    const logEvent = async (status: 'ok' | 'failed', recipientEmail: string, providerMessageId?: string, errorText?: string) => {
+      await supabase.rpc('log_email_delivery_event', {
+        p_provider: 'resend',
+        p_channel: 'maintenance_digest',
+        p_status: status,
+        p_recipient_email: recipientEmail,
+        p_provider_message_id: providerMessageId ?? null,
+        p_error_code: null,
+        p_error_text: errorText ?? null,
+      })
+      await mirrorUsageToLicensePortal(status)
+    }
     const fromEmail = Deno.env.get('RESEND_FROM') || 'Vico Türen & Tore <onboarding@resend.dev>'
 
     const { data: orgRow } = await supabase
@@ -191,9 +230,14 @@ serve(async (req) => {
         }),
       })
 
-      if (!res.ok) continue
+      const resendResult = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        await logEvent('failed', email, undefined, resendResult?.message || resendResult?.detail || `HTTP ${res.status}`)
+        continue
+      }
 
       emailsSent++
+      await logEvent('ok', email, resendResult?.id)
       await supabase
         .from('profiles')
         .update({ maintenance_reminder_email_last_sent_at: new Date().toISOString() })

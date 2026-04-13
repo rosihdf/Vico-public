@@ -22,8 +22,17 @@ export type Tenant = {
   datenschutz_responsible: string | null
   datenschutz_contact_email: string | null
   datenschutz_dsb_email: string | null
+  mail_provider?: string | null
+  mail_from_name?: string | null
+  mail_from_email?: string | null
+  mail_reply_to?: string | null
+  mail_monthly_limit?: number | null
   supabase_project_ref: string | null
   supabase_url: string | null
+  /** Optionale Cloudflare-Pages-Preview-URLs (Dokumentation / Verbindungsprüfung) */
+  cf_preview_main_url?: string | null
+  cf_preview_portal_url?: string | null
+  cf_preview_arbeitszeit_url?: string | null
   allowed_domains: string[] | null
   /** Optional: Version/Release Notes je App (Lizenz-API-Feld `appVersions`). */
   app_versions?: AppVersionsMap | null
@@ -96,8 +105,16 @@ export const createTenant = async (payload: Partial<Tenant>): Promise<{ id: stri
       datenschutz_responsible: payload.datenschutz_responsible ?? null,
       datenschutz_contact_email: payload.datenschutz_contact_email ?? null,
       datenschutz_dsb_email: payload.datenschutz_dsb_email ?? null,
+      mail_provider: payload.mail_provider ?? 'resend',
+      mail_from_name: payload.mail_from_name ?? null,
+      mail_from_email: payload.mail_from_email ?? null,
+      mail_reply_to: payload.mail_reply_to ?? null,
+      mail_monthly_limit: payload.mail_monthly_limit ?? 3000,
       supabase_project_ref: payload.supabase_project_ref ?? null,
       supabase_url: payload.supabase_url ?? null,
+      cf_preview_main_url: payload.cf_preview_main_url ?? null,
+      cf_preview_portal_url: payload.cf_preview_portal_url ?? null,
+      cf_preview_arbeitszeit_url: payload.cf_preview_arbeitszeit_url ?? null,
       allowed_domains: Array.isArray(payload.allowed_domains) ? payload.allowed_domains : [],
       app_versions: payload.app_versions ?? {},
       is_test_mandant: payload.is_test_mandant ?? false,
