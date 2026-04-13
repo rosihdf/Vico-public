@@ -62,7 +62,11 @@ const applyToLink = (link: HTMLLinkElement, href: string, mime: string | null): 
   // Kurz leeren + neu setzen: einige Browser/WebKit laden Cross-Origin-Favicons sonst nicht zuverlässig.
   link.removeAttribute('href')
   link.href = href
-  link.setAttribute('sizes', 'any')
+  if (mime === 'image/svg+xml') {
+    link.setAttribute('sizes', 'any')
+  } else {
+    link.removeAttribute('sizes')
+  }
   if (mime) {
     link.type = mime
   } else {
