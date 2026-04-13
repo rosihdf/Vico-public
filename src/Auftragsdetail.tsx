@@ -644,7 +644,7 @@ const Auftragsdetail = () => {
     let techPath = payloadBase.unterschrift_mitarbeiter_path
     let custPath = payloadBase.unterschrift_kunde_path
 
-    let mergedExtra: OrderCompletionExtraV1 = { ...payloadBase.completion_extra }
+    const mergedExtra: OrderCompletionExtraV1 = { ...payloadBase.completion_extra }
     const extraJson = mergedExtra as unknown as OrderCompletion['completion_extra']
 
     if (!id) {

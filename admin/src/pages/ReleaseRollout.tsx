@@ -31,14 +31,15 @@ type IncomingStripProps = {
 
 const RolloutIncomingStrip = ({ release }: IncomingStripProps) => {
   const [pilotCount, setPilotCount] = useState<number | null>(null)
+  const releaseId = release?.id ?? null
 
   useEffect(() => {
-    if (!release) {
+    if (!releaseId) {
       setPilotCount(null)
       return
     }
     let cancelled = false
-    void fetchIncomingTenantIdsForRelease(release.id)
+    void fetchIncomingTenantIdsForRelease(releaseId)
       .then((ids) => {
         if (!cancelled) setPilotCount(ids.length)
       })
@@ -48,7 +49,7 @@ const RolloutIncomingStrip = ({ release }: IncomingStripProps) => {
     return () => {
       cancelled = true
     }
-  }, [release?.id])
+  }, [releaseId])
 
   if (!release) {
     return <p className="text-xs text-slate-500">Kein Release gewählt.</p>
@@ -157,10 +158,12 @@ const ReleaseRollout = () => {
     setPicked(new Set())
   }, [mode])
 
+  const selectedChannelsKey = useMemo(() => selectedChannels.join(','), [selectedChannels])
+
   useEffect(() => {
     setD4Choice('none')
     setGithubActionsUrlByCh({})
-  }, [selectedChannels.join(','), mode])
+  }, [selectedChannelsKey, mode])
 
   const effectiveTenants = useMemo(
     () => getEffectiveTenantsForRollout(tenants, scopeMode, picked),
@@ -463,7 +466,7 @@ const ReleaseRollout = () => {
                           className="mt-1"
                         />
                         <span>
-                          Production-Deploy <strong>geprüft</strong> / erfolgreich (z. B. GitHub Actions).
+                          Production-Deploy <strong>geprüft</strong> / erfolgreich (z. B. GitHub Actions).
                           {selectedChannels.map((ch) =>
                             githubActionsUrlByCh[ch] ? (
                               <a

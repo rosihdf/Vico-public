@@ -246,6 +246,8 @@ const Arbeitszeit = () => {
     const tail = selMonth < currMonth ? 'bis Monatsende' : 'bis heute'
     return `Zeitraum: ${formatDateShort(monthStatRange.from)}–${formatDateShort(monthStatRange.to)} (${tail}, ab Eintritt)`
   }, [monthStatRange, selectedDate])
+  const employmentStartDate = myProfile?.employment_start_date ?? null
+  const employmentEndDate = myProfile?.employment_end_date ?? null
 
   useEffect(() => {
     if (!userId || !canUse) {
@@ -259,7 +261,7 @@ const Arbeitszeit = () => {
       return
     }
     const todayStr = toDateStr(new Date())
-    const range = getMonthStatDateRange(selectedDate, myProfile?.employment_start_date, todayStr)
+    const range = getMonthStatDateRange(selectedDate, employmentStartDate, todayStr)
     if (!range) {
       setCalculatedSoll(0)
       setMonthIstRpc(0)
@@ -267,7 +269,7 @@ const Arbeitszeit = () => {
     }
     void calcSollMinutesForDateRange(userId, range.from, range.to).then(setCalculatedSoll)
     void getWorkMinutesForUserInRange(userId, range.from, range.to).then(setMonthIstRpc)
-  }, [userId, canUse, isOffline, selectedDate, myProfile?.employment_start_date])
+  }, [userId, canUse, isOffline, selectedDate, employmentStartDate])
 
   const yearStatsHint = useMemo(() => {
     const todayStr = toDateStr(new Date())
@@ -275,7 +277,7 @@ const Arbeitszeit = () => {
     const { yearStart, yearEnd } = yearBounds(year)
     const r = computeYearWorkStatsRange(year, myProfile, todayStr, yNow)
     return buildYearStatsHint(year, yNow, r, yearStart, yearEnd, todayStr)
-  }, [year, myProfile?.employment_start_date, myProfile?.employment_end_date])
+  }, [year, myProfile])
 
   useEffect(() => {
     if (!userId || !canUse) return
@@ -290,7 +292,7 @@ const Arbeitszeit = () => {
     const { rangeStart, rangeEnd } = r
     void calcSollMinutesForDateRange(userId, rangeStart, rangeEnd).then(setYearSoll)
     void getWorkMinutesForUserInRange(userId, rangeStart, rangeEnd).then(setYearIst)
-  }, [userId, canUse, year, myProfile?.employment_start_date, myProfile?.employment_end_date])
+  }, [userId, canUse, year, myProfile, employmentStartDate, employmentEndDate])
 
   const loadLeaveRequests = useCallback(async () => {
     if (!userId) return

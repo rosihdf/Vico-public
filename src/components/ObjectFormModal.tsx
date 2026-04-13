@@ -251,10 +251,11 @@ const ObjectFormModal = ({
   const revokePendingGallery = (items: PendingGalleryPhoto[]) => {
     items.forEach((p) => URL.revokeObjectURL(p.previewUrl))
   }
+  const objectId = object?.id ?? null
 
   useEffect(() => {
     setShowResolvedDefects(false)
-  }, [object?.id])
+  }, [objectId])
 
   useEffect(() => {
     if (object) {
@@ -283,7 +284,7 @@ const ObjectFormModal = ({
       })
     }
     setProfilePanelOpen(false)
-  }, [object?.id])
+  }, [object])
 
   useEffect(() => {
     if (!doorStammdatenListsEnabled) {
@@ -306,7 +307,7 @@ const ObjectFormModal = ({
       setLockManufacturerUseFreeText(c.lock_manufacturers.length === 0 || !c.lock_manufacturers.includes(lm))
       setLockTypeUseFreeText(c.lock_types.length === 0 || !c.lock_types.includes(lt))
     })
-  }, [object?.id, doorStammdatenListsEnabled])
+  }, [object, doorStammdatenListsEnabled])
 
   useEffect(() => {
     return () => {
@@ -316,20 +317,20 @@ const ObjectFormModal = ({
   }, [])
 
   useEffect(() => {
-    if (!object?.id) {
+    if (!objectId) {
       setObjectPhotos([])
       return
     }
-    fetchObjectPhotos(object.id).then((rows) => setObjectPhotos(rows))
-  }, [object?.id])
+    fetchObjectPhotos(objectId).then((rows) => setObjectPhotos(rows))
+  }, [objectId])
 
   useEffect(() => {
-    if (!object?.id) {
+    if (!objectId) {
       setObjectDocuments([])
       return
     }
-    fetchObjectDocuments(object.id).then(setObjectDocuments)
-  }, [object?.id])
+    fetchObjectDocuments(objectId).then(setObjectDocuments)
+  }, [objectId])
 
   useEffect(() => {
     if (object) {
@@ -337,7 +338,7 @@ const ObjectFormModal = ({
     } else {
       setDefectPanelExpanded(false)
     }
-  }, [object?.id])
+  }, [object])
 
   const protocolRowsEffective =
     protocolOpenMangelRowsProp !== undefined ? protocolOpenMangelRowsProp : protocolRowsFetched
@@ -363,7 +364,7 @@ const ObjectFormModal = ({
     return () => {
       cancelled = true
     }
-  }, [object?.id, protocolOpenMangelRowsProp])
+  }, [objectId, object, protocolOpenMangelRowsProp])
 
   useEffect(() => {
     if (!object?.id || !isEdit) {
@@ -377,7 +378,7 @@ const ObjectFormModal = ({
     return () => {
       cancelled = true
     }
-  }, [object?.id, isEdit])
+  }, [objectId, object, isEdit])
 
   const protocolPhotoOrderId = protocolRowsEffective[0]?.order_id ?? ''
 
@@ -393,7 +394,7 @@ const ObjectFormModal = ({
     return () => {
       cancelled = true
     }
-  }, [object?.id, protocolPhotoOrderId])
+  }, [objectId, object, protocolPhotoOrderId])
 
   const protocolDraftPhotoOrderId = protocolDraftRowsFetched[0]?.order_id ?? ''
 
@@ -409,7 +410,7 @@ const ObjectFormModal = ({
     return () => {
       cancelled = true
     }
-  }, [object?.id, protocolDraftPhotoOrderId])
+  }, [objectId, object, protocolDraftPhotoOrderId])
 
   const defectEntryIdsKey = useMemo(
     () =>
@@ -443,7 +444,7 @@ const ObjectFormModal = ({
     return () => {
       cancelled = true
     }
-  }, [object?.id, defectEntryIdsKey])
+  }, [objectId, object, formData.defect_entries, defectEntryIdsKey])
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {

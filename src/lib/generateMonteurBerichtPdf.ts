@@ -246,12 +246,9 @@ export const generateMonteurBerichtPdf = async (input: MonteurBerichtPdfInput): 
     if (showCustomer) {
       leftBottom = lineH + leftLines.length * lineH
     }
-    let rightBottom = 0
-    if (showBv) {
-      rightBottom = lineH + rightBvLines.length * lineH + lineH + objLines.length * lineH
-    } else {
-      rightBottom = lineH + objLines.length * lineH
-    }
+    const rightBottom = showBv
+      ? lineH + rightBvLines.length * lineH + lineH + objLines.length * lineH
+      : lineH + objLines.length * lineH
     const blockH = Math.max(leftBottom, rightBottom) + 4
     ensureSpace(blockH)
     const yTop = y

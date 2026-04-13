@@ -57,6 +57,11 @@ const ReleaseRollbackBulkPanel = ({ channels, effectiveTenants }: ReleaseRollbac
   }, [])
 
   const chOrdered = useMemo(() => sortedChannels(channels), [channels])
+  const channelsKey = useMemo(() => channels.join(','), [channels])
+  const effectiveTenantsKey = useMemo(
+    () => effectiveTenants.map((t) => t.id).join(','),
+    [effectiveTenants]
+  )
 
   useEffect(() => {
     setLogLines([])
@@ -66,7 +71,7 @@ const ReleaseRollbackBulkPanel = ({ channels, effectiveTenants }: ReleaseRollbac
     setPreviewRows([])
     setPreviewPage(0)
     setPreviewError(null)
-  }, [channels.join(','), effectiveTenants.map((t) => t.id).join(',')])
+  }, [channelsKey, effectiveTenantsKey])
 
   const loadPreview = useCallback(async () => {
     if (chOrdered.length === 0 || effectiveTenants.length === 0) {

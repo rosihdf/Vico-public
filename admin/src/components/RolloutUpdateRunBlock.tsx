@@ -53,13 +53,14 @@ const RolloutUpdateRunBlock = ({
         .join('|'),
     [chOrdered, releaseIdByChannel]
   )
+  const selectedChannelsKey = useMemo(() => selectedChannels.join(','), [selectedChannels])
 
   useEffect(() => {
     setLogLines([])
     setRunDone(false)
     setCancelRequested(false)
     abortRef.current = false
-  }, [selectedChannels.join(','), tenantKey, releasePickKey])
+  }, [selectedChannelsKey, tenantKey, releasePickKey])
 
   const releasesValid = useMemo(() => {
     if (chOrdered.length === 0) return false
