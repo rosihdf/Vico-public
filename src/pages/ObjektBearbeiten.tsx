@@ -22,6 +22,9 @@ const ObjektBearbeiten = () => {
   const [obj, setObj] = useState<Obj | null | undefined>(undefined)
   const [customerBvs, setCustomerBvs] = useState<BV[]>([])
 
+  const customerIdFromOrder = searchParams.get('customerId')?.trim() || null
+  const bvIdFromOrder = searchParams.get('bvId')?.trim() || null
+
   const returnToRaw = searchParams.get('returnTo')?.trim() ?? ''
   const returnPath =
     returnToRaw.length > 0
@@ -46,10 +49,11 @@ const ObjektBearbeiten = () => {
       setCustomerBvs([])
       return
     }
-    const bvs = o.customer_id ? await fetchBvs(o.customer_id) : []
+    const customerForContext = o.customer_id ?? customerIdFromOrder
+    const bvs = customerForContext ? await fetchBvs(customerForContext) : []
     setCustomerBvs(bvs ?? [])
     setObj(o)
-  }, [objectId])
+  }, [objectId, customerIdFromOrder])
 
   useEffect(() => {
     void load()
@@ -70,7 +74,10 @@ const ObjektBearbeiten = () => {
     )
   }
 
-  if (!obj.customer_id) {
+  const resolvedCustomerId = obj.customer_id ?? customerIdFromOrder
+  const resolvedBvId = obj.bv_id ?? bvIdFromOrder
+
+  if (!resolvedCustomerId) {
     return (
       <div className="p-4 max-w-md">
         <p className="text-slate-600 dark:text-slate-400">Tür/Tor hat keine Kunden-Zuordnung.</p>
@@ -100,8 +107,8 @@ const ObjektBearbeiten = () => {
         </Link>
       </p>
       <ObjectFormModal
-        bvId={obj.bv_id}
-        customerId={obj.customer_id}
+        bvId={resolvedBvId}
+        customerId={resolvedCustomerId}
         customerBvs={customerBvs}
         object={obj}
         canEdit={canEdit}

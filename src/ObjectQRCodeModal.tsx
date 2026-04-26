@@ -1,10 +1,15 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { QRCodeCanvas } from 'qrcode.react'
 import WebBluetoothReceiptPrinter from '@point-of-sale/webbluetooth-receipt-printer'
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder'
+import type { PrinterTargetV1 } from 'vico-zebra-label-printer'
+import { ZebraLabelPrinter } from 'vico-zebra-label-printer'
 import type { Object as Obj } from './types'
 import { getObjectDisplayName } from './lib/objectUtils'
 import { getObjectDeepLinkUrl } from './lib/objectQrUrl'
+import { buildZplFromPayloadV1, mapZebraPluginCodeToUiMessage } from './lib/zebra'
+import { getEtikettPresetDimensions } from './lib/etikettPreset'
 import { useLicense } from './LicenseContext'
 
 type ObjectQRCodeModalProps = {
@@ -36,6 +41,13 @@ const ObjectQRCodeModal = ({
   const printRef = useRef<HTMLDivElement>(null)
   const [btStatus, setBtStatus] = useState<'idle' | 'connecting' | 'printing' | 'done' | 'error'>('idle')
   const [btMessage, setBtMessage] = useState<string>('')
+
+  /** Zebra MVP (Android nativ): nur wenn isAvailable sinnvoll. */
+  const [zebraUiPhase, setZebraUiPhase] = useState<'off' | 'loading' | 'ready' | 'na'>('off')
+  const [zebraPaired, setZebraPaired] = useState<PrinterTargetV1[]>([])
+  const [zebraSelectedId, setZebraSelectedId] = useState<string>('')
+  const [zebraMsg, setZebraMsg] = useState<string>('')
+  const [zebraBusy, setZebraBusy] = useState(false)
 
   const url = getObjectDeepLinkUrl(customerId, bvId, object.id)
   const displayName = getObjectDisplayName(object)
@@ -113,6 +125,119 @@ const ObjectQRCodeModal = ({
     return () => window.removeEventListener('keydown', handleEscape)
   }, [onClose])
 
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
+        setZebraUiPhase('off')
+        return
+      }
+      setZebraUiPhase('loading')
+      try {
+        const r = await ZebraLabelPrinter.isAvailable()
+        if (cancelled) return
+        if (r.available) {
+          setZebraUiPhase('ready')
+        } else {
+          setZebraUiPhase('na')
+        }
+      } catch {
+        if (!cancelled) setZebraUiPhase('na')
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const buildZebraPayload = useCallback(() => {
+    const labelSize = getEtikettPresetDimensions()
+    const subtitleParts: string[] = []
+    if (object.room?.trim()) subtitleParts.push(object.room.trim())
+    if (object.internal_id?.trim()) subtitleParts.push(object.internal_id.trim())
+    const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined
+    return {
+      qrContent: url,
+      titleLine: brandLine,
+      objectLabel: displayName,
+      customerName,
+      siteName: bvName?.trim() || undefined,
+      subtitle,
+      labelSize,
+    }
+  }, [url, brandLine, displayName, customerName, bvName, object.room, object.internal_id])
+
+  const handleZebraLoadPaired = useCallback(async () => {
+    setZebraMsg('')
+    setZebraBusy(true)
+    try {
+      const r = await ZebraLabelPrinter.getPairedPrinters()
+      if (!r.ok) {
+        setZebraMsg(mapZebraPluginCodeToUiMessage(r.error.code, r.error.details))
+        return
+      }
+      setZebraPaired(r.printers)
+      if (r.printers.length === 0) {
+        setZebraMsg('Keine gekoppelten Bluetooth-Geräte. Bitte in den Android-Einstellungen koppeln.')
+        setZebraSelectedId('')
+        return
+      }
+      setZebraSelectedId((prev) => (prev && r.printers.some((p) => p.id === prev) ? prev : r.printers[0].id))
+    } finally {
+      setZebraBusy(false)
+    }
+  }, [])
+
+  const handleZebraSetDefault = useCallback(async () => {
+    setZebraMsg('')
+    const sel = zebraPaired.find((p) => p.id === zebraSelectedId)
+    if (!sel) {
+      setZebraMsg('Bitte zuerst gekoppelte Geräte laden und einen Drucker auswählen.')
+      return
+    }
+    setZebraBusy(true)
+    try {
+      const r = await ZebraLabelPrinter.setDefaultPrinter({ target: sel })
+      if (!r.ok) {
+        setZebraMsg(mapZebraPluginCodeToUiMessage(r.error.code, r.error.details))
+        return
+      }
+      setZebraMsg('Standard-Zebra-Drucker gespeichert.')
+    } finally {
+      setZebraBusy(false)
+    }
+  }, [zebraPaired, zebraSelectedId])
+
+  const handleZebraPrint = useCallback(async () => {
+    setZebraMsg('')
+    setZebraBusy(true)
+    try {
+      const payload = buildZebraPayload()
+      let zpl: string
+      try {
+        zpl = buildZplFromPayloadV1(payload)
+      } catch (e) {
+        setZebraMsg(e instanceof Error ? e.message : 'ZPL konnte nicht erzeugt werden.')
+        return
+      }
+      const sel = zebraSelectedId ? zebraPaired.find((p) => p.id === zebraSelectedId) : undefined
+      const printOptions = sel != null ? { target: sel, timeoutMs: 20_000 } : { timeoutMs: 20_000 }
+      const r = await ZebraLabelPrinter.printLabel({
+        payload,
+        zpl,
+        printOptions,
+      })
+      if (!r.ok) {
+        setZebraMsg(mapZebraPluginCodeToUiMessage(r.error.code, r.error.details))
+        return
+      }
+      setZebraMsg(`Zebra-Druck gesendet (${r.meta?.bytesSent ?? '?'} Bytes).`)
+    } finally {
+      setZebraBusy(false)
+    }
+  }, [buildZebraPayload, zebraPaired, zebraSelectedId])
+
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
@@ -173,6 +298,63 @@ const ObjectQRCodeModal = ({
           {btStatus === 'done' && (
             <p className="mt-2 text-sm text-green-600 text-center">{btMessage}</p>
           )}
+
+          {zebraUiPhase === 'ready' && (
+            <div className="mt-4 w-full border-t border-slate-200 dark:border-slate-600 pt-3 text-left space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Zebra ZQ220 (Test, Android)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleZebraLoadPaired()}
+                  disabled={zebraBusy}
+                  className="text-xs py-1.5 px-2 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                >
+                  Gekoppelte laden
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleZebraSetDefault()}
+                  disabled={zebraBusy || zebraPaired.length === 0 || !zebraSelectedId}
+                  className="text-xs py-1.5 px-2 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                >
+                  Als Standard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleZebraPrint()}
+                  disabled={zebraBusy}
+                  className="text-xs py-1.5 px-2 rounded-md bg-emerald-700 text-white border border-emerald-800 disabled:opacity-50"
+                >
+                  Zebra drucken
+                </button>
+              </div>
+              {zebraPaired.length > 0 && (
+                <label className="block text-xs text-slate-600 dark:text-slate-400">
+                  <span className="sr-only">Zebra-Drucker wählen</span>
+                  <select
+                    className="mt-1 w-full text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-2 py-1"
+                    value={zebraSelectedId}
+                    onChange={(e) => setZebraSelectedId(e.target.value)}
+                    disabled={zebraBusy}
+                  >
+                    {zebraPaired.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.displayName} ({p.native.opaque})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {zebraMsg ? (
+                <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap" role="status">
+                  {zebraMsg}
+                </p>
+              ) : null}
+            </div>
+          )}
+
           <div className="mt-4 flex flex-col sm:flex-row gap-2 w-full">
             {isWebBluetoothSupported() && (
               <button

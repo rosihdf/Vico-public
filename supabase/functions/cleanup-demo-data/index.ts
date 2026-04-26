@@ -3,7 +3,8 @@ import { serve } from 'npm:https://deno.land/std@0.168.0/http/server.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-cleanup-demo-secret',
 }
 
 serve(async (req) => {
@@ -11,7 +12,36 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
   try {
+    const cronSecret = (Deno.env.get('CLEANUP_DEMO_DATA_SECRET') ?? '').trim()
+    if (!cronSecret) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'CLEANUP_DEMO_DATA_SECRET ist nicht gesetzt. Function absichtlich deaktiviert (fail-closed).',
+        }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const authHeader = req.headers.get('Authorization')?.trim() ?? ''
+    const headerSecret = req.headers.get('x-cleanup-demo-secret')?.trim() ?? ''
+    const bearerOk = authHeader === `Bearer ${cronSecret}`
+    const headerOk = headerSecret === cronSecret && headerSecret.length > 0
+    if (!bearerOk && !headerOk) {
+      return new Response(JSON.stringify({ error: 'Nicht autorisiert.' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     if (!supabaseUrl || !serviceRoleKey) {

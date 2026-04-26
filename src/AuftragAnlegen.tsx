@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Link } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useToast } from './ToastContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
+import { supabase } from './supabase'
 import {
   fetchOrders,
   createOrder,
@@ -22,13 +22,14 @@ import {
   getMaintenancePhotoUrl,
 } from './lib/dataService'
 import { isOnline } from '../shared/networkUtils'
+
+const MONTEUR_BERICHT_STORAGE_BUCKET = 'maintenance-photos'
 import { subscribeToOrderChanges } from './lib/orderRealtime'
 import { subscribeToProfileChanges } from './lib/profileRealtime'
-import { fetchProfiles, getProfileDisplayName } from './lib/userService'
+import { fetchProfiles } from './lib/userService'
 import { getObjectDisplayName } from './lib/objectUtils'
 import {
   findActiveOrderConflictsAmong,
-  getOrderObjectIds,
   isOrderActivePerObjectError,
   type ActiveOrderObjectConflict,
 } from './lib/orderUtils'
@@ -36,88 +37,37 @@ import { OrderCalendar } from './components/OrderCalendar'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import ConfirmDialog from './components/ConfirmDialog'
 import PdfPreviewOverlay, { type PdfPreviewState } from './components/PdfPreviewOverlay'
-import OrderActiveConflictCallout from './components/OrderActiveConflictCallout'
+import { AuftragAnlegenPageToolbar } from './components/auftraege/AuftragAnlegenPageToolbar'
+import { AuftragAnlegenOrderListRow } from './components/auftraege/AuftragAnlegenOrderListRow'
+import { AuftragAnlegenOrderFormModal } from './components/auftraege/AuftragAnlegenOrderFormModal'
 import EmptyState from '../shared/EmptyState'
 import { useLicense } from './LicenseContext'
+import { useComponentSettings } from './ComponentSettingsContext'
+import { hasFeature } from './lib/licenseService'
 import { isAssignedChannelReleaseAtLeast } from './lib/releaseGate'
+import {
+  deriveAuftragListView,
+  mapOrdersWithListLabels,
+  getCustomerDisplayName,
+  getBvDisplayName,
+} from './lib/auftragAnlegenListDerive'
+import { INITIAL_FORM, orderToFormState, type OrderFormState } from './lib/auftragAnlegenFormModel'
 import type { Order, Customer, BV, Object as Obj, OrderType, OrderStatus } from './types'
 import type { Profile } from './lib/userService'
 
-const ORDER_TYPE_LABELS: Record<OrderType, string> = {
-  wartung: 'Wartung',
-  reparatur: 'Reparatur',
-  montage: 'Montage',
-  sonstiges: 'Sonstiges',
-}
-
-const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  offen: 'Offen',
-  in_bearbeitung: 'In Bearbeitung',
-  erledigt: 'Erledigt',
-  storniert: 'Storniert',
-}
-
-type OrderFormState = {
-  customer_id: string
-  bv_id: string
-  selectedObjectIds: string[]
-  order_date: string
-  order_time: string
-  order_type: OrderType
-  status: OrderStatus
-  description: string
-  assigned_to: string
-}
-
-const INITIAL_FORM: OrderFormState = {
-  customer_id: '',
-  bv_id: '',
-  selectedObjectIds: [],
-  order_date: new Date().toISOString().slice(0, 10),
-  order_time: '',
-  order_type: 'wartung',
-  status: 'offen',
-  description: '',
-  assigned_to: '',
-}
-
-const orderToFormState = (o: Order): OrderFormState => ({
-  customer_id: o.customer_id,
-  bv_id: o.bv_id ?? '',
-  selectedObjectIds: getOrderObjectIds(o),
-  order_date: o.order_date,
-  order_time: o.order_time ?? '',
-  order_type: o.order_type,
-  status: o.status,
-  description: o.description ?? '',
-  assigned_to: o.assigned_to ?? '',
-})
-
-/** Direkt Tür/Tor-Modal ohne Kundenliste; nach Schließen zurück zu Aufträgen (oder returnTo). */
-const buildObjektBearbeitenUrl = (o: Order): string => {
-  const ids = getOrderObjectIds(o)
-  const firstId = ids[0] ?? o.object_id
-  if (!firstId) {
-    const params = new URLSearchParams()
-    params.set('customerId', o.customer_id)
-    params.set('returnTo', '/auftrag')
-    if (o.bv_id) params.set('bvId', o.bv_id)
-    return `/kunden?${params.toString()}`
-  }
-  const params = new URLSearchParams()
-  params.set('returnTo', '/auftrag')
-  return `/objekt/${firstId}/bearbeiten?${params.toString()}`
-}
-
 const AuftragAnlegen = () => {
   const { user, userRole } = useAuth()
-  const { mandantenReleases } = useLicense()
+  const { mandantenReleases, license } = useLicense()
+  const { isEnabled } = useComponentSettings()
   const { showError } = useToast()
   const isRelease110Enabled = isAssignedChannelReleaseAtLeast(mandantenReleases, '1.1.0')
   const canAssign = userRole === 'admin'
   const canEdit = userRole === 'admin' || userRole === 'mitarbeiter'
   const canBuchhaltungExport =
     userRole === 'admin' || userRole === 'mitarbeiter' || userRole === 'teamleiter'
+  const checklistAssistantAvailable =
+    Boolean(license && hasFeature(license, 'checklist_assistant')) &&
+    isEnabled('wartung_checklist_assistant')
   const [orders, setOrders] = useState<Order[]>([])
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -175,10 +125,24 @@ const AuftragAnlegen = () => {
         showError('Noch kein Monteursbericht-PDF. Öffnen Sie den Auftrag und tippen Sie auf „Monteursbericht“.')
         return
       }
+      if (!isOnline()) {
+        showError('Monteurbericht ist nur mit Verbindung abrufbar.')
+        return
+      }
+      const { data, error: dlErr } = await supabase.storage.from(MONTEUR_BERICHT_STORAGE_BUCKET).download(path)
+      if (dlErr || !data) {
+        showError(dlErr?.message ?? 'Monteurbericht konnte nicht geladen werden.')
+        return
+      }
+      const oid = o.object_ids?.[0] ?? o.object_id
+      const obj = oid ? allObjects.find((x) => x.id === oid) : undefined
+      const label = obj ? getObjectDisplayName(obj) : o.id.slice(0, 8)
+      const previewTitle = ['Monteurbericht', label, o.order_date].filter(Boolean).join(' – ')
+      const url = URL.createObjectURL(data)
       setPdfViewer({
-        url: getMaintenancePhotoUrl(path),
-        title: 'Monteursbericht',
-        revokeOnClose: false,
+        url,
+        title: previewTitle || 'Monteurbericht',
+        revokeOnClose: true,
       })
     } finally {
       setBerichteLoadingOrderId(null)
@@ -301,33 +265,9 @@ const AuftragAnlegen = () => {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [showForm, handleCloseForm])
 
-  const orderObjectSummary = useCallback(
-    (o: Order) => {
-      const ids = getOrderObjectIds(o)
-      if (ids.length === 0) return null
-      if (ids.length === 1) {
-        const obj = allObjects.find((x) => x.id === ids[0])
-        return ` · ${obj ? getObjectDisplayName(obj) : ids[0].slice(0, 8)}`
-      }
-      return ` · ${ids.length} Türen/Tore`
-    },
-    [allObjects]
-  )
-
-  const getCustomerName = (id: string) => customers.find((c) => c.id === id)?.name ?? '-'
-  const getBvName = (id: string | null | undefined) => {
-    if (!id) return '—'
-    return allBvs.find((b) => b.id === id)?.name ?? '-'
-  }
+  const getCustomerName = (id: string) => getCustomerDisplayName(customers, id)
+  const getBvName = (id: string | null | undefined) => getBvDisplayName(allBvs, id)
   const profilesAssignable = profiles.filter((p) => p.role !== 'demo' && p.role !== 'kunde')
-  const getProfileLabel = (id: string | null) => {
-    if (!id) return '-'
-    const p = profiles.find((p) => p.id === id)
-    if (!p) return id.slice(0, 8)
-    return p.first_name || p.last_name
-      ? `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim()
-      : (p.email ?? id.slice(0, 8))
-  }
 
   const handleOpenCreate = () => {
     setFormMode('create')
@@ -531,155 +471,37 @@ const AuftragAnlegen = () => {
     else loadData()
   }
 
-  const statusFilter = archiveMode === 'active'
-    ? (o: Order) => o.status === 'offen' || o.status === 'in_bearbeitung'
-    : (o: Order) => o.status === 'erledigt' || o.status === 'storniert'
-
-  const filteredByRole =
-    userRole === 'admin' || userRole === 'leser'
-      ? orders
-      : user
-        ? orders.filter((o) => o.assigned_to === user.id)
-        : []
-
-  const parentOrderIdsWithChildren = useMemo(() => {
-    const ids = new Set<string>()
-    for (const row of orders) {
-      if (row.related_order_id) ids.add(row.related_order_id)
-    }
-    return ids
-  }, [orders])
-
-  const isLinkedOrder = useCallback(
-    (o: Order) => Boolean(o.related_order_id) || parentOrderIdsWithChildren.has(o.id),
-    [parentOrderIdsWithChildren]
+  const { displayOrders, parentOrderIdsWithChildren } = deriveAuftragListView(
+    orders,
+    userRole,
+    user,
+    archiveMode,
+    relationFilter,
   )
-
-  const displayOrders = filteredByRole
-    .filter(statusFilter)
-    .filter((o) => {
-      if (relationFilter === 'linked') return isLinkedOrder(o)
-      if (relationFilter === 'unlinked') return !isLinkedOrder(o)
-      return true
-    })
-
-  const ordersWithNames = displayOrders.map((o) => ({
-    ...o,
-    customerName: getCustomerName(o.customer_id),
-    bvName: getBvName(o.bv_id),
-    isLinked: isLinkedOrder(o),
-    hasChildren: parentOrderIdsWithChildren.has(o.id),
-  }))
+  const ordersWithNames = mapOrdersWithListLabels(
+    displayOrders,
+    customers,
+    allBvs,
+    parentOrderIdsWithChildren,
+  )
 
   return (
     <div className="p-4 min-w-0">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Aufträge</h2>
-          {canBuchhaltungExport && (
-            <Link
-              to="/buchhaltung-export"
-              className="mt-1 inline-block text-sm font-medium text-vico-primary hover:underline focus:outline-none focus:ring-2 focus:ring-vico-primary focus:ring-offset-2 rounded dark:focus:ring-offset-slate-900"
-            >
-              Buchhaltungs-Export (CSV) →
-            </Link>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setArchiveMode('active')}
-              className={`px-3 py-2 text-sm font-medium ${
-                archiveMode === 'active'
-                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              Aktive
-            </button>
-            <button
-              type="button"
-              onClick={() => setArchiveMode('archive')}
-              className={`px-3 py-2 text-sm font-medium ${
-                archiveMode === 'archive'
-                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              Archiv
-            </button>
-          </div>
-          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`px-3 py-2 text-sm font-medium ${
-                viewMode === 'list'
-                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              Liste
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('calendar')}
-              className={`px-3 py-2 text-sm font-medium ${
-                viewMode === 'calendar'
-                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              Kalender
-            </button>
-          </div>
-          <div className="flex rounded-lg border border-slate-300 dark:border-slate-600 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setRelationFilter('all')}
-              className={`px-3 py-2 text-sm font-medium ${
-                relationFilter === 'all'
-                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              Alle
-            </button>
-            <button
-              type="button"
-              onClick={() => setRelationFilter('linked')}
-              className={`px-3 py-2 text-sm font-medium ${
-                relationFilter === 'linked'
-                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              Verknüpft
-            </button>
-            <button
-              type="button"
-              onClick={() => setRelationFilter('unlinked')}
-              className={`px-3 py-2 text-sm font-medium ${
-                relationFilter === 'unlinked'
-                  ? 'bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              Ohne Verknüpfung
-            </button>
-          </div>
-          {canEdit && archiveMode === 'active' && (
-            <button
-              type="button"
-              onClick={handleOpenCreate}
-              className="px-4 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600"
-            >
-              + Auftrag anlegen
-            </button>
-          )}
-        </div>
-      </div>
+      <AuftragAnlegenPageToolbar
+        canBuchhaltungExport={canBuchhaltungExport}
+        canEdit={canEdit}
+        archiveMode={archiveMode}
+        viewMode={viewMode}
+        relationFilter={relationFilter}
+        onArchiveActive={() => setArchiveMode('active')}
+        onArchiveArchive={() => setArchiveMode('archive')}
+        onViewList={() => setViewMode('list')}
+        onViewCalendar={() => setViewMode('calendar')}
+        onRelationAll={() => setRelationFilter('all')}
+        onRelationLinked={() => setRelationFilter('linked')}
+        onRelationUnlinked={() => setRelationFilter('unlinked')}
+        onCreateClick={handleOpenCreate}
+      />
 
       {viewMode === 'calendar' && (
         <div className="mb-6">
@@ -706,168 +528,35 @@ const AuftragAnlegen = () => {
       ) : (
         <ul className="space-y-2">
           {ordersWithNames.map((o) => (
-            <li
+            <AuftragAnlegenOrderListRow
               key={o.id}
-              className={`rounded-lg border p-4 flex flex-col gap-3 ${
-                !o.assigned_to
-                  ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 border-l-4 border-l-amber-500'
-                  : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600'
-              }`}
-            >
-              <div>
-                <p className="font-medium text-slate-800 dark:text-slate-100">
-                  {o.customerName} → {o.bvName}
-                  {!o.assigned_to && (
-                    <span className="ml-2 text-sm font-normal text-amber-700 dark:text-amber-300">(nicht zugewiesen)</span>
-                  )}
-                  {o.isLinked ? (
-                    <span className="ml-2 inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-xs font-medium text-sky-800 dark:text-sky-200">
-                      verknüpft
-                    </span>
-                  ) : null}
-                </p>
-                <p className="text-sm text-slate-600 dark:text-slate-300">
-                  {o.order_date}{o.order_time ? ` ${o.order_time.slice(0, 5)}` : ''} · {ORDER_TYPE_LABELS[o.order_type]} · {ORDER_STATUS_LABELS[o.status]}
-                  {orderObjectSummary(o)}
-                  {o.assigned_to && (
-                    <span className="ml-2 text-slate-500 dark:text-slate-400">→ {getProfileLabel(o.assigned_to)}</span>
-                  )}
-                </p>
-                {o.related_order_id ? (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Verknüpft mit{' '}
-                    <Link
-                      to={`/auftrag/${o.related_order_id}`}
-                      className="text-vico-primary hover:underline dark:text-sky-400"
-                    >
-                      Auftrag #{o.related_order_id.slice(0, 8)}
-                    </Link>
-                  </p>
-                ) : o.hasChildren ? (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Hat verknüpfte Folgeaufträge.</p>
-                ) : null}
-                {o.description && (
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 truncate max-w-md">{o.description}</p>
-                )}
-              </div>
-              <div className="flex flex-nowrap gap-2 overflow-x-auto pb-0.5 w-full items-center justify-end">
-                {o.status === 'erledigt' && (
-                  <>
-                    <button
-                      type="button"
-                      disabled={berichteLoadingOrderId === o.id}
-                      onClick={() => void handleListMonteursbericht(o)}
-                      className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
-                      title="Gespeicherten Monteursbericht anzeigen"
-                    >
-                      Monteursbericht
-                    </button>
-                    {o.order_type === 'wartung'
-                      ? getOrderObjectIds(o)
-                          .filter(Boolean)
-                          .map((oid) => {
-                            const obj = allObjects.find((x) => x.id === oid)
-                            return (
-                              <button
-                                key={oid}
-                                type="button"
-                                disabled={berichteLoadingOrderId === o.id}
-                                onClick={() => void handleListPruefprotokoll(o, oid)}
-                                className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 max-w-[140px] truncate"
-                                title={`Prüfprotokoll anzeigen: ${obj ? getObjectDisplayName(obj) : oid.slice(0, 8)}`}
-                                aria-label={`Prüfprotokoll anzeigen: ${obj ? getObjectDisplayName(obj) : oid.slice(0, 8)}`}
-                              >
-                                Prüfprotokoll
-                              </button>
-                            )
-                          })
-                      : null}
-                  </>
-                )}
-                {canAssign && archiveMode === 'active' && (
-                  <select
-                    value={profilesAssignable.some((p) => p.id === o.assigned_to) ? o.assigned_to ?? '' : ''}
-                    onChange={(e) => handleAssignmentChange(o, e.target.value)}
-                    className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg min-w-[140px] shrink-0 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                    title="Nutzer zuweisen"
-                    aria-label="Nutzer zuweisen"
-                  >
-                    <option value="">— Zuweisen —</option>
-                    {profilesAssignable.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {getProfileDisplayName(p)}
-                        {(p.first_name || p.last_name) && p.email ? ` (${p.email})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {canEdit && archiveMode === 'active' && (
-                  <>
-                    <input
-                      type="date"
-                      value={o.order_date}
-                      onChange={(e) => handleDateChange(o, e.target.value)}
-                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg max-w-[140px] shrink-0 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                      title="Termin ändern"
-                      aria-label="Termin ändern"
-                    />
-                    <select
-                      value={o.status}
-                      onChange={(e) => handleStatusChange(o, e.target.value as OrderStatus)}
-                      className="px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg shrink-0 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                      aria-label="Auftragsstatus"
-                    >
-                      {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
-                        <option key={s} value={s}>
-                          {ORDER_STATUS_LABELS[s]}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
-                {canEdit && archiveMode === 'active' && (
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEdit(o)}
-                    className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
-                  >
-                    Bearbeiten
-                  </button>
-                )}
-                <Link
-                  to={`/auftrag/${o.id}`}
-                  className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-block text-center"
-                  aria-label={o.status === 'erledigt' ? 'Erledigten Auftrag ansehen' : 'Auftrag bearbeiten'}
-                >
-                  {o.status === 'erledigt' ? 'Ansehen' : 'Abarbeiten'}
-                </Link>
-                <Link
-                  to={buildObjektBearbeitenUrl(o)}
-                  className="px-3 py-1.5 text-sm shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 inline-block text-center"
-                >
-                  Tür/Tor
-                </Link>
-                {canEdit && o.status !== 'erledigt' && o.status !== 'storniert' && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setConfirmDialog({
-                        open: true,
-                        title: 'Auftrag löschen',
-                        message: `Auftrag am ${o.order_date} wirklich löschen?`,
-                        onConfirm: () => {
-                          setConfirmDialog((c) => ({ ...c, open: false }))
-                          handleDelete(o)
-                        },
-                      })
-                    }
-                    className="px-3 py-1.5 text-sm shrink-0 ml-auto text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40"
-                  >
-                    Löschen
-                  </button>
-                )}
-              </div>
-            </li>
+              row={o}
+              allObjects={allObjects}
+              profiles={profiles}
+              profilesAssignable={profilesAssignable}
+              berichteLoadingOrderId={berichteLoadingOrderId}
+              canAssign={canAssign}
+              canEdit={canEdit}
+              archiveMode={archiveMode}
+              checklistAssistantAvailable={checklistAssistantAvailable}
+              onMonteursberichtClick={() => void handleListMonteursbericht(o)}
+              onPruefprotokollClick={(objectId) => void handleListPruefprotokoll(o, objectId)}
+              onAssignmentChange={(assignedTo) => handleAssignmentChange(o, assignedTo)}
+              onDateChange={(newDate) => handleDateChange(o, newDate)}
+              onStatusChange={(status) => handleStatusChange(o, status)}
+              onEditClick={() => handleOpenEdit(o)}
+              onDeleteClick={() =>
+                setConfirmDialog({
+                  open: true,
+                  title: 'Auftrag löschen',
+                  message: `Auftrag am ${o.order_date} wirklich löschen?`,
+                  onConfirm: () => {
+                    setConfirmDialog((c) => ({ ...c, open: false }))
+                    handleDelete(o)
+                  },
+                })
+              }
+            />
           ))}
         </ul>
       ))}
@@ -885,267 +574,32 @@ const AuftragAnlegen = () => {
       />
 
       {showForm && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
-          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
-          onClick={handleCloseForm}
-          onKeyDown={(e) => e.key === 'Escape' && handleCloseForm()}
-          role="dialog"
-          aria-modal
-          aria-labelledby="auftrag-form-title"
-        >
-        <div
-          className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto p-6 border border-slate-200 dark:border-slate-600"
-          onClick={(e) => e.stopPropagation()}
-        >
-            <h3 id="auftrag-form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">
-              {formMode === 'edit' ? 'Auftrag bearbeiten' : 'Neuer Auftrag'}
-            </h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="order-customer" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                  Kunde *
-                </label>
-                <select
-                  id="order-customer"
-                  value={formData.customer_id}
-                  onChange={(e) => handleFormChange('customer_id', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                  required
-                >
-                  <option value="">— Auswählen —</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {formData.customer_id && (
-                <>
-                  {bvs.length === 0 && (
-                    <p
-                      className="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2"
-                      role="status"
-                    >
-                      Kein Objekt/BV – Türen/Tore direkt unter dem Kunden (falls vorhanden) können gewählt werden.
-                    </p>
-                  )}
-                  {showBvSelect && (
-                    <div>
-                      <label htmlFor="order-bv" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                        Objekt/BV *
-                      </label>
-                      <select
-                        id="order-bv"
-                        value={formData.bv_id}
-                        onChange={(e) => handleFormChange('bv_id', e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                        required
-                        aria-label="Objekt/BV auswählen"
-                      >
-                        <option value="">— Auswählen —</option>
-                        {bvs.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  {singleBv && (
-                    <p className="text-sm text-slate-600 dark:text-slate-300">
-                      <span className="font-medium">Objekt/BV:</span> {singleBv.name}
-                    </p>
-                  )}
-                </>
-              )}
-              {showTuerTorSection && (
-                <fieldset className="space-y-2 min-w-0 border-0 p-0 m-0">
-                  <legend className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                    Tür/Tor (Mehrfachauswahl)
-                  </legend>
-                  {hasDoorsToPick ? (
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                      Mindestens eine Tür/Tor wählen, damit die Zuweisung und das Speichern möglich sind.
-                    </p>
-                  ) : null}
-                  {formData.order_type !== 'wartung' && formData.selectedObjectIds.length > 1 ? (
-                    <p
-                      className="text-xs text-slate-600 dark:text-slate-400 border-l-2 border-amber-400 pl-2 py-1 mb-2"
-                      role="note"
-                    >
-                      Hinweis: Bei Auftragstypen außer „Wartung“ dient die Mehrfachauswahl der Zuordnung mehrerer
-                      Türen zu <span className="font-medium">einem</span> Termin; der Monteurbericht wird nicht wie bei
-                      der Wartung automatisch türweise in getrennte Prüfprotokolle aufgeteilt.
-                    </p>
-                  ) : null}
-                  {formData.order_type === 'wartung' && formData.selectedObjectIds.length > 1 ? (
-                    <p
-                      className="text-xs text-slate-600 dark:text-slate-400 border-l-2 border-slate-300 dark:border-slate-600 pl-2 py-1 mb-2"
-                      role="note"
-                    >
-                      Bei „Wartung“ wird im Auftrag für <span className="font-medium">jede</span> gewählte Tür eine
-                      Prüf-Checkliste erwartet; Ausnahmen beim Abschluss werden im erledigten Auftrag dokumentiert.
-                    </p>
-                  ) : null}
-                  {pickerObjects.length === 0 ? (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Keine Türen/Tore für diese Auswahl.</p>
-                  ) : (
-                    <ul
-                      className="max-h-44 overflow-y-auto rounded-lg border border-slate-300 dark:border-slate-600 divide-y divide-slate-200 dark:divide-slate-600"
-                      aria-label="Türen und Tore auswählen"
-                    >
-                      {pickerObjects.map((obj) => {
-                        const checked = formData.selectedObjectIds.includes(obj.id)
-                        return (
-                          <li key={obj.id}>
-                            <label className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => handleToggleObject(obj.id)}
-                                className="rounded border-slate-300 dark:border-slate-600"
-                                aria-checked={checked}
-                              />
-                              <span className="text-sm text-slate-800 dark:text-slate-100">{getObjectDisplayName(obj)}</span>
-                            </label>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
-                </fieldset>
-              )}
-              {showZuweisungSection && canAssign && (
-                <div>
-                  <label htmlFor="order-assign" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                    Zugewiesen an
-                  </label>
-                  <select
-                    id="order-assign"
-                    value={formData.assigned_to}
-                    onChange={(e) => handleFormChange('assigned_to', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                    aria-label="Nutzer zuweisen"
-                  >
-                    <option value="">— Keine Zuweisung —</option>
-                    {profilesAssignable.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {getProfileDisplayName(p)}
-                        {(p.first_name || p.last_name) && p.email ? ` (${p.email})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div>
-                <label htmlFor="order-date" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                  Datum *
-                </label>
-                <input
-                  id="order-date"
-                  type="date"
-                  value={formData.order_date}
-                  onChange={(e) => handleFormChange('order_date', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="order-time" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                  Uhrzeit (optional)
-                </label>
-                <input
-                  id="order-time"
-                  type="time"
-                  value={formData.order_time}
-                  onChange={(e) => handleFormChange('order_time', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                  aria-label="Uhrzeit optional"
-                />
-              </div>
-              <div>
-                <label htmlFor="order-type" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                  Art
-                </label>
-                <select
-                  id="order-type"
-                  value={formData.order_type}
-                  onChange={(e) => handleFormChange('order_type', e.target.value as OrderType)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                >
-                  {(Object.keys(ORDER_TYPE_LABELS) as OrderType[]).map((t) => (
-                    <option key={t} value={t}>
-                      {ORDER_TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {formMode === 'edit' && (
-                <div>
-                  <label htmlFor="order-status" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                    Status
-                  </label>
-                  <select
-                    id="order-status"
-                    value={formData.status}
-                    onChange={(e) => handleFormChange('status', e.target.value as OrderStatus)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                  >
-                    {(Object.keys(ORDER_STATUS_LABELS) as OrderStatus[]).map((s) => (
-                      <option key={s} value={s}>
-                        {ORDER_STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div>
-                <label htmlFor="order-desc" className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">
-                  Beschreibung
-                </label>
-                <textarea
-                  id="order-desc"
-                  value={formData.description}
-                  onChange={(e) => handleFormChange('description', e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
-                  placeholder="Auftragsdetails…"
-                />
-              </div>
-              {isRelease110Enabled && conflictCalloutRows.length > 0 ? (
-                <div className="pt-1">
-                  <OrderActiveConflictCallout
-                    conflicts={conflictCalloutRows}
-                    resolveDoorLabel={resolveConflictDoorLabel}
-                  />
-                </div>
-              ) : null}
-              {formError && (
-                <p className="text-sm text-red-600 dark:text-red-400" role="alert">
-                  {formError}
-                </p>
-              )}
-              <div className="flex flex-nowrap gap-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={!canSubmitOrder || isSaving || saveBlockedByDoorConflict}
-                  className="flex-1 min-w-0 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 disabled:opacity-50 font-medium border border-slate-300 dark:border-slate-600 shrink"
-                >
-                  {isSaving ? 'Wird gespeichert…' : formMode === 'edit' ? 'Speichern' : 'Anlegen'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCloseForm}
-                  className="px-4 py-2 shrink-0 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <AuftragAnlegenOrderFormModal
+          onBackdropClick={handleCloseForm}
+          formMode={formMode}
+          formData={formData}
+          customers={customers}
+          bvs={bvs}
+          showBvSelect={showBvSelect}
+          singleBv={singleBv}
+          showTuerTorSection={showTuerTorSection}
+          hasDoorsToPick={hasDoorsToPick}
+          pickerObjects={pickerObjects}
+          showZuweisungSection={showZuweisungSection}
+          canAssign={canAssign}
+          profilesAssignable={profilesAssignable}
+          onFormChange={handleFormChange}
+          onToggleObject={handleToggleObject}
+          isRelease110Enabled={isRelease110Enabled}
+          conflictCalloutRows={conflictCalloutRows}
+          resolveConflictDoorLabel={resolveConflictDoorLabel}
+          formError={formError}
+          canSubmitOrder={canSubmitOrder}
+          isSaving={isSaving}
+          saveBlockedByDoorConflict={saveBlockedByDoorConflict}
+          onSubmit={handleSubmit}
+          onCancel={handleCloseForm}
+        />
       )}
     </div>
   )

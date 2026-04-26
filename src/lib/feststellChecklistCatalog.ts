@@ -213,10 +213,7 @@ export const validateFeststellChecklistComplete = (
     if (mode === 'compact' && id === INTERVAL_SECTION_ID) {
       const mi = items[FESTSTELL_MELDER_INTERVAL_ITEM_ID]?.melder_interval
       if (!mi || !MELDER_SET.has(mi)) {
-        return {
-          ok: false,
-          message: 'Bitte beim Abschnitt Wartung & Intervalle die Melder-Austausch-Option wählen.',
-        }
+        return { ok: false, message: 'Bitte beim Punkt Rauchmelder-Austausch eine Option wählen.' }
       }
       continue
     }

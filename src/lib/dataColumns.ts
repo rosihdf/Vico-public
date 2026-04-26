@@ -65,6 +65,7 @@ export const OBJECT_COLUMNS =
     'type_schiebetor',
     'type_freitext',
     'wing_count',
+    'anforderung',
     'manufacturer',
     'build_year',
     'lock_manufacturer',

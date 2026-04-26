@@ -31,6 +31,7 @@ const Fehlerberichte = lazy(() => import('./Fehlerberichte'))
 const Ladezeiten = lazy(() => import('./pages/Ladezeiten'))
 const System = lazy(() => import('./pages/System'))
 const SystemIndexRedirect = lazy(() => import('./pages/SystemIndexRedirect'))
+const AltberichtImportPage = lazy(() => import('./pages/AltberichtImportPage'))
 const OffeneMaengel = lazy(() => import('./pages/OffeneMaengel'))
 const Scan = lazy(() => import('./Scan'))
 const AuftragAnlegen = lazy(() => import('./AuftragAnlegen'))
@@ -115,6 +116,14 @@ const App = () => {
                 <Route path="benutzerverwaltung" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="benutzerverwaltung"><ProtectedRoute><Benutzerverwaltung /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="system" element={<Suspense fallback={<PageFallback />}><ProtectedRoute><System /></ProtectedRoute></Suspense>}>
                   <Route index element={<Suspense fallback={<PageFallback />}><SystemIndexRedirect /></Suspense>} />
+                  <Route
+                    path="altbericht-import"
+                    element={
+                      <Suspense fallback={<PageFallback />}>
+                        <AltberichtImportPage />
+                      </Suspense>
+                    }
+                  />
                   <Route path="historie" element={<Suspense fallback={<PageFallback />}><LicenseFeatureGuard feature="historie"><Historie /></LicenseFeatureGuard></Suspense>} />
                   <Route path="fehlerberichte" element={<Suspense fallback={<PageFallback />}><LicenseFeatureGuard feature="fehlerberichte"><Fehlerberichte /></LicenseFeatureGuard></Suspense>} />
                   <Route path="ladezeiten" element={<Suspense fallback={<PageFallback />}><LicenseFeatureGuard feature="ladezeiten"><Ladezeiten /></LicenseFeatureGuard></Suspense>} />
@@ -169,6 +178,7 @@ const App = () => {
                   }
                 />
                 <Route path="auftrag/:orderId" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="auftrag"><ProtectedRoute><Auftragsdetail /></ProtectedRoute></ComponentGuard></Suspense>} />
+                <Route path="auftrag/:orderId/assistent" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="auftrag"><ProtectedRoute><Auftragsdetail /></ProtectedRoute></ComponentGuard></Suspense>} />
                 <Route path="login" element={<Suspense fallback={<PageFallback />}><Login /></Suspense>} />
                 <Route path="reset-password" element={<Suspense fallback={<PageFallback />}><ResetPassword /></Suspense>} />
                 <Route path="profil" element={<Suspense fallback={<PageFallback />}><ComponentGuard componentKey="profil"><ProtectedRoute><Profil /></ProtectedRoute></ComponentGuard></Suspense>} />

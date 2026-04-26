@@ -73,13 +73,20 @@ serve(async (req) => {
 
   try {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    const cronSecret = Deno.env.get('MAINTENANCE_DIGEST_CRON_SECRET') ?? ''
-    const authHeader = req.headers.get('Authorization')
-    const headerSecret = req.headers.get('x-cron-secret')
+    const cronSecret = (Deno.env.get('MAINTENANCE_DIGEST_CRON_SECRET') ?? '').trim()
+    const headerSecret = (req.headers.get('x-cron-secret') ?? '').trim()
 
-    const authOk = serviceRoleKey && authHeader === `Bearer ${serviceRoleKey}`
-    const secretOk = cronSecret && headerSecret === cronSecret
-    if (!authOk && !secretOk) {
+    if (!cronSecret) {
+      return new Response(
+        JSON.stringify({ error: 'MAINTENANCE_DIGEST_CRON_SECRET nicht konfiguriert.' }),
+        {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      )
+    }
+
+    if (headerSecret !== cronSecret) {
       return new Response(JSON.stringify({ error: 'Nicht autorisiert.' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -8,8 +8,21 @@ export const getSupabaseErrorMessage = (error: unknown): string => {
   if (msg.includes('could not find the table') || msg.includes('schema cache')) {
     return 'Tabelle fehlt. Bitte supabase-complete.sql im Supabase-Dashboard (SQL Editor) ausführen. Siehe Vico.md.'
   }
-  if (msg.includes('row-level security') || msg.includes('violates')) {
+  // Wichtig: NICHT pauschal auf "violates" prüfen, da das auch Constraint-Fehler
+  // (z. B. unique/foreign key) betrifft und fälschlich als RLS gemeldet wurde.
+  if (
+    msg.includes('row-level security') ||
+    msg.includes('rls') ||
+    msg.includes('permission denied for table') ||
+    msg.includes('42501')
+  ) {
     return 'RLS-Fehler: Bist du eingeloggt? Ohne Login geht es nicht. Falls ja: Einstellungen öffnen → „RLS-Fix kopieren“ → Supabase SQL Editor → einfügen → Run.'
+  }
+  if (msg.includes('violates unique constraint') || msg.includes('duplicate key value')) {
+    return 'Datensatz existiert bereits. Bitte Eingaben prüfen.'
+  }
+  if (msg.includes('violates foreign key constraint')) {
+    return 'Verknüpfte Daten fehlen oder wurden bereits gelöscht. Bitte Eingaben aktualisieren.'
   }
   if (msg.includes('jwt') || msg.includes('expired')) {
     return 'Supabase-Session abgelaufen. Bitte aus- und wieder einloggen.'

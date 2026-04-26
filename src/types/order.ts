@@ -1,5 +1,6 @@
 export type OrderType = 'wartung' | 'reparatur' | 'montage' | 'sonstiges'
 export type OrderStatus = 'offen' | 'in_bearbeitung' | 'erledigt' | 'storniert'
+export type OrderBillingStatus = 'open' | 'prepared' | 'billed' | 'cancelled'
 
 export type Order = {
   id: string
@@ -14,6 +15,8 @@ export type Order = {
   order_time: string | null
   order_type: OrderType
   status: OrderStatus
+  /** Optional: Zielbild für spätere Buchhaltungs-Schnittstelle. */
+  billing_status?: OrderBillingStatus | null
   description: string | null
   assigned_to: string | null
   created_by: string | null

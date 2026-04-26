@@ -1,0 +1,26 @@
+{
+  "name": "vico-zebra-label-printer",
+  "version": "0.1.0",
+  "description": "Capacitor Zebra ZQ220 V1 (ZPL) – natives Plugin-Skelett",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": [
+    "android",
+    "ios",
+    "src"
+  ],
+  "capacitor": {
+    "android": {
+      "src": "android"
+    },
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

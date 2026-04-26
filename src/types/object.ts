@@ -33,6 +33,8 @@ export type Object = {
   type_schiebetor: boolean
   type_freitext: string | null
   wing_count: number | null
+  /** z. B. T30, RS, RC2, Fluchtweg (Brandschutz-/Normangabe) */
+  anforderung: string | null
   manufacturer: string | null
   build_year: string | null
   lock_manufacturer: string | null
@@ -81,6 +83,8 @@ export type ObjectFormData = {
   type_schiebetor: boolean
   type_freitext: string
   wing_count: string
+  /** Freitext; z. B. T30, T30 RS */
+  anforderung: string
   manufacturer: string
   build_year: string
   lock_manufacturer: string

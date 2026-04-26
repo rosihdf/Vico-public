@@ -416,6 +416,7 @@ alter table public.objects add column if not exists hold_open_last_maintenance_d
 alter table public.objects add column if not exists hold_open_maintenance_interval_months int;
 alter table public.objects add column if not exists hold_open_last_maintenance_manual boolean default false;
 alter table public.objects add column if not exists defects_structured jsonb default '[]'::jsonb;
+alter table public.objects add column if not exists anforderung text;
 alter table public.objects enable row level security;
 
 -- Stammdaten-Katalog Tür/Schließmittel (eine Zeile pro Mandanten-DB)
@@ -824,14 +825,18 @@ drop function if exists public.check_order_assigned_to_not_demo() cascade;
 create or replace function public.check_order_assigned_to_valid_role()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
-  target_role text;
+  assigned_user_role text;
 begin
   if new.assigned_to is null then return new; end if;
-  select role into target_role from public.profiles where id = new.assigned_to limit 1;
-  if target_role = 'demo' then
+  select p.role
+    into assigned_user_role
+  from public.profiles p
+  where p.id = new.assigned_to
+  limit 1;
+  if assigned_user_role = 'demo' then
     raise exception 'Demo-Benutzer können keinen Aufträgen zugewiesen werden.';
   end if;
-  if target_role = 'kunde' then
+  if assigned_user_role = 'kunde' then
     raise exception 'Portal-Benutzer können keinen Aufträgen zugewiesen werden.';
   end if;
   return new;

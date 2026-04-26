@@ -22,19 +22,26 @@ import {
 import {
   LICENSE_FEATURE_KEYS,
   LICENSE_FEATURE_LABELS,
-  LICENSE_FEATURE_DESCRIPTIONS,
-  LICENSE_FEATURE_GROUPS,
-  applyFeatureToggleWithDependencies,
   emptyLicenseFeatures,
   effectiveLicenseFeatures,
   explicitLicenseFeaturesMap,
-  getFeatureChildren,
-  isFeatureToggleEnabled,
-  type LicenseFeatureKey,
 } from '../../../shared/licenseFeatures'
 import AppVersionRowsEditor from '../components/AppVersionRowsEditor'
 import MandantReleaseAssignmentsSection from '../components/MandantReleaseAssignmentsSection'
 import TenantDeploymentPanel from '../components/TenantDeploymentPanel'
+import { MandantLicenseFeatureToggleField } from '../components/mandanten/MandantLicenseFeatureToggleField'
+import { MandantFormSectionActionRow } from '../components/mandanten/MandantFormSectionActionRow'
+import { MandantTenantLogoFaviconSection } from '../components/mandanten/MandantTenantLogoFaviconSection'
+import { MandantFormWizardStep1Basisdaten } from '../components/mandanten/MandantFormWizardStep1Basisdaten'
+import { MandantFormWizardStep2Branding } from '../components/mandanten/MandantFormWizardStep2Branding'
+import { MandantFormWizardStep3Rechtliches } from '../components/mandanten/MandantFormWizardStep3Rechtliches'
+import { MandantFormWizardStep4Mailversand } from '../components/mandanten/MandantFormWizardStep4Mailversand'
+import { MandantFormWizardStep5Hosting } from '../components/mandanten/MandantFormWizardStep5Hosting'
+import { MandantFormWizardStep6Fertigstellen } from '../components/mandanten/MandantFormWizardStep6Fertigstellen'
+import { MandantFormEditHostingSection } from '../components/mandanten/MandantFormEditHostingSection'
+import { MandantFormEditMailSection } from '../components/mandanten/MandantFormEditMailSection'
+import { MandantFormEditBrandingBasicsSection } from '../components/mandanten/MandantFormEditBrandingBasicsSection'
+import { MandantFormEditLegalSection } from '../components/mandanten/MandantFormEditLegalSection'
 import {
   appVersionRowsFromJson,
   appVersionRowsToPayload,
@@ -47,361 +54,18 @@ import {
   uploadTenantFaviconWebP,
   uploadTenantLogoWebP,
 } from '../lib/uploadTenantLogo'
-
-const TIER_OPTIONS = ['free', 'professional', 'enterprise'] as const
-const CHECK_INTERVAL_OPTIONS = ['on_start', 'daily', 'weekly'] as const
-
-const toDatetimeLocal = (iso: string | null | undefined): string => {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
-const fromDatetimeLocal = (value: string): string | null => {
-  if (!value.trim()) return null
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return null
-  return d.toISOString()
-}
-
-const toYearMonth = (value: Date): string => {
-  const y = value.getFullYear()
-  const m = String(value.getMonth() + 1).padStart(2, '0')
-  return `${y}-${m}`
-}
-
-const DEFAULT_CREATE_FORM: {
-  license_number: string
-  license_model_id: string | null
-  tier: 'free' | 'professional' | 'enterprise'
-  valid_until: string | null
-  is_trial: boolean
-  grace_period_days: number
-  max_users: number | null
-  max_customers: number | null
-  max_storage_mb: number | null
-  check_interval: 'on_start' | 'daily' | 'weekly'
-  features: Record<string, boolean>
-} = {
-  license_number: '',
-  license_model_id: null,
-  tier: 'professional',
-  valid_until: null,
-  is_trial: false,
-  grace_period_days: 0,
-  max_users: null,
-  max_customers: null,
-  max_storage_mb: null,
-  check_interval: 'daily',
-  features: emptyLicenseFeatures(),
-}
-
-type FeatureToggleListProps = {
-  idPrefix: string
-  features: Record<string, boolean>
-  onFeaturesChange: (next: Record<string, boolean>) => void
-}
-
-const FeatureToggleList = ({ idPrefix, features, onFeaturesChange }: FeatureToggleListProps) => {
-  return (
-    <div className="space-y-4">
-      {LICENSE_FEATURE_GROUPS.map((group) => (
-        <div key={group.id} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-          <h5 className="text-sm font-semibold text-slate-800 mb-2">{group.label}</h5>
-          <div className="space-y-2">
-            {group.features.map((parentKey) => {
-              const children = getFeatureChildren(parentKey)
-              const parentInputId = `${idPrefix}-feature-${parentKey}`
-              return (
-                <div key={parentKey} className="space-y-1">
-                  <label
-                    htmlFor={parentInputId}
-                    className="flex items-center gap-2 cursor-pointer"
-                    title={LICENSE_FEATURE_DESCRIPTIONS[parentKey] ?? ''}
-                  >
-                    <input
-                      id={parentInputId}
-                      type="checkbox"
-                      checked={features[parentKey] ?? false}
-                      onChange={(e) =>
-                        onFeaturesChange(
-                          applyFeatureToggleWithDependencies(
-                            features,
-                            parentKey as LicenseFeatureKey,
-                            e.target.checked
-                          )
-                        )
-                      }
-                      className="w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
-                    />
-                    <span className="text-sm font-medium text-slate-800">
-                      {LICENSE_FEATURE_LABELS[parentKey] ?? parentKey}
-                    </span>
-                  </label>
-
-                  {children.map((childKey) => {
-                    const childEnabled = isFeatureToggleEnabled(features, childKey)
-                    const childInputId = `${idPrefix}-feature-${childKey}`
-                    return (
-                      <label
-                        key={childKey}
-                        htmlFor={childInputId}
-                        className={`ml-7 flex items-center gap-2 ${childEnabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
-                        title={LICENSE_FEATURE_DESCRIPTIONS[childKey] ?? ''}
-                      >
-                        <input
-                          id={childInputId}
-                          type="checkbox"
-                          checked={features[childKey] ?? false}
-                          disabled={!childEnabled}
-                          onChange={(e) =>
-                            onFeaturesChange(
-                              applyFeatureToggleWithDependencies(
-                                features,
-                                childKey as LicenseFeatureKey,
-                                e.target.checked
-                              )
-                            )
-                          }
-                          className="w-4 h-4 rounded border-slate-300 text-vico-primary focus:ring-vico-primary disabled:opacity-60"
-                        />
-                        <span className="text-sm text-slate-700">
-                          {LICENSE_FEATURE_LABELS[childKey] ?? childKey}
-                        </span>
-                      </label>
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-      <p className="text-xs text-slate-500">
-        Abhängigkeiten sind gekoppelt: Elternmodul aus = Untermodule aus; Untermodul an = Elternmodul wird automatisch aktiviert.
-      </p>
-    </div>
-  )
-}
-
-const WIZARD_TOTAL_STEPS = 6
-
-const isPlausibleEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
-
-const isPlausibleSupabaseProjectUrl = (raw: string): boolean => {
-  const t = raw.trim()
-  if (!t) return true
-  try {
-    const u = new URL(t)
-    return u.protocol === 'https:' && /\.supabase\.co$/i.test(u.hostname)
-  } catch {
-    return false
-  }
-}
-
-const isOptionalHttpUrl = (raw: string): boolean => {
-  const t = raw.trim()
-  if (!t) return true
-  try {
-    const full = /^https?:\/\//i.test(t) ? t : `https://${t}`
-    const u = new URL(full)
-    return u.protocol === 'https:' || u.protocol === 'http:'
-  } catch {
-    return false
-  }
-}
-
-type WizardFormSlice = {
-  name: string
-  app_name: string
-  primary_color: string
-  datenschutz_contact_email: string
-  mail_monthly_limit: string
-  mail_from_email: string
-  supabase_url: string
-  cf_preview_main_url: string
-  cf_preview_portal_url: string
-  cf_preview_arbeitszeit_url: string
-}
-
-const getWizardStepComplete = (
-  f: WizardFormSlice,
-  step: number,
-  licenseModelId: string,
-  licenseModels: LicenseModel[]
-): boolean => {
-  switch (step) {
-    case 1:
-      return f.name.trim().length > 0
-    case 2:
-      return f.app_name.trim().length > 0 && /^#[0-9A-Fa-f]{6}$/.test(f.primary_color)
-    case 3: {
-      const de = f.datenschutz_contact_email.trim()
-      if (de.length > 0 && !isPlausibleEmail(de)) return false
-      return true
-    }
-    case 4: {
-      const lim = parseInt(f.mail_monthly_limit, 10)
-      if (Number.isNaN(lim) || lim < 1) return false
-      const fe = f.mail_from_email.trim()
-      if (fe.length > 0 && !isPlausibleEmail(fe)) return false
-      return true
-    }
-    case 5:
-      return (
-        isPlausibleSupabaseProjectUrl(f.supabase_url) &&
-        isOptionalHttpUrl(f.cf_preview_main_url) &&
-        isOptionalHttpUrl(f.cf_preview_portal_url) &&
-        isOptionalHttpUrl(f.cf_preview_arbeitszeit_url)
-      )
-    case 6:
-      return licenseModels.length === 0 || licenseModels.some((m) => m.id === licenseModelId)
-    default:
-      return false
-  }
-}
-
-const validateWizardStep = (
-  f: WizardFormSlice,
-  step: number,
-  licenseModelId: string,
-  licenseModels: LicenseModel[]
-): string | null => {
-  switch (step) {
-    case 1:
-      if (!f.name.trim()) return 'Bitte einen Mandanten-Namen eingeben.'
-      return null
-    case 2:
-      if (!f.app_name.trim()) return 'Bitte einen App-Namen eingeben.'
-      if (!/^#[0-9A-Fa-f]{6}$/.test(f.primary_color)) return 'Bitte eine gültige Primärfarbe wählen.'
-      return null
-    case 3: {
-      const de = f.datenschutz_contact_email.trim()
-      if (de.length > 0 && !isPlausibleEmail(de)) return 'Bitte eine gültige Datenschutz-Kontakt-E-Mail eingeben oder leer lassen.'
-      return null
-    }
-    case 4: {
-      const lim = parseInt(f.mail_monthly_limit, 10)
-      if (Number.isNaN(lim) || lim < 1) return 'Bitte ein gültiges Monatslimit (mindestens 1) eingeben.'
-      const fe = f.mail_from_email.trim()
-      if (fe.length > 0 && !isPlausibleEmail(fe)) return 'Bitte eine gültige Absender-E-Mail eingeben oder leer lassen.'
-      return null
-    }
-    case 5: {
-      if (!isPlausibleSupabaseProjectUrl(f.supabase_url)) {
-        return 'Supabase-URL leer lassen oder als https://…supabase.co angeben.'
-      }
-      if (!isOptionalHttpUrl(f.cf_preview_main_url)) return 'Preview-URL Haupt-App: leer oder gültige http(s)-URL.'
-      if (!isOptionalHttpUrl(f.cf_preview_portal_url)) return 'Preview-URL Kundenportal: leer oder gültige http(s)-URL.'
-      if (!isOptionalHttpUrl(f.cf_preview_arbeitszeit_url)) return 'Preview-URL Arbeitszeitportal: leer oder gültige http(s)-URL.'
-      return null
-    }
-    case 6:
-      if (licenseModels.length === 0) return 'Es ist kein Lizenzmodell vorhanden. Bitte zuerst unter Lizenzmodelle anlegen.'
-      if (!licenseModelId || !licenseModels.some((m) => m.id === licenseModelId)) return 'Bitte ein Lizenzmodell für die Initial-Lizenz auswählen.'
-      return null
-    default:
-      return null
-  }
-}
-
-type InfrastructurePingResultPanelProps = {
-  loading: boolean
-  result: InfrastructurePingResponse | null
-  idPrefix: string
-}
-
-const InfrastructurePingResultPanel = ({ loading, result, idPrefix }: InfrastructurePingResultPanelProps) => {
-  if (loading) {
-    return (
-      <p className="text-sm text-slate-600" role="status" aria-live="polite">
-        Verbindungen werden geprüft…
-      </p>
-    )
-  }
-  if (!result) return null
-  const rows: { key: string; label: string; ok: boolean; message: string; skipped?: boolean }[] = []
-  if (result.supabase_auth_health) {
-    rows.push({
-      key: 'sb-auth',
-      label: 'Supabase Auth (Health)',
-      ok: result.supabase_auth_health.ok,
-      message: result.supabase_auth_health.message,
-    })
-  }
-  if (result.supabase_rest) {
-    rows.push({
-      key: 'sb-rest',
-      label: 'Supabase REST (Anon-Key)',
-      ok: result.supabase_rest.skipped ? true : result.supabase_rest.ok,
-      message: result.supabase_rest.message,
-      skipped: result.supabase_rest.skipped,
-    })
-  }
-  for (const u of result.urls) {
-    rows.push({
-      key: u.label,
-      label: u.label,
-      ok: u.skipped ? true : u.ok,
-      message: u.message,
-      skipped: u.skipped,
-    })
-  }
-  if (rows.length === 0) {
-    return (
-      <p id={`${idPrefix}-empty`} className="text-sm text-slate-600 mt-2">
-        Keine Prüfungen ausgeführt (z. B. keine Supabase-URL und keine Preview-URLs).
-      </p>
-    )
-  }
-  return (
-    <ul
-      id={`${idPrefix}-list`}
-      className="mt-3 space-y-2 text-sm"
-      role="list"
-      aria-label="Ergebnisse Verbindungsprüfung"
-    >
-      {rows.map((r) => (
-        <li
-          key={r.key}
-          className="flex flex-wrap items-start gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5"
-        >
-          <span
-            className={`shrink-0 font-semibold min-w-[3.5rem] ${
-              r.skipped ? 'text-slate-500' : r.ok ? 'text-emerald-700' : 'text-red-700'
-            }`}
-          >
-            {r.skipped ? '—' : r.ok ? 'OK' : 'Fehler'}
-          </span>
-          <span className="text-slate-800">
-            <span className="font-medium">{r.label}:</span> {r.message}
-          </span>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-const SectionActionRow = ({ isSaving, onCancel }: { isSaving: boolean; onCancel: () => void }) => (
-  <div className="flex flex-col-reverse gap-2 pt-3 sm:flex-row sm:flex-wrap">
-    <button
-      type="submit"
-      disabled={isSaving}
-      className="w-full sm:w-auto px-4 py-2.5 rounded-lg bg-vico-primary text-white font-medium hover:bg-vico-primary-hover disabled:opacity-50 min-h-[44px] sm:min-h-0"
-    >
-      {isSaving ? 'Speichern…' : 'Speichern'}
-    </button>
-    <button
-      type="button"
-      onClick={onCancel}
-      className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 min-h-[44px] sm:min-h-0"
-    >
-      Abbrechen
-    </button>
-  </div>
-)
+import {
+  TIER_OPTIONS,
+  CHECK_INTERVAL_OPTIONS,
+  toDatetimeLocal,
+  fromDatetimeLocal,
+  toYearMonth,
+  DEFAULT_CREATE_FORM,
+  WIZARD_TOTAL_STEPS,
+  getWizardStepComplete,
+  validateWizardStep,
+  type WizardFormSlice,
+} from '../lib/mandantFormPure'
 
 type LocationState = { editLicenseId?: string; openCreateLicense?: boolean } | null
 
@@ -1348,315 +1012,110 @@ const MandantForm = () => {
           className="space-y-4"
         >
           {wizardStep === 1 && (
-            <div className="rounded-xl border-2 border-sky-200 bg-sky-50/60 p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800">Schritt 1: Basisdaten</h3>
-              <p className="text-xs text-slate-600" id="wizard-step1-hint">
-                Pflicht: <strong>Mandantenname</strong>. Domains sind optional und können später ergänzt werden.
-              </p>
-              <input
-                id="wizard-name"
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Mandantenname *"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-                required
-                aria-describedby="wizard-step1-hint"
-              />
-              <input
-                type="text"
-                value={form.app_domain}
-                onChange={(e) => setForm((f) => ({ ...f, app_domain: e.target.value }))}
-                placeholder="App-Domain"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              />
-              <input
-                type="text"
-                value={form.portal_domain}
-                onChange={(e) => setForm((f) => ({ ...f, portal_domain: e.target.value }))}
-                placeholder="Kundenportal-Domain"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              />
-              <input
-                type="text"
-                value={form.arbeitszeitenportal_domain}
-                onChange={(e) => setForm((f) => ({ ...f, arbeitszeitenportal_domain: e.target.value }))}
-                placeholder="Arbeitszeitportal-Domain"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              />
-            </div>
+            <MandantFormWizardStep1Basisdaten
+              name={form.name}
+              appDomain={form.app_domain}
+              portalDomain={form.portal_domain}
+              arbeitszeitenportalDomain={form.arbeitszeitenportal_domain}
+              onNameChange={(value) => setForm((f) => ({ ...f, name: value }))}
+              onAppDomainChange={(value) => setForm((f) => ({ ...f, app_domain: value }))}
+              onPortalDomainChange={(value) => setForm((f) => ({ ...f, portal_domain: value }))}
+              onArbeitszeitenportalDomainChange={(value) =>
+                setForm((f) => ({ ...f, arbeitszeitenportal_domain: value }))
+              }
+            />
           )}
 
           {wizardStep === 2 && (
-            <div className="rounded-xl border-2 border-violet-200 bg-violet-50/60 p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800">Schritt 2: Branding</h3>
-              <p className="text-xs text-slate-600" id="wizard-step2-hint">
-                Pflicht: <strong>App-Name</strong>. Logo- und Favicon-URLs sind optional.
-              </p>
-              <input
-                id="wizard-app-name"
-                type="text"
-                value={form.app_name}
-                onChange={(e) => setForm((f) => ({ ...f, app_name: e.target.value }))}
-                placeholder="App-Name"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-                aria-describedby="wizard-step2-hint"
-              />
-              <input
-                type="color"
-                value={form.primary_color}
-                onChange={(e) => setForm((f) => ({ ...f, primary_color: e.target.value }))}
-                className="w-16 h-10 rounded border border-slate-300"
-              />
-              <input
-                type="url"
-                value={form.logo_url}
-                onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
-                placeholder="Logo-URL"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              />
-              <input
-                type="url"
-                value={form.favicon_url}
-                onChange={(e) => setForm((f) => ({ ...f, favicon_url: e.target.value }))}
-                placeholder="Favicon-URL"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              />
-            </div>
+            <MandantFormWizardStep2Branding
+              appName={form.app_name}
+              primaryColor={form.primary_color}
+              logoUrl={form.logo_url}
+              faviconUrl={form.favicon_url}
+              onAppNameChange={(value) => setForm((f) => ({ ...f, app_name: value }))}
+              onPrimaryColorChange={(value) => setForm((f) => ({ ...f, primary_color: value }))}
+              onLogoUrlChange={(value) => setForm((f) => ({ ...f, logo_url: value }))}
+              onFaviconUrlChange={(value) => setForm((f) => ({ ...f, favicon_url: value }))}
+            />
           )}
 
           {wizardStep === 3 && (
-            <div className="rounded-xl border-2 border-amber-200 bg-amber-50/60 p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800">Schritt 3: Rechtliches</h3>
-              <p className="text-xs text-slate-600" id="wizard-step3-hint">
-                Alles optional. Wenn Sie eine Datenschutz-E-Mail eintragen, muss sie gültig sein.
-              </p>
-              <input
-                type="text"
-                value={form.impressum_company_name}
-                onChange={(e) => setForm((f) => ({ ...f, impressum_company_name: e.target.value }))}
-                placeholder="Impressum: Firmenname"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              />
-              <textarea
-                value={form.impressum_address}
-                onChange={(e) => setForm((f) => ({ ...f, impressum_address: e.target.value }))}
-                placeholder="Impressum: Adresse"
-                rows={2}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              />
-              <input
-                type="email"
-                value={form.datenschutz_contact_email}
-                onChange={(e) => setForm((f) => ({ ...f, datenschutz_contact_email: e.target.value }))}
-                placeholder="Datenschutz Kontakt-E-Mail"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-                aria-describedby="wizard-step3-hint"
-              />
-            </div>
+            <MandantFormWizardStep3Rechtliches
+              impressumCompanyName={form.impressum_company_name}
+              impressumAddress={form.impressum_address}
+              datenschutzContactEmail={form.datenschutz_contact_email}
+              onImpressumCompanyNameChange={(value) =>
+                setForm((f) => ({ ...f, impressum_company_name: value }))
+              }
+              onImpressumAddressChange={(value) => setForm((f) => ({ ...f, impressum_address: value }))}
+              onDatenschutzContactEmailChange={(value) =>
+                setForm((f) => ({ ...f, datenschutz_contact_email: value }))
+              }
+            />
           )}
 
           {wizardStep === 4 && (
-            <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800">Schritt 4: Mailversand</h3>
-              <p className="text-xs text-slate-600" id="wizard-step4-hint">
-                Monatslimit mindestens <strong>1</strong>. Absender-E-Mail nur ausfüllen, wenn sie gültig ist (sonst leer lassen).
-              </p>
-              <select
-                value={form.mail_provider}
-                onChange={(e) => setForm((f) => ({ ...f, mail_provider: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              >
-                <option value="resend">Resend</option>
-                <option value="custom">Eigener Provider (vorbereitet)</option>
-              </select>
-              <input
-                type="number"
-                min={1}
-                value={form.mail_monthly_limit}
-                onChange={(e) => setForm((f) => ({ ...f, mail_monthly_limit: e.target.value }))}
-                placeholder="Monatslimit"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-                aria-describedby="wizard-step4-hint"
-              />
-              <input
-                type="text"
-                value={form.mail_from_name}
-                onChange={(e) => setForm((f) => ({ ...f, mail_from_name: e.target.value }))}
-                placeholder="Absendername"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              />
-              <input
-                type="email"
-                value={form.mail_from_email}
-                onChange={(e) => setForm((f) => ({ ...f, mail_from_email: e.target.value }))}
-                placeholder="Absender-E-Mail"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-              />
-            </div>
+            <MandantFormWizardStep4Mailversand
+              mailProvider={form.mail_provider}
+              mailMonthlyLimit={form.mail_monthly_limit}
+              mailFromName={form.mail_from_name}
+              mailFromEmail={form.mail_from_email}
+              onMailProviderChange={(value) => setForm((f) => ({ ...f, mail_provider: value }))}
+              onMailMonthlyLimitChange={(value) => setForm((f) => ({ ...f, mail_monthly_limit: value }))}
+              onMailFromNameChange={(value) => setForm((f) => ({ ...f, mail_from_name: value }))}
+              onMailFromEmailChange={(value) => setForm((f) => ({ ...f, mail_from_email: value }))}
+            />
           )}
 
           {wizardStep === 5 && (
-            <div className="rounded-xl border-2 border-cyan-200 bg-cyan-50/60 p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800">Schritt 5: Hosting (Supabase und Cloudflare)</h3>
-              <p className="text-xs text-slate-600" id="wizard-step5-hint">
-                Optional: Mandanten-<strong>Supabase</strong>-Projekt und <strong>CF-Pages-Preview-URLs</strong>. Der{' '}
-                <strong>Anon-Key</strong> dient nur der Live-Prüfung und wird nicht gespeichert. Supabase-URL leer lassen,
-                wenn das Projekt noch nicht existiert.
-              </p>
-              <input
-                id="wizard-supabase-ref"
-                type="text"
-                value={form.supabase_project_ref}
-                onChange={(e) => setForm((f) => ({ ...f, supabase_project_ref: e.target.value }))}
-                placeholder="Supabase-Projekt-Ref (Dashboard-URL)"
-                autoComplete="off"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
-                aria-describedby="wizard-step5-hint"
-              />
-              <input
-                id="wizard-supabase-url"
-                type="url"
-                inputMode="url"
-                value={form.supabase_url}
-                onChange={(e) => setForm((f) => ({ ...f, supabase_url: e.target.value }))}
-                placeholder="https://xxxxxxxx.supabase.co"
-                autoComplete="off"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
-              />
-              <div>
-                <label htmlFor="wizard-infra-anon" className="block text-xs font-medium text-slate-600 mb-1">
-                  Anon-Key (nur Prüfung, optional)
-                </label>
-                <input
-                  id="wizard-infra-anon"
-                  type="password"
-                  value={infrastructurePingAnonKey}
-                  onChange={(e) => setInfrastructurePingAnonKey(e.target.value)}
-                  placeholder="eyJ… (wird nicht gespeichert)"
-                  autoComplete="off"
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
-                />
-              </div>
-              <input
-                type="url"
-                inputMode="url"
-                value={form.cf_preview_main_url}
-                onChange={(e) => setForm((f) => ({ ...f, cf_preview_main_url: e.target.value }))}
-                placeholder="CF Preview Haupt-App (https://…)"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
-              />
-              <input
-                type="url"
-                inputMode="url"
-                value={form.cf_preview_portal_url}
-                onChange={(e) => setForm((f) => ({ ...f, cf_preview_portal_url: e.target.value }))}
-                placeholder="CF Preview Kundenportal (https://…)"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
-              />
-              <input
-                type="url"
-                inputMode="url"
-                value={form.cf_preview_arbeitszeit_url}
-                onChange={(e) => setForm((f) => ({ ...f, cf_preview_arbeitszeit_url: e.target.value }))}
-                placeholder="CF Preview Arbeitszeitportal (https://…)"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-sm"
-              />
-              <button
-                type="button"
-                onClick={() => void handleInfrastructurePing()}
-                disabled={infrastructurePingLoading}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-cyan-400 bg-white text-cyan-900 font-medium hover:bg-cyan-50 disabled:opacity-50 min-h-[44px] sm:min-h-0"
-                aria-busy={infrastructurePingLoading}
-              >
-                {infrastructurePingLoading ? 'Prüfe…' : 'Verbindungen prüfen'}
-              </button>
-              <div
-                className="rounded-lg border border-slate-200 bg-white/90 p-3"
-                role="region"
-                aria-label="Ergebnis Verbindungsprüfung"
-              >
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Prüfergebnis</p>
-                <InfrastructurePingResultPanel
-                  loading={infrastructurePingLoading}
-                  result={infrastructurePingResult}
-                  idPrefix="wizard-infra"
-                />
-              </div>
-            </div>
+            <MandantFormWizardStep5Hosting
+              supabaseProjectRef={form.supabase_project_ref}
+              supabaseUrl={form.supabase_url}
+              infrastructurePingAnonKey={infrastructurePingAnonKey}
+              cfPreviewMainUrl={form.cf_preview_main_url}
+              cfPreviewPortalUrl={form.cf_preview_portal_url}
+              cfPreviewArbeitszeitUrl={form.cf_preview_arbeitszeit_url}
+              onSupabaseProjectRefChange={(value) =>
+                setForm((f) => ({ ...f, supabase_project_ref: value }))
+              }
+              onSupabaseUrlChange={(value) => setForm((f) => ({ ...f, supabase_url: value }))}
+              onInfrastructurePingAnonKeyChange={(value) => setInfrastructurePingAnonKey(value)}
+              onCfPreviewMainUrlChange={(value) =>
+                setForm((f) => ({ ...f, cf_preview_main_url: value }))
+              }
+              onCfPreviewPortalUrlChange={(value) =>
+                setForm((f) => ({ ...f, cf_preview_portal_url: value }))
+              }
+              onCfPreviewArbeitszeitUrlChange={(value) =>
+                setForm((f) => ({ ...f, cf_preview_arbeitszeit_url: value }))
+              }
+              onInfrastructurePingClick={() => void handleInfrastructurePing()}
+              infrastructurePingLoading={infrastructurePingLoading}
+              infrastructurePingResult={infrastructurePingResult}
+            />
           )}
 
           {wizardStep === 6 && (
-            <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800">Schritt 6: Fertigstellen</h3>
-              <p className="text-sm text-slate-600">Welche Initial-Lizenz soll angelegt werden?</p>
-              <div
-                className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-800 space-y-2"
-                role="region"
-                aria-label="Zusammenfassung Mandant"
-              >
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Kurzüberblick</p>
-                <dl className="grid grid-cols-1 gap-1.5 text-sm">
-                  <div className="flex flex-wrap gap-x-2">
-                    <dt className="text-slate-500 shrink-0">Mandant</dt>
-                    <dd className="font-medium break-words">{form.name.trim() || '–'}</dd>
-                  </div>
-                  <div className="flex flex-wrap gap-x-2">
-                    <dt className="text-slate-500 shrink-0">App</dt>
-                    <dd className="font-medium break-words">{form.app_name.trim() || '–'}</dd>
-                  </div>
-                  <div className="flex flex-wrap gap-x-2">
-                    <dt className="text-slate-500 shrink-0">Domains</dt>
-                    <dd className="font-mono text-xs break-all">
-                      {[form.app_domain, form.portal_domain, form.arbeitszeitenportal_domain]
-                        .filter((d) => d?.trim())
-                        .join(' · ') || '–'}
-                    </dd>
-                  </div>
-                  <div className="flex flex-wrap gap-x-2">
-                    <dt className="text-slate-500 shrink-0">Mail</dt>
-                    <dd className="break-words">
-                      {form.mail_provider} · Limit {Math.max(1, parseInt(form.mail_monthly_limit, 10) || 0)}
-                      {form.mail_from_email.trim() ? ` · Absender ${form.mail_from_email.trim()}` : ''}
-                    </dd>
-                  </div>
-                  <div className="flex flex-wrap gap-x-2">
-                    <dt className="text-slate-500 shrink-0">Supabase</dt>
-                    <dd className="font-mono text-xs break-all">{form.supabase_url.trim() || '–'}</dd>
-                  </div>
-                  <div className="flex flex-wrap gap-x-2">
-                    <dt className="text-slate-500 shrink-0">CF Previews</dt>
-                    <dd className="font-mono text-xs break-all">
-                      {[form.cf_preview_main_url, form.cf_preview_portal_url, form.cf_preview_arbeitszeit_url]
-                        .filter((u) => u?.trim())
-                        .join(' · ') || '–'}
-                    </dd>
-                  </div>
-                  {wizardTenantId ? (
-                    <p className="text-xs text-slate-500 pt-1 border-t border-slate-100">
-                      Entwurf ist bereits gespeichert (technische ID:{' '}
-                      <span className="font-mono">{wizardTenantId}</span>).
-                    </p>
-                  ) : null}
-                </dl>
-              </div>
-              <select
-                id="wizard-license-model"
-                value={wizardLicenseModelId}
-                onChange={(e) => setWizardLicenseModelId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300"
-                aria-label="Lizenzmodell für Initial-Lizenz"
-              >
-                {licenseModels.length === 0 ? (
-                  <option value="">Kein Lizenzmodell vorhanden</option>
-                ) : null}
-                {licenseModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.tier})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <MandantFormWizardStep6Fertigstellen
+              summary={{
+                name: form.name,
+                app_name: form.app_name,
+                app_domain: form.app_domain,
+                portal_domain: form.portal_domain,
+                arbeitszeitenportal_domain: form.arbeitszeitenportal_domain,
+                mail_provider: form.mail_provider,
+                mail_monthly_limit: form.mail_monthly_limit,
+                mail_from_email: form.mail_from_email,
+                supabase_url: form.supabase_url,
+                cf_preview_main_url: form.cf_preview_main_url,
+                cf_preview_portal_url: form.cf_preview_portal_url,
+                cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url,
+              }}
+              wizardTenantId={wizardTenantId}
+              licenseModels={licenseModels}
+              wizardLicenseModelId={wizardLicenseModelId}
+              onWizardLicenseModelIdChange={(value) => setWizardLicenseModelId(value)}
+            />
           )}
 
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
@@ -1902,14 +1361,11 @@ const MandantForm = () => {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <span className="block text-sm font-medium text-slate-700 mb-2">Features</span>
-                  <FeatureToggleList
-                    idPrefix="create"
-                    features={createForm.features}
-                    onFeaturesChange={(next) => setCreateForm((f) => ({ ...f, features: next }))}
-                  />
-                </div>
+                <MandantLicenseFeatureToggleField
+                  idPrefix="create"
+                  features={createForm.features}
+                  onFeaturesChange={(next) => setCreateForm((f) => ({ ...f, features: next }))}
+                />
                 <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:flex-wrap">
                   <button
                     type="submit"
@@ -2028,19 +1484,16 @@ const MandantForm = () => {
                             />
                           </div>
                         </div>
-                        <div>
-                          <span className="block text-sm font-medium text-slate-700 mb-2">Features</span>
-                          <FeatureToggleList
-                            idPrefix={`edit-${lic.id}`}
-                            features={editForm.features ?? emptyLicenseFeatures()}
-                            onFeaturesChange={(next) =>
-                              setEditForm((f) => ({
-                                ...f,
-                                features: next,
-                              }))
-                            }
-                          />
-                        </div>
+                        <MandantLicenseFeatureToggleField
+                          idPrefix={`edit-${lic.id}`}
+                          features={editForm.features ?? emptyLicenseFeatures()}
+                          onFeaturesChange={(next) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              features: next,
+                            }))
+                          }
+                        />
                         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap">
                           <button
                             type="submit"
@@ -2233,372 +1686,72 @@ const MandantForm = () => {
             Kennzeichnung für Pilot-Mandanten; steuert u. a. die Zuordnung zu Incoming-Releases (siehe App-Releases).
           </p>
         </div>
-        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
-        <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-slate-800">Mandanten-Supabase (Haupt-App-Datenbank)</h3>
-          <p className="text-xs text-slate-600">
-            Metadaten zum <strong>neuen</strong> Supabase-Projekt des Mandanten (nicht das Lizenzportal). Werden in{' '}
-            <code className="bg-white px-1 rounded border text-[11px]">tenants</code> gespeichert und für den Bereich{' '}
-            <strong>Deployment / Hosting</strong> genutzt (vorgefüllte <code className="bg-white px-1 rounded border text-[11px]">VITE_SUPABASE_URL</code>
-            ). Keine Secrets – nur Referenz und URL.
-          </p>
-          <div>
-            <label htmlFor="supabase_project_ref" className="block text-sm font-medium text-slate-700 mb-1">
-              Supabase-Projekt-Ref
-            </label>
-            <input
-              id="supabase_project_ref"
-              type="text"
-              value={form.supabase_project_ref}
-              onChange={(e) => setForm((f) => ({ ...f, supabase_project_ref: e.target.value }))}
-              placeholder="Kurzref (wie in der Dashboard-URL)"
-              autoComplete="off"
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
-              aria-describedby="supabase_project_ref_hint"
-            />
-            <p id="supabase_project_ref_hint" className="mt-1 text-xs text-slate-500">
-              Aus der Adresszeile: <code className="bg-white px-1 rounded border">supabase.com/dashboard/project/&lt;ref&gt;</code>
-            </p>
-          </div>
-          <div>
-            <label htmlFor="supabase_url" className="block text-sm font-medium text-slate-700 mb-1">
-              Supabase-URL (Mandant)
-            </label>
-            <input
-              id="supabase_url"
-              type="url"
-              inputMode="url"
-              value={form.supabase_url}
-              onChange={(e) => setForm((f) => ({ ...f, supabase_url: e.target.value }))}
-              placeholder="https://xxxxxxxx.supabase.co"
-              autoComplete="off"
-              className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
-              aria-describedby="supabase_url_hint"
-            />
-            <p id="supabase_url_hint" className="mt-1 text-xs text-slate-500">
-              Settings → API → Project URL (ohne Slash am Ende).
-            </p>
-          </div>
-          <div className="pt-3 mt-3 border-t border-slate-200 space-y-3">
-            <p className="text-xs font-semibold text-slate-700">Cloudflare Pages (Preview-URLs)</p>
-            <p className="text-xs text-slate-600" id="cf_preview_hint">
-              Optional: öffentliche Preview-Links aus Workers und Pages. Werden in{' '}
-              <code className="bg-white px-1 rounded border text-[11px]">tenants</code> gespeichert (keine Secrets).
-            </p>
-            <div>
-              <label htmlFor="cf_preview_main_url" className="block text-sm font-medium text-slate-700 mb-1">
-                Preview Haupt-App
-              </label>
-              <input
-                id="cf_preview_main_url"
-                type="url"
-                inputMode="url"
-                value={form.cf_preview_main_url}
-                onChange={(e) => setForm((f) => ({ ...f, cf_preview_main_url: e.target.value }))}
-                placeholder="https://….pages.dev"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
-                aria-describedby="cf_preview_hint"
-              />
-            </div>
-            <div>
-              <label htmlFor="cf_preview_portal_url" className="block text-sm font-medium text-slate-700 mb-1">
-                Preview Kundenportal
-              </label>
-              <input
-                id="cf_preview_portal_url"
-                type="url"
-                inputMode="url"
-                value={form.cf_preview_portal_url}
-                onChange={(e) => setForm((f) => ({ ...f, cf_preview_portal_url: e.target.value }))}
-                placeholder="https://….pages.dev"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
-              />
-            </div>
-            <div>
-              <label htmlFor="cf_preview_arbeitszeit_url" className="block text-sm font-medium text-slate-700 mb-1">
-                Preview Arbeitszeitportal
-              </label>
-              <input
-                id="cf_preview_arbeitszeit_url"
-                type="url"
-                inputMode="url"
-                value={form.cf_preview_arbeitszeit_url}
-                onChange={(e) => setForm((f) => ({ ...f, cf_preview_arbeitszeit_url: e.target.value }))}
-                placeholder="https://….pages.dev"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
-              />
-            </div>
-            <div>
-              <label htmlFor="edit-infra-anon" className="block text-sm font-medium text-slate-700 mb-1">
-                Anon-Key Mandanten-Supabase (nur Verbindungsprüfung)
-              </label>
-              <input
-                id="edit-infra-anon"
-                type="password"
-                value={infrastructurePingAnonKey}
-                onChange={(e) => setInfrastructurePingAnonKey(e.target.value)}
-                placeholder="Wird nicht gespeichert"
-                autoComplete="off"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => void handleInfrastructurePing()}
-              disabled={infrastructurePingLoading}
-              className="px-4 py-2.5 rounded-lg border border-slate-400 bg-white text-slate-800 font-medium hover:bg-slate-50 disabled:opacity-50 min-h-[44px] sm:min-h-0"
-              aria-busy={infrastructurePingLoading}
-            >
-              {infrastructurePingLoading ? 'Prüfe…' : 'Verbindungen prüfen (Supabase und Previews)'}
-            </button>
-            <div
-              className="rounded-md border border-slate-200 bg-white p-3"
-              role="region"
-              aria-label="Ergebnis Verbindungsprüfung"
-            >
-              <InfrastructurePingResultPanel
-                loading={infrastructurePingLoading}
-                result={infrastructurePingResult}
-                idPrefix="edit-infra"
-              />
-            </div>
-          </div>
-        </div>
-        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
-        <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-slate-800">Mailversand (Resend / Provider-Vorbereitung)</h3>
-          {!isNew && (
-            <div className="rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-700">
-              <p>
-                Aktueller Monat ({emailUsageMonth}):{' '}
-                <strong>{emailUsage?.sent_ok ?? 0}</strong> erfolgreich /{' '}
-                <strong>{emailUsage?.sent_failed ?? 0}</strong> fehlgeschlagen / Limit{' '}
-                <strong>{Math.max(1, parseInt(form.mail_monthly_limit, 10) || 3000)}</strong>
-              </p>
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="mail_provider" className="block text-sm font-medium text-slate-700 mb-1">
-                Provider
-              </label>
-              <select
-                id="mail_provider"
-                value={form.mail_provider}
-                onChange={(e) => setForm((f) => ({ ...f, mail_provider: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              >
-                <option value="resend">Resend</option>
-                <option value="custom">Eigener Provider (vorbereitet)</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="mail_monthly_limit" className="block text-sm font-medium text-slate-700 mb-1">
-                Monatslimit
-              </label>
-              <input
-                id="mail_monthly_limit"
-                type="number"
-                min={1}
-                value={form.mail_monthly_limit}
-                onChange={(e) => setForm((f) => ({ ...f, mail_monthly_limit: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              />
-            </div>
-            <div>
-              <label htmlFor="mail_from_name" className="block text-sm font-medium text-slate-700 mb-1">
-                Absendername
-              </label>
-              <input
-                id="mail_from_name"
-                type="text"
-                value={form.mail_from_name}
-                onChange={(e) => setForm((f) => ({ ...f, mail_from_name: e.target.value }))}
-                placeholder="Vico Türen & Tore"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              />
-            </div>
-            <div>
-              <label htmlFor="mail_from_email" className="block text-sm font-medium text-slate-700 mb-1">
-                Absender-E-Mail
-              </label>
-              <input
-                id="mail_from_email"
-                type="email"
-                value={form.mail_from_email}
-                onChange={(e) => setForm((f) => ({ ...f, mail_from_email: e.target.value }))}
-                placeholder="noreply@firma.de"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label htmlFor="mail_reply_to" className="block text-sm font-medium text-slate-700 mb-1">
-                Reply-To
-              </label>
-              <input
-                id="mail_reply_to"
-                type="email"
-                value={form.mail_reply_to}
-                onChange={(e) => setForm((f) => ({ ...f, mail_reply_to: e.target.value }))}
-                placeholder="service@firma.de"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              />
-            </div>
-          </div>
-        </div>
-        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
-        <div>
-          <label htmlFor="primary_color" className="block text-sm font-medium text-slate-700 mb-1">Primärfarbe</label>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              id="primary_color"
-              type="color"
-              value={form.primary_color}
-              onChange={(e) => setForm((f) => ({ ...f, primary_color: e.target.value }))}
-              className="w-12 h-10 min-w-[3rem] rounded border border-slate-300 cursor-pointer shrink-0"
-            />
-            <span className="text-sm text-slate-600 font-mono break-all">{form.primary_color}</span>
-          </div>
-        </div>
-        <div>
-          <label htmlFor="app_name" className="block text-sm font-medium text-slate-700 mb-1">App-Name</label>
-          <input
-            id="app_name"
-            type="text"
-            value={form.app_name}
-            onChange={(e) => setForm((f) => ({ ...f, app_name: e.target.value }))}
-            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-          />
-        </div>
-        <div>
-          <span className="block text-sm font-medium text-slate-700 mb-1">Logo</span>
-          <p className="text-xs text-slate-500 mb-2">
-            Optional: Datei hochladen (wird als WebP ins Storage-Bucket <code className="bg-slate-100 px-1 rounded">tenant_logos</code>{' '}
-            geschrieben) oder weiterhin eine öffentliche URL eintragen. Wird über die Lizenz-API als{' '}
-            <code className="bg-slate-100 px-1 rounded">design.logo_url</code> ausgeliefert.
-          </p>
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <input
-              id="logo_file"
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={handleLogoFileChange}
-              aria-label="Logo hochladen"
-            />
-            <label
-              htmlFor="logo_file"
-              className="inline-flex px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 cursor-pointer"
-            >
-              Hochladen (PNG/JPG …)
-            </label>
-            {logoFilePending ? (
-              <span className="text-xs text-slate-600 truncate max-w-[12rem]" title={logoFilePending.name}>
-                Auswahl: {logoFilePending.name}
-              </span>
-            ) : null}
-            {id && !isNew ? (
-              <button
-                type="button"
-                onClick={handleRemoveStoredLogo}
-                className="text-sm text-red-600 hover:text-red-800 underline"
-              >
-                Gespeichertes Storage-Logo entfernen
-              </button>
-            ) : null}
-          </div>
-          <label htmlFor="logo_url" className="block text-xs font-medium text-slate-600 mb-1">
-            Oder Logo-URL (öffentlich)
-          </label>
-          <input
-            id="logo_url"
-            type="url"
-            inputMode="url"
-            placeholder="https://…/logo.png"
-            value={form.logo_url}
-            onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
-            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
-          />
-          {(logoPreviewObjectUrl || form.logo_url.trim()) ? (
-            <div className="mt-2 flex items-center gap-3">
-              <span className="text-xs text-slate-500">Vorschau:</span>
-              <img
-                src={logoPreviewObjectUrl ?? form.logo_url.trim()}
-                alt=""
-                className="h-10 max-w-[200px] object-contain border border-slate-200 rounded bg-white p-1"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-            </div>
-          ) : (
-            <p className="mt-2 text-xs text-slate-400">Kein Logo gesetzt (Platzhalter in Apps bis zur Konfiguration).</p>
-          )}
-        </div>
-        <div>
-          <label htmlFor="favicon_url" className="block text-sm font-medium text-slate-700 mb-1">
-            Favicon-URL
-          </label>
-          <p className="text-xs text-slate-500 mb-2">
-            Optional: Öffentliche URL (z. B. PNG oder ICO). Wird in den Apps als{' '}
-            <code className="bg-slate-100 px-1 rounded">design.favicon_url</code> ausgeliefert.
-          </p>
-          <input
-            id="favicon_file"
-            type="file"
-            accept="image/*,.ico"
-            className="sr-only"
-            onChange={handleFaviconFileChange}
-            aria-label="Favicon hochladen"
-          />
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <label
-              htmlFor="favicon_file"
-              className="inline-flex px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 cursor-pointer"
-            >
-              Hochladen (PNG/ICO …)
-            </label>
-            {faviconFilePending ? (
-              <span className="text-xs text-slate-600 truncate max-w-[12rem]" title={faviconFilePending.name}>
-                Auswahl: {faviconFilePending.name}
-              </span>
-            ) : null}
-            {id && !isNew ? (
-              <button
-                type="button"
-                onClick={handleRemoveStoredFavicon}
-                className="text-sm text-red-600 hover:text-red-800 underline"
-              >
-                Gespeichertes Storage-Favicon entfernen
-              </button>
-            ) : null}
-          </div>
-          <input
-            id="favicon_url"
-            type="url"
-            inputMode="url"
-            placeholder="https://…/favicon.png"
-            value={form.favicon_url}
-            onChange={(e) => setForm((f) => ({ ...f, favicon_url: e.target.value }))}
-            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary font-mono text-sm"
-          />
-          {(faviconPreviewObjectUrl || form.favicon_url.trim()) ? (
-            <div className="mt-2 flex items-center gap-3">
-              <span className="text-xs text-slate-500">Vorschau:</span>
-              <img
-                src={faviconPreviewObjectUrl ?? form.favicon_url.trim()}
-                alt=""
-                className="h-8 w-8 object-contain border border-slate-200 rounded bg-white p-1"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-            </div>
-          ) : (
-            <p className="mt-2 text-xs text-slate-400">Kein Favicon gesetzt (Standard-Favicon bleibt aktiv).</p>
-          )}
-        </div>
-        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <MandantFormEditHostingSection
+          supabaseProjectRef={form.supabase_project_ref}
+          supabaseUrl={form.supabase_url}
+          cfPreviewMainUrl={form.cf_preview_main_url}
+          cfPreviewPortalUrl={form.cf_preview_portal_url}
+          cfPreviewArbeitszeitUrl={form.cf_preview_arbeitszeit_url}
+          infrastructurePingAnonKey={infrastructurePingAnonKey}
+          onSupabaseProjectRefChange={(value) =>
+            setForm((f) => ({ ...f, supabase_project_ref: value }))
+          }
+          onSupabaseUrlChange={(value) => setForm((f) => ({ ...f, supabase_url: value }))}
+          onCfPreviewMainUrlChange={(value) =>
+            setForm((f) => ({ ...f, cf_preview_main_url: value }))
+          }
+          onCfPreviewPortalUrlChange={(value) =>
+            setForm((f) => ({ ...f, cf_preview_portal_url: value }))
+          }
+          onCfPreviewArbeitszeitUrlChange={(value) =>
+            setForm((f) => ({ ...f, cf_preview_arbeitszeit_url: value }))
+          }
+          onInfrastructurePingAnonKeyChange={(value) => setInfrastructurePingAnonKey(value)}
+          onInfrastructurePingClick={() => void handleInfrastructurePing()}
+          infrastructurePingLoading={infrastructurePingLoading}
+          infrastructurePingResult={infrastructurePingResult}
+        />
+        <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <MandantFormEditMailSection
+          showEmailUsageBanner={!isNew}
+          emailUsageMonth={emailUsageMonth}
+          emailSentOk={emailUsage?.sent_ok ?? 0}
+          emailSentFailed={emailUsage?.sent_failed ?? 0}
+          mailMonthlyLimit={form.mail_monthly_limit}
+          mailProvider={form.mail_provider}
+          mailFromName={form.mail_from_name}
+          mailFromEmail={form.mail_from_email}
+          mailReplyTo={form.mail_reply_to}
+          onMailProviderChange={(value) => setForm((f) => ({ ...f, mail_provider: value }))}
+          onMailMonthlyLimitChange={(value) => setForm((f) => ({ ...f, mail_monthly_limit: value }))}
+          onMailFromNameChange={(value) => setForm((f) => ({ ...f, mail_from_name: value }))}
+          onMailFromEmailChange={(value) => setForm((f) => ({ ...f, mail_from_email: value }))}
+          onMailReplyToChange={(value) => setForm((f) => ({ ...f, mail_reply_to: value }))}
+        />
+        <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <MandantFormEditBrandingBasicsSection
+          primaryColor={form.primary_color}
+          appName={form.app_name}
+          onPrimaryColorChange={(value) => setForm((f) => ({ ...f, primary_color: value }))}
+          onAppNameChange={(value) => setForm((f) => ({ ...f, app_name: value }))}
+        />
+        <MandantTenantLogoFaviconSection
+          showStorageRemoveActions={Boolean(id && !isNew)}
+          logoUrl={form.logo_url}
+          faviconUrl={form.favicon_url}
+          onLogoUrlChange={(logo_url) => setForm((f) => ({ ...f, logo_url }))}
+          onFaviconUrlChange={(favicon_url) => setForm((f) => ({ ...f, favicon_url }))}
+          logoFilePending={logoFilePending}
+          faviconFilePending={faviconFilePending}
+          logoPreviewObjectUrl={logoPreviewObjectUrl}
+          faviconPreviewObjectUrl={faviconPreviewObjectUrl}
+          onLogoFileChange={handleLogoFileChange}
+          onFaviconFileChange={handleFaviconFileChange}
+          onRemoveStoredLogo={handleRemoveStoredLogo}
+          onRemoveStoredFavicon={handleRemoveStoredFavicon}
+        />
+        <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
         <div className="pt-4 border-t border-slate-200">
           <h3 className="text-sm font-semibold text-slate-700 mb-2">App-Versionen (optional, Mandant)</h3>
           <p className="text-xs text-slate-500 mb-4">
@@ -2613,7 +1766,7 @@ const MandantForm = () => {
             <MandantReleaseAssignmentsSection tenantId={id} />
           </div>
         ) : null}
-        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
         <div className="pt-4 border-t border-slate-200 space-y-3">
           <h3 className="text-sm font-semibold text-slate-700">Wartungsmodus (Mandanten-App)</h3>
           <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
@@ -2783,68 +1936,26 @@ const MandantForm = () => {
             </div>
           </div>
         </div>
-        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
-        <div className="pt-4 border-t border-slate-200">
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">Impressum</h3>
-          <div className="space-y-3">
-            <div>
-              <label htmlFor="impressum_company_name" className="block text-sm text-slate-600 mb-1">Firmenname</label>
-              <input
-                id="impressum_company_name"
-                type="text"
-                value={form.impressum_company_name}
-                onChange={(e) => setForm((f) => ({ ...f, impressum_company_name: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              />
-            </div>
-            <div>
-              <label htmlFor="impressum_address" className="block text-sm text-slate-600 mb-1">Adresse</label>
-              <textarea
-                id="impressum_address"
-                value={form.impressum_address}
-                onChange={(e) => setForm((f) => ({ ...f, impressum_address: e.target.value }))}
-                rows={2}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              />
-            </div>
-            <div>
-              <label htmlFor="impressum_contact" className="block text-sm text-slate-600 mb-1">Kontakt</label>
-              <input
-                id="impressum_contact"
-                type="text"
-                value={form.impressum_contact}
-                onChange={(e) => setForm((f) => ({ ...f, impressum_contact: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              />
-            </div>
-          </div>
-        </div>
-        <div className="pt-4 border-t border-slate-200">
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">Datenschutz</h3>
-          <div className="space-y-3">
-            <div>
-              <label htmlFor="datenschutz_responsible" className="block text-sm text-slate-600 mb-1">Verantwortlicher</label>
-              <input
-                id="datenschutz_responsible"
-                type="text"
-                value={form.datenschutz_responsible}
-                onChange={(e) => setForm((f) => ({ ...f, datenschutz_responsible: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              />
-            </div>
-            <div>
-              <label htmlFor="datenschutz_contact_email" className="block text-sm text-slate-600 mb-1">Kontakt-E-Mail</label>
-              <input
-                id="datenschutz_contact_email"
-                type="email"
-                value={form.datenschutz_contact_email}
-                onChange={(e) => setForm((f) => ({ ...f, datenschutz_contact_email: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
-              />
-            </div>
-          </div>
-        </div>
-        <SectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <MandantFormEditLegalSection
+          impressumCompanyName={form.impressum_company_name}
+          impressumAddress={form.impressum_address}
+          impressumContact={form.impressum_contact}
+          datenschutzResponsible={form.datenschutz_responsible}
+          datenschutzContactEmail={form.datenschutz_contact_email}
+          onImpressumCompanyNameChange={(value) =>
+            setForm((f) => ({ ...f, impressum_company_name: value }))
+          }
+          onImpressumAddressChange={(value) => setForm((f) => ({ ...f, impressum_address: value }))}
+          onImpressumContactChange={(value) => setForm((f) => ({ ...f, impressum_contact: value }))}
+          onDatenschutzResponsibleChange={(value) =>
+            setForm((f) => ({ ...f, datenschutz_responsible: value }))
+          }
+          onDatenschutzContactEmailChange={(value) =>
+            setForm((f) => ({ ...f, datenschutz_contact_email: value }))
+          }
+        />
+        <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
       </form>
 
       {!isNew && tenantLicenses.length > 0 && (

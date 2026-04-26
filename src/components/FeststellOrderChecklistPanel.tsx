@@ -62,6 +62,9 @@ type FeststellOrderChecklistPanelProps = {
   ) => Promise<void>
   uploadingItemId: string | null
   showSaveControls?: boolean
+  showOpenPointsSummary?: boolean
+  /** Optional: Assistenten-Fokus auf genau einen Checklistenpunkt */
+  assistantFocusItemId?: string | null
 }
 
 const FeststellOrderChecklistPanel = ({
@@ -77,6 +80,8 @@ const FeststellOrderChecklistPanel = ({
   onDeleteDefectPhoto,
   uploadingItemId,
   showSaveControls = true,
+  showOpenPointsSummary = true,
+  assistantFocusItemId,
 }: FeststellOrderChecklistPanelProps) => {
   const [cameraTargetItemId, setCameraTargetItemId] = useState<string | null>(null)
   const ids = getFeststellChecklistItemIdsForMode(mode)
@@ -113,7 +118,7 @@ const FeststellOrderChecklistPanel = ({
   )
 
   return (
-    <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-4">
+    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-4 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
           Feststellanlage (DIN 14677)
@@ -131,8 +136,12 @@ const FeststellOrderChecklistPanel = ({
 
       <div className="space-y-4 pr-1">
         {mode === 'detail'
-          ? FESTSTELL_CHECKLIST_SECTIONS.map((sec, secIdx) => {
-              const sectionNum = secIdx + 1
+          ? FESTSTELL_CHECKLIST_SECTIONS.map((sec) => {
+              const details = assistantFocusItemId
+                ? sec.details.filter((d) => d.id === assistantFocusItemId)
+                : sec.details
+              if (details.length === 0) return null
+              const sectionNum = FESTSTELL_CHECKLIST_SECTIONS.findIndex((s) => s.id === sec.id) + 1
               return (
                 <section
                   key={sec.id}
@@ -143,8 +152,8 @@ const FeststellOrderChecklistPanel = ({
                     {sec.title}
                   </h4>
                   <ul className="space-y-3">
-                    {sec.details.map((d, dIdx) => {
-                      const subNum = dIdx + 1
+                    {details.map((d) => {
+                      const subNum = sec.details.findIndex((entry) => entry.id === d.id) + 1
                       return d.id === FESTSTELL_MELDER_INTERVAL_ITEM_ID ? (
                         <li key={d.id} className="text-sm">
                           <p className="text-slate-800 dark:text-slate-100 mb-1">
@@ -249,7 +258,7 @@ const FeststellOrderChecklistPanel = ({
                                 {(defectPhotosByItem[d.id] ?? []).map((p) => (
                                   <div key={p.id} className="relative">
                                     {p.isDraft ? (
-                                      <span className="absolute -bottom-1 left-0 z-[1] rounded bg-amber-100 dark:bg-amber-900/80 px-0.5 text-[9px] font-medium text-amber-950 dark:text-amber-100">
+                                      <span className="absolute -bottom-1 left-0 z-[1] rounded bg-slate-100 dark:bg-slate-700 px-0.5 text-[9px] font-medium text-slate-700 dark:text-slate-100">
                                         Entwurf
                                       </span>
                                     ) : null}
@@ -290,10 +299,9 @@ const FeststellOrderChecklistPanel = ({
               )
             })
           : (() => {
-              let secNum = 0
               return FESTSTELL_CHECKLIST_SECTIONS.map((sec) => {
-                secNum += 1
-                const n = secNum
+                if (assistantFocusItemId && sec.id !== assistantFocusItemId) return null
+                const n = FESTSTELL_CHECKLIST_SECTIONS.findIndex((s) => s.id === sec.id) + 1
                 return sec.id === INTERVAL_SECTION_ID ? (
                   <div
                     key={sec.id}
@@ -398,7 +406,7 @@ const FeststellOrderChecklistPanel = ({
                           {(defectPhotosByItem[sec.id] ?? []).map((p) => (
                             <div key={p.id} className="relative">
                               {p.isDraft ? (
-                                <span className="absolute -bottom-1 left-0 z-[1] rounded bg-amber-100 dark:bg-amber-900/80 px-0.5 text-[9px] font-medium text-amber-950 dark:text-amber-100">
+                                <span className="absolute -bottom-1 left-0 z-[1] rounded bg-slate-100 dark:bg-slate-700 px-0.5 text-[9px] font-medium text-slate-700 dark:text-slate-100">
                                   Entwurf
                                 </span>
                               ) : null}
@@ -449,7 +457,7 @@ const FeststellOrderChecklistPanel = ({
             type="button"
             onClick={onSave}
             disabled={saving}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-700 text-white hover:bg-amber-800 dark:bg-amber-600 dark:hover:bg-amber-500 disabled:opacity-50"
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-vico-primary text-white hover:bg-vico-primary-hover disabled:opacity-50"
           >
             {saving ? 'Speichern…' : 'Feststellanlage speichern (Protokoll)'}
           </button>
@@ -458,9 +466,11 @@ const FeststellOrderChecklistPanel = ({
           </p>
         </>
       )}
-      <p className="text-xs text-slate-400 dark:text-slate-500">
-        Offene Prüfpunkte: {countFeststellIncompleteItems(mode, items)} / {ids.length}
-      </p>
+      {showOpenPointsSummary ? (
+        <p className="text-xs text-slate-400 dark:text-slate-500">
+          Offene Prüfpunkte: {countFeststellIncompleteItems(mode, items)} / {ids.length}
+        </p>
+      ) : null}
       <CameraCaptureModal
         open={cameraTargetItemId !== null}
         onClose={() => setCameraTargetItemId(null)}

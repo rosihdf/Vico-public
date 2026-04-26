@@ -1,5 +1,12 @@
 import type { Object as Obj } from '../types'
 
+/**
+ * Sichtbare/fachliche Objekt-ID für neu angelegte Türen/Tore (nicht die UUID-Primärschlüssel).
+ * Gleiche Logik wie in der manuellen Objektanlage (Formular-Vorbelegung).
+ */
+export const generateNewObjectInternalId = (): string =>
+  `OBJ-${Date.now().toString(36).toUpperCase()}`
+
 type ObjectDisplayInput = {
   name?: string | null
   internal_id?: string | null

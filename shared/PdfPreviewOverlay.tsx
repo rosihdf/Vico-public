@@ -7,6 +7,21 @@ type PdfPreviewOverlayProps = {
   onClose: () => void
 }
 
+const MAX_DOWNLOAD_BASENAME_LEN = 180
+
+/** Dateiname für <a download>; bei blob:-URLs sonst oft „Unknown.pdf“. */
+export const buildPdfDownloadFilename = (title: string): string => {
+  const cleaned = title
+    .trim()
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const base =
+    cleaned.length > 0 ? cleaned.slice(0, MAX_DOWNLOAD_BASENAME_LEN) : 'Pruefprotokoll'
+  if (/\.pdf$/i.test(base)) return base
+  return `${base}.pdf`
+}
+
 const PdfPreviewOverlay = ({ state, onClose }: PdfPreviewOverlayProps) => {
   useEffect(() => {
     if (!state) return
@@ -19,6 +34,8 @@ const PdfPreviewOverlay = ({ state, onClose }: PdfPreviewOverlayProps) => {
   }, [state, onClose])
 
   if (!state) return null
+
+  const downloadName = buildPdfDownloadFilename(state.title)
 
   return (
     <div
@@ -34,7 +51,7 @@ const PdfPreviewOverlay = ({ state, onClose }: PdfPreviewOverlayProps) => {
         <div className="flex items-center gap-3 shrink-0">
           <a
             href={state.url}
-            download
+            download={downloadName}
             className="text-sm text-sky-300 hover:text-sky-200 underline"
             aria-label="PDF herunterladen"
           >

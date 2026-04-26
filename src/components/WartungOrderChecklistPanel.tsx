@@ -57,8 +57,12 @@ type WartungOrderChecklistPanelProps = {
   ) => Promise<void>
   uploadingItemId: string | null
   showSaveControls?: boolean
+  showOpenPointsSummary?: boolean
+  showSingleDoorStatus?: boolean
   /** Pro Tür: einheitlicher Status (Tür- + ggf. Feststell-Checkliste) für Dropdown/Badge */
   doorStatusByObjectId?: Record<string, WartungChecklistObjectUiStatus>
+  /** Optional: Assistenten-Fokus auf genau einen Checklistenpunkt */
+  assistantFocusItemId?: string | null
 }
 
 export type WartungInspectorSignatureSectionProps = {
@@ -69,6 +73,8 @@ export type WartungInspectorSignatureSectionProps = {
   currentUserId?: string | null
   onInspectorSignatureChange: (dataUrl: string | null) => void
   onRequestReplaceInspectorSignature?: () => void
+  inspectorPrintedName?: string
+  onInspectorPrintedNameChange?: (name: string) => void
 }
 
 /** Prüfer-Unterschrift: außerhalb der Tür-Checkliste platzieren (z. B. unter Feststell-Checkliste). */
@@ -80,6 +86,8 @@ export const WartungInspectorSignatureSection = ({
   currentUserId,
   onInspectorSignatureChange,
   onRequestReplaceInspectorSignature,
+  inspectorPrintedName,
+  onInspectorPrintedNameChange,
 }: WartungInspectorSignatureSectionProps) => {
   if (!selectedObjectId) return null
   const hasPath = Boolean(inspectorSignaturePath?.trim())
@@ -136,6 +144,8 @@ export const WartungInspectorSignatureSection = ({
           value={null}
           onChange={onInspectorSignatureChange}
           disabled={false}
+          printedName={inspectorPrintedName}
+          onPrintedNameChange={onInspectorPrintedNameChange}
         />
       ) : null}
       {!currentUserId ? (
@@ -211,7 +221,10 @@ const WartungOrderChecklistPanel = ({
   onDeleteDefectPhoto,
   uploadingItemId,
   showSaveControls = true,
+  showOpenPointsSummary = true,
+  showSingleDoorStatus = true,
   doorStatusByObjectId,
+  assistantFocusItemId,
 }: WartungOrderChecklistPanelProps) => {
   const [cameraTargetItemId, setCameraTargetItemId] = useState<string | null>(null)
   const ids = getChecklistItemIdsForMode(mode)
@@ -280,7 +293,7 @@ const WartungOrderChecklistPanel = ({
         </div>
       )}
 
-      {objectIds.length === 1 && selectedObjectId && doorStatusByObjectId?.[selectedObjectId] ? (
+      {showSingleDoorStatus && objectIds.length === 1 && selectedObjectId && doorStatusByObjectId?.[selectedObjectId] ? (
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-medium text-slate-600 dark:text-slate-300">Checklistenstatus (diese Tür):</span>
           <DoorChecklistStatusBadge status={doorStatusByObjectId[selectedObjectId]} />
@@ -293,8 +306,12 @@ const WartungOrderChecklistPanel = ({
 
       <div className="space-y-4 pr-1">
         {mode === 'detail'
-          ? DOOR_MAINTENANCE_CHECKLIST_SECTIONS.map((sec, secIdx) => {
-              const sectionNum = secIdx + 1
+          ? DOOR_MAINTENANCE_CHECKLIST_SECTIONS.map((sec) => {
+              const details = assistantFocusItemId
+                ? sec.details.filter((d) => d.id === assistantFocusItemId)
+                : sec.details
+              if (details.length === 0) return null
+              const sectionNum = DOOR_MAINTENANCE_CHECKLIST_SECTIONS.findIndex((s) => s.id === sec.id) + 1
               return (
                 <section
                   key={sec.id}
@@ -305,8 +322,8 @@ const WartungOrderChecklistPanel = ({
                     {sec.title}
                   </h4>
                   <ul className="space-y-3">
-                    {sec.details.map((d, dIdx) => {
-                      const subNum = dIdx + 1
+                    {details.map((d) => {
+                      const subNum = sec.details.findIndex((entry) => entry.id === d.id) + 1
                       return (
                         <li key={d.id} className="text-sm">
                           <p className="text-slate-800 dark:text-slate-100 mb-1">
@@ -442,9 +459,9 @@ const WartungOrderChecklistPanel = ({
               )
             })
           : (() => {
-              let secNum = 0
               return DOOR_MAINTENANCE_CHECKLIST_SECTIONS.map((sec) => {
-                secNum += 1
+                if (assistantFocusItemId && sec.id !== assistantFocusItemId) return null
+                const secNum = DOOR_MAINTENANCE_CHECKLIST_SECTIONS.findIndex((s) => s.id === sec.id) + 1
                 return (
                   <div
                     key={sec.id}
@@ -600,9 +617,11 @@ const WartungOrderChecklistPanel = ({
           </p>
         </>
       )}
-      <p className="text-xs text-slate-400 dark:text-slate-500">
-        Offene Prüfpunkte: {ids.filter((id) => !items[id]?.status).length} / {ids.length}
-      </p>
+      {showOpenPointsSummary ? (
+        <p className="text-xs text-slate-400 dark:text-slate-500">
+          Offene Prüfpunkte: {ids.filter((id) => !items[id]?.status).length} / {ids.length}
+        </p>
+      ) : null}
       <CameraCaptureModal
         open={cameraTargetItemId !== null}
         onClose={() => setCameraTargetItemId(null)}

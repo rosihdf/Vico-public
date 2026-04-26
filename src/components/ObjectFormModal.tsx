@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useToast } from '../ToastContext'
 import { useComponentSettings } from '../ComponentSettingsContext'
@@ -41,7 +41,11 @@ import {
   normalizeDefectEntriesForSave,
   openDefectsToLegacyText,
 } from '../lib/objectDefects'
-import { accessoriesFormLinesToPayload, objectAccessoriesToFormLines } from '../lib/objectUtils'
+import {
+  accessoriesFormLinesToPayload,
+  generateNewObjectInternalId,
+  objectAccessoriesToFormLines,
+} from '../lib/objectUtils'
 import type { ObjectDocumentDisplay, ObjectPhotoDisplay } from '../lib/dataService'
 
 /** Lokale Galerie-Fotos vor dem ersten Speichern der Tür (Upload erst nach createObject) */
@@ -75,6 +79,7 @@ const INITIAL_FORM: ObjectFormData = {
   type_schiebetor: false,
   type_freitext: '',
   wing_count: '',
+  anforderung: '',
   manufacturer: '',
   build_year: '',
   lock_manufacturer: '',
@@ -98,6 +103,32 @@ const INITIAL_FORM: ObjectFormData = {
 const CURRENT_YEAR = new Date().getFullYear()
 const YEAR_OPTIONS = Array.from({ length: CURRENT_YEAR - 1990 + 2 }, (_, i) => 1990 + i).reverse()
 
+const formFieldClass =
+  'w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+const formCheckboxClass =
+  'h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-500 text-vico-primary focus:ring-vico-primary focus:ring-offset-0 dark:focus:ring-offset-slate-900'
+
+function ObjectFormSection({
+  title,
+  children,
+  className = '',
+}: {
+  title: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <section
+      className={`rounded-lg border border-slate-200/80 dark:border-slate-600/50 bg-slate-50/50 dark:bg-slate-800/20 p-4 sm:p-5 space-y-4 min-w-0 ${className}`.trim()}
+    >
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        {title}
+      </h4>
+      <div className="space-y-3 min-w-0">{children}</div>
+    </section>
+  )
+}
+
 const objToFormData = (obj: Obj): ObjectFormData => ({
   name: obj.name ?? '',
   internal_id: obj.internal_id ?? '',
@@ -110,6 +141,7 @@ const objToFormData = (obj: Obj): ObjectFormData => ({
   type_schiebetor: obj.type_schiebetor ?? false,
   type_freitext: obj.type_freitext ?? '',
   wing_count: obj.wing_count?.toString() ?? '',
+  anforderung: obj.anforderung ?? '',
   manufacturer: obj.manufacturer ?? '',
   build_year: obj.build_year ?? '',
   lock_manufacturer: obj.lock_manufacturer ?? '',
@@ -183,7 +215,7 @@ const ObjectFormModal = ({
     else setAssignmentBvId(null)
   }, [object, object?.id, effectiveBvId, bvsList])
   const [formData, setFormData] = useState<ObjectFormData>(
-    object ? objToFormData(object) : { ...INITIAL_FORM, internal_id: `OBJ-${Date.now().toString(36).toUpperCase()}` }
+    object ? objToFormData(object) : { ...INITIAL_FORM, internal_id: generateNewObjectInternalId() }
   )
   const [showResolvedDefects, setShowResolvedDefects] = useState(false)
   const [protocolRowsFetched, setProtocolRowsFetched] = useState<ProtocolOpenMangelRow[]>([])
@@ -272,7 +304,7 @@ const ObjectFormModal = ({
         return []
       })
     } else {
-      setFormData({ ...INITIAL_FORM, internal_id: `OBJ-${Date.now().toString(36).toUpperCase()}` })
+      setFormData({ ...INITIAL_FORM, internal_id: generateNewObjectInternalId() })
       setProfilePhotoPathState(null)
       setPendingProfileFile(null)
       setPendingProfilePreviewUrl((prev) => {
@@ -470,6 +502,12 @@ const ObjectFormModal = ({
           (_, i) => buildYears[i] ?? ''
         )
       }
+      if (
+        (field === 'type_tuer' || field === 'type_sektionaltor' || field === 'type_schiebetor') &&
+        value === true
+      ) {
+        next.type_freitext = ''
+      }
       return next
     })
   }
@@ -647,6 +685,8 @@ const ObjectFormModal = ({
       }
     }
     setIsSaving(true)
+    const hasAnyArtTypeCheckbox =
+      formData.type_tuer || formData.type_sektionaltor || formData.type_schiebetor
     const payload = {
       bv_id: assignmentBvId,
       customer_id: assignmentBvId ? null : effectiveCustomerId,
@@ -659,8 +699,9 @@ const ObjectFormModal = ({
       type_tuer: formData.type_tuer,
       type_sektionaltor: formData.type_sektionaltor,
       type_schiebetor: formData.type_schiebetor,
-      type_freitext: formData.type_freitext.trim() || null,
+      type_freitext: hasAnyArtTypeCheckbox ? null : (formData.type_freitext.trim() || null),
       wing_count: formData.wing_count ? parseInt(formData.wing_count, 10) : null,
+      anforderung: formData.anforderung.trim() || null,
       manufacturer: formData.manufacturer.trim() || null,
       build_year: formData.build_year.trim() || null,
       lock_manufacturer: formData.lock_manufacturer.trim() || null,
@@ -943,7 +984,7 @@ const ObjectFormModal = ({
         aria-label="Modal schließen"
       >
         <div
-          className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-2xl w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto text-slate-900 dark:text-slate-100"
+          className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-3xl w-full min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto text-slate-900 dark:text-slate-100"
           role="dialog"
           aria-modal
           onClick={(e) => e.stopPropagation()}
@@ -1039,322 +1080,422 @@ const ObjectFormModal = ({
               </button>
             </div>
           ) : null}
-          <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
-            {isEdit && effectiveCustomerId != null && customerBvs !== undefined && (
-              <div>
-                <label htmlFor="obj-assignment" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Zuordnung
-                </label>
-                <select
-                  id="obj-assignment"
-                  value={assignmentBvId ?? ''}
-                  onChange={(e) => setAssignmentBvId(e.target.value || null)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  aria-label="Tür/Tor zuordnen zu Objekt/BV oder direkt unter Kunde"
-                  disabled={!canEdit}
-                >
-                  {!customerHasBvs && <option value="">Direkt unter Kunde</option>}
-                  {bvsList.map((bv) => (
-                    <option key={bv.id} value={bv.id}>
-                      {bv.name ?? bv.id}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  {customerHasBvs
-                    ? 'Wenn Objekte/BV vorhanden sind, muss jede Tür einem Objekt/BV zugeordnet sein.'
-                    : 'Protokolle, Fotos und Dokumente bleiben der Tür zugeordnet.'}
-                </p>
-              </div>
-            )}
-            <div>
-              <label htmlFor="obj-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
-              <input
-                id="obj-name"
-                type="text"
-                value={formData.name}
-                onChange={(e) => handleFormChange('name', e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                placeholder="z. B. Haupteingang, Kellerzugang"
-                aria-label="Bezeichnung Tür oder Tor"
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tür Position</label>
-                <input
-                  type="text"
-                  value={formData.door_position}
-                  onChange={(e) => handleFormChange('door_position', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Interne Türnr.</label>
-                <input
-                  type="text"
-                  value={formData.internal_door_number}
-                  onChange={(e) => handleFormChange('internal_door_number', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-              <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Etage</label>
-                <input
-                  type="text"
-                  value={formData.floor}
-                  onChange={(e) => handleFormChange('floor', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-              <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Raum</label>
-                <input
-                  type="text"
-                  value={formData.room}
-                  onChange={(e) => handleFormChange('room', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Art</label>
-              <div className="flex flex-wrap gap-4 text-slate-800 dark:text-slate-200">
-                <label className="flex items-center gap-2"><input type="checkbox" checked={formData.type_tuer} onChange={(e) => handleFormChange('type_tuer', e.target.checked)} /> Tür</label>
-                <label className="flex items-center gap-2"><input type="checkbox" checked={formData.type_sektionaltor} onChange={(e) => handleFormChange('type_sektionaltor', e.target.checked)} /> Sektionaltor</label>
-                <label className="flex items-center gap-2"><input type="checkbox" checked={formData.type_schiebetor} onChange={(e) => handleFormChange('type_schiebetor', e.target.checked)} /> Schiebetor</label>
-              </div>
-              <input
-                type="text"
-                placeholder="Freitext"
-                value={formData.type_freitext}
-                onChange={(e) => handleFormChange('type_freitext', e.target.value)}
-                className="mt-2 w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Flügelanzahl</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={formData.wing_count}
-                  onChange={(e) => handleFormChange('wing_count', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Hersteller</label>
-                  {doorStammdatenListsEnabled && doorCatalog.door_manufacturers.length > 0 ? (
-                    <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={manufacturerUseFreeText}
-                        onChange={(e) => setManufacturerUseFreeText(e.target.checked)}
-                        className="rounded border-slate-400 dark:border-slate-500 text-vico-primary focus:ring-vico-primary"
-                      />
-                      Freitext
-                    </label>
-                  ) : null}
-                </div>
-                {!doorStammdatenListsEnabled ||
-                manufacturerUseFreeText ||
-                doorCatalog.door_manufacturers.length === 0 ? (
-                  <input
-                    type="text"
-                    value={formData.manufacturer}
-                    onChange={(e) => handleFormChange('manufacturer', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  />
-                ) : (
+          <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-6 min-w-0">
+            <ObjectFormSection title="Grunddaten">
+              {isEdit && effectiveCustomerId != null && customerBvs !== undefined && (
+                <div>
+                  <label htmlFor="obj-assignment" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Zuordnung
+                  </label>
                   <select
-                    value={formData.manufacturer}
-                    onChange={(e) => handleFormChange('manufacturer', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    aria-label="Hersteller aus Liste"
+                    id="obj-assignment"
+                    value={assignmentBvId ?? ''}
+                    onChange={(e) => setAssignmentBvId(e.target.value || null)}
+                    className={formFieldClass}
+                    aria-label="Tür/Tor zuordnen zu Objekt/BV oder direkt unter Kunde"
+                    disabled={!canEdit}
                   >
-                    <option value="">— Bitte wählen —</option>
-                    {doorCatalog.door_manufacturers.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
+                    {!customerHasBvs && <option value="">Direkt unter Kunde</option>}
+                    {bvsList.map((bv) => (
+                      <option key={bv.id} value={bv.id}>
+                        {bv.name ?? bv.id}
                       </option>
                     ))}
                   </select>
-                )}
-              </div>
-              <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Baujahr</label>
-                <input
-                  type="text"
-                  value={formData.build_year}
-                  onChange={(e) => handleFormChange('build_year', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Schließmittel Hersteller</label>
-                  {doorStammdatenListsEnabled && doorCatalog.lock_manufacturers.length > 0 ? (
-                    <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={lockManufacturerUseFreeText}
-                        onChange={(e) => setLockManufacturerUseFreeText(e.target.checked)}
-                        className="rounded border-slate-400 dark:border-slate-500 text-vico-primary focus:ring-vico-primary"
-                      />
-                      Freitext
-                    </label>
-                  ) : null}
-                </div>
-                {!doorStammdatenListsEnabled ||
-                lockManufacturerUseFreeText ||
-                doorCatalog.lock_manufacturers.length === 0 ? (
-                  <input
-                    type="text"
-                    value={formData.lock_manufacturer}
-                    onChange={(e) => handleFormChange('lock_manufacturer', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  />
-                ) : (
-                  <select
-                    value={formData.lock_manufacturer}
-                    onChange={(e) => {
-                      if (e.target.value === FREE_TEXT_OPTION) {
-                        setLockManufacturerUseFreeText(true)
-                        return
-                      }
-                      handleFormChange('lock_manufacturer', e.target.value)
-                    }}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    aria-label="Schließmittel Hersteller aus Liste"
-                  >
-                    <option value="">— Bitte wählen —</option>
-                    <option value={FREE_TEXT_OPTION}>Freitext…</option>
-                    {doorCatalog.lock_manufacturers.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Schließmittel Typ</label>
-                  {doorStammdatenListsEnabled && doorCatalog.lock_types.length > 0 ? (
-                    <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={lockTypeUseFreeText}
-                        onChange={(e) => setLockTypeUseFreeText(e.target.checked)}
-                        className="rounded border-slate-400 dark:border-slate-500 text-vico-primary focus:ring-vico-primary"
-                      />
-                      Freitext
-                    </label>
-                  ) : null}
-                </div>
-                {!doorStammdatenListsEnabled || lockTypeUseFreeText || doorCatalog.lock_types.length === 0 ? (
-                  <input
-                    type="text"
-                    value={formData.lock_type}
-                    onChange={(e) => handleFormChange('lock_type', e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  />
-                ) : (
-                  <select
-                    value={formData.lock_type}
-                    onChange={(e) => {
-                      if (e.target.value === FREE_TEXT_OPTION) {
-                        setLockTypeUseFreeText(true)
-                        return
-                      }
-                      handleFormChange('lock_type', e.target.value)
-                    }}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                    aria-label="Schließmittel Typ aus Liste"
-                  >
-                    <option value="">— Bitte wählen —</option>
-                    <option value={FREE_TEXT_OPTION}>Freitext…</option>
-                    {doorCatalog.lock_types.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-            </div>
-            <div>
-              <label className="flex items-center gap-2 text-slate-800 dark:text-slate-200"><input type="checkbox" checked={formData.has_hold_open} onChange={(e) => handleFormChange('has_hold_open', e.target.checked)} /> Feststellanlage vorhanden</label>
-              {formData.has_hold_open && (
-                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="hold-open-manufacturer" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Hersteller</label>
-                    <input id="hold-open-manufacturer" type="text" placeholder="z. B. GEZE" value={formData.hold_open_manufacturer} onChange={(e) => handleFormChange('hold_open_manufacturer', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label htmlFor="hold-open-type" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Typ</label>
-                    <input id="hold-open-type" type="text" placeholder="z. B. TS 5000" value={formData.hold_open_type} onChange={(e) => handleFormChange('hold_open_type', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label htmlFor="hold-open-approval-no" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Zulassungsnummer</label>
-                    <input id="hold-open-approval-no" type="text" placeholder="z. B. Z-6.5-1234" value={formData.hold_open_approval_no} onChange={(e) => handleFormChange('hold_open_approval_no', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
-                  </div>
-                  <div>
-                    <label htmlFor="hold-open-approval-date" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Abnahme am</label>
-                    <input id="hold-open-approval-date" type="text" placeholder="z. B. 2026-04-09" value={formData.hold_open_approval_date} onChange={(e) => handleFormChange('hold_open_approval_date', e.target.value)} className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100" />
-                  </div>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {customerHasBvs
+                      ? 'Wenn Objekte/BV vorhanden sind, muss jede Tür einem Objekt/BV zugeordnet sein.'
+                      : 'Protokolle, Fotos und Dokumente bleiben der Tür zugeordnet.'}
+                  </p>
                 </div>
               )}
-            </div>
-            {formData.has_hold_open ? (
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Rauchmelder Anzahl
+                <label htmlFor="obj-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Name
                 </label>
                 <input
-                  type="number"
-                  min={0}
-                  value={formData.smoke_detector_count}
-                  onChange={(e) => handleFormChange('smoke_detector_count', e.target.value)}
-                  className="w-24 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  aria-label="Rauchmelder Anzahl"
+                  id="obj-name"
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => handleFormChange('name', e.target.value)}
+                  className={formFieldClass}
+                  placeholder="z. B. Haupteingang, Kellerzugang"
+                  aria-label="Bezeichnung Tür oder Tor"
                 />
-                {(() => {
-                  const count = parseInt(formData.smoke_detector_count, 10) || 0
-                  return count > 0 ? (
-                    <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {Array.from({ length: count }, (_, i) => (
-                        <div key={i}>
-                          <label htmlFor={`smoke-year-${i}`} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            RM{i + 1} Baujahr
-                          </label>
-                          <select
-                            id={`smoke-year-${i}`}
-                            value={formData.smoke_detector_build_years[i] ?? ''}
-                            onChange={(e) => handleSmokeDetectorBuildYearChange(i, e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                            aria-label={`Rauchmelder ${i + 1} Baujahr`}
-                          >
-                            <option value="">–</option>
-                            {YEAR_OPTIONS.map((y) => (
-                              <option key={y} value={String(y)}>
-                                {y}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null
-                })()}
               </div>
-            ) : null}
+            </ObjectFormSection>
+
+            <ObjectFormSection title="Lage">
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4">
+                <div className="sm:col-span-8 min-w-0">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tür Position</label>
+                  <input
+                    type="text"
+                    value={formData.door_position}
+                    onChange={(e) => handleFormChange('door_position', e.target.value)}
+                    className={formFieldClass}
+                  />
+                </div>
+                <div className="sm:col-span-4 min-w-0 sm:max-w-xs">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Interne Türnr.</label>
+                  <input
+                    type="text"
+                    value={formData.internal_door_number}
+                    onChange={(e) => handleFormChange('internal_door_number', e.target.value)}
+                    className={formFieldClass}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4">
+                <div className="sm:col-span-3 min-w-0 sm:max-w-[10rem]">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Etage</label>
+                  <input
+                    type="text"
+                    value={formData.floor}
+                    onChange={(e) => handleFormChange('floor', e.target.value)}
+                    className={formFieldClass}
+                  />
+                </div>
+                <div className="sm:col-span-9 min-w-0">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Raum</label>
+                  <input
+                    type="text"
+                    value={formData.room}
+                    onChange={(e) => handleFormChange('room', e.target.value)}
+                    className={formFieldClass}
+                  />
+                </div>
+              </div>
+            </ObjectFormSection>
+
+            <ObjectFormSection title="Art (Typ)">
+              <div className="rounded-md border border-slate-200/70 dark:border-slate-600/40 bg-white/50 dark:bg-slate-900/25 px-3 py-3 space-y-3">
+                <div className="flex flex-wrap gap-x-5 gap-y-2.5 text-sm text-slate-800 dark:text-slate-200">
+                  <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.type_tuer}
+                      onChange={(e) => handleFormChange('type_tuer', e.target.checked)}
+                      className={formCheckboxClass}
+                    />
+                    <span>Tür</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.type_sektionaltor}
+                      onChange={(e) => handleFormChange('type_sektionaltor', e.target.checked)}
+                      className={formCheckboxClass}
+                    />
+                    <span>Sektionaltor</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.type_schiebetor}
+                      onChange={(e) => handleFormChange('type_schiebetor', e.target.checked)}
+                      className={formCheckboxClass}
+                    />
+                    <span>Schiebetor</span>
+                  </label>
+                </div>
+                {!(formData.type_tuer || formData.type_sektionaltor || formData.type_schiebetor) ? (
+                  <input
+                    type="text"
+                    placeholder="Freitext"
+                    value={formData.type_freitext}
+                    onChange={(e) => handleFormChange('type_freitext', e.target.value)}
+                    className={formFieldClass}
+                  />
+                ) : null}
+              </div>
+            </ObjectFormSection>
+            <ObjectFormSection title="Hersteller & Technik">
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-4">
+                <div className="sm:col-span-2 min-w-0 sm:max-w-[6.5rem]">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Flügelanzahl</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={formData.wing_count}
+                    onChange={(e) => handleFormChange('wing_count', e.target.value)}
+                    className={formFieldClass}
+                  />
+                </div>
+                <div className="sm:col-span-7 min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Hersteller</label>
+                    {doorStammdatenListsEnabled && doorCatalog.door_manufacturers.length > 0 ? (
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={manufacturerUseFreeText}
+                          onChange={(e) => setManufacturerUseFreeText(e.target.checked)}
+                          className={formCheckboxClass}
+                        />
+                        Freitext
+                      </label>
+                    ) : null}
+                  </div>
+                  {!doorStammdatenListsEnabled ||
+                  manufacturerUseFreeText ||
+                  doorCatalog.door_manufacturers.length === 0 ? (
+                    <input
+                      type="text"
+                      value={formData.manufacturer}
+                      onChange={(e) => handleFormChange('manufacturer', e.target.value)}
+                      className={formFieldClass}
+                    />
+                  ) : (
+                    <select
+                      value={formData.manufacturer}
+                      onChange={(e) => handleFormChange('manufacturer', e.target.value)}
+                      className={formFieldClass}
+                      aria-label="Hersteller aus Liste"
+                    >
+                      <option value="">— Bitte wählen —</option>
+                      {doorCatalog.door_manufacturers.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <div className="sm:col-span-3 min-w-0 sm:max-w-[9rem]">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Baujahr</label>
+                  <input
+                    type="text"
+                    value={formData.build_year}
+                    onChange={(e) => handleFormChange('build_year', e.target.value)}
+                    className={formFieldClass}
+                  />
+                </div>
+              </div>
+              <div className="min-w-0">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Anforderung</label>
+                <input
+                  type="text"
+                  placeholder="z. B. T30, RS, Fluchtweg"
+                  value={formData.anforderung}
+                  onChange={(e) => handleFormChange('anforderung', e.target.value)}
+                  className={formFieldClass}
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Schließmittel Hersteller</label>
+                    {doorStammdatenListsEnabled && doorCatalog.lock_manufacturers.length > 0 ? (
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={lockManufacturerUseFreeText}
+                          onChange={(e) => setLockManufacturerUseFreeText(e.target.checked)}
+                          className={formCheckboxClass}
+                        />
+                        Freitext
+                      </label>
+                    ) : null}
+                  </div>
+                  {!doorStammdatenListsEnabled ||
+                  lockManufacturerUseFreeText ||
+                  doorCatalog.lock_manufacturers.length === 0 ? (
+                    <input
+                      type="text"
+                      value={formData.lock_manufacturer}
+                      onChange={(e) => handleFormChange('lock_manufacturer', e.target.value)}
+                      className={formFieldClass}
+                    />
+                  ) : (
+                    <select
+                      value={formData.lock_manufacturer}
+                      onChange={(e) => {
+                        if (e.target.value === FREE_TEXT_OPTION) {
+                          setLockManufacturerUseFreeText(true)
+                          return
+                        }
+                        handleFormChange('lock_manufacturer', e.target.value)
+                      }}
+                      className={formFieldClass}
+                      aria-label="Schließmittel Hersteller aus Liste"
+                    >
+                      <option value="">— Bitte wählen —</option>
+                      <option value={FREE_TEXT_OPTION}>Freitext…</option>
+                      {doorCatalog.lock_manufacturers.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Schließmittel Typ</label>
+                    {doorStammdatenListsEnabled && doorCatalog.lock_types.length > 0 ? (
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={lockTypeUseFreeText}
+                          onChange={(e) => setLockTypeUseFreeText(e.target.checked)}
+                          className={formCheckboxClass}
+                        />
+                        Freitext
+                      </label>
+                    ) : null}
+                  </div>
+                  {!doorStammdatenListsEnabled || lockTypeUseFreeText || doorCatalog.lock_types.length === 0 ? (
+                    <input
+                      type="text"
+                      value={formData.lock_type}
+                      onChange={(e) => handleFormChange('lock_type', e.target.value)}
+                      className={formFieldClass}
+                    />
+                  ) : (
+                    <select
+                      value={formData.lock_type}
+                      onChange={(e) => {
+                        if (e.target.value === FREE_TEXT_OPTION) {
+                          setLockTypeUseFreeText(true)
+                          return
+                        }
+                        handleFormChange('lock_type', e.target.value)
+                      }}
+                      className={formFieldClass}
+                      aria-label="Schließmittel Typ aus Liste"
+                    >
+                      <option value="">— Bitte wählen —</option>
+                      <option value={FREE_TEXT_OPTION}>Freitext…</option>
+                      {doorCatalog.lock_types.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            </ObjectFormSection>
+
+            <ObjectFormSection title="Feststellanlage">
+              <div className="rounded-md border border-slate-200/65 dark:border-slate-600/45 bg-white/40 dark:bg-slate-900/20 px-3 py-2.5">
+                <label className="flex items-start gap-2.5 text-sm text-slate-800 dark:text-slate-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.has_hold_open}
+                    onChange={(e) => handleFormChange('has_hold_open', e.target.checked)}
+                    className={`${formCheckboxClass} mt-0.5`}
+                  />
+                  <span>Feststellanlage vorhanden</span>
+                </label>
+              </div>
+              {formData.has_hold_open ? (
+                <div
+                  className="rounded-lg border border-vico-primary/25 dark:border-sky-500/25 bg-white/80 dark:bg-slate-900/50 p-3 sm:p-4 space-y-4"
+                  role="region"
+                  aria-label="Eingabefelder zur Feststellanlage"
+                >
+                  <p className="text-xs font-medium text-slate-600 dark:text-slate-400">Details und Rauchmelder</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <div className="min-w-0">
+                      <label htmlFor="hold-open-manufacturer" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Hersteller
+                      </label>
+                      <input
+                        id="hold-open-manufacturer"
+                        type="text"
+                        placeholder="z. B. GEZE"
+                        value={formData.hold_open_manufacturer}
+                        onChange={(e) => handleFormChange('hold_open_manufacturer', e.target.value)}
+                        className={formFieldClass}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <label htmlFor="hold-open-type" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Typ
+                      </label>
+                      <input
+                        id="hold-open-type"
+                        type="text"
+                        placeholder="z. B. TS 5000"
+                        value={formData.hold_open_type}
+                        onChange={(e) => handleFormChange('hold_open_type', e.target.value)}
+                        className={formFieldClass}
+                      />
+                    </div>
+                    <div className="min-w-0 sm:max-w-md">
+                      <label htmlFor="hold-open-approval-no" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Zulassungsnummer
+                      </label>
+                      <input
+                        id="hold-open-approval-no"
+                        type="text"
+                        placeholder="z. B. Z-6.5-1234"
+                        value={formData.hold_open_approval_no}
+                        onChange={(e) => handleFormChange('hold_open_approval_no', e.target.value)}
+                        className={formFieldClass}
+                      />
+                    </div>
+                    <div className="min-w-0 sm:max-w-[12rem]">
+                      <label htmlFor="hold-open-approval-date" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Abnahme am
+                      </label>
+                      <input
+                        id="hold-open-approval-date"
+                        type="text"
+                        placeholder="z. B. 2026-04-09"
+                        value={formData.hold_open_approval_date}
+                        onChange={(e) => handleFormChange('hold_open_approval_date', e.target.value)}
+                        className={formFieldClass}
+                      />
+                    </div>
+                  </div>
+                  <div className="border-t border-slate-200/80 dark:border-slate-600/50 pt-4 space-y-3">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" htmlFor="smoke-count-input">
+                      Rauchmelder Anzahl
+                    </label>
+                    <input
+                      id="smoke-count-input"
+                      type="number"
+                      min={0}
+                      value={formData.smoke_detector_count}
+                      onChange={(e) => handleFormChange('smoke_detector_count', e.target.value)}
+                      className={`${formFieldClass} w-full max-w-[6.5rem]`}
+                      aria-label="Rauchmelder Anzahl"
+                    />
+                    {(() => {
+                      const count = parseInt(formData.smoke_detector_count, 10) || 0
+                      return count > 0 ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          {Array.from({ length: count }, (_, i) => (
+                            <div key={i} className="min-w-0 sm:max-w-[11rem]">
+                              <label htmlFor={`smoke-year-${i}`} className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                RM{i + 1} Baujahr
+                              </label>
+                              <select
+                                id={`smoke-year-${i}`}
+                                value={formData.smoke_detector_build_years[i] ?? ''}
+                                onChange={(e) => handleSmokeDetectorBuildYearChange(i, e.target.value)}
+                                className={formFieldClass}
+                                aria-label={`Rauchmelder ${i + 1} Baujahr`}
+                              >
+                                <option value="">–</option>
+                                {YEAR_OPTIONS.map((y) => (
+                                  <option key={y} value={String(y)}>
+                                    {y}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null
+                    })()}
+                  </div>
+                </div>
+              ) : null}
+            </ObjectFormSection>
             {isEdit && protocolRowsEffective.length > 0 ? (
               <div className="rounded-lg border border-rose-200 dark:border-rose-900/45 bg-rose-50/50 dark:bg-rose-950/25 p-4 space-y-3">
                 <h3 className="text-sm font-medium text-slate-800 dark:text-slate-100">Offene Mängel (Prüfprotokoll)</h3>
@@ -1525,12 +1666,12 @@ const ObjectFormModal = ({
               <div className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40 p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium text-slate-800 dark:text-slate-100">Mängel (Stammdaten)</span>
-                  <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={showResolvedDefects}
                       onChange={(e) => setShowResolvedDefects(e.target.checked)}
-                      className="rounded border-slate-300 dark:border-slate-600"
+                      className={formCheckboxClass}
                       aria-label="Erledigte Mängel anzeigen"
                     />
                     Erledigte Mängel anzeigen
@@ -1679,72 +1820,79 @@ const ObjectFormModal = ({
                 ) : null}
               </div>
             ) : null}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bemerkungen</label>
-                <textarea
-                  value={formData.remarks}
-                  onChange={(e) => handleFormChange('remarks', e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  rows={2}
-                />
+            <ObjectFormSection title="Zusatz & Hinweise">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-8 min-w-0">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bemerkungen</label>
+                  <textarea
+                    value={formData.remarks}
+                    onChange={(e) => handleFormChange('remarks', e.target.value)}
+                    className={formFieldClass}
+                    rows={3}
+                  />
+                </div>
+                <div className="lg:col-span-4 min-w-0 lg:max-w-sm">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                    Wartungsintervall (Monate)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={formData.maintenance_interval_months}
+                    onChange={(e) => handleFormChange('maintenance_interval_months', e.target.value)}
+                    placeholder="z. B. 12 für jährlich"
+                    className={formFieldClass}
+                    aria-label="Wartungsintervall in Monaten"
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Leer = keine Erinnerung. Beispiel: 12 = jährliche Wartung.
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Wartungsintervall (Monate)</label>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Panikfunktion / Zubehör</label>
                 <input
-                  type="number"
-                  min={1}
-                  max={120}
-                  value={formData.maintenance_interval_months}
-                  onChange={(e) => handleFormChange('maintenance_interval_months', e.target.value)}
-                  placeholder="z. B. 12 für jährlich"
-                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  aria-label="Wartungsintervall in Monaten"
+                  type="text"
+                  value={formData.panic_function}
+                  onChange={(e) => handleFormChange('panic_function', e.target.value)}
+                  placeholder="Panikfunktion"
+                  className={`${formFieldClass} mb-2`}
                 />
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Leer = keine Erinnerung. Beispiel: 12 = jährliche Wartung.</p>
+                <div className="space-y-2" role="group" aria-label="Weiteres Zubehör">
+                  {formData.accessories_lines.map((line, index) => (
+                    <div key={index} className="flex gap-2 items-center min-w-0">
+                      <input
+                        type="text"
+                        value={line}
+                        onChange={(e) => handleAccessoryLineChange(index, e.target.value)}
+                        placeholder={`Zubehör ${index + 1}`}
+                        className={`${formFieldClass} flex-1 min-w-0`}
+                        aria-label={`Weiteres Zubehör, Zeile ${index + 1}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAccessoryLine(index)}
+                        disabled={formData.accessories_lines.length <= 1}
+                        className="shrink-0 px-2 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                        aria-label={`Zubehörzeile ${index + 1} entfernen`}
+                      >
+                        Entfernen
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={handleAddAccessoryLine}
+                    className="text-sm text-vico-primary hover:underline font-medium"
+                    aria-label="Weitere Zubehörzeile hinzufügen"
+                  >
+                    + Weiteres Zubehör
+                  </button>
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Panikfunktion / Zubehör</label>
-              <input
-                type="text"
-                value={formData.panic_function}
-                onChange={(e) => handleFormChange('panic_function', e.target.value)}
-                placeholder="Panikfunktion"
-                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg mb-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-              />
-              <div className="space-y-2" role="group" aria-label="Weiteres Zubehör">
-                {formData.accessories_lines.map((line, index) => (
-                  <div key={index} className="flex gap-2 items-center min-w-0">
-                    <input
-                      type="text"
-                      value={line}
-                      onChange={(e) => handleAccessoryLineChange(index, e.target.value)}
-                      placeholder={`Zubehör ${index + 1}`}
-                      className="flex-1 min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                      aria-label={`Weiteres Zubehör, Zeile ${index + 1}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveAccessoryLine(index)}
-                      disabled={formData.accessories_lines.length <= 1}
-                      className="shrink-0 px-2 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                      aria-label={`Zubehörzeile ${index + 1} entfernen`}
-                    >
-                      Entfernen
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={handleAddAccessoryLine}
-                  className="text-sm text-vico-primary hover:underline font-medium"
-                  aria-label="Weitere Zubehörzeile hinzufügen"
-                >
-                  + Weiteres Zubehör
-                </button>
-              </div>
-            </div>
+            </ObjectFormSection>
+            <ObjectFormSection title="Fotos & Dokumente">
             {(editingId || !isEdit) && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Fotos</label>
@@ -1919,6 +2067,7 @@ const ObjectFormModal = ({
                 )}
               </div>
             )}
+            </ObjectFormSection>
             {formError && (
               <div className="text-sm text-red-600 dark:text-red-400">
                 <p>{formError}</p>
@@ -1927,7 +2076,7 @@ const ObjectFormModal = ({
                 )}
               </div>
             )}
-            <div className="flex flex-col gap-2 pt-2">
+            <div className="flex flex-col gap-2 pt-4 border-t border-slate-200/70 dark:border-slate-600/50">
               <div className="flex flex-nowrap gap-2 items-center">
                 <button type="submit" disabled={isSaving || isArchiving} className="flex-1 min-w-0 py-2 bg-vico-button dark:bg-vico-primary text-slate-800 dark:text-white rounded-lg hover:bg-vico-button-hover dark:hover:opacity-90 disabled:opacity-50 border border-slate-300 dark:border-slate-600">
                   {isSaving ? 'Speichern...' : 'Speichern'}

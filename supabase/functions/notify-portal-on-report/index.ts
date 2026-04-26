@@ -1,4 +1,4 @@
-import { createClient } from 'npm:@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const corsHeaders = {
@@ -8,6 +8,29 @@ const corsHeaders = {
 
 type RequestBody = {
   report_id: string
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const jsonResponse = (status: number, body: Record<string, unknown>) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+
+type ObjectRow = {
+  id: string
+  name: string | null
+  internal_id: string | null
+  bv_id: string | null
+  customer_id: string | null
+}
+
+type ReportWithObject = {
+  id: string
+  maintenance_date: string
+  object_id: string
+  objects: ObjectRow | ObjectRow[] | null
 }
 
 const toYearMonth = (value: Date): string => {
@@ -37,37 +60,132 @@ const mirrorUsageToLicensePortal = async (status: 'ok' | 'failed'): Promise<void
   })
 }
 
+const normalizeObjectEmbed = (raw: ObjectRow | ObjectRow[] | null): ObjectRow | null => {
+  if (raw == null) return null
+  if (Array.isArray(raw)) return raw[0] ?? null
+  return raw
+}
+
+/** RLS: maintenance_reports + objects!inner → nur sichtbare Objekte/Kundenkontext. */
+const assertCallerMayNotifyForReport = async (
+  userClient: SupabaseClient,
+  reportId: string
+): Promise<
+  | { ok: true; report: ReportWithObject; object: ObjectRow }
+  | { ok: false; status: number; body: Record<string, unknown> }
+> => {
+  const { data: row, error } = await userClient
+    .from('maintenance_reports')
+    .select(
+      `
+      id,
+      maintenance_date,
+      object_id,
+      objects!inner (
+        id,
+        name,
+        internal_id,
+        bv_id,
+        customer_id
+      )
+    `
+    )
+    .eq('id', reportId)
+    .maybeSingle()
+
+  if (error) {
+    return { ok: false, status: 403, body: { error: 'Keine Berechtigung für diesen Bericht.' } }
+  }
+  const report = row as ReportWithObject | null
+  const object = normalizeObjectEmbed(report?.objects ?? null)
+  if (!report?.id || !object?.id) {
+    return { ok: false, status: 403, body: { error: 'Keine Berechtigung für diesen Bericht.' } }
+  }
+  return { ok: true, report, object }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  if (req.method !== 'POST') {
+    return jsonResponse(405, { error: 'Method not allowed' })
+  }
+
   try {
-    const apiKey = Deno.env.get('RESEND_API_KEY')
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: 'RESEND_API_KEY nicht konfiguriert.' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return jsonResponse(401, { error: 'Nicht autorisiert.' })
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
+      return jsonResponse(500, { error: 'Supabase nicht konfiguriert (URL, Service Role oder Anon Key).' })
+    }
+
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    })
+    const {
+      data: { user: caller },
+      error: userErr,
+    } = await userClient.auth.getUser()
+    if (userErr || !caller) {
+      return jsonResponse(401, { error: 'Nicht autorisiert.' })
+    }
+
+    const { data: role, error: roleErr } = await userClient.rpc('get_my_role')
+    if (roleErr || role === 'leser') {
+      return jsonResponse(403, { error: 'Keine Berechtigung für diese Aktion.' })
+    }
+
+    const apiKey = Deno.env.get('RESEND_API_KEY')
+    if (!apiKey) {
+      return jsonResponse(500, { error: 'RESEND_API_KEY nicht konfiguriert.' })
+    }
+
     const portalUrl = (Deno.env.get('PORTAL_URL') ?? '').trim()
     const fromEmail = Deno.env.get('RESEND_FROM') || 'Vico Türen & Tore <onboarding@resend.dev>'
 
     if (!portalUrl) {
-      return new Response(
-        JSON.stringify({
-          error:
-            'PORTAL_URL ist nicht gesetzt. In Supabase → Edge Functions → Secrets die öffentliche Kundenportal-Basis-URL eintragen (z. B. https://….pages.dev oder Custom Domain, ohne trailing slash).',
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse(500, {
+        error:
+          'PORTAL_URL ist nicht gesetzt. In Supabase → Edge Functions → Secrets die öffentliche Kundenportal-Basis-URL eintragen (z. B. https://….pages.dev oder Custom Domain, ohne trailing slash).',
+      })
     }
 
+    let body: RequestBody
+    try {
+      body = (await req.json()) as RequestBody
+    } catch {
+      return jsonResponse(400, { error: 'Ungültiger JSON-Body.' })
+    }
+
+    const reportId = typeof body.report_id === 'string' ? body.report_id.trim() : ''
+    if (!reportId) {
+      return jsonResponse(400, { error: 'report_id ist erforderlich.' })
+    }
+    if (!UUID_RE.test(reportId)) {
+      return jsonResponse(400, { error: 'report_id ungültig.' })
+    }
+
+    const authz = await assertCallerMayNotifyForReport(userClient, reportId)
+    if (!authz.ok) {
+      return jsonResponse(authz.status, authz.body)
+    }
+
+    const { report, object } = authz
+
     const supabase = createClient(supabaseUrl, serviceRoleKey)
-    const logEvent = async (status: 'ok' | 'failed', recipientEmail: string, providerMessageId?: string, errorText?: string) => {
+    const logEvent = async (
+      status: 'ok' | 'failed',
+      recipientEmail: string,
+      providerMessageId?: string,
+      errorText?: string
+    ) => {
       await supabase.rpc('log_email_delivery_event', {
         p_provider: 'resend',
         p_channel: 'portal_notify',
@@ -80,42 +198,6 @@ serve(async (req) => {
       await mirrorUsageToLicensePortal(status)
     }
 
-    const body = (await req.json()) as RequestBody
-    const { report_id } = body
-
-    if (!report_id) {
-      return new Response(
-        JSON.stringify({ error: 'report_id ist erforderlich.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const { data: report, error: reportError } = await supabase
-      .from('maintenance_reports')
-      .select('id, maintenance_date, object_id')
-      .eq('id', report_id)
-      .single()
-
-    if (reportError || !report) {
-      return new Response(
-        JSON.stringify({ error: 'Bericht nicht gefunden.' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const { data: object, error: objError } = await supabase
-      .from('objects')
-      .select('id, name, internal_id, bv_id, customer_id')
-      .eq('id', report.object_id)
-      .single()
-
-    if (objError || !object) {
-      return new Response(
-        JSON.stringify({ success: true, notified: 0, message: 'Objekt nicht gefunden.' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
     let customerId: string | null = null
     let bvName = ''
     let bvDeliveryRow: {
@@ -124,19 +206,16 @@ serve(async (req) => {
     } | null = null
 
     if (object.bv_id) {
-      const { data: bv, error: bvError } = await supabase
+      const { data: bv, error: bvError } = await userClient
         .from('bvs')
         .select('id, name, customer_id, uses_customer_report_delivery, maintenance_report_portal')
         .eq('id', object.bv_id)
-        .single()
+        .maybeSingle()
       if (bvError || !bv) {
-        return new Response(
-          JSON.stringify({ success: true, notified: 0, message: 'BV nicht gefunden.' }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+        return jsonResponse(200, { success: true, notified: 0, message: 'BV nicht gefunden.' })
       }
-      customerId = bv.customer_id
-      bvName = bv.name ?? ''
+      customerId = bv.customer_id as string
+      bvName = (bv.name as string) ?? ''
       bvDeliveryRow = bv as typeof bvDeliveryRow
     } else {
       customerId = object.customer_id
@@ -144,23 +223,17 @@ serve(async (req) => {
     }
 
     if (!customerId) {
-      return new Response(
-        JSON.stringify({ success: true, notified: 0, message: 'Kein Kunde am Objekt.' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse(200, { success: true, notified: 0, message: 'Kein Kunde am Objekt.' })
     }
 
-    const { data: customerRow, error: custError } = await supabase
+    const { data: customerRow, error: custError } = await userClient
       .from('customers')
       .select('maintenance_report_portal')
       .eq('id', customerId)
       .maybeSingle()
 
     if (custError) {
-      return new Response(
-        JSON.stringify({ success: true, notified: 0, message: 'Kunde nicht lesbar.' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse(200, { success: true, notified: 0, message: 'Kunde nicht lesbar.' })
     }
 
     const custPortal = (customerRow as { maintenance_report_portal?: boolean } | null)?.maintenance_report_portal !==
@@ -172,14 +245,11 @@ serve(async (req) => {
       : custPortal
 
     if (!maintenancePortalAllowed) {
-      return new Response(
-        JSON.stringify({
-          success: true,
-          notified: 0,
-          message: 'Wartungsbericht ins Portal für diesen Kunden deaktiviert.',
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse(200, {
+        success: true,
+        notified: 0,
+        message: 'Wartungsbericht ins Portal für diesen Kunden deaktiviert.',
+      })
     }
 
     const { data: portalUsers, error: puError } = await supabase
@@ -189,10 +259,11 @@ serve(async (req) => {
       .not('email', 'is', null)
 
     if (puError || !portalUsers || portalUsers.length === 0) {
-      return new Response(
-        JSON.stringify({ success: true, notified: 0, message: 'Keine Portal-Benutzer für diesen Kunden.' }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return jsonResponse(200, {
+        success: true,
+        notified: 0,
+        message: 'Keine Portal-Benutzer für diesen Kunden.',
+      })
     }
 
     const objectLabel = object.internal_id ?? object.name ?? 'Objekt'
@@ -221,7 +292,7 @@ serve(async (req) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           from: fromEmail,
@@ -239,14 +310,10 @@ serve(async (req) => {
       }
     }
 
-    return new Response(
-      JSON.stringify({ success: true, notified: sent }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return jsonResponse(200, { success: true, notified: sent })
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : 'Unbekannter Fehler' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return jsonResponse(500, {
+      error: err instanceof Error ? err.message : 'Unbekannter Fehler',
+    })
   }
 })

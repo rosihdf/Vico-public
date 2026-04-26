@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { useToast } from './ToastContext'
 import { getSupabaseErrorMessage } from './supabaseErrors'
@@ -19,7 +19,6 @@ import {
   fetchObjects,
   fetchObjectsDirectUnderCustomer,
   duplicateObjectFromSource,
-  getObjectPhotoUrl,
   fetchMaintenanceReminders,
   fetchMaintenanceContractsByCustomer,
   fetchMaintenanceContractsByBv,
@@ -31,41 +30,41 @@ import {
 } from './lib/dataService'
 import { useComponentSettings } from './ComponentSettingsContext'
 import { useLicense } from './LicenseContext'
-import { checkCanCreateCustomer, getUsageLevel, getUsageMessage, hasFeature } from './lib/licenseService'
+import { checkCanCreateCustomer, hasFeature } from './lib/licenseService'
 import {
   generateQrBatchA4Pdf,
   type QrBatchPdfItem,
   type QrBatchPreset,
 } from './lib/generateQrBatchA4Pdf'
 import { getStoredLicenseNumber, reportLimitExceeded, isLicenseApiConfigured } from './lib/licensePortalApi'
-import { getObjectDisplayName, formatObjectRoomFloor } from './lib/objectUtils'
-import { AddressLookupFields } from './components/AddressLookupFields'
+import { getObjectDisplayName } from './lib/objectUtils'
 import ObjectFormModal from './components/ObjectFormModal'
 import { LoadingSpinner } from './components/LoadingSpinner'
-import ConfirmDialog from './components/ConfirmDialog'
 import EmptyState from '../shared/EmptyState'
-import MaintenanceContractModal from './components/MaintenanceContractModal'
+import { KundenConfirmDialog, type KundenConfirmDialogState } from './components/kunden/KundenConfirmDialog'
+import { KundenMaintenanceContractModalBridge } from './components/kunden/KundenMaintenanceContractModalBridge'
 import type { Customer, CustomerFormData, BV, BVFormData } from './types'
 import type { MaintenanceReminder, MaintenanceContract } from './types'
 
 const ObjectQRCodeModal = lazy(() => import('./ObjectQRCodeModal'))
 import type { Object as Obj } from './types'
+import { KundenLicenseUsageBanner } from './components/kunden/KundenLicenseUsageBanner'
+import { KundenFilterPanel } from './components/kunden/KundenFilterPanel'
+import { KundenArchivedSection } from './components/kunden/KundenArchivedSection'
+import { KundenQrBatchPdfBar } from './components/kunden/KundenQrBatchPdfBar'
+import {
+  KundenDuplicateObjectDialog,
+  type KundenDuplicateObjectDialogState,
+} from './components/kunden/KundenDuplicateObjectDialog'
+import { useKundenListFilters } from './hooks/useKundenListFilters'
+import { KundenCustomerFormModal } from './components/kunden/KundenCustomerFormModal'
+import { KundenBvFormModal } from './components/kunden/KundenBvFormModal'
+import { KundenObjectAccordionRow } from './components/kunden/KundenObjectAccordionRow'
+import { KundenBvAccordionHeader } from './components/kunden/KundenBvAccordionHeader'
+import { KundenPageToolbar } from './components/kunden/KundenPageToolbar'
 
 const makeQrBatchKey = (customerId: string, bvId: string | null, objectId: string) =>
   `${customerId}|${bvId ?? ''}|${objectId}`
-
-const ObjectProfileThumbInline = ({ path }: { path?: string | null }) => {
-  const p = path?.trim()
-  if (!p) return null
-  return (
-    <img
-      src={getObjectPhotoUrl(p)}
-      alt=""
-      className="w-10 h-10 rounded-md object-cover shrink-0 border border-slate-200 dark:border-slate-600"
-      loading="lazy"
-    />
-  )
-}
 
 const ProtocolMangelCustomerBadge = ({ count }: { count: number }) => {
   if (count <= 0) return null
@@ -73,20 +72,6 @@ const ProtocolMangelCustomerBadge = ({ count }: { count: number }) => {
   return (
     <span
       className="ml-2 inline-flex min-h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full bg-rose-100 px-2 text-xs font-bold text-rose-900 dark:bg-rose-900/45 dark:text-rose-100"
-      title={label}
-      aria-label={label}
-    >
-      {count > 99 ? '99+' : count}
-    </span>
-  )
-}
-
-const ProtocolMangelObjectBadge = ({ count }: { count: number }) => {
-  if (count <= 0) return null
-  const label = `${count} offene Protokoll-Mängel`
-  return (
-    <span
-      className="inline-flex min-h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-rose-100 px-1 text-[10px] font-bold text-rose-900 dark:bg-rose-900/45 dark:text-rose-100"
       title={label}
       aria-label={label}
     >
@@ -224,14 +209,7 @@ const Kunden = () => {
     bvId: string | null
     contract: MaintenanceContract | null
   }>({ open: false, customerId: null, bvId: null, contract: null })
-  const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean
-    title: string
-    message: string
-    confirmLabel: string
-    variant: 'danger' | 'default'
-    onConfirm: () => void
-  }>({
+  const [confirmDialog, setConfirmDialog] = useState<KundenConfirmDialogState>({
     open: false,
     title: '',
     message: '',
@@ -240,14 +218,14 @@ const Kunden = () => {
     onConfirm: () => {},
   })
 
-  const [duplicateObjectDialog, setDuplicateObjectDialog] = useState<{
-    open: boolean
-    source: Obj | null
-    copyPhotos: boolean
-    copyProfilePhoto: boolean
-    copyDocuments: boolean
-    busy: boolean
-  }>({ open: false, source: null, copyPhotos: false, copyProfilePhoto: true, copyDocuments: false, busy: false })
+  const [duplicateObjectDialog, setDuplicateObjectDialog] = useState<KundenDuplicateObjectDialogState>({
+    open: false,
+    source: null,
+    copyPhotos: false,
+    copyProfilePhoto: true,
+    copyDocuments: false,
+    busy: false,
+  })
 
   /** Nach Deep-Link (z. B. aus Aufträge) hierhin nach Schließen des Tür/Tor-Modals navigieren */
   const [objectModalReturnTo, setObjectModalReturnTo] = useState<string | null>(null)
@@ -484,77 +462,19 @@ const Kunden = () => {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [showForm, showBvForm])
 
-  const searchLower = searchQuery.trim().toLowerCase()
-  const matchStr = useCallback(
-    (v: string | null | undefined) => (v ?? '').toLowerCase().includes(searchLower),
-    [searchLower]
-  )
-  const filteredCustomers = useMemo(() => {
-    let list = customers
-    if (searchLower) {
-      list = list.filter((c) =>
-        matchStr(c.name) ||
-        matchStr(c.street) ||
-        matchStr(c.house_number) ||
-        matchStr(c.postal_code) ||
-        matchStr(c.city) ||
-        matchStr(c.email) ||
-        matchStr(c.phone) ||
-        matchStr(c.contact_name) ||
-        matchStr(c.contact_email) ||
-        matchStr(c.contact_phone)
-      )
-    }
-    if (filterPlz.trim()) {
-      const plzLower = filterPlz.trim().toLowerCase()
-      list = list.filter((c) => (c.postal_code ?? '').toLowerCase().includes(plzLower))
-    }
-    if (filterWartungsstatus !== 'all') {
-      list = list.filter((c) => customerWartungsstatus.get(c.id) === filterWartungsstatus)
-    }
-    const bvMin = filterBvMin.trim() ? parseInt(filterBvMin, 10) : null
-    const bvMax = filterBvMax.trim() ? parseInt(filterBvMax, 10) : null
-    if (bvMin != null && !Number.isNaN(bvMin)) {
-      list = list.filter((c) => (bvCountByCustomerId.get(c.id) ?? 0) >= bvMin)
-    }
-    if (bvMax != null && !Number.isNaN(bvMax)) {
-      list = list.filter((c) => (bvCountByCustomerId.get(c.id) ?? 0) <= bvMax)
-    }
-    return list
-  }, [
-    customers,
-    searchLower,
-    filterPlz,
-    filterWartungsstatus,
-    filterBvMin,
-    filterBvMax,
-    customerWartungsstatus,
-    bvCountByCustomerId,
-    matchStr,
-  ])
-
-  const filteredBvs = searchLower && expandedBvs.length > 0
-    ? expandedBvs.filter((b) =>
-        matchStr(b.name) ||
-        matchStr(b.street) ||
-        matchStr(b.house_number) ||
-        matchStr(b.postal_code) ||
-        matchStr(b.city) ||
-        matchStr(b.email) ||
-        matchStr(b.phone) ||
-        matchStr(b.contact_name)
-      )
-    : expandedBvs
-
-  const filteredObjects = searchLower && expandedObjects.length > 0
-    ? expandedObjects.filter((o) =>
-        matchStr(o.name) ||
-        matchStr(o.internal_id) ||
-        matchStr(o.room) ||
-        matchStr(o.floor) ||
-        matchStr(o.manufacturer)
-      )
-    : expandedObjects
+  const { searchLower, filteredCustomers, filteredBvs, filteredObjects, hasActiveFilters } =
+    useKundenListFilters({
+      customers,
+      searchQuery,
+      filterPlz,
+      filterWartungsstatus,
+      filterBvMin,
+      filterBvMax,
+      customerWartungsstatus,
+      bvCountByCustomerId,
+      expandedBvs,
+      expandedObjects,
+    })
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value)
@@ -566,12 +486,6 @@ const Kunden = () => {
     setFilterBvMin('')
     setFilterBvMax('')
   }
-
-  const hasActiveFilters =
-    filterPlz.trim() !== '' ||
-    filterWartungsstatus !== 'all' ||
-    filterBvMin.trim() !== '' ||
-    filterBvMax.trim() !== ''
 
   // --- Customer CRUD ---
 
@@ -1053,286 +967,96 @@ const Kunden = () => {
 
   return (
     <div className="p-4 min-w-0">
-      {license?.max_customers != null && (() => {
-        const msg = getUsageMessage(customerCountForLicense, license.max_customers, 'Kunden')
-        const level = getUsageLevel(customerCountForLicense, license.max_customers)
-        if (!msg) return null
-        return (
-          <div
-            className={`mb-4 p-4 rounded-xl border ${
-              level === 'blocked'
-                ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700 text-red-800 dark:text-red-300'
-                : level === 'critical'
-                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300'
-                  : 'bg-amber-50/80 dark:bg-amber-900/10 border-amber-200 dark:border-amber-700 text-amber-800 dark:text-amber-300'
-            }`}
-            role="status"
-          >
-            <p className="text-sm font-medium">{msg}</p>
-          </div>
-        )
-      })()}
+      <KundenLicenseUsageBanner
+        customerCountForLicense={customerCountForLicense}
+        maxCustomers={license?.max_customers}
+      />
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Kunden</h2>
-          {canUseQrBatch && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xl">
-              A4-PDF: Türen/Tore ankreuzen, Etikettgröße wählen und PDF herunterladen (Lizenz „A4-QR-Etiketten“).
-            </p>
-          )}
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <input
-            type="search"
-            placeholder="Name, Ort, Adresse, Kontakt…"
-            value={searchQuery}
-            onChange={handleSearchChange}
-            className="flex-1 sm:w-48 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-            aria-label="Kunden suchen"
-          />
-          {canEdit && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setShowNeuDropdown((v) => !v) }}
-                className="px-4 py-2.5 min-h-[40px] bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 font-medium border border-slate-300 dark:border-slate-600 flex items-center gap-1"
-                aria-expanded={showNeuDropdown}
-                aria-haspopup="true"
-                aria-label="Neu anlegen"
-              >
-                + Neu
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showNeuDropdown && (
-                <div
-                  className="absolute right-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 shadow-lg py-1 z-40"
-                  role="menu"
-                >
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setShowNeuDropdown(false); handleOpenCreate() }}
-                    className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                    role="menuitem"
-                  >
-                    Neuer Kunde
-                  </button>
-                  {canCreateBv && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setShowNeuDropdown(false)
-                        if (expandedCustomerId) handleOpenBvCreate()
-                      }}
-                      disabled={!expandedCustomerId}
-                      className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      role="menuitem"
-                      title={!expandedCustomerId ? 'Kunde zuerst ausklappen' : undefined}
-                    >
-                      Neues Objekt/BV
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setShowNeuDropdown(false)
-                      if (!expandedCustomerId) return
-                      setEditingObject(null)
-                      if (expandedBvId) {
-                        setEditingObjectBvId(expandedBvId)
-                        setEditingObjectCustomerId(null)
-                      } else {
-                        setEditingObjectBvId(null)
-                        setEditingObjectCustomerId(expandedCustomerId)
-                      }
-                    }}
-                    disabled={!expandedCustomerId || ((expandedBvs?.length ?? 0) > 0 && !expandedBvId)}
-                    className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                    role="menuitem"
-                    title={
-                      !expandedCustomerId
-                        ? 'Kunde zuerst ausklappen'
-                        : (expandedBvs?.length ?? 0) > 0 && !expandedBvId
-                          ? 'Objekt/BV ausklappen oder Kunde ohne Objekte/BV wählen'
-                          : undefined
-                    }
-                  >
-                    Neues Tür/Tor
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          {canDelete && (
-            <button
-              type="button"
-              onClick={() => setShowArchivedSection((v) => !v)}
-              className={`px-3 py-2 rounded-lg border text-sm font-medium ${
-                showArchivedSection
-                  ? 'bg-slate-200 dark:bg-slate-700 border-slate-400 dark:border-slate-500 text-slate-900 dark:text-slate-100'
-                  : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200'
-              }`}
-              aria-expanded={showArchivedSection}
-              aria-label="Archivierte Kunden ein- oder ausblenden"
-            >
-              Archiv
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            className={`px-3 py-2 rounded-lg border text-sm font-medium flex items-center gap-1.5 ${
-              hasActiveFilters
-                ? 'bg-vico-primary/20 border-vico-primary text-slate-800 dark:text-slate-100'
-                : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200'
-            }`}
-            aria-expanded={showFilters}
-            aria-label="Filter anzeigen"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-            </svg>
-            Filter
-            {hasActiveFilters && (
-              <span className="w-2 h-2 rounded-full bg-vico-primary" aria-hidden="true" />
-            )}
-          </button>
-        </div>
-      </div>
+      <KundenPageToolbar
+        canUseQrBatch={canUseQrBatch}
+        searchQuery={searchQuery}
+        onSearchChange={handleSearchChange}
+        canEdit={canEdit}
+        showNeuDropdown={showNeuDropdown}
+        onNeuToggleClick={(e) => {
+          e.stopPropagation()
+          setShowNeuDropdown((v) => !v)
+        }}
+        onNeuCustomerClick={(e) => {
+          e.stopPropagation()
+          setShowNeuDropdown(false)
+          handleOpenCreate()
+        }}
+        canCreateBv={canCreateBv}
+        onNeuBvClick={(e) => {
+          e.stopPropagation()
+          setShowNeuDropdown(false)
+          if (expandedCustomerId) handleOpenBvCreate()
+        }}
+        neuBvDisabled={!expandedCustomerId}
+        neuBvTitle={!expandedCustomerId ? 'Kunde zuerst ausklappen' : undefined}
+        onNeuDoorClick={(e) => {
+          e.stopPropagation()
+          setShowNeuDropdown(false)
+          if (!expandedCustomerId) return
+          setEditingObject(null)
+          if (expandedBvId) {
+            setEditingObjectBvId(expandedBvId)
+            setEditingObjectCustomerId(null)
+          } else {
+            setEditingObjectBvId(null)
+            setEditingObjectCustomerId(expandedCustomerId)
+          }
+        }}
+        neuDoorDisabled={!expandedCustomerId || ((expandedBvs?.length ?? 0) > 0 && !expandedBvId)}
+        neuDoorTitle={
+          !expandedCustomerId
+            ? 'Kunde zuerst ausklappen'
+            : (expandedBvs?.length ?? 0) > 0 && !expandedBvId
+              ? 'Objekt/BV ausklappen oder Kunde ohne Objekte/BV wählen'
+              : undefined
+        }
+        canDelete={canDelete}
+        showArchivedSection={showArchivedSection}
+        onToggleArchived={() => setShowArchivedSection((v) => !v)}
+        showFilters={showFilters}
+        hasActiveFilters={hasActiveFilters}
+        onToggleFilters={() => setShowFilters((v) => !v)}
+      />
 
       {showFilters && (
-        <div className="mb-4 p-4 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50/50 dark:bg-slate-800/50">
-          <div className="flex flex-wrap gap-4 items-end">
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">PLZ</span>
-              <input
-                type="text"
-                placeholder="z.B. 10115"
-                value={filterPlz}
-                onChange={(e) => setFilterPlz(e.target.value)}
-                className="w-28 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                aria-label="PLZ filtern"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Wartungsstatus</span>
-              <select
-                value={filterWartungsstatus}
-                onChange={(e) => setFilterWartungsstatus(e.target.value as typeof filterWartungsstatus)}
-                className="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-vico-primary bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-w-[140px]"
-                aria-label="Wartungsstatus filtern"
-              >
-                <option value="all">Alle</option>
-                <option value="overdue">Überfällig</option>
-                <option value="due_soon">Demnächst fällig</option>
-                <option value="ok">In Ordnung</option>
-                <option value="none">Keine Wartung</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">BV-Anzahl</span>
-              <div className="flex gap-2 items-center">
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="Min"
-                  value={filterBvMin}
-                  onChange={(e) => setFilterBvMin(e.target.value)}
-                  className="w-20 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  aria-label="Mindestanzahl BVs"
-                />
-                <span className="text-slate-500">–</span>
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="Max"
-                  value={filterBvMax}
-                  onChange={(e) => setFilterBvMax(e.target.value)}
-                  className="w-20 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  aria-label="Maximalanzahl BVs"
-                />
-              </div>
-            </label>
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 underline"
-                aria-label="Filter zurücksetzen"
-              >
-                Filter zurücksetzen
-              </button>
-            )}
-          </div>
-        </div>
+        <KundenFilterPanel
+          filterPlz={filterPlz}
+          setFilterPlz={setFilterPlz}
+          filterWartungsstatus={filterWartungsstatus}
+          setFilterWartungsstatus={setFilterWartungsstatus}
+          filterBvMin={filterBvMin}
+          setFilterBvMin={setFilterBvMin}
+          filterBvMax={filterBvMax}
+          setFilterBvMax={setFilterBvMax}
+          hasActiveFilters={hasActiveFilters}
+          onResetFilters={handleResetFilters}
+        />
       )}
 
-      {canDelete && showArchivedSection && (
-        <section
-          className="mb-4 p-4 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-100/80 dark:bg-slate-800/60"
-          aria-labelledby="kunden-archiv-heading"
-        >
-          <h3 id="kunden-archiv-heading" className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
-            Archivierte Kunden
-          </h3>
-          <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
-            Diese Kunden sind in den normalen Listen ausgeblendet. Wiederherstellen setzt Kunde, alle Objekte/BV und
-            Türen/Tore auf aktiv (nur online).
-          </p>
-          {isArchivedLoading ? (
-            <LoadingSpinner message="Lade Archiv…" size="sm" className="py-4" />
-          ) : archivedCustomers.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400 py-2">Keine archivierten Kunden.</p>
-          ) : (
-            <ul className="space-y-2">
-              {archivedCustomers.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-slate-800 dark:text-slate-100 truncate">{c.name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Archiviert:{' '}
-                      {c.archived_at
-                        ? new Date(c.archived_at).toLocaleString('de-DE', {
-                            dateStyle: 'medium',
-                            timeStyle: 'short',
-                          })
-                        : '—'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!isOnline()}
-                    onClick={() =>
-                      setConfirmDialog({
-                        open: true,
-                        title: 'Kunde wiederherstellen',
-                        message: `„${c.name}“ und alle zugehörigen Objekte/BV und Türen/Tore wieder in den Stammdaten anzeigen?`,
-                        confirmLabel: 'Wiederherstellen',
-                        variant: 'default',
-                        onConfirm: () => {
-                          setConfirmDialog((prev) => ({ ...prev, open: false }))
-                          void handleUnarchiveCustomer(c.id)
-                        },
-                      })
-                    }
-                    className="shrink-0 px-3 py-2 text-sm font-medium rounded-lg border border-emerald-600 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-                    aria-label={`Kunde ${c.name} wiederherstellen`}
-                  >
-                    Wiederherstellen
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
+      <KundenArchivedSection
+        visible={Boolean(canDelete && showArchivedSection)}
+        isArchivedLoading={isArchivedLoading}
+        archivedCustomers={archivedCustomers}
+        onRequestRestore={(c) =>
+          setConfirmDialog({
+            open: true,
+            title: 'Kunde wiederherstellen',
+            message: `„${c.name}“ und alle zugehörigen Objekte/BV und Türen/Tore wieder in den Stammdaten anzeigen?`,
+            confirmLabel: 'Wiederherstellen',
+            variant: 'default',
+            onConfirm: () => {
+              setConfirmDialog((prev) => ({ ...prev, open: false }))
+              void handleUnarchiveCustomer(c.id)
+            },
+          })
+        }
+      />
 
       {isLoading ? (
         <LoadingSpinner message="Lade Kunden…" className="py-8" />
@@ -1474,105 +1198,50 @@ const Kunden = () => {
                           ) : (
                             <ul className="space-y-1.5">
                               {directObjectsUnderCustomer.map((obj) => (
-                                <li
+                                <KundenObjectAccordionRow
                                   key={obj.id}
-                                  className="bg-white dark:bg-slate-900/80 rounded border border-slate-200 dark:border-slate-600 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
-                                >
-                                  <div className="min-w-0 flex items-center gap-2">
-                                    {canUseQrBatch && (
-                                      <label className="shrink-0 flex items-center cursor-pointer" title="Für A4-Sammel-PDF auswählen">
-                                        <input
-                                          type="checkbox"
-                                          checked={qrBatchSelection.has(makeQrBatchKey(customer.id, null, obj.id))}
-                                          onChange={() =>
-                                            toggleQrBatchItem({
-                                              customerId: customer.id,
-                                              bvId: null,
-                                              objectId: obj.id,
-                                              objectName: getObjectDisplayName(obj),
-                                              customerName: customer.name,
-                                              bvName: '',
-                                            })
-                                          }
-                                          className="rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
-                                          aria-label={`${getObjectDisplayName(obj)} für A4-PDF auswählen`}
-                                        />
-                                      </label>
-                                    )}
-                                    <ObjectProfileThumbInline path={obj.profile_photo_path} />
-                                    {(() => {
-                                      const reminder = remindersByObjectId.get(obj.id)
-                                      const status = reminder?.status
-                                      const title = reminder
-                                        ? status === 'overdue'
-                                          ? `Überfällig`
-                                          : status === 'due_soon'
-                                            ? `Bald fällig`
-                                            : 'Wartung in Ordnung'
-                                        : 'Kein Wartungsintervall'
-                                      const dotClass = status === 'overdue' ? 'bg-red-500' : status === 'due_soon' ? 'bg-amber-500' : 'bg-green-500'
-                                      return (
-                                        <span className={`shrink-0 w-2.5 h-2.5 rounded-full ${reminder ? dotClass : 'bg-slate-200'}`} title={title} aria-label={title} />
-                                      )
-                                    })()}
-                                    <div>
-                                      <p className="font-medium text-slate-600 dark:text-slate-300 text-xs inline-flex items-center gap-1.5 flex-wrap">
-                                        {getObjectDisplayName(obj)}
-                                        <ProtocolMangelObjectBadge count={protocolMangelCountByObjectId[obj.id] ?? 0} />
-                                      </p>
-                                      <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatObjectRoomFloor(obj)}</p>
-                                    </div>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {canEdit && (
-                                      <button
-                                        type="button"
-                                        onClick={() => { setEditingObject(obj); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
-                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                        aria-label={`${getObjectDisplayName(obj)} öffnen`}
-                                      >
-                                        Öffnen
-                                      </button>
-                                    )}
-                                    {canEdit && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenDuplicateObjectDialog(obj)}
-                                        disabled={!isOnline()}
-                                        title={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
-                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        aria-label={`${getObjectDisplayName(obj)} kopieren`}
-                                      >
-                                        Kopie
-                                      </button>
-                                    )}
-                                    {isEnabled('auftrag') && (
-                                      <Link
-                                        to={`/auftrag/neu-aus-qr?customerId=${customer.id}&objectId=${obj.id}`}
-                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                        aria-label={`Auftrag anlegen: ${getObjectDisplayName(obj)}`}
-                                      >
-                                        Auftrag
-                                      </Link>
-                                    )}
-                                    {isEnabled('wartungsprotokolle') && (
-                                      <Link
-                                        to={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
-                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                      >
-                                        Protokoll
-                                      </Link>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => setQrObject({ obj, customerId: customer.id, bvId: null, customerName: customer.name, bvName: '' })}
-                                      className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                      aria-label="QR-Code anzeigen"
-                                    >
-                                      QR-Code
-                                    </button>
-                                  </div>
-                                </li>
+                                  obj={obj}
+                                  protocolMangelCount={protocolMangelCountByObjectId[obj.id] ?? 0}
+                                  maintenanceReminder={remindersByObjectId.get(obj.id)}
+                                  reminderDisplayMode="short"
+                                  rowSurface="default"
+                                  canUseQrBatch={canUseQrBatch}
+                                  qrBatchChecked={qrBatchSelection.has(makeQrBatchKey(customer.id, null, obj.id))}
+                                  onToggleQrBatch={() =>
+                                    toggleQrBatchItem({
+                                      customerId: customer.id,
+                                      bvId: null,
+                                      objectId: obj.id,
+                                      objectName: getObjectDisplayName(obj),
+                                      customerName: customer.name,
+                                      bvName: '',
+                                    })
+                                  }
+                                  canEdit={canEdit}
+                                  onOpen={() => {
+                                    setEditingObject(obj)
+                                    setEditingObjectBvId(null)
+                                    setEditingObjectCustomerId(customer.id)
+                                  }}
+                                  openButtonLabel="Öffnen"
+                                  onDuplicate={() => handleOpenDuplicateObjectDialog(obj)}
+                                  duplicateDisabled={!isOnline()}
+                                  duplicateDisabledTitle={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
+                                  showAuftragLink={isEnabled('auftrag')}
+                                  auftragTo={`/auftrag/neu-aus-qr?customerId=${customer.id}&objectId=${obj.id}`}
+                                  showProtokollLink={isEnabled('wartungsprotokolle')}
+                                  protokollTo={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
+                                  onShowQr={() =>
+                                    setQrObject({
+                                      obj,
+                                      customerId: customer.id,
+                                      bvId: null,
+                                      customerName: customer.name,
+                                      bvName: '',
+                                    })
+                                  }
+                                  isolateRowClicks={false}
+                                />
                               ))}
                             </ul>
                           )}
@@ -1671,105 +1340,50 @@ const Kunden = () => {
                             ) : (
                               <ul className="space-y-1.5">
                                 {directObjectsUnderCustomer.map((obj) => (
-                                  <li
+                                  <KundenObjectAccordionRow
                                     key={obj.id}
-                                    className="bg-white dark:bg-slate-900/80 rounded border border-amber-200 dark:border-amber-800 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
-                                  >
-                                    <div className="min-w-0 flex items-center gap-2">
-                                      {canUseQrBatch && (
-                                        <label className="shrink-0 flex items-center cursor-pointer" title="Für A4-Sammel-PDF auswählen">
-                                          <input
-                                            type="checkbox"
-                                            checked={qrBatchSelection.has(makeQrBatchKey(customer.id, null, obj.id))}
-                                            onChange={() =>
-                                              toggleQrBatchItem({
-                                                customerId: customer.id,
-                                                bvId: null,
-                                                objectId: obj.id,
-                                                objectName: getObjectDisplayName(obj),
-                                                customerName: customer.name,
-                                                bvName: '',
-                                              })
-                                            }
-                                            className="rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
-                                            aria-label={`${getObjectDisplayName(obj)} für A4-PDF auswählen`}
-                                          />
-                                        </label>
-                                      )}
-                                      <ObjectProfileThumbInline path={obj.profile_photo_path} />
-                                      {(() => {
-                                        const reminder = remindersByObjectId.get(obj.id)
-                                        const status = reminder?.status
-                                        const title = reminder
-                                          ? status === 'overdue'
-                                            ? 'Überfällig'
-                                            : status === 'due_soon'
-                                              ? 'Bald fällig'
-                                              : 'Wartung in Ordnung'
-                                          : 'Kein Wartungsintervall'
-                                        const dotClass = status === 'overdue' ? 'bg-red-500' : status === 'due_soon' ? 'bg-amber-500' : 'bg-green-500'
-                                        return (
-                                          <span className={`shrink-0 w-2.5 h-2.5 rounded-full ${reminder ? dotClass : 'bg-slate-200'}`} title={title} aria-label={title} />
-                                        )
-                                      })()}
-                                      <div>
-                                        <p className="font-medium text-slate-600 dark:text-slate-300 text-xs inline-flex items-center gap-1.5 flex-wrap">
-                                          {getObjectDisplayName(obj)}
-                                          <ProtocolMangelObjectBadge count={protocolMangelCountByObjectId[obj.id] ?? 0} />
-                                        </p>
-                                        <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatObjectRoomFloor(obj)}</p>
-                                      </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-1">
-                                      {canEdit && (
-                                        <button
-                                          type="button"
-                                          onClick={() => { setEditingObject(obj); setEditingObjectBvId(null); setEditingObjectCustomerId(customer.id) }}
-                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                          aria-label={`${getObjectDisplayName(obj)} öffnen`}
-                                        >
-                                          Öffnen (Objekt/BV zuordnen)
-                                        </button>
-                                      )}
-                                      {canEdit && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenDuplicateObjectDialog(obj)}
-                                          disabled={!isOnline()}
-                                          title={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
-                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                          aria-label={`${getObjectDisplayName(obj)} kopieren`}
-                                        >
-                                          Kopie
-                                        </button>
-                                      )}
-                                      {isEnabled('auftrag') && (
-                                        <Link
-                                          to={`/auftrag/neu-aus-qr?customerId=${customer.id}&objectId=${obj.id}`}
-                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                          aria-label={`Auftrag anlegen: ${getObjectDisplayName(obj)}`}
-                                        >
-                                          Auftrag
-                                        </Link>
-                                      )}
-                                      {isEnabled('wartungsprotokolle') && (
-                                        <Link
-                                          to={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
-                                          className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                        >
-                                          Protokoll
-                                        </Link>
-                                      )}
-                                      <button
-                                        type="button"
-                                        onClick={() => setQrObject({ obj, customerId: customer.id, bvId: null, customerName: customer.name, bvName: '' })}
-                                        className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                        aria-label="QR-Code anzeigen"
-                                      >
-                                        QR-Code
-                                      </button>
-                                    </div>
-                                  </li>
+                                    obj={obj}
+                                    protocolMangelCount={protocolMangelCountByObjectId[obj.id] ?? 0}
+                                    maintenanceReminder={remindersByObjectId.get(obj.id)}
+                                    reminderDisplayMode="short"
+                                    rowSurface="amber"
+                                    canUseQrBatch={canUseQrBatch}
+                                    qrBatchChecked={qrBatchSelection.has(makeQrBatchKey(customer.id, null, obj.id))}
+                                    onToggleQrBatch={() =>
+                                      toggleQrBatchItem({
+                                        customerId: customer.id,
+                                        bvId: null,
+                                        objectId: obj.id,
+                                        objectName: getObjectDisplayName(obj),
+                                        customerName: customer.name,
+                                        bvName: '',
+                                      })
+                                    }
+                                    canEdit={canEdit}
+                                    onOpen={() => {
+                                      setEditingObject(obj)
+                                      setEditingObjectBvId(null)
+                                      setEditingObjectCustomerId(customer.id)
+                                    }}
+                                    openButtonLabel="Öffnen (Objekt/BV zuordnen)"
+                                    onDuplicate={() => handleOpenDuplicateObjectDialog(obj)}
+                                    duplicateDisabled={!isOnline()}
+                                    duplicateDisabledTitle={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
+                                    showAuftragLink={isEnabled('auftrag')}
+                                    auftragTo={`/auftrag/neu-aus-qr?customerId=${customer.id}&objectId=${obj.id}`}
+                                    showProtokollLink={isEnabled('wartungsprotokolle')}
+                                    protokollTo={`/kunden/${customer.id}/objekte/${obj.id}/wartung`}
+                                    onShowQr={() =>
+                                      setQrObject({
+                                        obj,
+                                        customerId: customer.id,
+                                        bvId: null,
+                                        customerName: customer.name,
+                                        bvName: '',
+                                      })
+                                    }
+                                    isolateRowClicks={false}
+                                  />
                                 ))}
                               </ul>
                             )}
@@ -1783,78 +1397,34 @@ const Kunden = () => {
                                 key={bv.id}
                                 className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden"
                               >
-                                <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleObjects(bv.id)}
-                                    className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                    aria-expanded={isBvExpanded}
-                                    aria-label={`Türen/Tore für ${bv.name} ${isBvExpanded ? 'einklappen' : 'ausklappen'}`}
-                                  >
-                                    <svg
-                                      className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${isBvExpanded ? 'rotate-180' : ''}`}
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium text-slate-700 dark:text-slate-200">{bv.name}</p>
-                                      {(bv.street || bv.house_number || bv.postal_code || bv.city) && (
-                                        <p className="text-xs text-slate-500">
-                                          {[
-                                            [bv.street, bv.house_number].filter(Boolean).join(' '),
-                                            [bv.postal_code, bv.city].filter(Boolean).join(' '),
-                                          ]
-                                            .filter(Boolean)
-                                            .join(', ')}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </button>
-                                  <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                                    {canEdit && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenBvEdit(bv)}
-                                        className="inline-flex min-h-[32px] items-center rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700/40"
-                                        aria-label={`${bv.name} öffnen`}
-                                      >
-                                        Öffnen
-                                      </button>
-                                    )}
-                                    {canDelete && (
-                                      <button
-                                        type="button"
-                                        disabled={!isOnline()}
-                                        title={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
-                                        onClick={() => {
-                                          if (!isOnline()) {
-                                            showError('Archivieren ist nur bei Internetverbindung möglich.')
-                                            return
-                                          }
-                                          setConfirmDialog({
-                                            open: true,
-                                            title: 'Objekt/BV archivieren',
-                                            message:
-                                              'Objekt/BV und alle zugehörigen Türen/Tore archivieren? Listen werden bereinigt; Historie bleibt.',
-                                            confirmLabel: 'Archivieren',
-                                            variant: 'default',
-                                            onConfirm: () => {
-                                              setConfirmDialog((c) => ({ ...c, open: false }))
-                                              handleArchiveBv(bv.id)
-                                            },
-                                          })
-                                        }}
-                                        className="inline-flex min-h-[32px] items-center rounded-lg border border-amber-200 px-3 py-1.5 text-sm text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/30 disabled:cursor-not-allowed disabled:opacity-50"
-                                        aria-label={`${bv.name} archivieren`}
-                                      >
-                                        Archiv
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
+                                <KundenBvAccordionHeader
+                                  bv={bv}
+                                  isExpanded={isBvExpanded}
+                                  onToggleExpand={() => handleToggleObjects(bv.id)}
+                                  canEdit={canEdit}
+                                  canDelete={canDelete}
+                                  onOpenEdit={() => handleOpenBvEdit(bv)}
+                                  archiveDisabled={!isOnline()}
+                                  archiveDisabledTitle={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
+                                  onArchiveClick={() => {
+                                    if (!isOnline()) {
+                                      showError('Archivieren ist nur bei Internetverbindung möglich.')
+                                      return
+                                    }
+                                    setConfirmDialog({
+                                      open: true,
+                                      title: 'Objekt/BV archivieren',
+                                      message:
+                                        'Objekt/BV und alle zugehörigen Türen/Tore archivieren? Listen werden bereinigt; Historie bleibt.',
+                                      confirmLabel: 'Archivieren',
+                                      variant: 'default',
+                                      onConfirm: () => {
+                                        setConfirmDialog((c) => ({ ...c, open: false }))
+                                        handleArchiveBv(bv.id)
+                                      },
+                                    })
+                                  }}
+                                />
 
                                 {isBvExpanded && (
                                   <div className="border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 px-3 py-2">
@@ -1880,128 +1450,50 @@ const Kunden = () => {
                                       <>
                                         <ul className="space-y-1.5">
                                           {filteredObjects.map((obj) => (
-                                            <li
+                                            <KundenObjectAccordionRow
                                               key={obj.id}
-                                              className="bg-white dark:bg-slate-900/80 rounded border border-slate-200 dark:border-slate-600 p-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5"
-                                            >
-                                              <div className="min-w-0 flex items-center gap-2">
-                                                {canUseQrBatch && (
-                                                  <label className="shrink-0 flex items-center cursor-pointer" title="Für A4-Sammel-PDF auswählen">
-                                                    <input
-                                                      type="checkbox"
-                                                      checked={qrBatchSelection.has(makeQrBatchKey(customer.id, bv.id, obj.id))}
-                                                      onChange={() =>
-                                                        toggleQrBatchItem({
-                                                          customerId: customer.id,
-                                                          bvId: bv.id,
-                                                          objectId: obj.id,
-                                                          objectName: getObjectDisplayName(obj),
-                                                          customerName: customer.name,
-                                                          bvName: bv.name,
-                                                        })
-                                                      }
-                                                      className="rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
-                                                      aria-label={`${getObjectDisplayName(obj)} für A4-PDF auswählen`}
-                                                    />
-                                                  </label>
-                                                )}
-                                                <ObjectProfileThumbInline path={obj.profile_photo_path} />
-                                                {(() => {
-                                                  const reminder = remindersByObjectId.get(obj.id)
-                                                  const status = reminder?.status
-                                                  const title = reminder
-                                                    ? status === 'overdue'
-                                                      ? `Überfällig (seit ${reminder.days_until_due != null ? Math.abs(reminder.days_until_due) : '?'} Tagen)`
-                                                      : status === 'due_soon'
-                                                        ? `Bald fällig (in ${reminder.days_until_due ?? '?'} Tagen)`
-                                                        : 'Wartung in Ordnung'
-                                                    : 'Kein Wartungsintervall'
-                                                  const dotClass = status
-                                                    ? status === 'overdue'
-                                                      ? 'bg-red-500'
-                                                      : status === 'due_soon'
-                                                        ? 'bg-amber-500'
-                                                        : 'bg-green-500'
-                                                    : 'bg-slate-200 border border-slate-300'
-                                                  return (
-                                                    <span
-                                                      className={`shrink-0 w-2.5 h-2.5 rounded-full ${dotClass}`}
-                                                      title={title}
-                                                      aria-label={title}
-                                                    />
-                                                  )
-                                                })()}
-                                                <div>
-                                                  <p className="font-medium text-slate-600 dark:text-slate-300 text-xs inline-flex items-center gap-1.5 flex-wrap">
-                                                    {getObjectDisplayName(obj)}
-                                                    <ProtocolMangelObjectBadge count={protocolMangelCountByObjectId[obj.id] ?? 0} />
-                                                  </p>
-                                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                                    {formatObjectRoomFloor(obj)}
-                                                  </p>
-                                                </div>
-                                              </div>
-                                              <div className="flex flex-wrap gap-1">
-                                                {canEdit && (
-                                                  <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation()
-                                                      setEditingObject(obj)
-                                                      setEditingObjectBvId(bv.id)
-                                                      setEditingObjectCustomerId(customer.id)
-                                                    }}
-                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                                    aria-label={`${getObjectDisplayName(obj)} öffnen`}
-                                                  >
-                                                    Öffnen
-                                                  </button>
-                                                )}
-                                                {canEdit && (
-                                                  <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation()
-                                                      handleOpenDuplicateObjectDialog(obj)
-                                                    }}
-                                                    disabled={!isOnline()}
-                                                    title={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
-                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    aria-label={`${getObjectDisplayName(obj)} kopieren`}
-                                                  >
-                                                    Kopie
-                                                  </button>
-                                                )}
-                                                {isEnabled('auftrag') && (
-                                                  <Link
-                                                    to={`/auftrag/neu-aus-qr?customerId=${customer.id}&bvId=${bv.id}&objectId=${obj.id}`}
-                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                                    aria-label={`Auftrag anlegen: ${getObjectDisplayName(obj)}`}
-                                                  >
-                                                    Auftrag
-                                                  </Link>
-                                                )}
-                                                {isEnabled('wartungsprotokolle') && (
-                                                  <Link
-                                                    to={`/kunden/${customer.id}/bvs/${bv.id}/objekte/${obj.id}/wartung`}
-                                                    className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                                  >
-                                                    Protokoll
-                                                  </Link>
-                                                )}
-                                                <button
-                                                  type="button"
-                                                  onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    setQrObject({ obj, customerId: customer.id, bvId: bv.id, customerName: customer.name, bvName: bv.name })
-                                                  }}
-                                                  className="px-2.5 py-1.5 min-h-[32px] inline-flex items-center text-xs text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                                                  aria-label="QR-Code anzeigen"
-                                                >
-                                                  QR-Code
-                                                </button>
-                                              </div>
-                                            </li>
+                                              obj={obj}
+                                              protocolMangelCount={protocolMangelCountByObjectId[obj.id] ?? 0}
+                                              maintenanceReminder={remindersByObjectId.get(obj.id)}
+                                              reminderDisplayMode="long"
+                                              rowSurface="default"
+                                              canUseQrBatch={canUseQrBatch}
+                                              qrBatchChecked={qrBatchSelection.has(makeQrBatchKey(customer.id, bv.id, obj.id))}
+                                              onToggleQrBatch={() =>
+                                                toggleQrBatchItem({
+                                                  customerId: customer.id,
+                                                  bvId: bv.id,
+                                                  objectId: obj.id,
+                                                  objectName: getObjectDisplayName(obj),
+                                                  customerName: customer.name,
+                                                  bvName: bv.name,
+                                                })
+                                              }
+                                              canEdit={canEdit}
+                                              onOpen={() => {
+                                                setEditingObject(obj)
+                                                setEditingObjectBvId(bv.id)
+                                                setEditingObjectCustomerId(customer.id)
+                                              }}
+                                              openButtonLabel="Öffnen"
+                                              onDuplicate={() => handleOpenDuplicateObjectDialog(obj)}
+                                              duplicateDisabled={!isOnline()}
+                                              duplicateDisabledTitle={!isOnline() ? 'Nur bei Internetverbindung' : undefined}
+                                              showAuftragLink={isEnabled('auftrag')}
+                                              auftragTo={`/auftrag/neu-aus-qr?customerId=${customer.id}&bvId=${bv.id}&objectId=${obj.id}`}
+                                              showProtokollLink={isEnabled('wartungsprotokolle')}
+                                              protokollTo={`/kunden/${customer.id}/bvs/${bv.id}/objekte/${obj.id}/wartung`}
+                                              onShowQr={() =>
+                                                setQrObject({
+                                                  obj,
+                                                  customerId: customer.id,
+                                                  bvId: bv.id,
+                                                  customerName: customer.name,
+                                                  bvName: bv.name,
+                                                })
+                                              }
+                                              isolateRowClicks
+                                            />
                                           ))}
                                         </ul>
                                         {canEdit && (
@@ -2125,130 +1617,19 @@ const Kunden = () => {
         </ul>
       )}
 
-      {duplicateObjectDialog.open && duplicateObjectDialog.source ? (
-        <div
-          className="fixed inset-0 z-[55] flex items-center justify-center bg-black/50 p-4"
-          role="button"
-          tabIndex={0}
-          onClick={() => handleDuplicateObjectDialogClose()}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              handleDuplicateObjectDialogClose()
-            }
-          }}
-          aria-label="Dialog schließen"
-        >
-          <div
-            role="dialog"
-            aria-modal
-            aria-labelledby="dup-object-title"
-            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full min-w-0 p-4 border border-slate-200 dark:border-slate-600"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 id="dup-object-title" className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-              Tür/Tor kopieren
-            </h3>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Es wird eine neue Tür/Tor mit eigener ID angelegt; die Stammdaten werden übernommen. Die Bezeichnung
-              erhält den Zusatz „(Duplikat)“, die interne ID einen eindeutigen Suffix. Wählen Sie unten, was zusätzlich
-              kopiert werden soll (jeweils eigene Dateien im Speicher).
-            </p>
-            <div className="mt-4 space-y-3">
-              <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
-                  checked={duplicateObjectDialog.copyProfilePhoto}
-                  disabled={duplicateObjectDialog.busy}
-                  onChange={(e) =>
-                    setDuplicateObjectDialog((d) =>
-                      d.source ? { ...d, copyProfilePhoto: e.target.checked } : d
-                    )
-                  }
-                  aria-describedby="dup-profile-hint"
-                />
-                <span>
-                  Profilfoto übernehmen
-                  <span id="dup-profile-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Nur sinnvoll, wenn an der Quelle ein Profilbild hinterlegt ist.
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
-                  checked={duplicateObjectDialog.copyPhotos}
-                  disabled={duplicateObjectDialog.busy}
-                  onChange={(e) =>
-                    setDuplicateObjectDialog((d) =>
-                      d.source ? { ...d, copyPhotos: e.target.checked } : d
-                    )
-                  }
-                  aria-describedby="dup-gallery-hint"
-                />
-                <span>
-                  Galerie-Fotos übernehmen
-                  <span id="dup-gallery-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Normale Objekt-Fotos (Galerie), nicht Profilfoto und nicht Dokumente.
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 rounded border-slate-400 text-vico-primary focus:ring-vico-primary"
-                  checked={duplicateObjectDialog.copyDocuments}
-                  disabled={duplicateObjectDialog.busy}
-                  onChange={(e) =>
-                    setDuplicateObjectDialog((d) =>
-                      d.source ? { ...d, copyDocuments: e.target.checked } : d
-                    )
-                  }
-                  aria-describedby="dup-docs-hint"
-                />
-                <span>
-                  Dokumente übernehmen (Zeichnungen, Zertifikate, …)
-                  <span id="dup-docs-hint" className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Einträge unter „Dokumente zur Tür“ inkl. Datei im Dokumenten-Speicher.
-                  </span>
-                </span>
-              </label>
-            </div>
-            <div className="mt-6 flex flex-wrap gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => handleDuplicateObjectDialogClose()}
-                disabled={duplicateObjectDialog.busy}
-                className="px-4 py-2 min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/50 disabled:opacity-50"
-              >
-                Abbrechen
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleDuplicateObjectConfirm()}
-                disabled={duplicateObjectDialog.busy}
-                className="px-4 py-2 min-h-[40px] rounded-lg bg-vico-button dark:bg-vico-primary text-slate-800 dark:text-white font-medium border border-slate-300 dark:border-slate-600 hover:bg-vico-button-hover dark:hover:opacity-90 disabled:opacity-50"
-              >
-                {duplicateObjectDialog.busy ? 'Wird angelegt…' : 'Kopie anlegen'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <KundenDuplicateObjectDialog
+        dialog={duplicateObjectDialog}
+        setDialog={setDuplicateObjectDialog}
+        onClose={handleDuplicateObjectDialogClose}
+        onConfirm={handleDuplicateObjectConfirm}
+      />
 
-      <ConfirmDialog
-        open={confirmDialog.open}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        confirmLabel={confirmDialog.confirmLabel}
-        variant={confirmDialog.variant}
-        onConfirm={confirmDialog.onConfirm}
+      <KundenConfirmDialog
+        state={confirmDialog}
         onCancel={() => setConfirmDialog((c) => ({ ...c, open: false }))}
       />
 
-      <MaintenanceContractModal
+      <KundenMaintenanceContractModalBridge
         open={contractModal.open}
         customerId={contractModal.customerId}
         bvId={contractModal.bvId}
@@ -2303,769 +1684,55 @@ const Kunden = () => {
         />
       )}
 
-      {/* Kunde Formular Modal */}
       {showForm && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
-          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
-          onClick={handleCloseForm}
-        >
-          <div
-            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col border border-slate-200 dark:border-slate-600"
-            role="dialog"
-            aria-modal
-            onClick={(e) => e.stopPropagation()}
-            aria-labelledby="form-title"
-          >
-            <div className="p-4 sticky top-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
-              <h3 id="form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                {editingId ? 'Kunde öffnen' : 'Kunde anlegen'}
-              </h3>
-            </div>
-            <form onSubmit={handleSubmit} className="p-4 space-y-4 min-w-0">
-              <div className="min-w-0">
-                <label htmlFor="name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Name *
-                </label>
-                <input
-                  id="name"
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => handleFormChange('name', e.target.value)}
-                  className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  required
-                />
-              </div>
-              <AddressLookupFields
-                street={formData.street}
-                houseNumber={formData.house_number}
-                postalCode={formData.postal_code}
-                city={formData.city}
-                onStreetChange={(v) => handleFormChange('street', v)}
-                onHouseNumberChange={(v) => handleFormChange('house_number', v)}
-                onPostalCodeChange={(v) => handleFormChange('postal_code', v)}
-                onCityChange={(v) => handleFormChange('city', v)}
-                streetId="street"
-                houseNumberId="house_number"
-                postalCodeId="postal_code"
-                cityId="city"
-              />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="min-w-0">
-                  <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    E-Mail
-                  </label>
-                  <input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => handleFormChange('email', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <label htmlFor="phone" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Telefon
-                  </label>
-                  <input
-                    id="phone"
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => handleFormChange('phone', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
-                </div>
-              </div>
-              <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Ansprechpartner</p>
-                <div className="space-y-2">
-                  <div className="min-w-0">
-                    <label
-                      htmlFor="customer-contact-name"
-                      className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
-                    >
-                      Name
-                    </label>
-                    <input
-                      id="customer-contact-name"
-                      type="text"
-                      placeholder="Name"
-                      value={formData.contact_name}
-                      onChange={(e) => handleFormChange('contact_name', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div className="min-w-0">
-                      <label
-                        htmlFor="customer-contact-email"
-                        className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
-                      >
-                        E-Mail
-                      </label>
-                      <input
-                        id="customer-contact-email"
-                        type="email"
-                        placeholder="E-Mail"
-                        value={formData.contact_email}
-                        onChange={(e) => handleFormChange('contact_email', e.target.value)}
-                        className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <label
-                        htmlFor="customer-contact-phone"
-                        className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
-                      >
-                        Telefon
-                      </label>
-                      <input
-                        id="customer-contact-phone"
-                        type="tel"
-                        placeholder="Telefon"
-                        value={formData.contact_phone}
-                        onChange={(e) => handleFormChange('contact_phone', e.target.value)}
-                        className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                    Zustellweg: E-Mail direkt
-                  </span>
-                  <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
-                    Quelle: Kunde
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <p
-                    id="wartungs-email-kunde-label"
-                    className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
-                  >
-                    Wartungsbericht · E-Mail
-                  </p>
-                  <button
-                    type="button"
-                    role="switch"
-                    tabIndex={0}
-                    aria-checked={formData.maintenance_report_email}
-                    aria-labelledby="wartungs-email-kunde-label"
-                    onClick={() => handleFormChange('maintenance_report_email', !formData.maintenance_report_email)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        handleFormChange('maintenance_report_email', !formData.maintenance_report_email)
-                      }
-                    }}
-                    className={[
-                      'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
-                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
-                      formData.maintenance_report_email ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
-                    ].join(' ')}
-                  >
-                    <span
-                      className={[
-                        'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
-                        formData.maintenance_report_email ? 'translate-x-5' : 'translate-x-0.5',
-                      ].join(' ')}
-                      aria-hidden
-                    />
-                  </button>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Ist diese Option aktiv, wird der Wartungsbericht direkt an die hier hinterlegte E-Mail-Adresse
-                  zugestellt.
-                </p>
-                {formData.maintenance_report_email && (
-                  <input
-                    type="email"
-                    placeholder="Wartungsbericht E-Mail-Adresse"
-                    value={formData.maintenance_report_email_address}
-                    onChange={(e) => handleFormChange('maintenance_report_email_address', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
-                )}
-              </div>
-              {showPortalDeliveryToggles && (
-                <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                      Zustellweg: Portal
-                    </span>
-                    <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
-                      Wirkung: Benachrichtigung + Abruf im Portal
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Für diesen Kunden bestehen Kundenportal-Zugänge. Die Schalter unten steuern, ob Wartungs- und
-                    Monteursberichte zusätzlich im Kundenportal sichtbar werden.
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Bei aktiver Portal-Freigabe erhalten Portal-Benutzer eine Information, dass ein neuer Bericht im
-                    Kundenportal verfügbar ist.
-                  </p>
-                  <div className="flex items-center justify-between gap-3">
-                    <p
-                      id="monteur-portal-kunde-label"
-                      className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
-                    >
-                      Monteursbericht · Portal
-                    </p>
-                    <button
-                      type="button"
-                      role="switch"
-                      tabIndex={0}
-                      aria-checked={formData.monteur_report_portal}
-                      aria-labelledby="monteur-portal-kunde-label"
-                      onClick={() => handleMonteurPortalToggle(!formData.monteur_report_portal)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          handleMonteurPortalToggle(!formData.monteur_report_portal)
-                        }
-                      }}
-                      className={[
-                        'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
-                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
-                        formData.monteur_report_portal ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
-                      ].join(' ')}
-                    >
-                      <span
-                        className={[
-                          'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
-                          formData.monteur_report_portal ? 'translate-x-5' : 'translate-x-0.5',
-                        ].join(' ')}
-                        aria-hidden
-                      />
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <p
-                      id="wartungs-portal-kunde-label"
-                      className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
-                    >
-                      Wartungsbericht · Portal
-                    </p>
-                    <button
-                      type="button"
-                      role="switch"
-                      tabIndex={0}
-                      aria-checked={formData.maintenance_report_portal}
-                      aria-labelledby="wartungs-portal-kunde-label"
-                      onClick={() =>
-                        handleMaintenanceReportPortalToggle(!formData.maintenance_report_portal)
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          handleMaintenanceReportPortalToggle(!formData.maintenance_report_portal)
-                        }
-                      }}
-                      className={[
-                        'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
-                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
-                        formData.maintenance_report_portal ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
-                      ].join(' ')}
-                    >
-                      <span
-                        className={[
-                          'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
-                          formData.maintenance_report_portal ? 'translate-x-5' : 'translate-x-0.5',
-                        ].join(' ')}
-                        aria-hidden
-                      />
-                    </button>
-                  </div>
-                </div>
-              )}
-              {hasKundenportalFeature && editingId && (
-                <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Kundenportal</p>
-                  <div className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 p-3 space-y-2">
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
-                      Weitere Einstellungen für Kundenportal-Zugänge & Sichtbarkeit (Benutzerzuordnung und Objekt/BV)
-                      erfolgen zentral in der Benutzerverwaltung.
-                    </p>
-                    {canOpenBenutzerverwaltung ? (
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                          Zugeordnete Portal-Benutzer: {portalUserCountForForm}
-                        </p>
-                        <Link
-                          to="/benutzerverwaltung#portal-zugaenge"
-                          className="inline-flex items-center rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50"
-                          aria-label="Benutzerverwaltung öffnen"
-                        >
-                          Zur Benutzerverwaltung
-                        </Link>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Die Administration verwaltet Kundenportal-Zugänge zentral in der Benutzerverwaltung.
-                      </p>
-                    )}
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Aktuelle Freigabe Kunde: Monteursbericht {formData.monteur_report_portal ? 'aktiv' : 'inaktiv'} ·
-                      Wartungsbericht {formData.maintenance_report_portal ? 'aktiv' : 'inaktiv'}.
-                    </p>
-                  </div>
-                </div>
-              )}
-              {formError && (
-                <div className="text-sm text-red-600 dark:text-red-400" role="alert">
-                  <p>{formError}</p>
-                  {formError.startsWith('RLS-Fehler') && (
-                    <Link
-                      to="/einstellungen"
-                      className="mt-2 inline-block px-3 py-1.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/60 text-xs font-medium"
-                    >
-                      → Zu Einstellungen (RLS-Fix)
-                    </Link>
-                  )}
-                </div>
-              )}
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="flex-1 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 disabled:opacity-50 border border-slate-300 dark:border-slate-600"
-                >
-                  {isSaving ? 'Speichern...' : 'Speichern'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCloseForm}
-                  className="px-4 py-2 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <KundenCustomerFormModal
+          editingId={editingId}
+          formData={formData}
+          formError={formError}
+          isSaving={isSaving}
+          showPortalDeliveryToggles={showPortalDeliveryToggles}
+          hasKundenportalFeature={hasKundenportalFeature}
+          canOpenBenutzerverwaltung={canOpenBenutzerverwaltung}
+          portalUserCountForForm={portalUserCountForForm}
+          onClose={handleCloseForm}
+          onSubmit={handleSubmit}
+          onFormChange={handleFormChange}
+          onMonteurPortalToggle={handleMonteurPortalToggle}
+          onMaintenanceReportPortalToggle={handleMaintenanceReportPortalToggle}
+        />
       )}
 
-      {/* BV Formular Modal */}
       {showBvForm && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto overscroll-contain"
-          style={{ padding: 'max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left))' }}
-          onClick={handleCloseBvForm}
-        >
-          <div
-            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg min-w-0 my-auto max-h-[min(90vh,90dvh)] overflow-y-auto flex flex-col border border-slate-200 dark:border-slate-600"
-            role="dialog"
-            aria-modal
-            onClick={(e) => e.stopPropagation()}
-            aria-labelledby="bv-form-title"
-          >
-            <div className="p-4 sticky top-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
-              <h3 id="bv-form-title" className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                {bvEditingId ? 'Objekt/BV öffnen' : 'Objekt/BV anlegen'}
-              </h3>
-            </div>
-            <form onSubmit={handleBvSubmit} className="p-4 space-y-4 min-w-0">
-              {!bvEditingId && (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={bvFormData.copy_from_customer}
-                    onChange={(e) => {
-                      handleBvFormChange('copy_from_customer', e.target.checked)
-                      if (e.target.checked) handleCopyFromCustomer()
-                    }}
-                    className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800"
-                  />
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Daten aus Kundenverwaltung übernehmen
-                  </span>
-                </label>
-              )}
-              <div className="min-w-0">
-                <label htmlFor="bv-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Name *
-                </label>
-                <input
-                  id="bv-name"
-                  type="text"
-                  value={bvFormData.name}
-                  onChange={(e) => handleBvFormChange('name', e.target.value)}
-                  className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  required
-                />
-              </div>
-              <AddressLookupFields
-                street={bvFormData.street}
-                houseNumber={bvFormData.house_number}
-                postalCode={bvFormData.postal_code}
-                city={bvFormData.city}
-                onStreetChange={(v) => handleBvFormChange('street', v)}
-                onHouseNumberChange={(v) => handleBvFormChange('house_number', v)}
-                onPostalCodeChange={(v) => handleBvFormChange('postal_code', v)}
-                onCityChange={(v) => handleBvFormChange('city', v)}
-                streetId="bv-street"
-                houseNumberId="bv-house_number"
-                postalCodeId="bv-postal_code"
-                cityId="bv-city"
-              />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="min-w-0">
-                  <label htmlFor="bv-email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    E-Mail
-                  </label>
-                  <input
-                    id="bv-email"
-                    type="email"
-                    value={bvFormData.email}
-                    onChange={(e) => handleBvFormChange('email', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
-                </div>
-                <div className="min-w-0">
-                  <label htmlFor="bv-phone" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Telefon
-                  </label>
-                  <input
-                    id="bv-phone"
-                    type="tel"
-                    value={bvFormData.phone}
-                    onChange={(e) => handleBvFormChange('phone', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
-                </div>
-              </div>
-              <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Ansprechpartner</p>
-                <div className="space-y-2">
-                  <div className="min-w-0">
-                    <label
-                      htmlFor="bv-contact-name"
-                      className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
-                    >
-                      Name
-                    </label>
-                    <input
-                      id="bv-contact-name"
-                      type="text"
-                      placeholder="Name"
-                      value={bvFormData.contact_name}
-                      onChange={(e) => handleBvFormChange('contact_name', e.target.value)}
-                      className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div className="min-w-0">
-                      <label
-                        htmlFor="bv-contact-email"
-                        className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
-                      >
-                        E-Mail
-                      </label>
-                      <input
-                        id="bv-contact-email"
-                        type="email"
-                        placeholder="E-Mail"
-                        value={bvFormData.contact_email}
-                        onChange={(e) => handleBvFormChange('contact_email', e.target.value)}
-                        className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <label
-                        htmlFor="bv-contact-phone"
-                        className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1"
-                      >
-                        Telefon
-                      </label>
-                      <input
-                        id="bv-contact-phone"
-                        type="tel"
-                        placeholder="Telefon"
-                        value={bvFormData.contact_phone}
-                        onChange={(e) => handleBvFormChange('contact_phone', e.target.value)}
-                        className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                    Zustellweg: E-Mail direkt
-                  </span>
-                  <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
-                    Quelle: Objekt/BV
-                  </span>
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={bvFormData.maintenance_report_email}
-                    onChange={(e) => handleBvFormChange('maintenance_report_email', e.target.checked)}
-                    className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800"
-                  />
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Wartungsbericht per E-Mail
-                  </span>
-                </label>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Ist diese Option aktiv, wird der Wartungsbericht direkt an die hier hinterlegte E-Mail-Adresse
-                  zugestellt.
-                </p>
-                {bvFormData.maintenance_report_email && (
-                  <input
-                    type="email"
-                    placeholder="Wartungsbericht E-Mail-Adresse"
-                    value={bvFormData.maintenance_report_email_address}
-                    onChange={(e) => handleBvFormChange('maintenance_report_email_address', e.target.value)}
-                    className="w-full min-w-0 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-vico-primary"
-                  />
-                )}
-              </div>
-              {canEditPortalConfig && showMonteurCustomerZustellung && (
-                <div className="border-t border-slate-200 dark:border-slate-600 pt-4 space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                      Zustellung: {bvFormData.uses_customer_report_delivery ? 'geerbt' : 'individuell'}
-                    </span>
-                    <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
-                      Quelle: {bvFormData.uses_customer_report_delivery ? 'Kunde' : 'Objekt/BV'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <p
-                      id="bv-zustellung-wie-kunde-label"
-                      className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
-                    >
-                      Zustellung wie Kundenstamm
-                    </p>
-                    <button
-                      type="button"
-                      role="switch"
-                      tabIndex={0}
-                      aria-checked={bvFormData.uses_customer_report_delivery}
-                      aria-labelledby="bv-zustellung-wie-kunde-label"
-                      onClick={() =>
-                        handleBvUsesCustomerDeliveryToggle(!bvFormData.uses_customer_report_delivery)
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          handleBvUsesCustomerDeliveryToggle(!bvFormData.uses_customer_report_delivery)
-                        }
-                      }}
-                      className={[
-                        'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
-                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
-                        bvFormData.uses_customer_report_delivery ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
-                      ].join(' ')}
-                    >
-                      <span
-                        className={[
-                          'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
-                          bvFormData.uses_customer_report_delivery ? 'translate-x-5' : 'translate-x-0.5',
-                        ].join(' ')}
-                        aria-hidden
-                      />
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Aktiv: BV übernimmt die Zustell-/Portal-Einstellungen vom Kunden. Inaktiv: dieses Objekt/BV hat
-                    eigene Freigaben.
-                  </p>
-                  {bvFormData.uses_customer_report_delivery && (
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Aktuell vom Kunden geerbt: Monteursbericht {formData.monteur_report_portal ? 'aktiv' : 'inaktiv'} ·
-                      Wartungsbericht {formData.maintenance_report_portal ? 'aktiv' : 'inaktiv'}.
-                    </p>
-                  )}
-                  {!bvFormData.uses_customer_report_delivery && showBvPortalDeliveryToggles && (
-                    <>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">
-                        Eigene Portal-Freigaben für dieses Objekt/BV (Kundenportal-Zugänge sind am Kunden hinterlegt).
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Bei aktiver Portal-Freigabe erhalten Portal-Benutzer eine Information, dass ein neuer Bericht im
-                        Kundenportal verfügbar ist.
-                      </p>
-                      <div className="flex items-center justify-between gap-3">
-                        <p
-                          id="bv-monteur-portal-label"
-                          className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
-                        >
-                          Monteursbericht · Portal
-                        </p>
-                        <button
-                          type="button"
-                          role="switch"
-                          tabIndex={0}
-                          aria-checked={bvFormData.monteur_report_portal}
-                          aria-labelledby="bv-monteur-portal-label"
-                          onClick={() => handleBvMonteurPortalToggle(!bvFormData.monteur_report_portal)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault()
-                              handleBvMonteurPortalToggle(!bvFormData.monteur_report_portal)
-                            }
-                          }}
-                          className={[
-                            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
-                            'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
-                            bvFormData.monteur_report_portal ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
-                          ].join(' ')}
-                        >
-                          <span
-                            className={[
-                              'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
-                              bvFormData.monteur_report_portal ? 'translate-x-5' : 'translate-x-0.5',
-                            ].join(' ')}
-                            aria-hidden
-                          />
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <p
-                          id="bv-wartung-portal-label"
-                          className="text-sm font-medium text-slate-700 dark:text-slate-300 min-w-0"
-                        >
-                          Wartungsbericht · Portal
-                        </p>
-                        <button
-                          type="button"
-                          role="switch"
-                          tabIndex={0}
-                          aria-checked={bvFormData.maintenance_report_portal}
-                          aria-labelledby="bv-wartung-portal-label"
-                          onClick={() =>
-                            handleBvMaintenanceReportPortalToggle(!bvFormData.maintenance_report_portal)
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault()
-                              handleBvMaintenanceReportPortalToggle(!bvFormData.maintenance_report_portal)
-                            }
-                          }}
-                          className={[
-                            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
-                            'focus:outline-none focus-visible:ring-2 focus-visible:ring-vico-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900',
-                            bvFormData.maintenance_report_portal ? 'bg-vico-primary' : 'bg-slate-200 dark:bg-slate-600',
-                          ].join(' ')}
-                        >
-                          <span
-                            className={[
-                              'pointer-events-none mt-0.5 inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition',
-                              bvFormData.maintenance_report_portal ? 'translate-x-5' : 'translate-x-0.5',
-                            ].join(' ')}
-                            aria-hidden
-                          />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-              {!canEditPortalConfig && hasKundenportalFeature && (
-                <div className="border-t border-slate-200 dark:border-slate-600 pt-4">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:text-slate-300">
-                      Zustellung: nur Anzeige
-                    </span>
-                    <span className="inline-flex items-center rounded-full bg-sky-100 dark:bg-sky-900/40 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:text-sky-200">
-                      Quelle: Benutzerverwaltung
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Weitere Einstellungen für Kundenportal-Zugänge & Sichtbarkeit dieses Objekt/BV werden zentral in
-                    der Benutzerverwaltung verwaltet.
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Aktuelle Freigabe Objekt/BV: Monteursbericht {bvFormData.monteur_report_portal ? 'aktiv' : 'inaktiv'} ·
-                    Wartungsbericht {bvFormData.maintenance_report_portal ? 'aktiv' : 'inaktiv'}.
-                  </p>
-                </div>
-              )}
-              {bvFormError && (
-                <div className="text-sm text-red-600 dark:text-red-400" role="alert">
-                  <p>{bvFormError}</p>
-                  {bvFormError.startsWith('RLS-Fehler') && (
-                    <Link
-                      to="/einstellungen"
-                      className="mt-2 inline-block px-3 py-1.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/60 text-xs font-medium"
-                    >
-                      → Zu Einstellungen (RLS-Fix)
-                    </Link>
-                  )}
-                </div>
-              )}
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={isBvSaving}
-                  className="flex-1 py-2 bg-vico-button dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg hover:bg-vico-button-hover dark:hover:bg-slate-600 disabled:opacity-50 border border-slate-300 dark:border-slate-600"
-                >
-                  {isBvSaving ? 'Speichern...' : 'Speichern'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCloseBvForm}
-                  className="px-4 py-2 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <KundenBvFormModal
+          bvEditingId={bvEditingId}
+          bvFormData={bvFormData}
+          bvFormError={bvFormError}
+          isBvSaving={isBvSaving}
+          canEditPortalConfig={canEditPortalConfig}
+          showMonteurCustomerZustellung={showMonteurCustomerZustellung}
+          showBvPortalDeliveryToggles={showBvPortalDeliveryToggles}
+          hasKundenportalFeature={hasKundenportalFeature}
+          inheritedCustomerMonteurPortal={formData.monteur_report_portal}
+          inheritedCustomerMaintenancePortal={formData.maintenance_report_portal}
+          onClose={handleCloseBvForm}
+          onSubmit={handleBvSubmit}
+          onBvFormChange={handleBvFormChange}
+          onCopyFromCustomer={handleCopyFromCustomer}
+          onBvUsesCustomerDeliveryToggle={handleBvUsesCustomerDeliveryToggle}
+          onBvMonteurPortalToggle={handleBvMonteurPortalToggle}
+          onBvMaintenanceReportPortalToggle={handleBvMaintenanceReportPortalToggle}
+        />
       )}
 
-      {canUseQrBatch && qrBatchSelection.size > 0 && (
-        <div
-          className="fixed bottom-0 left-0 right-0 z-40 p-3 sm:p-4 border-t border-slate-200 dark:border-slate-600 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-          role="region"
-          aria-label="A4 QR-Sammel-PDF"
-        >
-          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-            <p className="text-sm text-slate-700 dark:text-slate-200">
-              <strong>{qrBatchSelection.size}</strong> Objekt(e) für PDF ausgewählt
-            </p>
-            <div className="flex flex-wrap gap-2 items-center">
-              <label className="text-sm text-slate-600 dark:text-slate-300 flex items-center gap-2">
-                <span className="whitespace-nowrap">Etikettgröße</span>
-                <select
-                  value={qrBatchPreset}
-                  onChange={(e) => setQrBatchPreset(e.target.value as QrBatchPreset)}
-                  className="px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm min-h-[40px]"
-                  aria-label="Etikettgröße für A4"
-                >
-                  <option value="mini">Mini (ca. HERMA 48×25 mm)</option>
-                  <option value="mid">Mittel (ca. HERMA 52×30 mm)</option>
-                  <option value="max">Groß (ca. 63×38 mm)</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                onClick={() => setQrBatchSelection(new Map())}
-                className="px-3 py-2 min-h-[40px] text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-transparent"
-                disabled={qrBatchPdfLoading}
-              >
-                Auswahl leeren
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleDownloadQrBatchPdf()}
-                disabled={qrBatchPdfLoading}
-                className="px-4 py-2 min-h-[40px] rounded-lg bg-vico-primary text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
-              >
-                {qrBatchPdfLoading ? 'PDF wird erzeugt…' : 'PDF herunterladen'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <KundenQrBatchPdfBar
+        visible={Boolean(canUseQrBatch && qrBatchSelection.size > 0)}
+        selectionCount={qrBatchSelection.size}
+        preset={qrBatchPreset}
+        onPresetChange={setQrBatchPreset}
+        onClearSelection={() => setQrBatchSelection(new Map())}
+        pdfLoading={qrBatchPdfLoading}
+        onDownloadPdf={() => void handleDownloadQrBatchPdf()}
+      />
     </div>
   )
 }

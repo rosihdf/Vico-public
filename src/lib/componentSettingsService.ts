@@ -29,10 +29,16 @@ export const DEFAULT_SETTINGS_META: { component_key: string; label: string; enab
   { component_key: 'profil', label: 'Profil', enabled: true, sort_order: 9 },
   { component_key: 'arbeitszeiterfassung', label: 'Arbeitszeiterfassung', enabled: true, sort_order: 10 },
   {
+    component_key: 'wartung_checklist_assistant',
+    label: 'Wartungs-Checklisten-Assistent',
+    enabled: true,
+    sort_order: 11,
+  },
+  {
     component_key: COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL,
     label: 'Tür-/Schließmittel-Auswahllisten',
     enabled: true,
-    sort_order: 11,
+    sort_order: 12,
   },
 ]
 

@@ -355,11 +355,21 @@ export const updateImpressum = async (
   const url = `${base}/update-impressum`
 
   const apiKey = (import.meta.env.VITE_LICENSE_API_KEY ?? '').trim()
+  const mandantAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? '').trim()
+  if (!mandantAnon) return { ok: false, error: 'Mandanten-Anon-Key nicht konfiguriert.' }
+
+  const { supabase } = await import('../supabase')
+  const { data: sessionData } = await supabase.auth.getSession()
+  const accessToken = sessionData.session?.access_token?.trim()
+  if (!accessToken) return { ok: false, error: 'Nicht angemeldet.' }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    Authorization: `Bearer ${accessToken}`,
+    'x-mandant-anon-key': mandantAnon,
   }
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+  if (apiKey) headers.apikey = apiKey
 
   try {
     const res = await fetch(url, {
@@ -400,12 +410,26 @@ export const reportLimitExceeded = async (payload: LimitExceededPayload): Promis
   let apiOk = false
   if (apiEndpoint) {
     try {
-      const res = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      apiOk = res.ok
+      const { supabase } = await import('../supabase')
+      const mandantAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? '').trim()
+      const apiKey = (import.meta.env.VITE_LICENSE_API_KEY ?? '').trim()
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData.session?.access_token?.trim()
+      if (mandantAnon && accessToken) {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'x-mandant-anon-key': mandantAnon,
+        }
+        if (apiKey) headers.apikey = apiKey
+        const res = await fetch(apiEndpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        })
+        apiOk = res.ok
+      }
     } catch {
       apiOk = false
     }

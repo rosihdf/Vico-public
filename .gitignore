@@ -10,6 +10,12 @@ supabase/.temp/
 **/supabase/.temp/
 *.tsbuildinfo
 
+# Playwright E2E
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 # Mandanten: lokale Secrets / Kopien der Registry (keine DB-URLs committen)
 configs/mandanten-registry.local.json
 configs/mandanten-db-urls.local.txt

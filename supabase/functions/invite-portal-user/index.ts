@@ -66,6 +66,22 @@ serve(async (req) => {
       )
     }
 
+    const { data: canAccess, error: accessErr } = await userClient.rpc('customer_visible_to_user', {
+      cid: customer_id,
+    })
+    if (accessErr) {
+      return new Response(
+        JSON.stringify({ error: 'Ungültige customer_id.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    if (canAccess !== true) {
+      return new Response(
+        JSON.stringify({ error: 'Keine Berechtigung für diesen Kunden.' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     const { data: existing } = await supabaseAdmin
       .from('customer_portal_users')
       .select('id')

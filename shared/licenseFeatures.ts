@@ -24,6 +24,10 @@ export const LICENSE_FEATURE_KEYS = [
   'qr_batch_a4',
   /** Beta-Live-Test: Feedback-Widget (Haupt-App, Kundenportal, Arbeitszeit-Portal) */
   'beta_feedback',
+  /** Geführter Checklisten-Assistent in der Haupt-App (Wartungsprotokoll) */
+  'checklist_assistant',
+  /** Optional vorbereitet: harte Pflichtvalidierung im Checklisten-Assistenten */
+  'checklist_assistant_strict_mode',
   /** Hinweis „Mandanten-Datenbank nicht erreichbar“ anzeigen */
   'degraded_banner',
 ] as const
@@ -44,11 +48,17 @@ export const LICENSE_FEATURE_LABELS: Record<string, string> = {
   ladezeiten: 'Ladezeiten (System)',
   qr_batch_a4: 'A4-QR-Etiketten',
   beta_feedback: 'Beta-Feedback (Live-Test)',
+  checklist_assistant: 'Checklisten-Assistent (Haupt-App)',
+  checklist_assistant_strict_mode: 'Checklisten-Assistent: Strict-Mode',
   degraded_banner: 'Hinweis: Mandanten-Datenbank instabil',
 }
 
 /** Kurzhinweise für Admin-UI (Tooltip/Title an Feature-Checkboxen). */
 export const LICENSE_FEATURE_DESCRIPTIONS: Record<string, string> = {
+  checklist_assistant:
+    'Aktiviert den geführten Checklisten-Assistenten im Wartungsprotokoll (optional, klassische Ansicht bleibt verfügbar).',
+  checklist_assistant_strict_mode:
+    'Vorbereitung für harte Pflichtvalidierung im Assistenten. Aktuell nur als Schalter vorgesehen (ohne erzwungenen Flow).',
   degraded_banner:
     'Steuert beide Hinweise: Mandanten-Datenbank instabil und Lizenz-API nur aus Cache (Lizenz-Portal nicht erreichbar). false = beide ausblenden.',
 }
@@ -72,8 +82,9 @@ export const LICENSE_FEATURE_GROUPS = [
 ] as const satisfies ReadonlyArray<{ id: string; label: string; features: readonly LicenseFeatureKey[] }>
 
 export const LICENSE_FEATURE_DEPENDENCIES: Partial<Record<LicenseFeatureKey, readonly LicenseFeatureKey[]>> = {
-  wartungsprotokolle: ['qr_batch_a4'],
+  wartungsprotokolle: ['qr_batch_a4', 'checklist_assistant'],
   historie: ['fehlerberichte', 'ladezeiten', 'beta_feedback', 'degraded_banner', 'buchhaltung_export'],
+  checklist_assistant: ['checklist_assistant_strict_mode'],
   arbeitszeiterfassung: ['urlaub', 'teamfunktion', 'standortabfrage'],
 }
 
@@ -256,6 +267,8 @@ export const TIER_DEFAULT_FEATURES: Record<string, Record<string, boolean>> = {
     ladezeiten: false,
     qr_batch_a4: false,
     beta_feedback: false,
+    checklist_assistant: false,
+    checklist_assistant_strict_mode: false,
     degraded_banner: true,
   },
   professional: {
@@ -271,6 +284,8 @@ export const TIER_DEFAULT_FEATURES: Record<string, Record<string, boolean>> = {
     ladezeiten: true,
     qr_batch_a4: false,
     beta_feedback: false,
+    checklist_assistant: false,
+    checklist_assistant_strict_mode: false,
     degraded_banner: true,
   },
   enterprise: {
@@ -286,6 +301,8 @@ export const TIER_DEFAULT_FEATURES: Record<string, Record<string, boolean>> = {
     ladezeiten: true,
     qr_batch_a4: false,
     beta_feedback: false,
+    checklist_assistant: false,
+    checklist_assistant_strict_mode: false,
     degraded_banner: true,
   },
 }

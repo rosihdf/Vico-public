@@ -12,5 +12,6 @@ Einzel-Skripte (Hotfixes / Features):
 - `mandanten-db-azk-stammdaten-migration.sql`
 - `mandanten-db-calc-soll-date-range.sql`
 - `mandanten-db-fix-auth-user-delete-fks.sql`
+- `mandanten-db-repair-objects-customer-id.sql` (`objects.customer_id` aus BV/Auftrag nachziehen)
 
 **Gesamt-Initialisierung** neuer Mandanten-Projekte: Repo-Root **`supabase-complete.sql`**.

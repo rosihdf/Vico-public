@@ -2,7 +2,6 @@ import { supabase } from '../supabase'
 import { compressImageFile } from './imageCompression'
 import { checklistHasOpenMangel } from './doorMaintenanceChecklistCatalog'
 import { checklistHasOpenMangelFeststell } from './feststellChecklistCatalog'
-import { mergeChecklistProtocolForUpsert } from './checklistProtocol'
 import {
   findActiveOrderConflictsAmong,
   getOrderObjectIds,
@@ -39,25 +38,16 @@ import type {
   ChecklistMangelPhoto,
   ObjectDefectPhotoDisplay,
   MaintenanceReportSmokeDetector,
-  MaintenanceReminder,
-  MaintenanceContract,
-  ObjectPhoto,
-  ObjectDocument,
-  ObjectDocumentType,
 } from '../types'
+import type { MaintenanceReportPayload } from './dataService/maintenanceReportChecklistProtocol'
 import {
   CUSTOMER_COLUMNS,
   BV_COLUMNS,
   OBJECT_COLUMNS,
-  MAINTENANCE_CONTRACT_COLUMNS,
   ORDER_COLUMNS,
   ORDER_COMPLETION_COLUMNS,
-  OBJECT_PHOTO_COLUMNS,
-  OBJECT_DOCUMENT_COLUMNS,
   MAINTENANCE_REPORT_COLUMNS,
   MAINTENANCE_REPORT_PHOTO_COLUMNS,
-  MAINTENANCE_REPORT_SMOKE_DETECTOR_COLUMNS,
-  PORTAL_USER_COLUMNS,
   CHECKLIST_DEFECT_PHOTO_COLUMNS,
   CHECKLIST_DEFECT_PHOTO_DRAFT_COLUMNS,
   OBJECT_DEFECT_PHOTO_COLUMNS,
@@ -76,16 +66,6 @@ import {
   setCachedOrders,
   getCachedOrderCompletions,
   mergeCachedOrderCompletions,
-  getCachedObjectPhotos,
-  setCachedObjectPhotos,
-  getObjectPhotoOutbox,
-  addToObjectPhotoOutbox,
-  removeObjectPhotoOutboxItem,
-  getCachedObjectDocuments,
-  setCachedObjectDocuments,
-  getObjectDocumentOutbox,
-  addToObjectDocumentOutbox,
-  removeObjectDocumentOutboxItem,
   getCachedMaintenancePhotos,
   setCachedMaintenancePhotos,
   getMaintenancePhotoOutbox,
@@ -94,26 +74,34 @@ import {
   getObjectDefectPhotoOutbox,
   addToObjectDefectPhotoOutbox,
   removeObjectDefectPhotoOutboxItem,
-  getCachedReminders,
-  setCachedReminders,
   getMaintenanceOutbox,
   addToMaintenanceOutbox,
   removeMaintenanceOutboxItem,
   addToOutbox,
-  getCachedAuditLog,
   addToEmailOutbox,
 } from './offlineStorage'
 
-type Listener = () => void
-const listeners: Listener[] = []
-export const notifyDataChange = () => listeners.forEach((l) => l())
-export const subscribeToDataChange = (fn: Listener) => {
-  listeners.push(fn)
-  return () => {
-    const i = listeners.indexOf(fn)
-    if (i >= 0) listeners.splice(i, 1)
-  }
-}
+import { notifyDataChange } from './dataService/dataChange'
+export { notifyDataChange, subscribeToDataChange } from './dataService/dataChange'
+
+import {
+  OBJECT_PHOTOS_BUCKET,
+  OBJECT_DOCUMENTS_BUCKET,
+  fetchObjectPhotos,
+  fetchObjectDocuments,
+} from './dataService/objectMedia'
+export type { ObjectPhotoDisplay, ObjectDocumentDisplay } from './dataService/objectMedia'
+export {
+  fetchObjectPhotos,
+  uploadObjectPhoto,
+  deleteObjectPhoto,
+  getObjectPhotoUrl,
+  getObjectPhotoDisplayUrl,
+  fetchObjectDocuments,
+  uploadObjectDocument,
+  deleteObjectDocument,
+  getObjectDocumentUrl,
+} from './dataService/objectMedia'
 
 const isActiveCustomer = (c: Customer) => !c.archived_at
 const isActiveBv = (b: BV) => !b.archived_at
@@ -268,65 +256,13 @@ export const fetchObjectsDirectUnderCustomer = async (customerId: string): Promi
   )
 }
 
-export const fetchMaintenanceContractsByCustomer = async (customerId: string): Promise<MaintenanceContract[]> => {
-  if (!isOnline()) return []
-  const { data, error } = await supabase
-    .from('maintenance_contracts')
-    .select(MAINTENANCE_CONTRACT_COLUMNS)
-    .eq('customer_id', customerId)
-    .is('bv_id', null)
-    .order('start_date', { ascending: false })
-  if (error) return []
-  return (data ?? []) as MaintenanceContract[]
-}
-
-export const fetchMaintenanceContractsByBv = async (bvId: string): Promise<MaintenanceContract[]> => {
-  if (!isOnline()) return []
-  const { data, error } = await supabase
-    .from('maintenance_contracts')
-    .select(MAINTENANCE_CONTRACT_COLUMNS)
-    .eq('bv_id', bvId)
-    .order('start_date', { ascending: false })
-  if (error) return []
-  return (data ?? []) as MaintenanceContract[]
-}
-
-export const createMaintenanceContract = async (
-  payload: { customer_id?: string | null; bv_id?: string | null; contract_number: string; start_date: string; end_date?: string | null }
-): Promise<{ data: MaintenanceContract | null; error: { message: string } | null }> => {
-  const full = {
-    ...payload,
-    customer_id: payload.customer_id ?? null,
-    bv_id: payload.bv_id ?? null,
-    end_date: payload.end_date?.trim() || null,
-    updated_at: new Date().toISOString(),
-  }
-  if (isOnline()) {
-    const { data, error } = await supabase.from('maintenance_contracts').insert(full).select(MAINTENANCE_CONTRACT_COLUMNS).single()
-    return { data: data ? (data as unknown as MaintenanceContract) : null, error: error ? { message: error.message } : null }
-  }
-  return { data: null, error: { message: 'Offline: Wartungsverträge nur online anlegbar.' } }
-}
-
-export const updateMaintenanceContract = async (
-  id: string,
-  payload: Partial<{ contract_number: string; start_date: string; end_date: string | null }>
-): Promise<{ error: { message: string } | null }> => {
-  const full = { ...payload, id, updated_at: new Date().toISOString() }
-  if (isOnline()) {
-    const { error } = await supabase.from('maintenance_contracts').update(full).eq('id', id)
-    return { error: error ? { message: error.message } : null }
-  }
-  return { error: { message: 'Offline: Wartungsverträge nur online bearbeitbar.' } }
-}
-
-export const deleteMaintenanceContract = async (id: string): Promise<{ error: { message: string } | null }> => {
-  if (isOnline()) {
-    const { error } = await supabase.from('maintenance_contracts').delete().eq('id', id)
-    return { error: error ? { message: error.message } : null }
-  }
-  return { error: { message: 'Offline: Wartungsverträge nur online löschbar.' } }
-}
+export {
+  fetchMaintenanceContractsByCustomer,
+  fetchMaintenanceContractsByBv,
+  createMaintenanceContract,
+  updateMaintenanceContract,
+  deleteMaintenanceContract,
+} from './dataService/maintenanceContracts'
 
 export const fetchAllBvs = async (): Promise<BV[]> => {
   if (isOnline()) {
@@ -355,344 +291,14 @@ export const fetchAllObjects = async (): Promise<Obj[]> => {
   return (getCachedObjects() as Obj[]).filter(isActiveObject)
 }
 
-const mapReminderRow = (row: Record<string, unknown>): MaintenanceReminder => ({
-  object_id: row.object_id as string,
-  customer_id: row.customer_id as string,
-  customer_name: (row.customer_name as string) ?? '',
-  bv_id: row.bv_id as string,
-  bv_name: (row.bv_name as string) ?? '',
-  internal_id: (row.internal_id as string) ?? null,
-  object_name: (row.object_name as string) ?? null,
-  object_room: (row.object_room as string) ?? null,
-  object_floor: (row.object_floor as string) ?? null,
-  object_manufacturer: (row.object_manufacturer as string) ?? null,
-  maintenance_interval_months: (row.maintenance_interval_months as number) ?? 0,
-  last_maintenance_date: row.last_maintenance_date ? String(row.last_maintenance_date).slice(0, 10) : null,
-  next_maintenance_date: row.next_maintenance_date ? String(row.next_maintenance_date).slice(0, 10) : null,
-  status: (row.status as MaintenanceReminder['status']) ?? 'ok',
-  days_until_due: row.days_until_due != null ? Number(row.days_until_due) : null,
-})
-
-export const fetchMaintenanceReminders = async (): Promise<MaintenanceReminder[]> => {
-  if (!isOnline()) return (getCachedReminders() as MaintenanceReminder[]) ?? []
-  const { data, error } = await supabase.rpc('get_maintenance_reminders')
-  if (error || !Array.isArray(data)) return []
-  const reminders = data.map((row: Record<string, unknown>) => mapReminderRow(row))
-  setCachedReminders(reminders)
-  return reminders
-}
-
-export type AuditLogEntry = {
-  id: string
-  user_id: string | null
-  user_email: string | null
-  action: string
-  table_name: string
-  record_id: string | null
-  created_at: string
-}
-
-const mapAuditRow = (row: Record<string, unknown>): AuditLogEntry => ({
-  id: row.id as string,
-  user_id: (row.user_id as string) ?? null,
-  user_email: (row.user_email as string) ?? null,
-  action: (row.action as string) ?? '',
-  table_name: (row.table_name as string) ?? '',
-  record_id: (row.record_id as string) ?? null,
-  created_at: row.created_at ? new Date(row.created_at as string).toISOString() : '',
-})
-
-export const fetchAuditLog = async (limit = 200, offset = 0): Promise<AuditLogEntry[]> => {
-  if (!isOnline()) {
-    return (getCachedAuditLog() as AuditLogEntry[]) ?? []
-  }
-  const { data, error } = await supabase.rpc('get_audit_log', { limit_rows: limit, offset_rows: offset })
-  if (error || !Array.isArray(data)) return []
-  return data.map((row: Record<string, unknown>) => mapAuditRow(row))
-}
-
-export type AuditLogDetailEntry = AuditLogEntry & { user_name?: string | null }
-
-export const fetchAuditLogDetail = async (id: string): Promise<AuditLogDetailEntry | null> => {
-  if (!isOnline()) return null
-  const { data, error } = await supabase.rpc('get_audit_log_detail', { entry_id: id })
-  if (error || !Array.isArray(data) || data.length === 0) return null
-  const row = data[0] as Record<string, unknown>
-  return {
-    ...mapAuditRow(row),
-    user_name: (row.user_name as string) ?? null,
-  }
-}
-
-/** Eintrag für „Zuletzt bearbeitet“ auf der Startseite (nach DB-Spalte updated_at). */
-export type DashboardRecentEdit = {
-  key: string
-  to: string
-  title: string
-  subtitle: string
-  updatedAt: string
-}
-
-const ORDER_TYPE_LABELS_SHORT: Record<string, string> = {
-  wartung: 'Wartung',
-  reparatur: 'Reparatur',
-  montage: 'Montage',
-  sonstiges: 'Sonstiges',
-}
-
-const sortByUpdatedAtDesc = <T extends { updated_at: string }>(rows: T[]): T[] =>
-  [...rows].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-
-/**
- * Baut „Zuletzt bearbeitet“ aus lokalem Cache (Offline, gleiche Sichtbarkeit wie zuletzt synchronisiert).
- */
-export const buildRecentEditsFromCache = (options: {
-  includeMaster: boolean
-  includeOrders: boolean
-  scope?: 'all' | 'mine'
-  userId?: string
-}): DashboardRecentEdit[] => {
-  const scope = options.scope ?? 'all'
-  const uid = options.userId
-  const perTable = 10
-  const maxTotal = 10
-  const raw: DashboardRecentEdit[] = []
-
-  const includeMaster = options.includeMaster && scope !== 'mine'
-
-  if (includeMaster) {
-    const customers = sortByUpdatedAtDesc((getCachedCustomers() as Customer[]).filter(isActiveCustomer)).slice(
-      0,
-      perTable
-    )
-    for (const c of customers) {
-      raw.push({
-        key: `customer-${c.id}`,
-        to: `/kunden?customerId=${c.id}`,
-        title: `Kunde: ${c.name?.trim() || 'Ohne Namen'}`,
-        subtitle: '',
-        updatedAt: c.updated_at,
-      })
-    }
-    const bvs = sortByUpdatedAtDesc((getCachedBvs() as BV[]).filter(isActiveBv)).slice(0, perTable)
-    for (const b of bvs) {
-      raw.push({
-        key: `bv-${b.id}`,
-        to: `/kunden?customerId=${b.customer_id}&bvId=${b.id}`,
-        title: `Objekt/BV: ${b.name?.trim() || 'Ohne Namen'}`,
-        subtitle: '',
-        updatedAt: b.updated_at,
-      })
-    }
-    const objs = sortByUpdatedAtDesc((getCachedObjects() as Obj[]).filter(isActiveObject)).slice(0, perTable)
-    for (const o of objs) {
-      const cid = o.customer_id
-      if (!cid) continue
-      const params = new URLSearchParams()
-      params.set('customerId', cid)
-      if (o.bv_id) params.set('bvId', o.bv_id)
-      params.set('objectId', o.id)
-      raw.push({
-        key: `object-${o.id}`,
-        to: `/kunden?${params.toString()}`,
-        title: `Tür/Tor: ${o.name?.trim() || o.internal_id?.trim() || 'Ohne Namen'}`,
-        subtitle: '',
-        updatedAt: o.updated_at,
-      })
-    }
-  }
-
-  if (options.includeOrders) {
-    let orders = sortByUpdatedAtDesc(getCachedOrders() as Order[])
-    if (scope === 'mine' && uid) {
-      orders = orders.filter((o) => o.assigned_to === uid || o.created_by === uid)
-    }
-    for (const o of orders.slice(0, perTable)) {
-      const typeLabel = ORDER_TYPE_LABELS_SHORT[o.order_type] ?? o.order_type
-      raw.push({
-        key: `order-${o.id}`,
-        to: `/auftrag/${o.id}`,
-        title: `Auftrag: ${typeLabel} · ${o.order_date}`,
-        subtitle: o.status ? `Status: ${o.status}` : '',
-        updatedAt: o.updated_at,
-      })
-    }
-  }
-
-  raw.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-  return raw.slice(0, maxTotal)
-}
-
-/**
- * Liefert die zuletzt geänderten Stammdaten/Aufträge, die der Nutzer per RLS sehen darf.
- * @param options.includeMaster – Kunden, BVs, Objekte (Menü „Kunden“)
- * @param options.includeOrders – Aufträge (Menü „Auftrag“)
- * @param options.scope – „mine“: nur Aufträge mit assigned_to/created_by = userId (Stammdaten entfallen)
- */
-export const fetchRecentEditsForDashboard = async (options: {
-  includeMaster: boolean
-  includeOrders: boolean
-  scope?: 'all' | 'mine'
-  userId?: string
-}): Promise<DashboardRecentEdit[]> => {
-  if (!isOnline()) return buildRecentEditsFromCache(options)
-  const scope = options.scope ?? 'all'
-  const uid = options.userId
-  const perTable = 10
-  const maxTotal = 10
-  /** Supabase-Query-Builder sind thenable, aber kein `Promise` im TS-Sinne. */
-  const promises: PromiseLike<unknown>[] = []
-  let fetchCustomers = false
-  let fetchBvs = false
-  let fetchObjects = false
-  let fetchOrders = false
-
-  const includeMaster = options.includeMaster && scope !== 'mine'
-
-  if (includeMaster) {
-    fetchCustomers = true
-    fetchBvs = true
-    fetchObjects = true
-    promises.push(
-      supabase
-        .from('customers')
-        .select('id,name,updated_at')
-        .is('archived_at', null)
-        .order('updated_at', { ascending: false })
-        .limit(perTable)
-    )
-    promises.push(
-      supabase
-        .from('bvs')
-        .select('id,name,customer_id,updated_at')
-        .is('archived_at', null)
-        .order('updated_at', { ascending: false })
-        .limit(perTable)
-    )
-    promises.push(
-      supabase
-        .from('objects')
-        .select('id,name,internal_id,room,floor,manufacturer,bv_id,customer_id,updated_at')
-        .is('archived_at', null)
-        .order('updated_at', { ascending: false })
-        .limit(perTable)
-    )
-  }
-  if (options.includeOrders) {
-    fetchOrders = true
-    let orderQ = supabase
-      .from('orders')
-      .select('id,customer_id,bv_id,order_date,order_type,status,updated_at,assigned_to,created_by')
-      .order('updated_at', { ascending: false })
-      .limit(perTable)
-    if (scope === 'mine' && uid) {
-      orderQ = orderQ.or(`assigned_to.eq.${uid},created_by.eq.${uid}`)
-    }
-    promises.push(orderQ)
-  }
-  if (promises.length === 0) return []
-
-  const results = await Promise.all(promises)
-  const raw: DashboardRecentEdit[] = []
-  let idx = 0
-
-  if (fetchCustomers) {
-    const { data, error } = results[idx++] as {
-      data: { id: string; name: string; updated_at: string }[] | null
-      error: { message: string } | null
-    }
-    if (!error && data) {
-      for (const c of data) {
-        raw.push({
-          key: `customer-${c.id}`,
-          to: `/kunden?customerId=${c.id}`,
-          title: `Kunde: ${c.name?.trim() || 'Ohne Namen'}`,
-          subtitle: '',
-          updatedAt: c.updated_at,
-        })
-      }
-    }
-  }
-  if (fetchBvs) {
-    const { data, error } = results[idx++] as {
-      data: { id: string; name: string; customer_id: string; updated_at: string }[] | null
-      error: { message: string } | null
-    }
-    if (!error && data) {
-      for (const b of data) {
-        raw.push({
-          key: `bv-${b.id}`,
-          to: `/kunden?customerId=${b.customer_id}&bvId=${b.id}`,
-          title: `Objekt/BV: ${b.name?.trim() || 'Ohne Namen'}`,
-          subtitle: '',
-          updatedAt: b.updated_at,
-        })
-      }
-    }
-  }
-  if (fetchObjects) {
-    const { data, error } = results[idx++] as {
-      data: {
-        id: string
-        name: string | null
-        internal_id: string | null
-        room: string | null
-        floor: string | null
-        manufacturer: string | null
-        bv_id: string | null
-        customer_id: string | null
-        updated_at: string
-      }[] | null
-      error: { message: string } | null
-    }
-    if (!error && data) {
-      for (const o of data) {
-        const cid = o.customer_id
-        if (!cid) continue
-        const params = new URLSearchParams()
-        params.set('customerId', cid)
-        if (o.bv_id) params.set('bvId', o.bv_id)
-        params.set('objectId', o.id)
-        raw.push({
-          key: `object-${o.id}`,
-          to: `/kunden?${params.toString()}`,
-          title: `Tür/Tor: ${o.name?.trim() || o.internal_id?.trim() || 'Ohne Namen'}`,
-          subtitle: '',
-          updatedAt: o.updated_at,
-        })
-      }
-    }
-  }
-  if (fetchOrders) {
-    const { data, error } = results[idx] as {
-      data: {
-        id: string
-        customer_id: string
-        bv_id: string
-        order_date: string
-        order_type: string
-        status: string
-        updated_at: string
-      }[] | null
-      error: { message: string } | null
-    }
-    if (!error && data) {
-      for (const o of data) {
-        const typeLabel = ORDER_TYPE_LABELS_SHORT[o.order_type] ?? o.order_type
-        raw.push({
-          key: `order-${o.id}`,
-          to: `/auftrag/${o.id}`,
-          title: `Auftrag: ${typeLabel} · ${o.order_date}`,
-          subtitle: o.status ? `Status: ${o.status}` : '',
-          updatedAt: o.updated_at,
-        })
-      }
-    }
-  }
-
-  raw.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-  return raw.slice(0, maxTotal)
-}
+export type { AuditLogEntry, AuditLogDetailEntry, DashboardRecentEdit } from './dataService/metaReads'
+export {
+  fetchMaintenanceReminders,
+  fetchAuditLog,
+  fetchAuditLogDetail,
+  buildRecentEditsFromCache,
+  fetchRecentEditsForDashboard,
+} from './dataService/metaReads'
 
 type CustomerPayload = Omit<Customer, 'id' | 'created_at' | 'updated_at'> & {
   updated_at?: string
@@ -976,356 +582,36 @@ export const unarchiveCustomer = async (id: string): Promise<{ error: { message:
 
 // --- Wartungsprotokolle ---
 
-export const fetchMaintenanceReports = async (
-  objectId: string
-): Promise<MaintenanceReport[]> => {
-  if (isOnline()) {
-    const { data, error } = await supabase
-      .from('maintenance_reports')
-      .select(MAINTENANCE_REPORT_COLUMNS)
-      .eq('object_id', objectId)
-      .order('maintenance_date', { ascending: false })
-    if (!error && data) {
-      const reports = data as unknown as MaintenanceReport[]
-      setCachedMaintenanceReports(objectId, reports)
-      return mergeMaintenanceCacheWithOutbox(objectId, reports)
-    }
-  }
-  const cached = getCachedMaintenanceReports(objectId) as MaintenanceReport[]
-  return mergeMaintenanceCacheWithOutbox(objectId, cached)
-}
+export {
+  fetchMaintenanceReports,
+  fetchMaintenanceReportSmokeDetectors,
+} from './dataService/maintenanceReportsRead'
 
-const mergeMaintenanceCacheWithOutbox = (
-  objectId: string,
-  cached: MaintenanceReport[]
-): MaintenanceReport[] => {
-  const pending = getMaintenanceOutbox().filter(
-    (item) => (item.reportPayload.object_id as string) === objectId
-  )
-  const pendingReports: MaintenanceReport[] = pending.map((item) => ({
-    id: item.tempId,
-    object_id: objectId,
-    maintenance_date: item.reportPayload.maintenance_date as string,
-    maintenance_time: item.reportPayload.maintenance_time as string | null,
-    technician_id: item.reportPayload.technician_id as string | null,
-    reason: item.reportPayload.reason as MaintenanceReport['reason'],
-    reason_other: item.reportPayload.reason_other as string | null,
-    manufacturer_maintenance_done: item.reportPayload.manufacturer_maintenance_done as boolean,
-    hold_open_checked: item.reportPayload.hold_open_checked as boolean | null,
-    deficiencies_found: item.reportPayload.deficiencies_found as boolean,
-    deficiency_description: item.reportPayload.deficiency_description as string | null,
-    urgency: item.reportPayload.urgency as MaintenanceReport['urgency'],
-    fixed_immediately: item.reportPayload.fixed_immediately as boolean,
-    customer_signature_path: null,
-    technician_signature_path: null,
-    technician_name_printed: item.reportPayload.technician_name_printed as string | null,
-    customer_name_printed: item.reportPayload.customer_name_printed as string | null,
-    pdf_path: null,
-    synced: false,
-    created_at: item.timestamp,
-    updated_at: item.timestamp,
-  }))
-  const all = [...pendingReports, ...cached]
-  all.sort((a, b) => (b.maintenance_date || '').localeCompare(a.maintenance_date || ''))
-  return all
-}
+export {
+  fetchMaintenanceReportIdByOrderObject,
+  fetchMaintenanceReportPruefprotokollMetaForOrderObject,
+  fetchPruefprotokollPdfPathForOrderObject,
+} from './dataService/maintenanceReportsOrderObjectRead'
 
-export const fetchMaintenanceReportSmokeDetectors = async (
-  reportId: string
-): Promise<MaintenanceReportSmokeDetector[]> => {
-  const pending = getMaintenanceOutbox().find((item) => item.tempId === reportId)
-  if (pending) {
-    return pending.smokeDetectors.map((sd, idx) => ({
-      id: `temp-sd-${idx}`,
-      report_id: reportId,
-      smoke_detector_label: sd.label,
-      status: sd.status as MaintenanceReportSmokeDetector['status'],
-      created_at: new Date().toISOString(),
-    }))
-  }
-  if (isOnline()) {
-    const { data, error } = await supabase
-      .from('maintenance_report_smoke_detectors')
-      .select(MAINTENANCE_REPORT_SMOKE_DETECTOR_COLUMNS)
-      .eq('report_id', reportId)
-    if (error) return []
-    return (data ?? []) as unknown as MaintenanceReportSmokeDetector[]
-  }
-  return []
-}
+export { upsertWartungsChecklistProtocol } from './dataService/maintenanceReportChecklistProtocol'
 
-type MaintenanceReportPayload = Omit<
-  MaintenanceReport,
-  'id' | 'created_at' | 'updated_at'
-> & { updated_at?: string }
+export type {
+  MonteurReportCustomerDeliveryMode,
+  WartungChecklisteModus,
+  PruefprotokollAddressMode,
+  MonteurReportSettingsFull,
+  MonteurReportOrgDigestSettings,
+} from './dataService/monteurReportSettings'
 
-export type MonteurReportCustomerDeliveryMode =
-  | 'none'
-  | 'email_auto'
-  | 'email_manual'
-  | 'portal_notify'
-
-export const fetchMonteurReportSettings = async (): Promise<{
-  customer_delivery_mode: MonteurReportCustomerDeliveryMode
-} | null> => {
-  if (!isOnline()) return { customer_delivery_mode: 'none' }
-  const { data, error } = await supabase
-    .from('monteur_report_settings')
-    .select('customer_delivery_mode')
-    .eq('id', 1)
-    .maybeSingle()
-  if (error || !data) return null
-  const m = (data as { customer_delivery_mode: string }).customer_delivery_mode
-  const allowed: MonteurReportCustomerDeliveryMode[] = ['none', 'email_auto', 'email_manual', 'portal_notify']
-  return {
-    customer_delivery_mode: allowed.includes(m as MonteurReportCustomerDeliveryMode)
-      ? (m as MonteurReportCustomerDeliveryMode)
-      : 'none',
-  }
-}
-
-export const updateMonteurReportSettings = async (
-  mode: MonteurReportCustomerDeliveryMode
-): Promise<{ error: { message: string } | null }> => {
-  if (!isOnline()) return { error: { message: 'Nur online speicherbar.' } }
-  const { error } = await supabase.from('monteur_report_settings').upsert(
-    { id: 1, customer_delivery_mode: mode, updated_at: new Date().toISOString() },
-    { onConflict: 'id' }
-  )
-  return { error: error ? { message: error.message } : null }
-}
-
-export type WartungChecklisteModus = 'compact' | 'detail'
-export type PruefprotokollAddressMode = 'both' | 'bv_only'
-
-export type MonteurReportSettingsFull = {
-  customer_delivery_mode: MonteurReportCustomerDeliveryMode
-  wartung_checkliste_modus: WartungChecklisteModus
-  pruefprotokoll_address_mode: PruefprotokollAddressMode
-  mangel_neuer_auftrag_default: boolean
-  portal_share_monteur_report_pdf: boolean
-  portal_share_pruefprotokoll_pdf: boolean
-  portal_timeline_show_planned: boolean
-  portal_timeline_show_termin: boolean
-  portal_timeline_show_in_progress: boolean
-}
-
-export const fetchMonteurReportSettingsFull = async (): Promise<MonteurReportSettingsFull | null> => {
-  if (!isOnline()) {
-    return {
-      customer_delivery_mode: 'none',
-      wartung_checkliste_modus: 'detail',
-      pruefprotokoll_address_mode: 'both',
-      mangel_neuer_auftrag_default: true,
-      portal_share_monteur_report_pdf: true,
-      portal_share_pruefprotokoll_pdf: true,
-      portal_timeline_show_planned: false,
-      portal_timeline_show_termin: true,
-      portal_timeline_show_in_progress: true,
-    }
-  }
-  const { data, error } = await supabase
-    .from('monteur_report_settings')
-    .select(
-      'customer_delivery_mode, wartung_checkliste_modus, pruefprotokoll_address_mode, mangel_neuer_auftrag_default, portal_share_monteur_report_pdf, portal_share_pruefprotokoll_pdf, portal_timeline_show_planned, portal_timeline_show_termin, portal_timeline_show_in_progress'
-    )
-    .eq('id', 1)
-    .maybeSingle()
-  if (error || !data) return null
-  const row = data as Record<string, unknown>
-  const m = String(row.customer_delivery_mode ?? 'none')
-  const allowed: MonteurReportCustomerDeliveryMode[] = ['none', 'email_auto', 'email_manual', 'portal_notify']
-  const mod = row.wartung_checkliste_modus === 'compact' ? 'compact' : 'detail'
-  const addrMode = row.pruefprotokoll_address_mode === 'bv_only' ? 'bv_only' : 'both'
-  return {
-    customer_delivery_mode: allowed.includes(m as MonteurReportCustomerDeliveryMode)
-      ? (m as MonteurReportCustomerDeliveryMode)
-      : 'none',
-    wartung_checkliste_modus: mod,
-    pruefprotokoll_address_mode: addrMode,
-    mangel_neuer_auftrag_default: Boolean(row.mangel_neuer_auftrag_default ?? true),
-    portal_share_monteur_report_pdf: Boolean(row.portal_share_monteur_report_pdf ?? true),
-    portal_share_pruefprotokoll_pdf: Boolean(row.portal_share_pruefprotokoll_pdf ?? true),
-    portal_timeline_show_planned: Boolean(row.portal_timeline_show_planned),
-    portal_timeline_show_termin: row.portal_timeline_show_termin !== false,
-    portal_timeline_show_in_progress: row.portal_timeline_show_in_progress !== false,
-  }
-}
-
-export const updateMonteurReportWartungChecklisteSettings = async (patch: {
-  wartung_checkliste_modus?: WartungChecklisteModus
-  pruefprotokoll_address_mode?: PruefprotokollAddressMode
-  mangel_neuer_auftrag_default?: boolean
-}): Promise<{ error: { message: string } | null }> => {
-  if (!isOnline()) return { error: { message: 'Nur online speicherbar.' } }
-  const { error } = await supabase
-    .from('monteur_report_settings')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', 1)
-  return { error: error ? { message: error.message } : null }
-}
-
-export const updateMonteurReportPortalPdfShareSettings = async (patch: {
-  portal_share_monteur_report_pdf: boolean
-  portal_share_pruefprotokoll_pdf: boolean
-  portal_timeline_show_planned: boolean
-  portal_timeline_show_termin: boolean
-  portal_timeline_show_in_progress: boolean
-}): Promise<{ error: { message: string } | null }> => {
-  if (!isOnline()) return { error: { message: 'Nur online speicherbar.' } }
-  const { error } = await supabase
-    .from('monteur_report_settings')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', 1)
-  return { error: error ? { message: error.message } : null }
-}
-
-/** Wartungsprotokoll-Zeile aus Auftrags-Checkliste (Upsert je order_id + object_id). */
-export const upsertWartungsChecklistProtocol = async (params: {
-  orderId: string
-  objectId: string
-  maintenanceDate: string
-  technicianId: string | null
-  /** Tür-Checklisten-Block ({ modus, items, norms, order_id }) – optional wenn nur Feststell gespeichert wird. */
-  checklistProtocol?: unknown
-  /** Optionaler Feststellanlagen-Block; auslassen = bestehenden Block beibehalten. */
-  feststellChecklistProtocol?: unknown
-  deficiencyDescription: string | null
-  deficienciesFound: boolean
-}): Promise<{ data: MaintenanceReport | null; error: { message: string } | null }> => {
-  if (!isOnline()) {
-    return { data: null, error: { message: 'Checklisten-Protokoll ist nur online speicherbar.' } }
-  }
-  const now = new Date().toISOString()
-
-  const { data: existing, error: exErr } = await supabase
-    .from('maintenance_reports')
-    .select('id, checklist_protocol')
-    .eq('source_order_id', params.orderId)
-    .eq('object_id', params.objectId)
-    .maybeSingle()
-
-  if (exErr) return { data: null, error: { message: exErr.message } }
-
-  const protocolPatch: { door_checklist?: unknown; feststell_checklist?: unknown } = {}
-  if (params.checklistProtocol !== undefined) protocolPatch.door_checklist = params.checklistProtocol
-  if (params.feststellChecklistProtocol !== undefined)
-    protocolPatch.feststell_checklist = params.feststellChecklistProtocol
-  const mergedProtocol = mergeChecklistProtocolForUpsert(existing?.checklist_protocol, protocolPatch)
-
-  const basePayload: MaintenanceReportPayload = {
-    object_id: params.objectId,
-    maintenance_date: params.maintenanceDate.slice(0, 10),
-    maintenance_time: null,
-    technician_id: params.technicianId,
-    reason: 'regelwartung',
-    reason_other: null,
-    manufacturer_maintenance_done: false,
-    hold_open_checked: null,
-    deficiencies_found: params.deficienciesFound,
-    deficiency_description: params.deficiencyDescription,
-    urgency: null,
-    fixed_immediately: !params.deficienciesFound,
-    customer_signature_path: null,
-    technician_signature_path: null,
-    technician_name_printed: null,
-    customer_name_printed: null,
-    pdf_path: null,
-    synced: true,
-    source_order_id: params.orderId,
-    checklist_protocol: mergedProtocol,
-    updated_at: now,
-  }
-
-  if (existing?.id) {
-    const { data: updated, error: upErr } = await supabase
-      .from('maintenance_reports')
-      .update({
-        maintenance_date: basePayload.maintenance_date,
-        technician_id: basePayload.technician_id,
-        deficiencies_found: basePayload.deficiencies_found,
-        deficiency_description: basePayload.deficiency_description,
-        fixed_immediately: basePayload.fixed_immediately,
-        checklist_protocol: mergedProtocol as Record<string, unknown>,
-        updated_at: now,
-      })
-      .eq('id', existing.id)
-      .select(MAINTENANCE_REPORT_COLUMNS)
-      .single()
-    if (upErr) return { data: null, error: { message: upErr.message } }
-    const reportTyped = updated as unknown as MaintenanceReport
-    const cached = getCachedMaintenanceReports(params.objectId) as MaintenanceReport[]
-    setCachedMaintenanceReports(
-      params.objectId,
-      [reportTyped, ...cached.filter((r) => r.id !== reportTyped.id)]
-    )
-    notifyDataChange()
-    return { data: reportTyped, error: null }
-  }
-
-  const { data: inserted, error: insErr } = await supabase
-    .from('maintenance_reports')
-    .insert(basePayload)
-    .select(MAINTENANCE_REPORT_COLUMNS)
-    .single()
-  if (insErr) return { data: null, error: { message: insErr.message } }
-  const reportTyped = inserted as unknown as MaintenanceReport
-  const cached = getCachedMaintenanceReports(params.objectId) as MaintenanceReport[]
-  setCachedMaintenanceReports(params.objectId, [reportTyped, ...cached])
-  notifyDataChange()
-  return { data: reportTyped, error: null }
-}
-
-export const fetchMaintenanceReportIdByOrderObject = async (
-  orderId: string,
-  objectId: string
-): Promise<string | null> => {
-  if (!isOnline()) return null
-  const { data, error } = await supabase
-    .from('maintenance_reports')
-    .select('id')
-    .eq('source_order_id', orderId)
-    .eq('object_id', objectId)
-    .maybeSingle()
-  if (error || !data?.id) return null
-  return String(data.id)
-}
-
-/** Für Prüfprotokoll-PDF: Report-UUID und laufende Nummer (nach Migration immer gesetzt). */
-export const fetchMaintenanceReportPruefprotokollMetaForOrderObject = async (
-  orderId: string,
-  objectId: string
-): Promise<{ id: string; pruefprotokoll_laufnummer: number | null } | null> => {
-  if (!isOnline()) return null
-  const { data, error } = await supabase
-    .from('maintenance_reports')
-    .select('id, pruefprotokoll_laufnummer')
-    .eq('source_order_id', orderId)
-    .eq('object_id', objectId)
-    .maybeSingle()
-  if (error || !data?.id) return null
-  const n = data.pruefprotokoll_laufnummer
-  const num = typeof n === 'number' ? n : n != null ? Number(n) : NaN
-  if (!Number.isFinite(num) || num <= 0) return { id: String(data.id), pruefprotokoll_laufnummer: null }
-  return { id: String(data.id), pruefprotokoll_laufnummer: Math.trunc(num) }
-}
-
-/** Gespeicherter Pfad zum Checklisten-Prüfprotokoll-PDF (Storage), falls vorhanden. */
-export const fetchPruefprotokollPdfPathForOrderObject = async (
-  orderId: string,
-  objectId: string
-): Promise<string | null> => {
-  if (!isOnline()) return null
-  const { data, error } = await supabase
-    .from('maintenance_reports')
-    .select('pruefprotokoll_pdf_path')
-    .eq('source_order_id', orderId)
-    .eq('object_id', objectId)
-    .maybeSingle()
-  if (error || !data?.pruefprotokoll_pdf_path) return null
-  const p = String(data.pruefprotokoll_pdf_path).trim()
-  return p || null
-}
+export {
+  fetchMonteurReportSettings,
+  updateMonteurReportSettings,
+  fetchMonteurReportSettingsFull,
+  updateMonteurReportWartungChecklisteSettings,
+  updateMonteurReportPortalPdfShareSettings,
+  fetchMonteurReportOrgDigestSettings,
+  updateMonteurReportOrgDigestSettings,
+} from './dataService/monteurReportSettings'
 
 export type DefectFollowupOpenRow = {
   id: string
@@ -1672,39 +958,6 @@ export const insertDefectFollowupsForCompletedWartungOrder = async (params: {
   }
   notifyDataChange()
   return { error: null }
-}
-
-export type MonteurReportOrgDigestSettings = {
-  maintenance_digest_local_time: string
-  maintenance_digest_timezone: string
-  app_public_url: string | null
-}
-
-export const fetchMonteurReportOrgDigestSettings = async (): Promise<MonteurReportOrgDigestSettings | null> => {
-  if (!isOnline()) return null
-  const { data, error } = await supabase
-    .from('monteur_report_settings')
-    .select('maintenance_digest_local_time, maintenance_digest_timezone, app_public_url')
-    .eq('id', 1)
-    .maybeSingle()
-  if (error || !data) return null
-  const row = data as Record<string, unknown>
-  return {
-    maintenance_digest_local_time: String(row.maintenance_digest_local_time ?? '07:00'),
-    maintenance_digest_timezone: String(row.maintenance_digest_timezone ?? 'Europe/Berlin'),
-    app_public_url: row.app_public_url != null ? String(row.app_public_url) : null,
-  }
-}
-
-export const updateMonteurReportOrgDigestSettings = async (
-  patch: Partial<MonteurReportOrgDigestSettings>
-): Promise<{ error: { message: string } | null }> => {
-  if (!isOnline()) return { error: { message: 'Nur online speicherbar.' } }
-  const { error } = await supabase
-    .from('monteur_report_settings')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', 1)
-  return { error: error ? { message: error.message } : null }
 }
 
 export type OpenDeficiencyReportRow = {
@@ -2553,7 +1806,8 @@ export const uploadWartungChecklistInspectorSignature = async (
   const bytes = new Uint8Array(byteChars.length)
   for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
   const blob = new Blob([bytes], { type: 'image/png' })
-  const path = `order-completion-checklist-signatures/${completionId}/${objectId}/inspector.png`
+  // Reuse the proven signature namespace so existing Storage-RLS policies apply.
+  const path = `order-completion-signatures/${completionId}/checklist-${objectId}-inspector.png`
   const { error } = await supabase.storage.from(MAINTENANCE_PHOTOS_BUCKET).upload(path, blob, { upsert: true })
   return { path: error ? null : path, error: error ? { message: error.message } : null }
 }
@@ -2647,136 +1901,6 @@ export const sendMaintenanceReportEmailOrQueue = async (
   return sendMaintenanceReportEmail(path, toEmail, subject, filename)
 }
 
-// --- Object Photos ---
-
-export type ObjectPhotoDisplay = ObjectPhoto & { localDataUrl?: string }
-
-const OBJECT_PHOTOS_BUCKET = 'object-photos'
-const OBJECT_DOCUMENTS_BUCKET = 'object-documents'
-
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      const base64 = result.includes(',') ? result.split(',')[1] : result
-      resolve(base64 ?? '')
-    }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-
-export const fetchObjectPhotos = async (objectId: string): Promise<ObjectPhotoDisplay[]> => {
-  if (isOnline()) {
-    const { data, error } = await supabase
-      .from('object_photos')
-      .select(OBJECT_PHOTO_COLUMNS)
-      .eq('object_id', objectId)
-      .order('created_at', { ascending: false })
-    if (error) return []
-    return (data ?? []) as unknown as ObjectPhotoDisplay[]
-  }
-  const cached = (getCachedObjectPhotos() as ObjectPhoto[]).filter((p) => p.object_id === objectId)
-  const outbox = getObjectPhotoOutbox().filter((o) => o.object_id === objectId)
-  const pending: ObjectPhotoDisplay[] = outbox.map((o) => ({
-    id: o.tempId,
-    object_id: o.object_id,
-    storage_path: '',
-    caption: o.caption,
-    created_at: o.timestamp,
-    localDataUrl: `data:image/${o.ext === 'jpg' ? 'jpeg' : o.ext};base64,${o.fileBase64}`,
-  }))
-  const merged = [...pending, ...cached]
-  merged.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
-  return merged
-}
-
-export const uploadObjectPhoto = async (
-  objectId: string,
-  file: File,
-  caption?: string
-): Promise<{ data: ObjectPhotoDisplay | null; error: { message: string } | null }> => {
-  const ext = file.name.split('.').pop() || 'jpg'
-  if (!isOnline()) {
-    const base64 = await fileToBase64(file)
-    const tempId = `temp-${crypto.randomUUID()}`
-    addToObjectPhotoOutbox({
-      object_id: objectId,
-      tempId,
-      fileBase64: base64,
-      caption: caption?.trim() || null,
-      ext,
-    })
-    notifyDataChange()
-    const localDataUrl = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${base64}`
-    return {
-      data: {
-        id: tempId,
-        object_id: objectId,
-        storage_path: '',
-        caption: caption?.trim() || null,
-        created_at: new Date().toISOString(),
-        localDataUrl,
-      },
-      error: null,
-    }
-  }
-  const blob = await compressImageFile(file)
-  const uploadExt = blob.type === 'image/jpeg' ? 'jpg' : ext
-  const path = `${objectId}/${crypto.randomUUID()}.${uploadExt}`
-  const { error: uploadError } = await supabase.storage
-    .from(OBJECT_PHOTOS_BUCKET)
-    .upload(path, blob, { upsert: false, contentType: blob.type })
-  if (uploadError) return { data: null, error: { message: uploadError.message } }
-  const { data: photo, error } = await supabase
-    .from('object_photos')
-    .insert({ object_id: objectId, storage_path: path, caption: caption?.trim() || null })
-    .select(OBJECT_PHOTO_COLUMNS)
-    .single()
-  return { data: photo ? (photo as unknown as ObjectPhotoDisplay) : null, error: error ? { message: error.message } : null }
-}
-
-export const deleteObjectPhoto = async (
-  photoId: string,
-  storagePath: string
-): Promise<{ error: { message: string } | null }> => {
-  if (!isOnline()) {
-    if (photoId.startsWith('temp-')) {
-      const outbox = getObjectPhotoOutbox()
-      const item = outbox.find((o) => o.tempId === photoId)
-      if (item) removeObjectPhotoOutboxItem(item.id)
-    } else {
-      addToOutbox({
-        table: 'object_photos',
-        action: 'delete',
-        payload: { id: photoId, storage_path: storagePath },
-      })
-      const cached = (getCachedObjectPhotos() as ObjectPhoto[]).filter((p) => p.id !== photoId)
-      setCachedObjectPhotos(cached)
-    }
-    notifyDataChange()
-    return { error: null }
-  }
-  await supabase.storage.from(OBJECT_PHOTOS_BUCKET).remove([storagePath])
-  const { error } = await supabase.from('object_photos').delete().eq('id', photoId)
-  if (!error) {
-    const cached = (getCachedObjectPhotos() as ObjectPhoto[]).filter((p) => p.id !== photoId)
-    setCachedObjectPhotos(cached)
-    notifyDataChange()
-  }
-  return { error: error ? { message: error.message } : null }
-}
-
-export const getObjectPhotoUrl = (storagePath: string): string => {
-  const { data } = supabase.storage
-    .from(OBJECT_PHOTOS_BUCKET)
-    .getPublicUrl(storagePath)
-  return data.publicUrl
-}
-
-export const getObjectPhotoDisplayUrl = (p: ObjectPhotoDisplay): string =>
-  p.localDataUrl ?? getObjectPhotoUrl(p.storage_path)
-
 const copyObjectStorageFileToNewObject = async (
   sourcePath: string,
   targetObjectId: string
@@ -2838,6 +1962,7 @@ const objectRowToCreatePayload = (o: Obj): ObjectPayload => ({
   type_schiebetor: o.type_schiebetor,
   type_freitext: o.type_freitext,
   wing_count: o.wing_count,
+  anforderung: o.anforderung,
   manufacturer: o.manufacturer,
   build_year: o.build_year,
   lock_manufacturer: o.lock_manufacturer,
@@ -2987,236 +2112,16 @@ export const removeObjectProfilePhoto = async (
   return updateObject(objectId, { profile_photo_path: null })
 }
 
-// --- Object Documents ---
-
-export type ObjectDocumentDisplay = ObjectDocument & { localDataUrl?: string }
-
-export const fetchObjectDocuments = async (objectId: string): Promise<ObjectDocumentDisplay[]> => {
-  if (isOnline()) {
-    const { data, error } = await supabase
-      .from('object_documents')
-      .select(OBJECT_DOCUMENT_COLUMNS)
-      .eq('object_id', objectId)
-      .order('created_at', { ascending: false })
-    if (error) return []
-    return (data ?? []) as unknown as ObjectDocumentDisplay[]
-  }
-  const cached = (getCachedObjectDocuments() as ObjectDocument[]).filter((d) => d.object_id === objectId)
-  const outbox = getObjectDocumentOutbox().filter((o) => o.object_id === objectId)
-  const pending: ObjectDocumentDisplay[] = outbox.map((o) => ({
-    id: o.tempId,
-    object_id: o.object_id,
-    storage_path: '',
-    document_type: o.document_type,
-    title: o.title,
-    file_name: o.file_name,
-    created_at: o.timestamp,
-    localDataUrl: `data:application/octet-stream;base64,${o.fileBase64}`,
-  }))
-  const merged = [...pending, ...cached]
-  merged.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
-  return merged
-}
-
-export const uploadObjectDocument = async (
-  objectId: string,
-  file: File,
-  documentType: ObjectDocumentType,
-  title?: string
-): Promise<{ data: ObjectDocumentDisplay | null; error: { message: string } | null }> => {
-  const ext = file.name.split('.').pop() || 'pdf'
-  const fileName = file.name
-  if (!isOnline()) {
-    const base64 = await fileToBase64(file)
-    const tempId = `temp-${crypto.randomUUID()}`
-    addToObjectDocumentOutbox({
-      object_id: objectId,
-      tempId,
-      fileBase64: base64,
-      document_type: documentType,
-      title: title?.trim() || null,
-      file_name: fileName,
-      ext,
-    })
-    notifyDataChange()
-    return {
-      data: {
-        id: tempId,
-        object_id: objectId,
-        storage_path: '',
-        document_type: documentType,
-        title: title?.trim() || null,
-        file_name: fileName,
-        created_at: new Date().toISOString(),
-        localDataUrl: `data:application/octet-stream;base64,${base64}`,
-      },
-      error: null,
-    }
-  }
-  const path = `${objectId}/${crypto.randomUUID()}.${ext}`
-  const { error: uploadError } = await supabase.storage
-    .from(OBJECT_DOCUMENTS_BUCKET)
-    .upload(path, file, { upsert: false })
-  if (uploadError) return { data: null, error: { message: uploadError.message } }
-  const { data: doc, error } = await supabase
-    .from('object_documents')
-    .insert({
-      object_id: objectId,
-      storage_path: path,
-      document_type: documentType,
-      title: title?.trim() || null,
-      file_name: fileName,
-    })
-    .select(OBJECT_DOCUMENT_COLUMNS)
-    .single()
-  return { data: doc ? (doc as unknown as ObjectDocumentDisplay) : null, error: error ? { message: error.message } : null }
-}
-
-export const deleteObjectDocument = async (
-  documentId: string,
-  storagePath: string
-): Promise<{ error: { message: string } | null }> => {
-  if (!isOnline()) {
-    if (documentId.startsWith('temp-')) {
-      const outbox = getObjectDocumentOutbox()
-      const item = outbox.find((o) => o.tempId === documentId)
-      if (item) removeObjectDocumentOutboxItem(item.id)
-    } else {
-      addToOutbox({
-        table: 'object_documents',
-        action: 'delete',
-        payload: { id: documentId, storage_path: storagePath },
-      })
-      const cached = (getCachedObjectDocuments() as ObjectDocument[]).filter((d) => d.id !== documentId)
-      setCachedObjectDocuments(cached)
-    }
-    notifyDataChange()
-    return { error: null }
-  }
-  await supabase.storage.from(OBJECT_DOCUMENTS_BUCKET).remove([storagePath])
-  const { error } = await supabase.from('object_documents').delete().eq('id', documentId)
-  if (!error) {
-    const cached = (getCachedObjectDocuments() as ObjectDocument[]).filter((d) => d.id !== documentId)
-    setCachedObjectDocuments(cached)
-    notifyDataChange()
-  }
-  return { error: error ? { message: error.message } : null }
-}
-
-export const getObjectDocumentUrl = (storagePath: string): string => {
-  const { data } = supabase.storage
-    .from(OBJECT_DOCUMENTS_BUCKET)
-    .getPublicUrl(storagePath)
-  return data.publicUrl
-}
-
-// --- Kundenportal ---
-
-export type PortalUser = {
-  id: string
-  customer_id: string
-  email: string
-  user_id: string | null
-  invited_by: string | null
-  invited_at: string
-  created_at: string
-}
-
-export const fetchPortalUsers = async (customerId: string): Promise<PortalUser[]> => {
-  if (!isOnline()) return []
-  const { data, error } = await supabase
-    .from('customer_portal_users')
-    .select(PORTAL_USER_COLUMNS)
-    .eq('customer_id', customerId)
-    .order('created_at', { ascending: false })
-  if (error) return []
-  return (data ?? []) as unknown as PortalUser[]
-}
-
-export const invitePortalUser = async (
-  customerId: string,
-  email: string
-): Promise<{ success: boolean; error?: string }> => {
-  const { data, error } = await supabase.functions.invoke('invite-portal-user', {
-    body: { customer_id: customerId, email },
-  })
-  if (error) return { success: false, error: error.message }
-  const bodyError = (data as { error?: string })?.error
-  if (bodyError) return { success: false, error: bodyError }
-  return { success: true }
-}
-
-export const deletePortalUser = async (
-  id: string
-): Promise<{ error: { message: string } | null }> => {
-  if (!isOnline()) return { error: { message: 'Offline: Nicht möglich' } }
-  const { error } = await supabase.from('customer_portal_users').delete().eq('id', id)
-  return { error: error ? { message: error.message } : null }
-}
-
-export type PortalUserAssignment = {
-  id: string
-  user_id: string | null
-  customer_id: string
-  email: string
-}
-
-const PORTAL_ASSIGNMENT_COLUMNS = 'id, user_id, customer_id, email'
-
-export const fetchAllPortalUserAssignments = async (): Promise<PortalUserAssignment[]> => {
-  if (!isOnline()) return []
-  const { data, error } = await supabase
-    .from('customer_portal_users')
-    .select(PORTAL_ASSIGNMENT_COLUMNS)
-  if (error) return []
-  return (data ?? []) as PortalUserAssignment[]
-}
-
-export const linkPortalUserToCustomer = async (
-  userId: string,
-  email: string,
-  customerId: string
-): Promise<{ error: string | null }> => {
-  if (!isOnline()) return { error: 'Offline: Nicht möglich' }
-  const { error } = await supabase.from('customer_portal_users').insert({
-    user_id: userId,
-    email,
-    customer_id: customerId,
-  })
-  return { error: error?.message ?? null }
-}
-
-// --- Portal-Objekt/BV-Sichtbarkeit (Whitelist) ---
-
-export type PortalVisibilityRow = { user_id: string; customer_id: string; bv_id: string }
-
-export const fetchPortalVisibility = async (userId: string): Promise<PortalVisibilityRow[]> => {
-  if (!isOnline()) return []
-  const { data, error } = await supabase
-    .from('portal_user_object_visibility')
-    .select('user_id, customer_id, bv_id')
-    .eq('user_id', userId)
-  if (error) return []
-  return (data ?? []) as PortalVisibilityRow[]
-}
-
-export const setPortalVisibilityForCustomer = async (
-  userId: string,
-  customerId: string,
-  bvIds: string[]
-): Promise<{ error: string | null }> => {
-  if (!isOnline()) return { error: 'Offline: Nicht möglich' }
-  const { error: delErr } = await supabase
-    .from('portal_user_object_visibility')
-    .delete()
-    .eq('user_id', userId)
-    .eq('customer_id', customerId)
-  if (delErr) return { error: delErr.message }
-  if (bvIds.length === 0) return { error: null }
-  const rows = bvIds.map((bv_id) => ({ user_id: userId, customer_id: customerId, bv_id }))
-  const { error: insErr } = await supabase.from('portal_user_object_visibility').insert(rows)
-  return { error: insErr?.message ?? null }
-}
+export type { PortalUser, PortalUserAssignment, PortalVisibilityRow } from './dataService/portal'
+export {
+  fetchPortalUsers,
+  invitePortalUser,
+  deletePortalUser,
+  fetchAllPortalUserAssignments,
+  linkPortalUserToCustomer,
+  fetchPortalVisibility,
+  setPortalVisibilityForCustomer,
+} from './dataService/portal'
 
 // --- Aufträge (Orders) ---
 

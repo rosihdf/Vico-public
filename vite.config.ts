@@ -57,6 +57,11 @@ export default defineConfig(() => ({
       // VITE_* nicht per define überschreiben: sonst können leere Strings eingebacken werden,
       // wenn loadEnv zum Config-Zeitpunkt nicht wie erwartet greift (Login: „Supabase nicht konfiguriert“).
     },
+    resolve: {
+      alias: {
+        'vico-zebra-label-printer': path.resolve(__dirname, 'plugins/zebra-label-printer/src/index.ts'),
+      },
+    },
     build: {
       rollupOptions: {
         output: {

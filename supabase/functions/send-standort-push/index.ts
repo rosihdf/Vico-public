@@ -65,14 +65,45 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Berechtigung prüfen: nur Admin/Teamleiter mit request_employee_location dürfen aufrufen
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     })
+    const { data: { user: caller } } = await userClient.auth.getUser()
+    if (!caller) {
+      return new Response(
+        JSON.stringify({ error: 'Nicht angemeldet' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     const { data: role } = await userClient.rpc('get_my_role')
     if (role !== 'admin' && role !== 'teamleiter') {
       return new Response(
         JSON.stringify({ error: 'Keine Berechtigung' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const { data: pendingRows, error: lrErr } = await userClient
+      .from('location_requests')
+      .select('id')
+      .eq('requested_by', caller.id)
+      .eq('requested_user_id', userId)
+      .is('fulfilled_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (lrErr) {
+      return new Response(
+        JSON.stringify({ error: 'Standortanfrage konnte nicht geprüft werden.' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    if (!pendingRows?.length) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Keine passende offene Standortanfrage. Bitte die Anfrage zuerst in der App auslösen.',
+        }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
