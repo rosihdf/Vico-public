@@ -13,6 +13,7 @@ const Grenzueberschreitungen = lazy(() => import('./pages/Grenzueberschreitungen
 const Lizenzmodelle = lazy(() => import('./pages/Lizenzmodelle'))
 const LizenzmodellForm = lazy(() => import('./pages/LizenzmodellForm'))
 const Einstellungen = lazy(() => import('./pages/Einstellungen'))
+const MandantenAktualisieren = lazy(() => import('./pages/MandantenAktualisieren'))
 const AppInfo = lazy(() => import('./pages/AppInfo'))
 const GlobaleWartung = lazy(() => import('./pages/GlobaleWartung'))
 const AppReleases = lazy(() => import('./pages/AppReleases'))
@@ -300,6 +301,11 @@ const App = () => {
           <Route path="beta-feedback" element={
             <Suspense fallback={<PageFallback />}>
               <BetaFeedback />
+            </Suspense>
+          } />
+          <Route path="mandanten-aktualisieren" element={
+            <Suspense fallback={<PageFallback />}>
+              <MandantenAktualisieren />
             </Suspense>
           } />
           <Route path="einstellungen" element={

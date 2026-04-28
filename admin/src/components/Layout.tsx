@@ -21,6 +21,11 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
   const navItems: NavItem[] = [
     { to: '/', label: 'Mandanten', isActive: (p) => p === '/' || p.startsWith('/mandanten') },
     { to: '/globale-wartung', label: 'Globale Wartung', isActive: (p) => p.startsWith('/globale-wartung') },
+    {
+      to: '/mandanten-aktualisieren',
+      label: 'Mandanten aktualisieren',
+      isActive: (p) => p.startsWith('/mandanten-aktualisieren'),
+    },
     { to: '/app-releases', label: 'App-Releases', isActive: (p) => p.startsWith('/app-releases') },
     {
       to: '/release-rollout',
