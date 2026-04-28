@@ -75,7 +75,11 @@ export default defineConfig(() => ({
     test: {
       globals: true,
       environment: 'node',
-      /** Eigene vite.config + Vitest in admin/ und arbeitszeit-portal/ */
-      exclude: ['**/node_modules/**', '**/dist/**', 'admin/**', 'arbeitszeit-portal/**'],
+      /**
+       * Eigene vite.config + Vitest in admin/ und arbeitszeit-portal/.
+       * `e2e/**` enthält Playwright-Specs (eigener Runner via `npm run e2e`); Vitest darf
+       * sie nicht laden, sonst kollidiert Playwrights `test.describe` mit Vitests Globals.
+       */
+      exclude: ['**/node_modules/**', '**/dist/**', 'admin/**', 'arbeitszeit-portal/**', 'e2e/**'],
     },
 }))
