@@ -635,12 +635,6 @@ const extractSchliessmittelDataLineLegacy = (block: string): string | undefined 
   return undefined
 }
 
-const extractSchliessmittelDataLine = (block: string): string | undefined => {
-  const c = tryParseComplexFsaBlock(block)
-  if (c?.schliessmittel_typ) return c.schliessmittel_typ
-  return extractSchliessmittelDataLineLegacy(block)
-}
-
 /**
  * Liest die erste inhaltliche Statuszeile nach „weiteres Zubehör Status“ (ohne restlichen Block-Text,
  * vgl. ehem. `[\s\S]+`-Match).
