@@ -57,7 +57,7 @@ export const runAltberichtEmbeddedImageScanForFile = async (
   if (typeof window === 'undefined') {
     return { count: 0, error: null }
   }
-  let drafts: AltberichtEmbeddedImageDraft[] = []
+  let drafts!: AltberichtEmbeddedImageDraft[]
   try {
     drafts = await scanAltberichtPdfForEmbeddedImages(pdfBytes)
   } catch (e) {
