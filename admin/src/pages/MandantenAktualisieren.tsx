@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import {
@@ -6,47 +6,54 @@ import {
   type MandantenRolloutMode,
   type MandantenRolloutTarget,
 } from '../lib/mandantenRolloutService'
-
-const DEFAULT_ROLLOUT_SQL = 'supabase-complete.sql'
-
-const SQL_FILE_PRESETS: ReadonlyArray<{ value: string; hint?: string }> = [
-  { value: 'supabase-complete.sql', hint: 'Konsolidierter Gesamtstand' },
-  {
-    value: 'docs/sql/mandanten-db-altbericht-import-complete.sql',
-    hint: 'Altbericht-Import · alle Pakete in einem Lauf',
-  },
-  { value: 'docs/sql/mandanten-db-stammdaten-archived-at.sql', hint: 'Stammdaten · archived_at' },
-  { value: 'docs/sql/mandanten-db-altbericht-import-paket-a.sql' },
-  { value: 'docs/sql/mandanten-db-altbericht-import-paket-b-review.sql' },
-  { value: 'docs/sql/mandanten-db-altbericht-import-paket-c1-commit.sql' },
-  { value: 'docs/sql/mandanten-db-altbericht-import-paket-c2-defects.sql' },
-  { value: 'docs/sql/mandanten-db-altbericht-import-paket-d-proposed-id-match-key.sql' },
-  { value: 'docs/sql/mandanten-db-altbericht-import-paket-e-embedded-images.sql' },
-  { value: 'docs/sql/mandanten-db-altbericht-import-paket-f-embedded-image-productive.sql' },
-  { value: 'docs/sql/mandanten-db-altbericht-import-paket-g-embedded-scan-meta.sql' },
-]
+import {
+  findMandantenDbUpdatePackageById,
+  isMandantenDbUpdatePackageAllowedForTarget,
+  visibleMandantenDbUpdatePackages,
+} from '../lib/mandantenDbUpdatePackages'
 
 const MandantenAktualisieren = () => {
+  const visiblePackages = useMemo(() => visibleMandantenDbUpdatePackages(), [])
+  const defaultPackageId = visiblePackages[0]?.id ?? ''
+
   const [rolloutSending, setRolloutSending] = useState(false)
   const [rolloutTarget, setRolloutTarget] = useState<MandantenRolloutTarget>('staging')
-  const [rolloutSqlFile, setRolloutSqlFile] = useState(DEFAULT_ROLLOUT_SQL)
+  const [rolloutPackageId, setRolloutPackageId] = useState<string>(defaultPackageId)
   const [rolloutMessage, setRolloutMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   )
 
+  const selectedPackage = findMandantenDbUpdatePackageById(rolloutPackageId)
+  const isProduction = rolloutTarget === 'production'
+  const isPackageAllowedForTarget = selectedPackage
+    ? isMandantenDbUpdatePackageAllowedForTarget(selectedPackage, rolloutTarget)
+    : false
+  const canTrigger = !!selectedPackage && isPackageAllowedForTarget && !rolloutSending
+
   /**
-   * Bestehende Rollout-Logik 1:1 aus Einstellungen.tsx übernommen – der Edge-Function/
-   * GitHub-Workflow-Pfad bleibt unverändert. Nur Routing/UI wird neu strukturiert.
+   * Bestehende Rollout-Logik (Service → Edge-Function → GitHub-Workflow) bleibt
+   * unverändert. Frontend liefert nur den vom Admin gewählten Paket-`sqlFile`-Wert
+   * weiter – die serverseitige Whitelist in `trigger-mandanten-db-rollout` prüft
+   * den Pfad zusätzlich.
    */
   const handleRollout = async (mode: MandantenRolloutMode) => {
-    const sql = rolloutSqlFile.trim() || DEFAULT_ROLLOUT_SQL
+    if (!selectedPackage) {
+      setRolloutMessage({ type: 'error', text: 'Bitte zuerst ein Update-Paket auswählen.' })
+      return
+    }
+    if (!isPackageAllowedForTarget) {
+      setRolloutMessage({
+        type: 'error',
+        text: `Dieses Paket ist für ${isProduction ? 'Produktion' : 'Staging'} nicht freigegeben.`,
+      })
+      return
+    }
     if (mode === 'apply') {
-      const scope =
-        rolloutTarget === 'production'
-          ? 'PRODUKTION (Secret MANDANTEN_DB_URLS_PRODUCTION oder Legacy MANDANTEN_DB_URLS)'
-          : 'Staging (Secret MANDANTEN_DB_URLS_STAGING)'
+      const scope = isProduction
+        ? 'PRODUKTION (Secret MANDANTEN_DB_URLS_PRODUCTION oder Legacy MANDANTEN_DB_URLS)'
+        : 'Staging (Secret MANDANTEN_DB_URLS_STAGING)'
       const ok = window.confirm(
-        `Echtlauf starten?\n\nZiel: ${scope}\nSQL-Datei (im Repo): ${sql}\n\nVorher Trockenlauf mit gleichen Einstellungen und GitHub Actions-Logs prüfen.`
+        `Echtlauf starten?\n\nPaket: ${selectedPackage.label}\nModul: ${selectedPackage.module}\nZiel: ${scope}\nSQL-Datei (im Repo): ${selectedPackage.sqlFile}\n\nVorher Trockenlauf mit gleichen Einstellungen und GitHub Actions-Logs prüfen.`
       )
       if (!ok) return
     }
@@ -56,7 +63,7 @@ const MandantenAktualisieren = () => {
       const r = await triggerMandantenDbRollout({
         mode,
         target: rolloutTarget,
-        sql_file: sql,
+        sql_file: selectedPackage.sqlFile,
       })
       if (r.ok) {
         setRolloutMessage({ type: 'success', text: r.message ?? 'Anfrage gesendet.' })
@@ -72,8 +79,6 @@ const MandantenAktualisieren = () => {
       setRolloutSending(false)
     }
   }
-
-  const isProduction = rolloutTarget === 'production'
 
   return (
     <div className="max-w-4xl">
@@ -137,34 +142,75 @@ const MandantenAktualisieren = () => {
           </div>
 
           <div>
-            <label htmlFor="rollout-sql-file" className="block text-xs font-medium text-slate-600 mb-1">
-              SQL-Datei im Repo (relativer Pfad)
+            <label htmlFor="rollout-package" className="block text-xs font-medium text-slate-600 mb-1">
+              Update-Paket
             </label>
-            <input
-              id="rollout-sql-file"
-              type="text"
-              value={rolloutSqlFile}
-              onChange={(e) => setRolloutSqlFile(e.target.value)}
-              disabled={rolloutSending}
-              list="rollout-sql-presets"
-              autoComplete="off"
-              className="w-full max-w-full px-3 py-2 rounded-lg border border-slate-300 text-sm font-mono text-slate-800 bg-white"
-              placeholder={DEFAULT_ROLLOUT_SQL}
-              aria-describedby="rollout-sql-hint"
-            />
-            <datalist id="rollout-sql-presets">
-              {SQL_FILE_PRESETS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.hint ?? ''}
-                </option>
-              ))}
-            </datalist>
-            <p id="rollout-sql-hint" className="text-xs text-slate-500 mt-1">
-              Erlaubt: <code className="bg-slate-100 px-1 rounded">supabase-complete.sql</code> oder{' '}
-              <code className="bg-slate-100 px-1 rounded">docs/sql/…/name.sql</code> (nach Push auf
-              main).
+            <select
+              id="rollout-package"
+              value={rolloutPackageId}
+              onChange={(e) => setRolloutPackageId(e.target.value)}
+              disabled={rolloutSending || visiblePackages.length === 0}
+              className="w-full max-w-md px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-800 bg-white"
+              aria-describedby="rollout-package-hint"
+            >
+              {visiblePackages.length === 0 ? (
+                <option value="">Keine freigegebenen Pakete verfügbar</option>
+              ) : (
+                visiblePackages.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label} · {p.module} – {p.description}
+                  </option>
+                ))
+              )}
+            </select>
+            <p id="rollout-package-hint" className="text-xs text-slate-500 mt-1">
+              Auswahl beschränkt auf freigegebene Complete-/Rollout-Pakete. Einzelpakete
+              (A–G, Hotfixes) sind hier bewusst nicht enthalten – siehe{' '}
+              <code className="text-[11px]">docs/sql/Mandanten-DB-Workflow.md</code>.
             </p>
           </div>
+
+          {selectedPackage ? (
+            <div
+              className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2"
+              aria-label="Details zum gewählten Paket"
+            >
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-sm font-semibold text-slate-800">{selectedPackage.label}</span>
+                <span className="text-xs text-slate-500">{selectedPackage.module}</span>
+              </div>
+              <div className="text-xs text-slate-600">
+                <span className="text-slate-500">SQL-Datei:</span>{' '}
+                <code className="bg-white border border-slate-200 px-1 rounded font-mono">
+                  {selectedPackage.sqlFile}
+                </code>
+              </div>
+              <p className="text-xs text-slate-700 leading-relaxed">{selectedPackage.description}</p>
+              {selectedPackage.risk ? (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 leading-relaxed">
+                  <strong className="font-semibold">Hinweis:</strong> {selectedPackage.risk}
+                </p>
+              ) : null}
+              <div
+                className={`text-xs font-medium ${
+                  isPackageAllowedForTarget ? 'text-green-700' : 'text-red-700'
+                }`}
+              >
+                {selectedPackage.targetAllowed === 'both'
+                  ? 'Freigegeben für Staging und Produktion.'
+                  : selectedPackage.targetAllowed === 'staging'
+                    ? 'Nur für Staging freigegeben.'
+                    : 'Nur für Produktion freigegeben.'}
+                {!isPackageAllowedForTarget ? (
+                  <>
+                    {' '}
+                    Aktuelles Ziel: <strong>{isProduction ? 'Produktion' : 'Staging'}</strong> –
+                    bitte anpassen.
+                  </>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {rolloutMessage ? (
@@ -182,8 +228,8 @@ const MandantenAktualisieren = () => {
           <button
             type="button"
             onClick={() => void handleRollout('dry_run')}
-            disabled={rolloutSending}
-            className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-800 bg-white hover:bg-slate-50 disabled:opacity-50 min-h-[44px]"
+            disabled={!canTrigger}
+            className="px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-800 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
             aria-label="Trockenlauf Mandanten-DB-Rollout starten"
           >
             {rolloutSending ? 'Sende…' : 'Trockenlauf'}
@@ -191,8 +237,8 @@ const MandantenAktualisieren = () => {
           <button
             type="button"
             onClick={() => void handleRollout('apply')}
-            disabled={rolloutSending}
-            className={`px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 min-h-[44px] ${
+            disabled={!canTrigger}
+            className={`px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] ${
               isProduction ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'
             }`}
             aria-label="Echtlauf Mandanten-DB-Rollout starten"
