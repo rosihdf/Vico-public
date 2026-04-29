@@ -4,6 +4,9 @@
 
 | Datum | SQL-Datei | Kurzbeschreibung | Bemerkung |
 |-------|-----------|------------------|-----------|
+| 2026-04-28 | mandanten-db-altbericht-import-complete.sql | Konsolidiertes Complete-SQL für den Altbericht-Import: Pakete A bis G + `objects.anforderung` in einer idempotenten Datei | Empfohlen für Sammel-Rollout über Lizenzadmin → „Mandanten aktualisieren". Einzelpakete bleiben für Historie / Reparatur erhalten. |
+| 2026-04-28 | mandanten-db-altbericht-import-paket-e-embedded-images.sql | Paket E idempotent für Re-Apply: `drop policy if exists` vor jeder RLS-Policy auf `altbericht_import_embedded_image` | Behebt 42710 beim Sammel-/Re-Rollout (Postgres < 17 kennt kein `create policy if not exists`) |
+| 2026-04-28 | mandanten-db-altbericht-import-paket-b-review.sql | Paket B daten-robust für Re-Apply: Constraint `review_status` erlaubt zusätzlich `committed` (synchron zu C1-Commit), NULL-Defensiv-Update vor Constraint | Behebt 23514 beim Sammel-/Re-Rollout, wenn bereits `committed`-Zeilen existieren |
 | 2026-04-24 | mandanten-db-altbericht-import-paket-d-proposed-id-match-key.sql | Altbericht Paket D: `proposed_internal_id`, `import_match_key` am Staging (Vorschau-OBJ-ID + Dubletten-Fingerprint) | Nach App-Deploy mit Parser/Persist ausführen |
 | 2026-04-19 | mandanten-db-altbericht-import-paket-c2-defects.sql | Altbericht Paket C2: `c2_defects_*` am Staging, RPC `altbericht_import_c2_commit_defects` (append Mängel, idempotent) | Nach App-Deploy mit C2 ausführen |
 | 2026-04-19 | mandanten-db-altbericht-import-paket-c1-commit.sql | Altbericht Paket C1: `review_object_id`, `committed_at`, `committed_object_id`, `commit_last_error`, `review_status` inkl. `committed` | Nach App-Deploy mit C1-Commit-Service ausführen |
