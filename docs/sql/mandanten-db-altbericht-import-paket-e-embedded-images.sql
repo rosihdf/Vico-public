@@ -34,6 +34,13 @@ create trigger altbericht_import_embedded_image_updated_at
 
 alter table public.altbericht_import_embedded_image enable row level security;
 
+-- Idempotent: Postgres < 17 kennt kein `create policy if not exists`. Beim Re-Apply würde der zweite
+-- Lauf sonst mit 42710 (policy already exists) abbrechen. Daher vor jedem create policy ein drop.
+drop policy if exists "altbericht_import_embedded_image select staff" on public.altbericht_import_embedded_image;
+drop policy if exists "altbericht_import_embedded_image insert staff" on public.altbericht_import_embedded_image;
+drop policy if exists "altbericht_import_embedded_image update staff" on public.altbericht_import_embedded_image;
+drop policy if exists "altbericht_import_embedded_image delete staff" on public.altbericht_import_embedded_image;
+
 create policy "altbericht_import_embedded_image select staff"
   on public.altbericht_import_embedded_image for select
   using (auth.uid() is not null and not public.is_portal_customer());

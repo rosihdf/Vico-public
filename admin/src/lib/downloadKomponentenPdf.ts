@@ -12,5 +12,5 @@ const triggerDownload = (blob: Blob, filename: string) => {
 
 export const downloadKomponentenPdf = () => {
   const blob = generateKomponentenPdf(komponentenPdfContent)
-  triggerDownload(blob, 'Vico-Komponenten-Funktionen.pdf')
+  triggerDownload(blob, 'ArioVan-Komponenten-Funktionen.pdf')
 }

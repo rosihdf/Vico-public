@@ -90,6 +90,19 @@ const DAU_LIVE_SKIPPABLE_VALIDATION_CODES: ReadonlySet<string> = new Set([
   ALTBERICHT_STAGING_VALIDATION_CODES.MISSING_LOCATION,
 ])
 
+/** BV ist für C1 generell optional; alte gespeicherte `missing_bv`-Validierungen dürfen nicht blockieren. */
+const C1_OPTIONAL_PERSISTED_VALIDATION_CODES: ReadonlySet<string> = new Set([
+  ALTBERICHT_STAGING_VALIDATION_CODES.MISSING_BV,
+])
+
+const persistedBlockingValidationErrors = (row: AltberichtImportStagingObjectRow): unknown[] =>
+  validationErrorsArray(row).filter((item) => {
+    if (!item || typeof item !== 'object') return true
+    const code = (item as { code?: unknown }).code
+    if (typeof code !== 'string' || !code.trim()) return true
+    return !C1_OPTIONAL_PERSISTED_VALIDATION_CODES.has(code.trim())
+  })
+
 /** DAU: Pflicht ist nur Kunde (Review/Neuanlage) oder leiten über gesetztes BV. */
 const dauHasMandatoryCustomerForCommit = (
   row: AltberichtImportStagingObjectRow,
@@ -98,6 +111,7 @@ const dauHasMandatoryCustomerForCommit = (
 ): boolean => {
   if (row.review_customer_id?.trim()) return true
   if (options?.newCustomer) return true
+  if (options?.newBv?.customer_id?.trim()) return true
   if (getEffectiveBvId(input)?.trim()) return true
   return false
 }
@@ -121,11 +135,11 @@ export const isAltberichtStagingRowCommitEligible = (
   if (row.committed_at) return false
   if (options?.allowMissingDetails) {
     if (hasBlockingPersistedValidationErrors(row)) return false
-  } else if (validationErrorsArray(row).length > 0) {
+  } else if (persistedBlockingValidationErrors(row).length > 0) {
     return false
   }
   const input = rowToStagingInput(row)
-  if (options?.allowMissingDetails && !dauHasMandatoryCustomerForCommit(row, input, options)) {
+  if (!dauHasMandatoryCustomerForCommit(row, input, options)) {
     return false
   }
   const errs = validateAltberichtStagingRow(input)
@@ -203,6 +217,20 @@ export const commitAltberichtC1StagingRow = async (
   let bvId = getEffectiveBvId(input)?.trim() || null
 
   try {
+    await insertAltberichtImportEvent(client, {
+      jobId: row.job_id,
+      fileId: row.file_id,
+      stagingObjectId,
+      level: 'info',
+      code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_ROW_STARTED,
+      message: 'C1: Zeilen-Commit gestartet',
+      payloadJson: {
+        review_customer_id: customerId,
+        review_bv_id: bvId,
+        review_object_id: row.review_object_id?.trim() || null,
+      },
+    })
+
     if (!customerId && options?.newCustomer) {
       const { data: cust, error: cErr } = await createCustomer(options.newCustomer)
       if (cErr || !cust) {
@@ -245,10 +273,6 @@ export const commitAltberichtC1StagingRow = async (
       })
     }
 
-    if (!bvId && !options?.allowMissingDetails) {
-      throw new Error('BV fehlt (Review oder newBv).')
-    }
-
     if (!customerId) {
       if (!bvId) {
         throw new Error('Kunde fehlt (review_customer_id oder Neuanlage).')
@@ -281,6 +305,7 @@ export const commitAltberichtC1StagingRow = async (
 
     const reviewObjectId = row.review_object_id?.trim() || null
     let committedObjectId: string
+    let linkedExistingObject = Boolean(reviewObjectId)
 
     if (reviewObjectId) {
       const { data: objRow, error: oErr } = await client
@@ -296,8 +321,18 @@ export const commitAltberichtC1StagingRow = async (
         if (objRow.bv_id !== bvId) {
           throw new Error('Objekt gehört nicht zum gewählten BV.')
         }
-      } else if (objRow.bv_id != null && !options?.allowMissingDetails) {
-        throw new Error('Objekt ist einem Bauvorhaben zugeordnet – bitte BV wählen oder Expertenmodus.')
+      } else if (objRow.bv_id != null) {
+        const { data: objBv, error: objBvErr } = await client
+          .from('bvs')
+          .select('customer_id, archived_at')
+          .eq('id', objRow.bv_id)
+          .single()
+        if (objBvErr || !objBv || objBv.archived_at) {
+          throw new Error(objBvErr?.message ?? 'Objekt-BV nicht gefunden oder archiviert.')
+        }
+        if (objBv.customer_id !== customerId) {
+          throw new Error('Objekt-BV gehört nicht zum gewählten Kunden.')
+        }
       }
       if (objRow.customer_id != null && objRow.customer_id !== customerId) {
         throw new Error('Objekt-Kunde weicht vom gewählten Kunden ab.')
@@ -314,18 +349,218 @@ export const commitAltberichtC1StagingRow = async (
         catalog: row.catalog_candidates_json,
         proposedInternalId: row.proposed_internal_id?.trim() || null,
       })
-      const { data: created, error: oCreateErr } = await createObject(objPayload)
-      if (oCreateErr || !created) {
-        throw new Error(oCreateErr?.message ?? 'Objekt konnte nicht angelegt werden')
+      const objectPayloadSummary = {
+        customer_id: objPayload.customer_id,
+        bv_id: objPayload.bv_id,
+        internal_id: objPayload.internal_id,
+        has_name: Boolean(objPayload.name?.trim()),
+        name_length: objPayload.name?.trim().length ?? 0,
+        has_floor: Boolean(objPayload.floor?.trim()),
+        has_room: Boolean(objPayload.room?.trim()),
+        has_type_freitext: Boolean(objPayload.type_freitext?.trim()),
+        type_tuer: objPayload.type_tuer,
+        type_sektionaltor: objPayload.type_sektionaltor,
+        type_schiebetor: objPayload.type_schiebetor,
+        has_anforderung: Boolean(objPayload.anforderung?.trim()),
+        has_hold_open: objPayload.has_hold_open,
       }
-      committedObjectId = created.id
+      await insertAltberichtImportEvent(client, {
+        jobId: row.job_id,
+        fileId: row.file_id,
+        stagingObjectId,
+        level: 'info',
+        code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_CREATE_STARTED,
+        message: 'C1: Objektanlage gestartet',
+        payloadJson: {
+          ...objectPayloadSummary,
+          proposed_internal_id: row.proposed_internal_id ?? null,
+        },
+      })
+      const { data: existingByInternalId, error: existingByInternalIdErr } = await client
+        .from('objects')
+        .select('id, customer_id, bv_id, archived_at')
+        .eq('internal_id', objPayload.internal_id)
+        .maybeSingle()
+
+      if (existingByInternalIdErr) {
+        await insertAltberichtImportEvent(client, {
+          jobId: row.job_id,
+          fileId: row.file_id,
+          stagingObjectId,
+          level: 'error',
+          code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_CREATE_FAILED,
+          message: `C1: Dublettenprüfung fehlgeschlagen — ${existingByInternalIdErr.message}`,
+          payloadJson: {
+            ...objectPayloadSummary,
+            error: existingByInternalIdErr.message,
+            code: existingByInternalIdErr.code ?? null,
+            details: existingByInternalIdErr.details ?? null,
+            hint: existingByInternalIdErr.hint ?? null,
+          },
+        })
+        throw new Error(existingByInternalIdErr.message)
+      }
+
+      if (existingByInternalId) {
+        if (existingByInternalId.archived_at) {
+          throw new Error(`Interne ID ${objPayload.internal_id} existiert bereits, ist aber archiviert.`)
+        }
+        if (existingByInternalId.customer_id != null && existingByInternalId.customer_id !== customerId) {
+          throw new Error(`Interne ID ${objPayload.internal_id} gehört bereits zu einem anderen Kunden.`)
+        }
+        if (bvId && existingByInternalId.bv_id != null && existingByInternalId.bv_id !== bvId) {
+          throw new Error(`Interne ID ${objPayload.internal_id} gehört bereits zu einem anderen BV.`)
+        }
+        if (!bvId && existingByInternalId.bv_id != null) {
+          const { data: existingBv, error: existingBvErr } = await client
+            .from('bvs')
+            .select('customer_id, archived_at')
+            .eq('id', existingByInternalId.bv_id)
+            .single()
+          if (existingBvErr || !existingBv || existingBv.archived_at) {
+            throw new Error(existingBvErr?.message ?? `BV des bestehenden Objekts ${objPayload.internal_id} nicht gefunden oder archiviert.`)
+          }
+          if (existingBv.customer_id !== customerId) {
+            throw new Error(`Interne ID ${objPayload.internal_id} gehört über ein BV zu einem anderen Kunden.`)
+          }
+        }
+        committedObjectId = existingByInternalId.id
+        linkedExistingObject = true
+        await insertAltberichtImportEvent(client, {
+          jobId: row.job_id,
+          fileId: row.file_id,
+          stagingObjectId,
+          level: 'warn',
+          code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_DUPLICATE_LINKED,
+          message: 'C1: Interne ID existiert bereits, bestehendes Objekt wird als Ziel verwendet',
+          payloadJson: {
+            ...objectPayloadSummary,
+            object_id: committedObjectId,
+            existing_customer_id: existingByInternalId.customer_id,
+            existing_bv_id: existingByInternalId.bv_id,
+          },
+        })
+      } else {
+        const { data: created, error: oCreateErr } = await createObject(objPayload)
+        if (oCreateErr || !created) {
+          await insertAltberichtImportEvent(client, {
+            jobId: row.job_id,
+            fileId: row.file_id,
+            stagingObjectId,
+            level: 'error',
+            code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_CREATE_FAILED,
+            message: `C1: Objektanlage fehlgeschlagen — ${oCreateErr?.message ?? 'Keine Daten zurückgegeben'}`,
+            payloadJson: {
+              ...objectPayloadSummary,
+              error: oCreateErr?.message ?? 'created row missing',
+              code: oCreateErr?.code ?? null,
+              details: oCreateErr?.details ?? null,
+              hint: oCreateErr?.hint ?? null,
+            },
+          })
+          throw new Error(oCreateErr?.message ?? 'Objekt konnte nicht angelegt werden')
+        }
+        committedObjectId = created.id
+        await insertAltberichtImportEvent(client, {
+          jobId: row.job_id,
+          fileId: row.file_id,
+          stagingObjectId,
+          level: 'info',
+          code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_CREATED,
+          message: 'C1: Objekt angelegt',
+          payloadJson: { object_id: committedObjectId, internal_id: created.internal_id ?? objPayload.internal_id },
+        })
+      }
     }
+
+    await insertAltberichtImportEvent(client, {
+      jobId: row.job_id,
+      fileId: row.file_id,
+      stagingObjectId,
+      level: 'info',
+      code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_VERIFY_STARTED,
+      message: 'C1: Objekt-Rücklesen gestartet',
+      payloadJson: {
+        object_id: committedObjectId,
+        linked_existing_object: linkedExistingObject,
+      },
+    })
+
+    const { data: verifyObj, error: verifyErr } = await client
+      .from('objects')
+      .select('id, customer_id, bv_id, archived_at')
+      .eq('id', committedObjectId)
+      .single()
+
+    if (verifyErr || !verifyObj || verifyObj.archived_at) {
+      const message = verifyErr?.message ?? 'Objekt nach C1-Commit nicht gefunden oder archiviert.'
+      await insertAltberichtImportEvent(client, {
+        jobId: row.job_id,
+        fileId: row.file_id,
+        stagingObjectId,
+        level: 'warn',
+        code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_VERIFY_FAILED,
+        message: `C1: Objekt-Verifikation fehlgeschlagen — ${message}`,
+        payloadJson: {
+          object_id: committedObjectId,
+          error: message,
+          code: verifyErr?.code ?? null,
+          details: verifyErr?.details ?? null,
+          hint: verifyErr?.hint ?? null,
+        },
+      })
+      throw new Error(message)
+    }
+
+    if (bvId && verifyObj.bv_id !== bvId) {
+      const message = 'Objekt-Verifikation fehlgeschlagen: BV weicht nach Commit ab.'
+      await insertAltberichtImportEvent(client, {
+        jobId: row.job_id,
+        fileId: row.file_id,
+        stagingObjectId,
+        level: 'error',
+        code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_VERIFY_FAILED,
+        message,
+        payloadJson: { object_id: committedObjectId, expected_bv_id: bvId, actual_bv_id: verifyObj.bv_id },
+      })
+      throw new Error(message)
+    }
+
+    if (verifyObj.customer_id != null && verifyObj.customer_id !== customerId) {
+      const message = 'Objekt-Verifikation fehlgeschlagen: Kunde weicht nach Commit ab.'
+      await insertAltberichtImportEvent(client, {
+        jobId: row.job_id,
+        fileId: row.file_id,
+        stagingObjectId,
+        level: 'error',
+        code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_VERIFY_FAILED,
+        message,
+        payloadJson: { object_id: committedObjectId, expected_customer_id: customerId, actual_customer_id: verifyObj.customer_id },
+      })
+      throw new Error(message)
+    }
+
+    await insertAltberichtImportEvent(client, {
+      jobId: row.job_id,
+      fileId: row.file_id,
+      stagingObjectId,
+      level: 'info',
+      code: ALTBERICHT_IMPORT_EVENT.COMMIT_C1_OBJECT_VERIFIED,
+      message: 'C1: Objekt nach Commit verifiziert',
+      payloadJson: {
+        object_id: committedObjectId,
+        customer_id: verifyObj.customer_id,
+        bv_id: verifyObj.bv_id,
+        linked_existing_object: linkedExistingObject,
+      },
+    })
 
     const committedAt = new Date().toISOString()
     const { error: upErr } = await client
       .from('altbericht_import_staging_object')
       .update({
         review_status: 'committed',
+        review_object_id: linkedExistingObject ? committedObjectId : row.review_object_id ?? null,
         committed_at: committedAt,
         committed_object_id: committedObjectId,
         commit_last_error: null,
@@ -347,7 +582,7 @@ export const commitAltberichtC1StagingRow = async (
         customer_id: customerId,
         bv_id: bvId,
         object_id: committedObjectId,
-        linked_existing_object: Boolean(reviewObjectId),
+        linked_existing_object: linkedExistingObject,
       },
     })
 

@@ -52,7 +52,19 @@ const mergePatch = (
     patch.review_status !== undefined
       ? patch.review_status
       : ((row.review_status ?? 'draft') as AltberichtImportReviewStatus),
+  findings_json:
+    patch.findings_json !== undefined ? patch.findings_json : row.findings_json,
 })
+
+const findingsJsonChanged = (before: unknown, next: unknown): boolean =>
+  JSON.stringify(before ?? []) !== JSON.stringify(next ?? [])
+
+const patchDefinesOnlyFindings = (patch: AltberichtStagingReviewPatch): boolean => {
+  const keys = (Object.keys(patch) as (keyof AltberichtStagingReviewPatch)[]).filter(
+    (k) => patch[k] !== undefined
+  )
+  return keys.length === 1 && keys[0] === 'findings_json'
+}
 
 const resolveNextReviewStatusAfterPatch = (
   before: AltberichtImportStagingObjectRow,
@@ -212,7 +224,7 @@ export const patchAltberichtStagingReview = async (
   stagingObjectId: string,
   patch: AltberichtStagingReviewPatch,
   client: SupabaseClient = supabase
-): Promise<{ error: Error | null }> => {
+): Promise<{ error: Error | null; row?: AltberichtImportStagingObjectRow | null }> => {
   const { data: row, error: loadErr } = await client
     .from('altbericht_import_staging_object')
     .select('*')
@@ -220,13 +232,64 @@ export const patchAltberichtStagingReview = async (
     .single()
 
   if (loadErr || !row) {
-    return { error: new Error(loadErr?.message ?? 'Staging-Zeile nicht gefunden') }
+    return { error: new Error(loadErr?.message ?? 'Staging-Zeile nicht gefunden'), row: null }
   }
 
   const typed = row as unknown as AltberichtImportStagingObjectRow
-  if (typed.committed_at || typed.review_status === 'committed') {
-    return { error: new Error('Staging-Zeile ist bereits produktiv committed (C1).') }
+  const isC1Committed = Boolean(typed.committed_at || typed.review_status === 'committed')
+
+  if (isC1Committed) {
+    if (!patchDefinesOnlyFindings(patch)) {
+      return {
+        error: new Error(
+          'Staging-Zeile ist bereits in den Stammdaten übernommen (C1). Nur Mängel-Texte (findings_json) dürfen noch angepasst werden.'
+        ),
+        row: null,
+      }
+    }
+    if (patch.findings_json === undefined) {
+      return { error: new Error('Keine Änderung übermittelt.'), row: null }
+    }
+
+    const { data: auth } = await client.auth.getUser()
+    const reviewedBy = auth.user?.id ?? null
+    const resetC2 = findingsJsonChanged(typed.findings_json, patch.findings_json)
+    const { data: updated, error: upErr } = await client
+      .from('altbericht_import_staging_object')
+      .update({
+        findings_json: patch.findings_json,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: reviewedBy,
+        ...(resetC2
+          ? {
+              c2_defects_imported_keys: [],
+              c2_defects_last_import_at: null,
+              c2_defects_last_error: null,
+            }
+          : {}),
+      })
+      .eq('id', stagingObjectId)
+      .select('*')
+      .single()
+
+    if (upErr || !updated) {
+      return { error: new Error(upErr?.message ?? 'Update fehlgeschlagen'), row: null }
+    }
+
+    const out = updated as unknown as AltberichtImportStagingObjectRow
+    await insertAltberichtImportEvent(client, {
+      jobId: typed.job_id,
+      fileId: typed.file_id,
+      stagingObjectId,
+      level: 'info',
+      code: ALTBERICHT_IMPORT_EVENT.REVIEW_PATCH,
+      message: 'Mängel (findings_json) angepasst',
+      payloadJson: { patch: { findings_json: true }, c2Reset: resetC2 },
+    })
+
+    return { error: null, row: out }
   }
+
   const merged = mergePatch(typed, patch)
   const validationErrors = validateAltberichtStagingRow(rowToInput(merged))
   const payloadJson = validationErrorsToJson(validationErrors)
@@ -235,7 +298,11 @@ export const patchAltberichtStagingReview = async (
   const { data: auth } = await client.auth.getUser()
   const reviewedBy = auth.user?.id ?? null
 
-  const { error: upErr } = await client
+  const touchFindings = patch.findings_json !== undefined
+  const resetC2 =
+    touchFindings && findingsJsonChanged(typed.findings_json, merged.findings_json)
+
+  const { data: updated, error: upErr } = await client
     .from('altbericht_import_staging_object')
     .update({
       review_customer_id: merged.review_customer_id ?? null,
@@ -251,10 +318,24 @@ export const patchAltberichtStagingReview = async (
       validation_errors_json: payloadJson,
       reviewed_at: new Date().toISOString(),
       reviewed_by: reviewedBy,
+      ...(touchFindings ? { findings_json: merged.findings_json } : {}),
+      ...(resetC2
+        ? {
+            c2_defects_imported_keys: [],
+            c2_defects_last_import_at: null,
+            c2_defects_last_error: null,
+          }
+        : {}),
     })
     .eq('id', stagingObjectId)
+    .select('*')
+    .single()
 
-  if (upErr) return { error: new Error(upErr.message) }
+  if (upErr || !updated) {
+    return { error: new Error(upErr?.message ?? 'Update fehlgeschlagen'), row: null }
+  }
+
+  const out = updated as unknown as AltberichtImportStagingObjectRow
 
   await insertAltberichtImportEvent(client, {
     jobId: typed.job_id,
@@ -282,5 +363,5 @@ export const patchAltberichtStagingReview = async (
     })
   }
 
-  return { error: null }
+  return { error: null, row: out }
 }

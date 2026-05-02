@@ -27,6 +27,10 @@ export type Tenant = {
   mail_from_email?: string | null
   mail_reply_to?: string | null
   mail_monthly_limit?: number | null
+  smtp_host?: string | null
+  smtp_port?: number | null
+  smtp_implicit_tls?: boolean | null
+  smtp_username?: string | null
   supabase_project_ref: string | null
   supabase_url: string | null
   /** Optionale Cloudflare-Pages-Preview-URLs (Dokumentation / Verbindungsprüfung) */
@@ -95,7 +99,7 @@ export const createTenant = async (payload: Partial<Tenant>): Promise<{ id: stri
       primary_color: payload.primary_color ?? '#5b7895',
       secondary_color: payload.secondary_color ?? null,
       favicon_url: payload.favicon_url ?? null,
-      app_name: payload.app_name ?? 'AMRtech',
+      app_name: payload.app_name ?? 'ArioVan',
       impressum_company_name: payload.impressum_company_name ?? null,
       impressum_address: payload.impressum_address ?? null,
       impressum_contact: payload.impressum_contact ?? null,
@@ -110,6 +114,10 @@ export const createTenant = async (payload: Partial<Tenant>): Promise<{ id: stri
       mail_from_email: payload.mail_from_email ?? null,
       mail_reply_to: payload.mail_reply_to ?? null,
       mail_monthly_limit: payload.mail_monthly_limit ?? 3000,
+      smtp_host: payload.smtp_host ?? null,
+      smtp_port: payload.smtp_port ?? 587,
+      smtp_implicit_tls: payload.smtp_implicit_tls ?? false,
+      smtp_username: payload.smtp_username ?? null,
       supabase_project_ref: payload.supabase_project_ref ?? null,
       supabase_url: payload.supabase_url ?? null,
       cf_preview_main_url: payload.cf_preview_main_url ?? null,

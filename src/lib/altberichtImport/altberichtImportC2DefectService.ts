@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../../supabase'
-import { textShouldBeExcludedFromAltberichtC2Import } from './altberichtImportC2FindingFilter'
+import {
+  altberichtC2FindingManualReviewHint,
+  normalizeAltberichtC2FindingText,
+  textShouldBeExcludedFromAltberichtC2Import,
+} from './altberichtImportC2FindingFilter'
 import type { AltberichtParserFindingCandidateV1 } from './parserContractV1'
 import { ALTBERICHT_IMPORT_EVENT } from './altberichtImportConstants'
 import { insertAltberichtImportEvent } from './altberichtImportEvents'
@@ -11,8 +15,13 @@ export const altberichtC2FindingKey = (index: number): string => `f:${index}`
 export type AltberichtC2FindingRow = {
   key: string
   index: number
+  /** Rohtext aus findings_json */
   originalText: string
+  /** Bereinigter Text für Commit (ohne Dokumentkopf) */
+  commitText: string
   alreadyImported: boolean
+  /** Optionale UI-Warnung: inhaltlich zur manuellen Prüfung empfohlen */
+  reviewHint?: string
 }
 
 export type AltberichtC2CommitItem = { key: string; text: string }
@@ -50,7 +59,11 @@ export const parseAltberichtC2ImportedKeys = (row: AltberichtImportStagingObject
 const isFindingRecord = (x: unknown): x is AltberichtParserFindingCandidateV1 =>
   Boolean(x && typeof x === 'object' && typeof (x as { text?: unknown }).text === 'string')
 
-export { textShouldBeExcludedFromAltberichtC2Import } from './altberichtImportC2FindingFilter'
+export {
+  altberichtC2FindingManualReviewHint,
+  normalizeAltberichtC2FindingText,
+  textShouldBeExcludedFromAltberichtC2Import,
+} from './altberichtImportC2FindingFilter'
 
 export const listAltberichtC2FindingRows = (
   row: AltberichtImportStagingObjectRow
@@ -64,12 +77,16 @@ export const listAltberichtC2FindingRows = (
     const t = item.text.trim()
     if (!t) return
     if (textShouldBeExcludedFromAltberichtC2Import(t)) return
+    const commitText = normalizeAltberichtC2FindingText(t) ?? t
+    if (textShouldBeExcludedFromAltberichtC2Import(commitText)) return
     const key = altberichtC2FindingKey(index)
     out.push({
       key,
       index,
       originalText: item.text,
+      commitText,
       alreadyImported: imported.has(key),
+      reviewHint: altberichtC2FindingManualReviewHint(commitText),
     })
   })
   return out
@@ -127,6 +144,29 @@ export const commitAltberichtC2DefectsForStagingRow = async (
     return { ok: false, errorCode: 'no_items', errorMessage: 'Bitte mindestens einen Mangel auswählen.' }
   }
 
+  const sanitized: AltberichtC2CommitItem[] = []
+  for (const it of items) {
+    const text = normalizeAltberichtC2FindingText(it.text) ?? it.text.trim()
+    if (!text || textShouldBeExcludedFromAltberichtC2Import(text)) {
+      await insertAltberichtImportEvent(client, {
+        jobId: row.job_id,
+        fileId: row.file_id,
+        stagingObjectId: row.id,
+        level: 'warn',
+        code: ALTBERICHT_IMPORT_EVENT.COMMIT_C2_DEFECTS_REJECTED,
+        message: 'C2 abgelehnt: unzulässiger Text (Dokumentkopf/Filter).',
+        payloadJson: { key: it.key, phase: 'client_guard' },
+      })
+      return {
+        ok: false,
+        errorCode: 'invalid_item',
+        errorMessage:
+          'C2: Unzulässiger Mangeltext (Dokumentkopf oder Textfilter). Es wurde nichts produktiv übernommen. Bitte Text prüfen.',
+      }
+    }
+    sanitized.push({ key: it.key, text })
+  }
+
   await insertAltberichtImportEvent(client, {
     jobId: row.job_id,
     fileId: row.file_id,
@@ -134,12 +174,12 @@ export const commitAltberichtC2DefectsForStagingRow = async (
     level: 'info',
     code: ALTBERICHT_IMPORT_EVENT.COMMIT_C2_DEFECTS_STARTED,
     message: 'C2: Mängelübernahme gestartet',
-    payloadJson: { itemCount: items.length, keys: items.map((i) => i.key) },
+    payloadJson: { itemCount: sanitized.length, keys: sanitized.map((i) => i.key) },
   })
 
   const { data, error } = await client.rpc('altbericht_import_c2_commit_defects', {
     p_staging_object_id: row.id,
-    p_items: items,
+    p_items: sanitized,
   })
 
   if (error) {

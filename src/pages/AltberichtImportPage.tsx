@@ -1,15 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../AuthContext'
 import { useToast } from '../ToastContext'
-import { isMandantSupabaseEnvConfigured } from '../supabase'
+import { isMandantSupabaseEnvConfigured, supabase } from '../supabase'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { AltberichtImportProgressPanel } from '../components/altberichtImport/AltberichtImportProgressPanel'
+import type { AltberichtImportProgressPanelState } from '../components/altberichtImport/AltberichtImportProgressPanel'
+import { AltberichtStandardRowFindingsSection } from '../components/altberichtImport/AltberichtStandardRowFindingsSection'
+import { AltberichtStagingRowEmbeddedImages } from '../components/altberichtImport/AltberichtStagingRowEmbeddedImages'
 import { AltberichtExpertEmbeddedImagesPanel } from '../components/altberichtImport/AltberichtExpertEmbeddedImagesPanel'
+import { clearAltberichtEmbeddedImagePreviewInflight } from '../components/altberichtImport/AltberichtEmbeddedImagePreviewThumb'
+import { clearAltberichtPositionBlockThumbInflightCaches } from '../components/altberichtImport/AltberichtPositionBlockThumb'
 import { AltberichtStagingReviewRowEditor } from '../components/altberichtImport/AltberichtStagingReviewRowEditor'
 import { fetchAllBvs, fetchAllObjects, fetchCustomers } from '../lib/dataService'
 import type { Customer } from '../types/customer'
 import type { BV } from '../types/bv'
 import type { Object as Obj } from '../types/object'
 import {
+  ALTBERICHT_IMPORT_EVENT,
+  altberichtBulkResultToastType,
+  altberichtToastTypeForCode,
   applyAltberichtJobReviewCustomerBvDefaults,
   commitAltberichtC1Job,
   commitAltberichtC1StagingRow,
@@ -19,6 +28,7 @@ import {
   fetchAltberichtEmbeddedImagesForJob,
   fetchAltberichtImportFilesForJob,
   fetchAltberichtImportStagingForJob,
+  fetchAltberichtSkippedPagesByFileForJob,
   isAltberichtStagingRowC2Eligible,
   isAltberichtStagingRowCommitEligible,
   listAltberichtC2FindingRows,
@@ -28,11 +38,28 @@ import {
   persistAltberichtMatchCandidatesForStaging,
   recomputeAltberichtStagingReviewForJob,
   recomputeAltberichtStagingReviewRow,
+  clearAltberichtPositionBlockGeometryCache,
   deleteAltberichtImportJob,
   runAltberichtImportParseForFile,
   runAltberichtImportParseJobSequential,
 } from '../lib/altberichtImport'
+import PdfPreviewOverlay, { type PdfPreviewState } from '../components/PdfPreviewOverlay'
 import { buildC1PositionCompare } from '../lib/altberichtImport/altberichtImportC1CompareReport'
+import {
+  isEmbeddedImageLikelyLogo,
+  listEmbeddedImagesForStagingRow,
+  shouldCountAltberichtEmbeddedImageForFileStats,
+} from '../lib/altberichtImport/altberichtImportEmbeddedImageRowUi'
+import {
+  checkAltberichtImportReadiness,
+  type AltberichtImportReadinessResult,
+} from '../lib/altberichtImport/altberichtImportReadinessService'
+import { clearAltberichtImportPdfBufferCache } from '../lib/altberichtImport/altberichtImportPdfDownloadCache'
+import { clearAltberichtPdfJsDocumentCache } from '../lib/altberichtImport/altberichtPdfPageThumb'
+import type {
+  AltberichtImportParseStats,
+  AltberichtImportUiProgressPayload,
+} from '../lib/altberichtImport/altberichtImportUiProgress'
 import { fetchObjectsByIdsForCompare } from '../lib/altberichtImport/altberichtImportQueryService'
 import type {
   AltberichtC1RowCommitOverrides,
@@ -125,6 +152,17 @@ const resolveStandardBvDisplayLabel = (
   return 'Nicht zugeordnet'
 }
 
+/** Blob-URL ohne Hash-Fragment (`#page=…`) freigeben, sonst leaked der Object-URL-Eintrag. */
+const revokeAltberichtPdfBlobObjectUrl = (urlWithOptionalFragment: string): void => {
+  const base = urlWithOptionalFragment.split('#')[0] ?? ''
+  if (!base) return
+  try {
+    URL.revokeObjectURL(base)
+  } catch {
+    /* ignore */
+  }
+}
+
 const buildNewCustomerOverride = (name: string): NonNullable<AltberichtC1RowCommitOverrides['newCustomer']> => ({
   name,
   street: null,
@@ -174,7 +212,7 @@ const humanMissingFieldLabel = (code: string): string => {
     case 'missing_customer':
       return 'Kunde auswählen'
     case 'missing_bv':
-      return 'Bauvorhaben auswählen'
+      return 'Bauvorhaben optional ergänzen'
     case 'missing_object_name':
       return 'Objektname ergänzen'
     case 'missing_object_type':
@@ -212,7 +250,7 @@ const deriveStandardMissingCodes = (
   } else {
     codes.delete('missing_customer')
   }
-  // DAU: BV optional — dient nur Stück-2/optional-Hinweisen, nicht blockierender Pflicht
+  // DAU: BV optional, deshalb nur Hinweis für bessere Zuordnung, kein Commit-Blocker.
   if (!effectiveBvId && !hasPreparedNewBv) {
     codes.add('missing_bv')
   } else {
@@ -262,7 +300,9 @@ const evaluateStandardRow = (params: {
   const missingCodes = deriveStandardMissingCodes(row, allBvs, draft)
   const blockingMissingCodes = missingCodes.filter((c) => c === 'missing_customer')
   const optionalMissingCodes = missingCodes.filter((c) => c !== 'missing_customer')
-  const isCommitted = Boolean(row.committed_at) || rs === 'committed'
+  const hasVerifiedCommit = isAltberichtRowVerifiedCommitted(row)
+  const isCommitted = hasVerifiedCommit
+  const hasIncompleteCommit = (Boolean(row.committed_at) || rs === 'committed') && !row.committed_object_id?.trim()
   const isDeferred = rs === 'blocked' || rs === 'skipped'
   const hasLocalNewDraft = Boolean(draft && draft.customerMode === 'new')
   const isCommitReady =
@@ -280,6 +320,10 @@ const evaluateStandardRow = (params: {
     statusLabel = 'Übernommen'
     statusTone =
       'bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200 border border-emerald-200/80 dark:border-emerald-800/60'
+  } else if (hasIncompleteCommit) {
+    statusLabel = 'Commit prüfen'
+    statusTone =
+      'bg-red-50 text-red-900 dark:bg-red-950/40 dark:text-red-200 border border-red-200/80 dark:border-red-900/50'
   } else if (rs === 'blocked') {
     statusLabel = 'Zurückgestellt'
     statusTone =
@@ -295,7 +339,7 @@ const evaluateStandardRow = (params: {
   } else if (isCommitReady) {
     statusLabel = 'Bereit'
     statusTone =
-      'bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200 border border-emerald-200/80 dark:border-emerald-800/60'
+      'bg-sky-50 text-sky-900 dark:bg-sky-950/40 dark:text-sky-200 border border-sky-200/80 dark:border-sky-800/60'
   }
 
   return {
@@ -325,14 +369,62 @@ const extractMissingCodes = (row: AltberichtImportStagingObjectRow): string[] =>
   return out
 }
 
+const extractBlockingMissingCodesForFilter = (row: AltberichtImportStagingObjectRow): string[] =>
+  extractMissingCodes(row).filter((code) => code !== 'missing_bv')
+
+const isAltberichtRowVerifiedCommitted = (row: AltberichtImportStagingObjectRow): boolean =>
+  Boolean(row.committed_object_id?.trim()) && (Boolean(row.committed_at) || row.review_status === 'committed')
+
+const getC1CompareObjectId = (row: AltberichtImportStagingObjectRow): string | null =>
+  row.committed_object_id?.trim() || row.review_object_id?.trim() || null
+
 const analysisTraceStringField = (trace: unknown, key: 'mode' | 'subMode'): string | null => {
   if (!trace || typeof trace !== 'object') return null
   const v = (trace as Record<string, unknown>)[key]
   return typeof v === 'string' && v.trim() ? v : null
 }
 
+type StatusFindingsDebugSummary = {
+  sequence: number
+  blockRawPreview: string | null
+  statusRawAround: string | null
+  statusCandidate: string | null
+  rejectedReason: string | null
+  findingsFilled: boolean
+  findingsCount: number
+}
+
+const debugString = (value: unknown, max = 260): string | null => {
+  if (typeof value !== 'string') return null
+  const text = value.replace(/\s+/g, ' ').trim()
+  if (!text) return null
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+const statusFindingsDebugFromTrace = (
+  trace: unknown,
+  fallbackSequence: number,
+  fallbackFindingsJson: unknown
+): StatusFindingsDebugSummary | null => {
+  if (!trace || typeof trace !== 'object') return null
+  const raw = (trace as { statusFindingsDebug?: unknown }).statusFindingsDebug
+  if (!raw || typeof raw !== 'object') return null
+  const debug = raw as Record<string, unknown>
+  const findingsCount = Array.isArray(fallbackFindingsJson) ? fallbackFindingsJson.length : 0
+  return {
+    sequence: typeof debug.sequence === 'number' ? debug.sequence : fallbackSequence,
+    blockRawPreview: debugString(debug.blockRawPreview, 320),
+    statusRawAround: debugString(debug.statusRawAround, 260),
+    statusCandidate: debugString(debug.statusCandidate, 180),
+    rejectedReason: debugString(debug.rejectedReason, 100),
+    findingsFilled: Boolean(debug.findingsFilled) || findingsCount > 0,
+    findingsCount: typeof debug.findingsCount === 'number' ? debug.findingsCount : findingsCount,
+  }
+}
+
 /** Nur Parser-/Staging-Pipeline (keine Commit-/Match-Warnungen). */
 const isParserPipelineDiagnosticEvent = (e: AltberichtImportEventRow): boolean => {
+  if (e.code === ALTBERICHT_IMPORT_EVENT.PARSER_STATUS_FINDINGS_DEBUG) return true
   if (e.level === 'warn' && (e.code.startsWith('parser.') || e.code.startsWith('import.parser.')))
     return true
   if (e.level === 'error' && e.code.startsWith('import.parser.')) return true
@@ -356,6 +448,14 @@ const AltberichtImportPage = () => {
   const [listLoading, setListLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  /** Scrollcontainer der Review-Stagingliste (IntersectionObserver für Foto-Thumbnails). */
+  const [stagingReviewScrollIntersectRoot, setStagingReviewScrollIntersectRoot] =
+    useState<HTMLElement | null>(null)
+  const handleStagingReviewScrollIntersectRef = useCallback((node: HTMLUListElement | null) => {
+    setStagingReviewScrollIntersectRoot(node)
+  }, [])
+  const [importProgress, setImportProgress] = useState<AltberichtImportProgressPanelState>({ kind: 'idle' })
+  const importSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [pickedFiles, setPickedFiles] = useState<FileList | null>(null)
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -381,6 +481,98 @@ const AltberichtImportPage = () => {
   const [compareExtraObjects, setCompareExtraObjects] = useState<Obj[]>([])
   const [embeddedImages, setEmbeddedImages] = useState<AltberichtImportEmbeddedImageRow[]>([])
   const [embeddedImagesError, setEmbeddedImagesError] = useState<string | null>(null)
+  const [skippedPagesByFile, setSkippedPagesByFile] = useState<Map<string, number[]>>(new Map())
+  const [pdfPreview, setPdfPreview] = useState<PdfPreviewState>(null)
+  const pdfPreviewRef = useRef(pdfPreview)
+  pdfPreviewRef.current = pdfPreview
+  const [readiness, setReadiness] = useState<AltberichtImportReadinessResult | null>(null)
+  const [readinessLoading, setReadinessLoading] = useState(false)
+  const [readinessStartedAt, setReadinessStartedAt] = useState<string | null>(null)
+  const [readinessFinishedAt, setReadinessFinishedAt] = useState<string | null>(null)
+
+  const readinessOk = readiness?.ok === true
+  const canRunAltberichtActions = readinessOk && !readinessLoading
+
+  useEffect(() => {
+    return () => {
+      if (importSuccessTimerRef.current) clearTimeout(importSuccessTimerRef.current)
+    }
+  }, [])
+
+  useEffect(
+    () => () => {
+      const p = pdfPreviewRef.current
+      if (p?.revokeOnClose && p.url) revokeAltberichtPdfBlobObjectUrl(p.url)
+    },
+    []
+  )
+
+  const applyImportProgressFromService = useCallback((u: AltberichtImportUiProgressPayload) => {
+    setImportProgress({
+      kind: 'running',
+      percent: u.percent,
+      statusLine: u.statusLine,
+      phaseIndex: u.phaseIndex,
+      phaseTotal: u.phaseTotal,
+      expertLines: u.expertDetailLines,
+    })
+  }, [])
+
+  const showImportFlowSuccess = useCallback((title: string, lines?: string[]) => {
+    if (importSuccessTimerRef.current) {
+      clearTimeout(importSuccessTimerRef.current)
+      importSuccessTimerRef.current = null
+    }
+    setImportProgress({ kind: 'success', title, lines })
+    importSuccessTimerRef.current = setTimeout(() => {
+      setImportProgress({ kind: 'idle' })
+      importSuccessTimerRef.current = null
+    }, 4500)
+  }, [])
+
+  const startGenericImportBusy = useCallback((statusLine: string) => {
+    setBusy(true)
+    setImportProgress({
+      kind: 'running',
+      percent: 50,
+      statusLine,
+      phaseIndex: 1,
+      phaseTotal: 1,
+    })
+  }, [])
+
+  const endBusyAndMaybeClearGenericProgress = useCallback(() => {
+    setBusy(false)
+    setImportProgress((p) => (p.kind === 'running' && p.phaseTotal === 1 ? { kind: 'idle' } : p))
+  }, [])
+
+  const buildParseSuccessLines = useCallback(
+    (stats: AltberichtImportParseStats): string[] => {
+      const lines = [`${stats.positionCount} Positionen erkannt`]
+      const raster = stats.rasterPositionPhotoCount
+      const embedded = stats.embeddedImageScanCount
+      if (viewMode === 'expert') {
+        lines.push(`${raster} Raster-Foto(s) erkannt`)
+        lines.push(`${embedded} eingebettete PDF-Bilder per Operator-Scan`)
+        if (stats.matchReusedCount > 0) {
+          lines.push(`${stats.matchReusedCount} Wiederverwendungen bei Zuordnungen`)
+        }
+        return lines
+      }
+      if (raster > 0) {
+        lines.push(`${raster} Positionsfoto(s) erkannt`)
+        return lines
+      }
+      if (embedded > 0) {
+        lines.push(`${embedded} Bild(er) im PDF erfasst (eingebettet)`)
+        return lines
+      }
+      lines.push('Keine Positionsfotos im Raster erkannt')
+      lines.push('Keine eingebetteten Bilder per Operator-Scan')
+      return lines
+    },
+    [viewMode]
+  )
 
   const markRowDirty = useCallback((rowId: string) => {
     setDirtyRowIds((prev) => {
@@ -446,21 +638,100 @@ const AltberichtImportPage = () => {
     []
   )
 
+  /** Übersprungene Seiten werden auch im Standard-Modus benötigt (Banner pro Position). */
+  const loadSkippedPages = useCallback(async (jobId: string) => {
+    const r = await fetchAltberichtSkippedPagesByFileForJob(jobId, supabase)
+    setSkippedPagesByFile(r.error ? new Map() : r.pagesByFile)
+  }, [])
+
+  const handleClosePdfPreview = useCallback(() => {
+    setPdfPreview((prev) => {
+      if (prev?.revokeOnClose && prev.url) {
+        revokeAltberichtPdfBlobObjectUrl(prev.url)
+      }
+      return null
+    })
+  }, [])
+
+  const handleOpenPagePreview = useCallback(
+    async (file: AltberichtImportFileRow, pageNumber: number) => {
+      try {
+        const { data: blob, error: dlErr } = await supabase.storage
+          .from(file.storage_bucket)
+          .download(file.storage_path)
+        if (dlErr || !blob) {
+          showError(dlErr?.message ?? 'PDF konnte nicht geladen werden.')
+          return
+        }
+        const blobUrl = URL.createObjectURL(blob)
+        const safePage = Math.max(1, Math.floor(pageNumber))
+        setPdfPreview((prev) => {
+          if (prev?.revokeOnClose && prev.url) {
+            revokeAltberichtPdfBlobObjectUrl(prev.url)
+          }
+          return {
+            url: `${blobUrl}#page=${safePage}`,
+            title: `${file.original_filename} – Seite ${safePage}`,
+            revokeOnClose: true,
+          }
+        })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        showError(`PDF-Vorschau fehlgeschlagen: ${msg}`)
+      }
+    },
+    [showError]
+  )
+
+  const reloadProductiveObjects = useCallback(async () => {
+    const objects = await fetchAllObjects()
+    setAllObjects(objects)
+    return objects
+  }, [])
+
   useEffect(() => {
     if (!envOk) {
       setListLoading(false)
+      setReadiness(null)
       return
     }
     if (!authPermissionKnown) return
     if (!canUse) {
       setListLoading(false)
+      setReadiness(null)
       return
     }
-    void loadJobs()
+    let cancelled = false
+    ;(async () => {
+      setReadinessStartedAt(new Date().toISOString())
+      setReadinessFinishedAt(null)
+      setReadinessLoading(true)
+      const result = await checkAltberichtImportReadiness()
+      if (cancelled) return
+      setReadiness(result)
+      setReadinessFinishedAt(new Date().toISOString())
+      setReadinessLoading(false)
+      if (result.ok) void loadJobs()
+      else setListLoading(false)
+    })().catch((e) => {
+      if (cancelled) return
+      const message = e instanceof Error ? e.message : String(e)
+      setReadiness({
+        ok: false,
+        missing: [`Readiness-Check fehlgeschlagen: ${message}`],
+        warnings: [],
+      })
+      setReadinessFinishedAt(new Date().toISOString())
+      setReadinessLoading(false)
+      setListLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [envOk, authPermissionKnown, canUse, loadJobs])
 
   useEffect(() => {
-    if (!selectedJobId || !envOk) {
+    if (!selectedJobId || !envOk || !readinessOk) {
       setFiles([])
       setStaging([])
       setEmbeddedImages([])
@@ -476,7 +747,7 @@ const AltberichtImportPage = () => {
       return
     }
     void loadJobDetail(selectedJobId)
-  }, [selectedJobId, authPermissionKnown, canUse, envOk, loadJobDetail])
+  }, [selectedJobId, authPermissionKnown, canUse, envOk, readinessOk, loadJobDetail])
 
   useEffect(() => {
     setJobCustomerId('')
@@ -497,21 +768,54 @@ const AltberichtImportPage = () => {
   )
 
   useEffect(() => {
-    if (viewMode === 'standard') {
+    /**
+     * Embedded-Images werden in beiden Modi geladen, damit der Standardmodus echte
+     * Einzelbild-Vorschau pro Position zeigen kann (statt nur Seitenfoto-Fallback).
+     * Im Standard wird die Korrektur-Liste „Eingebettete PDF-Bilder (Korrektur)" weiterhin
+     * nicht gerendert – nur die Pro-Position-Foto-Sektion nutzt die Daten.
+     */
+    if (!selectedJobId) {
       setEmbeddedImages([])
       setEmbeddedImagesError(null)
       return
     }
-    if (viewMode !== 'expert' || !selectedJobId) return
     void loadEmbeddedImages(selectedJobId)
   }, [viewMode, selectedJobId, embeddedReloadSig, loadEmbeddedImages])
 
   useEffect(() => {
-    if (viewMode !== 'expert' || !envOk || !authPermissionKnown || !canUse || !selectedJobId) return
+    clearAltberichtPdfJsDocumentCache()
+    clearAltberichtImportPdfBufferCache()
+    clearAltberichtEmbeddedImagePreviewInflight()
+    clearAltberichtPositionBlockThumbInflightCaches()
+    clearAltberichtPositionBlockGeometryCache()
+  }, [embeddedReloadSig, selectedJobId])
+
+  /**
+   * Übersprungene Seiten werden in beiden View-Modi benötigt (Banner zeigt sie auch im Standard).
+   * Dadurch sieht der Nutzer ohne Original-PDF, welche Seiten manuell geprüft werden sollten.
+   */
+  useEffect(() => {
+    if (!selectedJobId || !envOk || !readinessOk || !authPermissionKnown || !canUse) {
+      setSkippedPagesByFile(new Map())
+      return
+    }
+    void loadSkippedPages(selectedJobId)
+  }, [
+    selectedJobId,
+    envOk,
+    readinessOk,
+    authPermissionKnown,
+    canUse,
+    embeddedReloadSig,
+    loadSkippedPages,
+  ])
+
+  useEffect(() => {
+    if (viewMode !== 'expert' || !envOk || !readinessOk || !authPermissionKnown || !canUse || !selectedJobId) return
     const ids = [
       ...new Set(
         staging
-          .map((s) => s.committed_object_id?.trim())
+          .map((s) => getC1CompareObjectId(s))
           .filter((x): x is string => Boolean(x && x.length > 0))
       ),
     ]
@@ -538,10 +842,10 @@ const AltberichtImportPage = () => {
     return () => {
       cancelled = true
     }
-  }, [viewMode, envOk, authPermissionKnown, canUse, selectedJobId, staging, allObjects])
+  }, [viewMode, envOk, readinessOk, authPermissionKnown, canUse, selectedJobId, staging, allObjects])
 
   useEffect(() => {
-    if (!envOk || !authPermissionKnown || !canUse) return
+    if (!envOk || !readinessOk || !authPermissionKnown || !canUse) return
     let cancelled = false
     ;(async () => {
       setMastersLoading(true)
@@ -559,7 +863,7 @@ const AltberichtImportPage = () => {
     return () => {
       cancelled = true
     }
-  }, [authPermissionKnown, canUse, envOk])
+  }, [authPermissionKnown, canUse, envOk, readinessOk])
 
   const jobBvs = jobCustomerId ? allBvs.filter((x) => x.customer_id === jobCustomerId) : allBvs
 
@@ -574,7 +878,6 @@ const AltberichtImportPage = () => {
   const filteredStaging = useMemo(() => {
     return staging.filter((s) => {
       const rs = s.review_status ?? 'draft'
-      const errs = Array.isArray(s.validation_errors_json) ? s.validation_errors_json : []
       switch (stagingFilter) {
         case 'all':
           return true
@@ -587,11 +890,14 @@ const AltberichtImportPage = () => {
         case 'skipped':
           return rs === 'skipped'
         case 'open_validation':
-          return errs.length > 0
+          return extractBlockingMissingCodesForFilter(s).length > 0
         case 'committed':
-          return rs === 'committed' || Boolean(s.committed_at)
+          return Boolean(s.committed_object_id?.trim()) && (rs === 'committed' || Boolean(s.committed_at))
         case 'commit_failed':
-          return Boolean(s.commit_last_error?.trim()) && !s.committed_at
+          return (
+            (Boolean(s.commit_last_error?.trim()) && !s.committed_at) ||
+            ((rs === 'committed' || Boolean(s.committed_at)) && !s.committed_object_id?.trim())
+          )
         default:
           return true
       }
@@ -599,53 +905,81 @@ const AltberichtImportPage = () => {
   }, [staging, stagingFilter])
 
   const commitEligibleInJob = useMemo(
-    () => staging.filter((s) => isAltberichtStagingRowCommitEligible(s)),
+    () =>
+      staging.filter(
+        (s) =>
+          !isAltberichtRowVerifiedCommitted(s) &&
+          isAltberichtStagingRowCommitEligible(s, { allowMissingDetails: true })
+      ),
     [staging]
   )
 
   const commitEligibleInFiltered = useMemo(
-    () => filteredStaging.filter((s) => isAltberichtStagingRowCommitEligible(s)),
+    () =>
+      filteredStaging.filter(
+        (s) =>
+          !isAltberichtRowVerifiedCommitted(s) &&
+          isAltberichtStagingRowCommitEligible(s, { allowMissingDetails: true })
+      ),
     [filteredStaging]
   )
 
   const patchStagingRow = useCallback(
     async (id: string, patch: AltberichtStagingReviewPatch) => {
-      setBusy(true)
-      const { error } = await patchAltberichtStagingReview(id, patch)
-      setBusy(false)
-      if (error) {
-        showError(error.message)
-        return
+      startGenericImportBusy('Angaben werden gespeichert …')
+      try {
+        const { error } = await patchAltberichtStagingReview(id, patch)
+        if (error) {
+          showError(error.message)
+          return
+        }
+        showToast('Angaben wurden gespeichert.', 'success')
+        if (selectedJobId) await loadJobDetail(selectedJobId)
+      } finally {
+        endBusyAndMaybeClearGenericProgress()
       }
-      showToast('Angaben wurden gespeichert.', 'success')
-      if (selectedJobId) await loadJobDetail(selectedJobId)
     },
-    [selectedJobId, loadJobDetail, showError, showToast]
+    [selectedJobId, loadJobDetail, showError, showToast, startGenericImportBusy, endBusyAndMaybeClearGenericProgress]
   )
 
   const computeMatchForRow = useCallback(
     async (id: string) => {
-      setBusy(true)
-      const { error } = await persistAltberichtMatchCandidatesForStaging(id, allBvs, allObjects)
-      setBusy(false)
-      if (error) showError(error.message)
-      else {
-        showToast('Zuordnungsvorschläge wurden aktualisiert.', 'success')
-        if (selectedJobId) await loadJobDetail(selectedJobId)
+      startGenericImportBusy('Zuordnungsvorschläge werden ermittelt …')
+      try {
+        const { error } = await persistAltberichtMatchCandidatesForStaging(id, allBvs, allObjects)
+        if (error) showError(error.message)
+        else {
+          showToast('Zuordnungsvorschläge wurden aktualisiert.', 'success')
+          if (selectedJobId) await loadJobDetail(selectedJobId)
+        }
+      } finally {
+        endBusyAndMaybeClearGenericProgress()
       }
     },
-    [allBvs, allObjects, selectedJobId, loadJobDetail, showError, showToast]
+    [
+      allBvs,
+      allObjects,
+      selectedJobId,
+      loadJobDetail,
+      showError,
+      showToast,
+      startGenericImportBusy,
+      endBusyAndMaybeClearGenericProgress,
+    ]
   )
 
   const recomputeOneRow = useCallback(
     async (id: string) => {
-      setBusy(true)
-      const { error } = await recomputeAltberichtStagingReviewRow(id)
-      setBusy(false)
-      if (error) showError(error.message)
-      else if (selectedJobId) await loadJobDetail(selectedJobId)
+      startGenericImportBusy('Zeile wird auf Vollständigkeit geprüft …')
+      try {
+        const { error } = await recomputeAltberichtStagingReviewRow(id)
+        if (error) showError(error.message)
+        else if (selectedJobId) await loadJobDetail(selectedJobId)
+      } finally {
+        endBusyAndMaybeClearGenericProgress()
+      }
     },
-    [selectedJobId, loadJobDetail, showError]
+    [selectedJobId, loadJobDetail, showError, startGenericImportBusy, endBusyAndMaybeClearGenericProgress]
   )
 
   const handleCreateAndUpload = async () => {
@@ -655,57 +989,106 @@ const AltberichtImportPage = () => {
     }
     const uploads = Array.from(pickedFiles).map((file) => ({ file }))
     setBusy(true)
-    const res = await createAltberichtImportJobWithPdfUploads(
-      { title: newTitle.trim() || null, notes: null, analysisMode: false },
-      uploads
-    )
-    setBusy(false)
-    if (res.error) {
-      showError(res.error.message)
-      return
+    setImportProgress({
+      kind: 'running',
+      percent: 0,
+      statusLine: 'Upload wird vorbereitet …',
+      phaseIndex: 1,
+      phaseTotal: 6,
+    })
+    try {
+      const res = await createAltberichtImportJobWithPdfUploads(
+        { title: newTitle.trim() || null, notes: null, analysisMode: false },
+        uploads,
+        supabase,
+        applyImportProgressFromService
+      )
+      if (res.error) {
+        showError(res.error.message)
+        setImportProgress({ kind: 'error', message: res.error.message })
+        return
+      }
+      showToast('Auftrag angelegt, PDF-Dateien sind hochgeladen.', 'success')
+      showImportFlowSuccess('Upload abgeschlossen', [`${res.files.length} PDF-Datei(en) im Auftrag`])
+      setNewTitle('')
+      setPickedFiles(null)
+      await loadJobs()
+      if (res.job?.id) setSelectedJobId(res.job.id)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      showError(msg)
+      setImportProgress({ kind: 'error', message: msg })
+    } finally {
+      setBusy(false)
+      setImportProgress((p) => (p.kind === 'running' ? { kind: 'idle' } : p))
     }
-    showToast('Auftrag angelegt, PDF-Dateien sind hochgeladen.', 'success')
-    setNewTitle('')
-    setPickedFiles(null)
-    await loadJobs()
-    if (res.job?.id) setSelectedJobId(res.job.id)
   }
 
   const handleParseOne = async (fileId: string) => {
     setBusy(true)
-    const { error } = await runAltberichtImportParseForFile(fileId)
-    setBusy(false)
-    if (error) {
-      showError(error.message)
-    } else {
-      showToast('Der PDF-Text wurde neu ausgelesen und die Vorschau aktualisiert.', 'success')
+    try {
+      const { error, stats } = await runAltberichtImportParseForFile(fileId, supabase, {
+        onProgress: applyImportProgressFromService,
+      })
+      if (error) {
+        showError(error.message)
+        setImportProgress({ kind: 'error', message: error.message })
+      } else if (stats) {
+        showToast('Der PDF-Text wurde neu ausgelesen und die Vorschau aktualisiert.', 'success')
+        showImportFlowSuccess('Import abgeschlossen', buildParseSuccessLines(stats))
+      }
+      if (selectedJobId) await loadJobDetail(selectedJobId)
+      await loadJobs()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      showError(msg)
+      setImportProgress({ kind: 'error', message: msg })
+    } finally {
+      setBusy(false)
+      setImportProgress((p) => (p.kind === 'running' ? { kind: 'idle' } : p))
     }
-    if (selectedJobId) await loadJobDetail(selectedJobId)
-    await loadJobs()
   }
 
   const handleRecomputeReview = async () => {
     if (!selectedJobId) return
-    setBusy(true)
-    const { error } = await recomputeAltberichtStagingReviewForJob(selectedJobId)
-    setBusy(false)
-    if (error) showError(error.message)
-    else showToast('Alle Zeilen wurden auf Vollständigkeit geprüft.', 'success')
-    await loadJobDetail(selectedJobId)
+    startGenericImportBusy('Alle Zeilen werden auf Vollständigkeit geprüft …')
+    try {
+      const { error } = await recomputeAltberichtStagingReviewForJob(selectedJobId)
+      if (error) showError(error.message)
+      else showToast('Alle Zeilen wurden auf Vollständigkeit geprüft.', 'success')
+      await loadJobDetail(selectedJobId)
+    } finally {
+      endBusyAndMaybeClearGenericProgress()
+    }
   }
 
   const handleParseAll = async () => {
     if (!selectedJobId) return
     setBusy(true)
-    const { errors } = await runAltberichtImportParseJobSequential(selectedJobId)
-    setBusy(false)
-    if (errors.length) {
-      showError(errors.map((e) => e.message).join(' · '))
-    } else {
-      showToast('Alle PDFs des Auftrags wurden erneut ausgelesen.', 'success')
+    try {
+      const { errors, stats } = await runAltberichtImportParseJobSequential(selectedJobId, supabase, {
+        onProgress: applyImportProgressFromService,
+      })
+      if (errors.length) {
+        const msg = errors.map((e) => e.message).join(' · ')
+        showError(msg)
+        setImportProgress({ kind: 'error', message: msg })
+      } else {
+        showToast('Alle PDFs des Auftrags wurden erneut ausgelesen.', 'success')
+        if (stats) {
+          showImportFlowSuccess('Import abgeschlossen', buildParseSuccessLines(stats))
+        }
+      }
+      await loadJobDetail(selectedJobId)
+      await loadJobs()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      showError(msg)
+      setImportProgress({ kind: 'error', message: msg })
+    } finally {
+      setBusy(false)
+      setImportProgress((p) => (p.kind === 'running' ? { kind: 'idle' } : p))
     }
-    await loadJobDetail(selectedJobId)
-    await loadJobs()
   }
 
   const handleDeleteJob = async (jobId: string) => {
@@ -714,20 +1097,25 @@ const AltberichtImportPage = () => {
     if (!window.confirm(`Import-Job „${label}“ wirklich löschen? Zugehörige Dateien, Staging und Protokoll werden entfernt.`)) {
       return
     }
-    setBusy(true)
-    const { error, storageRemoveErrors } = await deleteAltberichtImportJob(jobId)
-    setBusy(false)
-    if (error) {
-      showError(error.message)
-      return
+    startGenericImportBusy('Import-Job wird gelöscht …')
+    try {
+      const { error, storageRemoveErrors } = await deleteAltberichtImportJob(jobId)
+      if (error) {
+        showError(error.message)
+        return
+      }
+      if (storageRemoveErrors.length) {
+        showToast(`Job gelöscht. Hinweis Storage: ${storageRemoveErrors.join(' ')}`, 'warning')
+      } else {
+        showToast('Import-Job gelöscht.', 'success')
+      }
+      if (selectedJobId === jobId) setSelectedJobId(null)
+      await loadJobs()
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e))
+    } finally {
+      endBusyAndMaybeClearGenericProgress()
     }
-    if (storageRemoveErrors.length) {
-      showToast(`Job gelöscht. Hinweis Storage: ${storageRemoveErrors.join(' ')}`, 'error')
-    } else {
-      showToast('Import-Job gelöscht.', 'success')
-    }
-    if (selectedJobId === jobId) setSelectedJobId(null)
-    await loadJobs()
   }
 
   const handleCommitEntireJob = useCallback(async () => {
@@ -736,116 +1124,165 @@ const AltberichtImportPage = () => {
       showError('Keine Zeilen sind bereit zum Speichern (prüfen Sie offene Eingaben).')
       return
     }
-    setBusy(true)
-    const { results, error } = await commitAltberichtC1Job(selectedJobId, {})
-    setBusy(false)
-    if (error) {
-      showError(error.message)
-      return
-    }
-    setLastCommitSummary({ results, label: 'Gesamter Job' })
-    const ok = results.filter((r) => r.ok && !r.skipped).length
-    const bad = results.filter((r) => !r.ok && !r.skipped).length
-    const skipped = results.filter((r) => r.skipped).length
+    startGenericImportBusy('Stammdaten werden übernommen …')
+    try {
+      const { results, error } = await commitAltberichtC1Job(selectedJobId, {
+        stagingIds: commitEligibleInJob.map((s) => s.id),
+        allowMissingDetails: true,
+      })
+      if (error) {
+        showError(error.message)
+        return
+      }
+      setLastCommitSummary({ results, label: 'Gesamter Job' })
+      const ok = results.filter((r) => r.ok && !r.skipped).length
+      const bad = results.filter((r) => !r.ok && !r.skipped).length
+      const skipped = results.filter((r) => r.skipped).length
       showToast(
         `Stammdaten: ${ok} übernommen, ${bad} mit Fehler, ${skipped} übersprungen.`,
-        bad ? 'error' : 'success'
+        altberichtBulkResultToastType({ ok, bad, skipped })
       )
-    await loadJobDetail(selectedJobId)
-  }, [selectedJobId, commitEligibleInJob.length, loadJobDetail, showError, showToast])
-
-  const handleCommitFilteredList = useCallback(async () => {
-    if (!selectedJobId) return
-    const ids = filteredStaging.map((s) => s.id)
-    if (ids.length === 0) {
-      showError('Keine Zeilen in der aktuellen Liste.')
-      return
+      await reloadProductiveObjects()
+      await loadJobDetail(selectedJobId)
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e))
+    } finally {
+      endBusyAndMaybeClearGenericProgress()
     }
-    const eligibleIds = commitEligibleInFiltered.map((s) => s.id)
-    if (eligibleIds.length === 0) {
-      showError('In der aktuellen Ansicht ist keine Zeile zum Speichern bereit.')
-      return
-    }
-    setBusy(true)
-    const { results, error } = await commitAltberichtC1Job(selectedJobId, { stagingIds: ids })
-    setBusy(false)
-    if (error) {
-      showError(error.message)
-      return
-    }
-    setLastCommitSummary({ results, label: 'Aktuelle Filterliste' })
-    const ok = results.filter((r) => r.ok && !r.skipped).length
-    const bad = results.filter((r) => !r.ok && !r.skipped).length
-    const skipped = results.filter((r) => r.skipped).length
-    showToast(
-      `Stammdaten (Liste): ${ok} übernommen, ${bad} mit Fehler, ${skipped} übersprungen.`,
-      bad ? 'error' : 'success'
-    )
-    await loadJobDetail(selectedJobId)
   }, [
     selectedJobId,
-    filteredStaging,
-    commitEligibleInFiltered,
+    commitEligibleInJob,
+    reloadProductiveObjects,
     loadJobDetail,
     showError,
     showToast,
+    startGenericImportBusy,
+    endBusyAndMaybeClearGenericProgress,
+  ])
+
+  const handleCommitFilteredList = useCallback(async () => {
+    if (!selectedJobId) return
+    const ids = commitEligibleInFiltered.map((s) => s.id)
+    if (ids.length === 0) {
+      showError('In der aktuellen Ansicht ist keine Zeile zum Speichern bereit.')
+      return
+    }
+    startGenericImportBusy('Stammdaten werden übernommen (Liste) …')
+    try {
+      const { results, error } = await commitAltberichtC1Job(selectedJobId, {
+        stagingIds: ids,
+        allowMissingDetails: true,
+      })
+      if (error) {
+        showError(error.message)
+        return
+      }
+      setLastCommitSummary({ results, label: 'Aktuelle Filterliste' })
+      const ok = results.filter((r) => r.ok && !r.skipped).length
+      const bad = results.filter((r) => !r.ok && !r.skipped).length
+      const skipped = results.filter((r) => r.skipped).length
+      showToast(
+        `Stammdaten (Liste): ${ok} übernommen, ${bad} mit Fehler, ${skipped} übersprungen.`,
+        altberichtBulkResultToastType({ ok, bad, skipped })
+      )
+      await reloadProductiveObjects()
+      await loadJobDetail(selectedJobId)
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e))
+    } finally {
+      endBusyAndMaybeClearGenericProgress()
+    }
+  }, [
+    selectedJobId,
+    commitEligibleInFiltered,
+    loadJobDetail,
+    reloadProductiveObjects,
+    showError,
+    showToast,
+    startGenericImportBusy,
+    endBusyAndMaybeClearGenericProgress,
   ])
 
   const commitC2ForRow = useCallback(
     async (row: AltberichtImportStagingObjectRow, items: AltberichtC2CommitItem[]) => {
-      setBusy(true)
-      const res = await commitAltberichtC2DefectsForStagingRow(row, items)
-      setBusy(false)
-      if (!res.ok) {
-        showError(res.errorMessage ?? 'Mängel konnten nicht übernommen werden.')
-        return
+      startGenericImportBusy('Mängel werden in die Stammdaten übernommen …')
+      try {
+        const res = await commitAltberichtC2DefectsForStagingRow(row, items)
+        if (!res.ok) {
+          showError(res.errorMessage ?? 'Mängel konnten nicht übernommen werden.')
+          return
+        }
+        showToast(
+          `${res.importedKeys?.length ?? items.length} Mängel in den Stammdaten ergänzt.`,
+          'success'
+        )
+        if (selectedJobId) await loadJobDetail(selectedJobId)
+      } catch (e) {
+        showError(e instanceof Error ? e.message : String(e))
+      } finally {
+        endBusyAndMaybeClearGenericProgress()
       }
-      showToast(
-        `${res.importedKeys?.length ?? items.length} Mängel in den Stammdaten ergänzt.`,
-        'success'
-      )
-      if (selectedJobId) await loadJobDetail(selectedJobId)
     },
-    [selectedJobId, loadJobDetail, showError, showToast]
+    [selectedJobId, loadJobDetail, showError, showToast, startGenericImportBusy, endBusyAndMaybeClearGenericProgress]
   )
 
   const commitOneRow = useCallback(
     async (row: AltberichtImportStagingObjectRow) => {
-      setBusy(true)
-      const res = await commitAltberichtC1StagingRow(row, undefined)
-      setBusy(false)
-      setLastCommitSummary({ results: [res], label: `Zeile #${row.sequence}` })
-      if (res.ok && !res.skipped) {
-        showToast('Stammdaten für diese Zeile übernommen.', 'success')
-      } else if (res.skipped && res.skipReason === 'already_committed') {
-        showToast('Diese Zeile war bereits übernommen.', 'success')
-      } else if (res.skipped && res.skipReason === 'ineligible') {
-        showError(res.errorMessage ?? 'Diese Zeile kann noch nicht übernommen werden (Angaben unvollständig).')
-      } else if (res.skipped && res.skipReason === 'offline') {
-        showError(res.errorMessage ?? 'Offline.')
-      } else if (!res.ok) {
-        showError(res.errorMessage ?? 'Speichern in den Stammdaten fehlgeschlagen.')
+      startGenericImportBusy('Stammdaten für diese Zeile werden übernommen …')
+      try {
+        const res = await commitAltberichtC1StagingRow(row, { allowMissingDetails: true })
+        setLastCommitSummary({ results: [res], label: `Zeile #${row.sequence}` })
+        if (res.ok && !res.skipped) {
+          showToast('Stammdaten für diese Zeile übernommen.', altberichtToastTypeForCode('committed'))
+        } else if (res.skipped && res.skipReason === 'already_committed') {
+          showToast(
+            'Diese Zeile war bereits übernommen.',
+            altberichtToastTypeForCode('already_committed')
+          )
+        } else if (res.skipped && res.skipReason === 'ineligible') {
+          showError(res.errorMessage ?? 'Diese Zeile kann noch nicht übernommen werden (Angaben unvollständig).')
+        } else if (res.skipped && res.skipReason === 'offline') {
+          showError(res.errorMessage ?? 'Offline.')
+        } else if (!res.ok) {
+          showError(res.errorMessage ?? 'Speichern in den Stammdaten fehlgeschlagen.')
+        }
+        if (res.ok && res.objectId) await reloadProductiveObjects()
+        if (selectedJobId) await loadJobDetail(selectedJobId)
+      } catch (e) {
+        showError(e instanceof Error ? e.message : String(e))
+      } finally {
+        endBusyAndMaybeClearGenericProgress()
       }
-      if (selectedJobId) await loadJobDetail(selectedJobId)
     },
-    [selectedJobId, loadJobDetail, showError, showToast]
+    [
+      selectedJobId,
+      reloadProductiveObjects,
+      loadJobDetail,
+      showError,
+      showToast,
+      startGenericImportBusy,
+      endBusyAndMaybeClearGenericProgress,
+    ]
   )
 
   const handleJobApplyBv = async (mode: 'all' | 'empty_bv_only') => {
     if (!selectedJobId) return
-    setBusy(true)
-    const { error, updatedCount } = await applyAltberichtJobReviewCustomerBvDefaults(
-      selectedJobId,
-      {
-        review_customer_id: jobCustomerId.trim() ? jobCustomerId.trim() : null,
-        review_bv_id: jobBvId.trim() ? jobBvId.trim() : null,
-      },
-      mode
-    )
-    setBusy(false)
-    if (error) showError(error.message)
-    else showToast(`${updatedCount} Zeile(n) aktualisiert.`, 'success')
-    await loadJobDetail(selectedJobId)
+    startGenericImportBusy('Kunde/BV-Vorgaben werden auf die Zeilen übertragen …')
+    try {
+      const { error, updatedCount } = await applyAltberichtJobReviewCustomerBvDefaults(
+        selectedJobId,
+        {
+          review_customer_id: jobCustomerId.trim() ? jobCustomerId.trim() : null,
+          review_bv_id: jobBvId.trim() ? jobBvId.trim() : null,
+        },
+        mode
+      )
+      if (error) showError(error.message)
+      else showToast(`${updatedCount} Zeile(n) aktualisiert.`, 'success')
+      await loadJobDetail(selectedJobId)
+    } finally {
+      endBusyAndMaybeClearGenericProgress()
+    }
   }
 
   const standardRowOverrides = useMemo(
@@ -912,64 +1349,68 @@ const AltberichtImportPage = () => {
       showError('Zurzeit ist keine der gewählten Positionen vollständig – bitte zuerst die Pflichtangaben ergänzen.')
       return
     }
+    const commitTargetRowIds = targetRowIds.filter((id) => standardRowsById.get(id)?.dau.isCommitReady)
 
-    setBusy(true)
-
-    const { results, error } = await commitAltberichtC1Job(selectedJobId, {
-      stagingIds: targetRowIds,
-      rowOverrides: standardRowOverrides,
-      allowMissingDetails: true,
-    })
-    if (error) {
-      setBusy(false)
-      showError(error.message)
-      return
-    }
-
-    const c1Imported = results.filter((r) => r.ok && !r.skipped).length
-    const c1Failed = results.filter((r) => !r.ok && !r.skipped).length
-    const c1Skipped = results.filter((r) => r.skipped).length
-    let c2ImportedRows = 0
-    let c2ImportedItems = 0
-
-    await loadJobDetail(selectedJobId)
-
-    if (standardIncludeC2) {
-      const { staging: newest, error: stagingErr } = await fetchAltberichtImportStagingForJob(selectedJobId)
-      if (stagingErr) {
-        setBusy(false)
-        showError(stagingErr.message)
+    startGenericImportBusy('Ausgewählte Positionen werden in die Stammdaten übernommen …')
+    try {
+      const { results, error } = await commitAltberichtC1Job(selectedJobId, {
+        stagingIds: commitTargetRowIds,
+        rowOverrides: standardRowOverrides,
+        allowMissingDetails: true,
+      })
+      if (error) {
+        showError(error.message)
         return
       }
-      for (const row of newest) {
-        if (!isAltberichtStagingRowC2Eligible(row)) continue
-        const items = listAltberichtC2FindingRows(row)
-          .filter((x) => !x.alreadyImported && x.originalText.trim().length > 0)
-          .map((x) => ({ key: x.key, text: x.originalText.trim() }))
-        if (items.length === 0) continue
-        const c2 = await commitAltberichtC2DefectsForStagingRow(row, items)
-        if (c2.ok) {
-          c2ImportedRows += 1
-          c2ImportedItems += c2.importedKeys?.length ?? items.length
-        }
-      }
-      await loadJobDetail(selectedJobId)
-    }
 
-    setBusy(false)
-    setStandardRunResult({ c1Imported, c1Failed, c1Skipped, c2ImportedRows, c2ImportedItems })
-    if (c1Failed > 0) {
+      const c1Imported = results.filter((r) => r.ok && !r.skipped).length
+      const c1Failed = results.filter((r) => !r.ok && !r.skipped).length
+      const c1Skipped = results.filter((r) => r.skipped).length
+      let c2ImportedRows = 0
+      let c2ImportedItems = 0
+
+      await reloadProductiveObjects()
+      await loadJobDetail(selectedJobId)
+
+      if (standardIncludeC2) {
+        const { staging: newest, error: stagingErr } = await fetchAltberichtImportStagingForJob(selectedJobId)
+        if (stagingErr) {
+          showError(stagingErr.message)
+          return
+        }
+        for (const row of newest) {
+          if (!isAltberichtStagingRowC2Eligible(row)) continue
+          const items = listAltberichtC2FindingRows(row)
+            .filter((x) => !x.alreadyImported && x.commitText.trim().length > 0)
+            .map((x) => ({ key: x.key, text: x.commitText.trim() }))
+          if (items.length === 0) continue
+          const c2 = await commitAltberichtC2DefectsForStagingRow(row, items)
+          if (c2.ok) {
+            c2ImportedRows += 1
+            c2ImportedItems += c2.importedKeys?.length ?? items.length
+          }
+        }
+        await loadJobDetail(selectedJobId)
+      }
+
+      setStandardRunResult({ c1Imported, c1Failed, c1Skipped, c2ImportedRows, c2ImportedItems })
+      if (c1Failed > 0) {
         showToast(
-        `Teilweise fertig: ${c1Imported} Positionen übernommen, ${c1Failed} sind fehlgeschlagen, ${c1Skipped} übersprungen.`,
-        'error'
-      )
-    } else {
-      showToast(
-        standardIncludeC2
-          ? `Stammdaten für ${c1Imported} Position(en) gespeichert. Mängel aus dem Bericht wurden bei ${c2ImportedRows} Objekt(en) ergänzt.`
-          : `Stammdaten für ${c1Imported} Position(en) in der App gespeichert.`,
-        'success'
-      )
+          `Teilweise fertig: ${c1Imported} Positionen übernommen, ${c1Failed} sind fehlgeschlagen, ${c1Skipped} übersprungen.`,
+          altberichtBulkResultToastType({ ok: c1Imported, bad: c1Failed, skipped: c1Skipped })
+        )
+      } else {
+        showToast(
+          standardIncludeC2
+            ? `Stammdaten für ${c1Imported} Position(en) gespeichert. Mängel aus dem Bericht wurden bei ${c2ImportedRows} Objekt(en) ergänzt.`
+            : `Stammdaten für ${c1Imported} Position(en) in der App gespeichert.`,
+          altberichtBulkResultToastType({ ok: c1Imported, bad: 0, skipped: c1Skipped })
+        )
+      }
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e))
+    } finally {
+      endBusyAndMaybeClearGenericProgress()
     }
   }, [
     selectedJobId,
@@ -978,8 +1419,11 @@ const AltberichtImportPage = () => {
     standardRowOverrides,
     showError,
     standardIncludeC2,
+    reloadProductiveObjects,
     loadJobDetail,
     showToast,
+    startGenericImportBusy,
+    endBusyAndMaybeClearGenericProgress,
   ])
 
   const stagingRowById = useMemo(() => {
@@ -1002,11 +1446,13 @@ const AltberichtImportPage = () => {
         modeLabels: string[]
         subModeLabels: string[]
         parserPipelineEvents: AltberichtImportEventRow[]
+        statusDebugRows: StatusFindingsDebugSummary[]
       }
     >()
     const modeSets = new Map<string, Set<string>>()
     const subModeSets = new Map<string, Set<string>>()
     const counts = new Map<string, number>()
+    const statusDebugByFile = new Map<string, StatusFindingsDebugSummary[]>()
     for (const s of staging) {
       counts.set(s.file_id, (counts.get(s.file_id) ?? 0) + 1)
       const t = s.analysis_trace_json
@@ -1019,6 +1465,12 @@ const AltberichtImportPage = () => {
       if (sm) {
         if (!subModeSets.has(s.file_id)) subModeSets.set(s.file_id, new Set())
         subModeSets.get(s.file_id)!.add(sm)
+      }
+      const statusDebug = statusFindingsDebugFromTrace(s.analysis_trace_json, s.sequence, s.findings_json)
+      if (statusDebug) {
+        const list = statusDebugByFile.get(s.file_id)
+        if (list) list.push(statusDebug)
+        else statusDebugByFile.set(s.file_id, [statusDebug])
       }
     }
     const eventsByFile = new Map<string, AltberichtImportEventRow[]>()
@@ -1037,6 +1489,7 @@ const AltberichtImportPage = () => {
         parserPipelineEvents: (eventsByFile.get(id) ?? []).sort(
           (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         ),
+        statusDebugRows: (statusDebugByFile.get(id) ?? []).sort((a, b) => a.sequence - b.sequence),
       })
     }
     return byFile
@@ -1110,18 +1563,192 @@ const AltberichtImportPage = () => {
     )
   }
 
+  const protocolEvents = [...importJobEvents].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+
+  const protocolStatusForEvent = (event: AltberichtImportEventRow): { label: string; className: string } => {
+    if (event.level === 'error') {
+      return {
+        label: 'Fehler',
+        className: 'bg-red-50 text-red-900 border-red-200 dark:bg-red-950/40 dark:text-red-200 dark:border-red-900/50',
+      }
+    }
+    if (event.level === 'warn') {
+      return {
+        label: 'Warnung',
+        className:
+          'bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900/50',
+      }
+    }
+    if (
+      /(?:succeeded|success|completed|created|verified|text_extracted|staging_succeeded)$/i.test(event.code)
+    ) {
+      return {
+        label: 'Erfolg',
+        className:
+          'bg-emerald-50 text-emerald-900 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800/60',
+      }
+    }
+    return {
+      label: 'Info',
+      className: 'bg-slate-50 text-slate-800 border-slate-200 dark:bg-slate-900/60 dark:text-slate-200 dark:border-slate-700',
+    }
+  }
+
+  const importProtocolPanel = selectedJobId ? (
+    <section className="mb-5 rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">Import-Protokoll</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Neueste Einträge oben. Hilft beim Live-Test zu sehen, wo Upload, Parse, Review oder Commit hängen.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy || detailLoading}
+          className="rounded border border-slate-300 dark:border-slate-600 px-2 py-1 text-xs disabled:opacity-50"
+          onClick={() => void loadJobDetail(selectedJobId)}
+        >
+          Aktualisieren
+        </button>
+      </div>
+      <ul className="space-y-2 max-h-72 overflow-auto pr-1">
+          {readinessStartedAt ? (
+            <li className="rounded border px-3 py-2 text-xs bg-slate-50 text-slate-800 border-slate-200 dark:bg-slate-900/60 dark:text-slate-200 dark:border-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">Info</span>
+                <span className="font-mono opacity-80">
+                  {new Date(readinessStartedAt).toLocaleString('de-DE')}
+                </span>
+              </div>
+              <div className="mt-1 font-medium">Readiness-Check gestartet</div>
+              <div className="mt-0.5 font-mono text-[10px] opacity-75 break-all">import.readiness.started</div>
+            </li>
+          ) : null}
+          {readinessFinishedAt && readiness ? (
+            <li
+              className={`rounded border px-3 py-2 text-xs ${
+                readiness.ok
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-800/60'
+                  : 'bg-red-50 text-red-900 border-red-200 dark:bg-red-950/40 dark:text-red-200 dark:border-red-900/50'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">{readiness.ok ? 'Erfolg' : 'Fehler'}</span>
+                <span className="font-mono opacity-80">
+                  {new Date(readinessFinishedAt).toLocaleString('de-DE')}
+                </span>
+              </div>
+              <div className="mt-1 font-medium">
+                {readiness.ok ? 'Readiness-Check erfolgreich' : 'Readiness-Check fehlgeschlagen'}
+              </div>
+              <div className="mt-0.5 font-mono text-[10px] opacity-75 break-all">
+                {readiness.ok ? 'import.readiness.succeeded' : 'import.readiness.failed'}
+              </div>
+              {!readiness.ok ? (
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-[11px] opacity-80">Technische Details</summary>
+                  <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white/50 dark:bg-slate-950/40 px-2 py-1 font-mono text-[10px]">
+                    {JSON.stringify({ missing: readiness.missing, warnings: readiness.warnings }, null, 2)}
+                  </pre>
+                </details>
+              ) : null}
+            </li>
+          ) : null}
+          {protocolEvents.slice(0, 80).map((event) => {
+            const status = protocolStatusForEvent(event)
+            return (
+              <li
+                key={event.id}
+                className={`rounded border px-3 py-2 text-xs ${status.className}`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium">{status.label}</span>
+                  <span className="font-mono opacity-80">
+                    {new Date(event.created_at).toLocaleString('de-DE')}
+                  </span>
+                </div>
+                <div className="mt-1 font-medium">{event.message}</div>
+                <div className="mt-0.5 font-mono text-[10px] opacity-75 break-all">{event.code}</div>
+                {event.payload_json != null ? (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-[11px] opacity-80">Technische Details</summary>
+                    <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white/50 dark:bg-slate-950/40 px-2 py-1 font-mono text-[10px]">
+                      {JSON.stringify(event.payload_json, null, 2)}
+                    </pre>
+                  </details>
+                ) : null}
+              </li>
+            )
+          })}
+        {protocolEvents.length === 0 ? (
+          <li className="text-sm text-slate-500">Noch keine DB-Protokoll-Einträge für diesen Import.</li>
+        ) : null}
+      </ul>
+    </section>
+  ) : null
+
+  const readinessNotice = (
+    <>
+      {readinessLoading ? (
+        <div className="mb-5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+          Altbericht-Voraussetzungen werden geprüft…
+        </div>
+      ) : null}
+      {readiness && !readiness.ok ? (
+        <div
+          className="mb-5 rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-900 dark:text-red-100"
+          role="alert"
+        >
+          <div className="font-semibold mb-1">Altbericht-Import ist noch nicht bereit.</div>
+          <p className="mb-2">
+            Die Mandanten-Datenbank erfüllt nicht alle Voraussetzungen. Upload, Parsing und Übernahme sind deaktiviert,
+            bis die SQL-Pakete ausgerollt wurden.
+          </p>
+          <ul className="list-disc pl-5 space-y-1">
+            {readiness.missing.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {readiness?.warnings.length ? (
+        <div className="mb-5 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+          <div className="font-semibold mb-1">Hinweise zur Altbericht-Bereitschaft</div>
+          <ul className="list-disc pl-5 space-y-1">
+            {readiness.warnings.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </>
+  )
+
+  const importProgressPanel = (
+    <AltberichtImportProgressPanel
+      viewMode={viewMode}
+      state={importProgress}
+      onDismissError={() => setImportProgress({ kind: 'idle' })}
+    />
+  )
+
   if (viewMode === 'standard') {
     const rows = standardRows
     const rowsNeedingInput = rows.filter((r) => r.dau.showInStep3)
     const rowsDeferred = rows.filter((r) => r.dau.isDeferred)
     const rowsCommitted = rows.filter((r) => r.dau.isCommitted)
+    const rowsReady = rows.filter((r) => r.dau.isCommitReady)
     const rowsOpenAfterRun = rows.filter((r) => !r.dau.isCommitted && !r.dau.isDeferred)
     const targetRowIds = resolveStandardTargetRowIds()
     const targetRowIdSet = new Set(targetRowIds)
-    const rowsInImportScope = rows.filter((r) => targetRowIdSet.has(r.row.id))
+    const rowsInImportScope = rows.filter((r) => targetRowIdSet.has(r.row.id) && !r.dau.isCommitted)
     const scopeReadyCount = rowsInImportScope.filter((r) => r.dau.isCommitReady).length
     const scopeNeedingInputCount = rowsInImportScope.filter((r) => r.dau.showInStep3).length
     const scopeDeferredCount = rowsInImportScope.filter((r) => r.dau.isDeferred).length
+    const scopeCommittedCount = rows.filter((r) => targetRowIdSet.has(r.row.id) && r.dau.isCommitted).length
     const readyInTargetCount = targetRowIds.filter(
       (id) => standardRowsById.get(id)?.dau.isCommitReady
     ).length
@@ -1160,6 +1787,12 @@ const AltberichtImportPage = () => {
             Expertenmodus
           </button>
         </div>
+
+        {readinessNotice}
+
+        {importProgressPanel}
+
+        {importProtocolPanel}
 
         <section className="mb-5 rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 p-4 sm:p-5 shadow-sm">
           <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-1">Schritt 1: PDFs hochladen</h3>
@@ -1201,7 +1834,7 @@ const AltberichtImportPage = () => {
             </label>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !canRunAltberichtActions}
               className="rounded bg-slate-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
               onClick={() => void handleCreateAndUpload()}
             >
@@ -1212,7 +1845,7 @@ const AltberichtImportPage = () => {
             <button
               type="button"
               className="rounded-md border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80"
-              disabled={busy || !selectedJobId}
+              disabled={busy || !selectedJobId || !canRunAltberichtActions}
               onClick={() => void handleParseAll()}
             >
               Text aus PDFs lesen
@@ -1262,8 +1895,13 @@ const AltberichtImportPage = () => {
                         <input
                           type="checkbox"
                           className="rounded border-slate-300 text-vico-primary"
-                          title="Für die Übernahme markieren (siehe Schritt 4: „Nur markierte“)"
-                          checked={Boolean(selectedStandardRows[row.id])}
+                          title={
+                            dau.isCommitted
+                              ? 'Bereits übernommen und nicht mehr Teil der C1-Übernahme'
+                              : 'Für die Übernahme markieren (siehe Schritt 4: „Nur markierte“)'
+                          }
+                          disabled={dau.isCommitted}
+                          checked={Boolean(selectedStandardRows[row.id]) && !dau.isCommitted}
                           onChange={(e) =>
                             setSelectedStandardRows((prev) => {
                               const next = { ...prev }
@@ -1285,8 +1923,13 @@ const AltberichtImportPage = () => {
                     <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        className="rounded-md border border-slate-300 dark:border-slate-600 px-2 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80"
-                        title="Diese Zeile in Schritt 3 und 4 allein bearbeiten und übernehmen"
+                        disabled={dau.isCommitted}
+                        className="rounded-md border border-slate-300 dark:border-slate-600 px-2 py-0.5 text-[11px] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/80 disabled:opacity-50"
+                        title={
+                          dau.isCommitted
+                            ? 'Diese Zeile wurde bereits übernommen'
+                            : 'Diese Zeile in Schritt 3 und 4 allein bearbeiten und übernehmen'
+                        }
                         onClick={() => {
                           setStandardBulkTarget('single')
                           setSingleStandardRowId(row.id)
@@ -1323,6 +1966,12 @@ const AltberichtImportPage = () => {
                         </span>
                       </div>
                     ) : null}
+                    {dau.isCommitted ? (
+                      <p className="text-xs text-emerald-900/90 dark:text-emerald-200/95 mt-2 leading-snug rounded-md bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/50 px-2 py-1.5">
+                        <span className="font-medium">Beim Reparse übernommen:</span> Diese Position ist bereits mit dem
+                        Produktivobjekt verknüpft und wird nicht erneut in C1 gespeichert.
+                      </p>
+                    ) : null}
                     {standardSoftDuplicateRowIds.has(row.id) ? (
                       <p className="text-xs text-amber-900/90 dark:text-amber-200/95 mt-2 leading-snug rounded-md bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/50 px-2 py-1.5">
                         <span className="font-medium">Hinweis:</span> Möglicherweise passend zu einem{' '}
@@ -1330,6 +1979,49 @@ const AltberichtImportPage = () => {
                         Zuordnung anpassen.
                       </p>
                     ) : null}
+                    {(() => {
+                      /**
+                       * Foto-Block global im Standardmodus (Schritt 2) pro PDF-Position.
+                       * Echte eingebettete Einzelbilder werden – sobald welche dieser Position
+                       * zugeordnet (oder vorgeschlagen) sind – prominent gerendert. Wenn keine
+                       * Einzelbilder zugeordnet sind, fällt die Komponente auf den
+                       * Seitenfoto-Workflow (Sequenz-Heuristik) zurück.
+                       */
+                      const fileForPhoto = fileById.get(row.file_id) ?? null
+                      if (!fileForPhoto || !selectedJobId) return null
+                      const rowEmbedded = listEmbeddedImagesForStagingRow(row, staging, embeddedImages)
+                      const fileEmbAll = embeddedImages.filter(
+                        (im) =>
+                          im.file_id === row.file_id && shouldCountAltberichtEmbeddedImageForFileStats(im)
+                      )
+                      return (
+                        <div className="mt-2.5">
+                          <AltberichtStagingRowEmbeddedImages
+                            row={row}
+                            fileRow={fileForPhoto}
+                            images={rowEmbedded}
+                            allJobEmbeddedImages={embeddedImages}
+                            fileEmbeddedImageTotal={fileEmbAll.length}
+                            fileLikelyLogoCount={
+                              fileEmbAll.filter((im) => isEmbeddedImageLikelyLogo(im)).length
+                            }
+                            fileSkippedPages={skippedPagesByFile.get(row.file_id) ?? []}
+                            onOpenPagePreview={(f, p) => void handleOpenPagePreview(f, p)}
+                            allObjects={allObjects}
+                            busy={busy}
+                            onReload={() => void loadJobDetail(selectedJobId)}
+                          />
+                        </div>
+                      )
+                    })()}
+                    <AltberichtStandardRowFindingsSection
+                      row={row}
+                      busy={busy}
+                      canRun={canRunAltberichtActions}
+                      onReloadJob={async () => {
+                        if (selectedJobId) await loadJobDetail(selectedJobId)
+                      }}
+                    />
                 </li>
               ))}
             </ul>
@@ -1453,7 +2145,7 @@ const AltberichtImportPage = () => {
                             className="mt-0.5 w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-sm"
                             value={draft.newCustomerName}
                             disabled={busy}
-                            placeholder="z. B. Wette Center GmbH"
+                            placeholder="z. B. Kunde GmbH"
                             onChange={(e) => {
                               markRowDirty(row.id)
                               setQuickEdits((q) => ({
@@ -1546,7 +2238,7 @@ const AltberichtImportPage = () => {
                               className="mt-0.5 w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-sm"
                               value={draft.newBvName}
                               disabled={busy}
-                              placeholder={suggestedBvNameFromRow(row) || 'z. B. Wette Center Kornwestheim'}
+                              placeholder={suggestedBvNameFromRow(row) || 'z. B. Muster-Bauvorhaben'}
                               onChange={(e) => {
                                 markRowDirty(row.id)
                                 setQuickEdits((q) => ({
@@ -1734,6 +2426,13 @@ const AltberichtImportPage = () => {
                 Eingabe nötig
                 &nbsp;·{' '}
                 <span className="font-medium text-slate-600 dark:text-slate-400">{scopeDeferredCount}</span> ausgesetzt
+                {scopeCommittedCount > 0 ? (
+                  <>
+                    &nbsp;·{' '}
+                    <span className="font-medium text-emerald-800 dark:text-emerald-200">{scopeCommittedCount}</span>{' '}
+                    bereits übernommen
+                  </>
+                ) : null}
                 {targetRowIds.length === 0 ? (
                   <span className="block mt-1.5 text-xs text-amber-800 dark:text-amber-200">
                     Wählen Sie in Schritt 2 eine Position (z. B. „Nur diese Position“) oder stellen Sie unten „Alle“ /
@@ -1801,7 +2500,7 @@ const AltberichtImportPage = () => {
                   type="checkbox"
                   className="mt-0.5 rounded border-slate-300 text-vico-primary"
                   checked={standardIncludeC2}
-                  disabled={busy}
+                  disabled={busy || !canRunAltberichtActions}
                   onChange={(e) => setStandardIncludeC2(e.target.checked)}
                 />
                 <span>
@@ -1811,7 +2510,7 @@ const AltberichtImportPage = () => {
               </label>
               <button
                 type="button"
-                disabled={busy || readyInTargetCount === 0}
+                disabled={busy || readyInTargetCount === 0 || !canRunAltberichtActions}
                 className="rounded-md bg-emerald-700 text-white px-4 py-2.5 text-sm font-medium disabled:opacity-50 shadow-sm"
                 onClick={() => void handleStandardCommit()}
               >
@@ -1838,6 +2537,9 @@ const AltberichtImportPage = () => {
               <ul className="text-sm space-y-1.5 text-slate-700 dark:text-slate-200">
                 <li>
                   In den Stammdaten gespeichert: <span className="font-semibold tabular-nums">{rowsCommitted.length}</span>
+                </li>
+                <li>
+                  Bereit zur Übernahme: <span className="font-semibold tabular-nums">{rowsReady.length}</span>
                 </li>
                 <li>
                   Noch nicht abgeschlossen: <span className="font-semibold tabular-nums">{rowsOpenAfterRun.length}</span>
@@ -1880,6 +2582,8 @@ const AltberichtImportPage = () => {
             </>
           )}
         </section>
+
+        <PdfPreviewOverlay state={pdfPreview} onClose={handleClosePdfPreview} />
       </div>
     )
   }
@@ -1912,6 +2616,12 @@ const AltberichtImportPage = () => {
         Abläufe (u. a. C1/C2) bleiben unverändert; hier steuern Sie alle Details pro Auftrag.
       </p>
 
+      {readinessNotice}
+
+      {importProgressPanel}
+
+      {importProtocolPanel}
+
       <section className="mb-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/80 p-4 shadow-sm">
         <h3 className="font-semibold mb-3">Neuer Job</h3>
         <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
@@ -1936,7 +2646,7 @@ const AltberichtImportPage = () => {
           </label>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || !canRunAltberichtActions}
             className="rounded bg-slate-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
             onClick={() => void handleCreateAndUpload()}
           >
@@ -2004,7 +2714,7 @@ const AltberichtImportPage = () => {
             {selectedJobId ? (
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || !canRunAltberichtActions}
                 className="text-xs rounded bg-slate-600 text-white px-2 py-1 disabled:opacity-50"
                 onClick={() => void handleParseAll()}
               >
@@ -2055,6 +2765,40 @@ const AltberichtImportPage = () => {
                           <span className="text-slate-500">Staging-Objekte (Zahl): </span>
                           {d.objectCount}
                         </div>
+                        {d.statusDebugRows.length > 0 ? (
+                          <details className="rounded border border-sky-200/70 dark:border-sky-800/50 bg-sky-50/50 dark:bg-sky-950/20 px-2 py-1">
+                            <summary className="cursor-pointer text-sky-900 dark:text-sky-200 font-medium">
+                              Status/Mängel-Debug ({d.statusDebugRows.length} Positionen)
+                            </summary>
+                            <ul className="mt-1.5 space-y-2">
+                              {d.statusDebugRows.slice(0, 20).map((item) => (
+                                <li key={item.sequence} className="border-t border-sky-100 dark:border-sky-900/40 pt-1">
+                                  <div className="font-mono text-slate-700 dark:text-slate-300">
+                                    sequence: {item.sequence} · finding:{' '}
+                                    {item.findingsFilled ? `Ja (${item.findingsCount})` : 'Nein'} · verworfen:{' '}
+                                    {item.rejectedReason || 'nein'}
+                                  </div>
+                                  <div className="font-mono">
+                                    <span className="text-slate-500">status_raw: </span>
+                                    {item.statusCandidate || '—'}
+                                  </div>
+                                  <div className="font-mono">
+                                    <span className="text-slate-500">um Status: </span>
+                                    {item.statusRawAround || '—'}
+                                  </div>
+                                  <div className="font-mono">
+                                    <span className="text-slate-500">Block: </span>
+                                    {item.blockRawPreview || '—'}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        ) : (
+                          <div className="font-mono text-slate-500">
+                            Status/Mängel-Debug: — (Datei mit aktueller Version neu parsen)
+                          </div>
+                        )}
                         {d.parserPipelineEvents.length > 0 ? (
                           <ul className="list-disc pl-4 space-y-0.5 text-amber-900 dark:text-amber-200/90 font-sans not-italic">
                             {d.parserPipelineEvents.map((ev) => (
@@ -2073,7 +2817,7 @@ const AltberichtImportPage = () => {
                   {['pending', 'parse_failed', 'parsed', 'staged', 'parsing'].includes(f.status) ? (
                     <button
                       type="button"
-                      disabled={busy}
+                      disabled={busy || !canRunAltberichtActions}
                       className="self-start text-xs underline text-slate-700 dark:text-slate-300 disabled:opacity-50"
                       onClick={() => void handleParseOne(f.id)}
                     >
@@ -2203,7 +2947,7 @@ const AltberichtImportPage = () => {
             <div className="flex flex-wrap gap-2 items-center">
               <button
                 type="button"
-                disabled={busy || commitEligibleInJob.length === 0}
+                disabled={busy || commitEligibleInJob.length === 0 || !canRunAltberichtActions}
                 className="rounded-md bg-emerald-700 text-white px-3 py-1.5 text-xs font-medium disabled:opacity-50"
                 onClick={() => void handleCommitEntireJob()}
               >
@@ -2211,7 +2955,7 @@ const AltberichtImportPage = () => {
               </button>
               <button
                 type="button"
-                disabled={busy || commitEligibleInFiltered.length === 0}
+                disabled={busy || commitEligibleInFiltered.length === 0 || !canRunAltberichtActions}
                 className="rounded-md border border-emerald-700 text-emerald-900 dark:text-emerald-100 px-3 py-1.5 text-xs font-medium disabled:opacity-50"
                 onClick={() => void handleCommitFilteredList()}
                 title="Nur die aktuell durch den Filter sichtbaren Zeilen-IDs. Nicht speicherbare Zeilen erscheinen als übersprungen."
@@ -2283,45 +3027,73 @@ const AltberichtImportPage = () => {
         ) : filteredStaging.length === 0 ? (
           <p className="text-sm text-slate-500">Keine Zeilen für diesen Filter.</p>
         ) : (
-          <ul className="space-y-4 max-h-[70vh] overflow-auto pr-1">
+          <ul
+            ref={handleStagingReviewScrollIntersectRef}
+            className="space-y-4 max-h-[70vh] overflow-auto pr-1"
+          >
             {filteredStaging.map((s) => (
-              <AltberichtStagingReviewRowEditor
-                key={s.id}
-                row={s}
-                customers={customers}
-                allBvs={allBvs}
-                allObjects={allObjects}
-                busy={busy}
-                fileExtractedText={files.find((f) => f.id === s.file_id)?.extracted_text ?? null}
-                c1PositionCompare={
-                  viewMode === 'expert'
-                    ? buildC1PositionCompare(
-                        s,
-                        s.committed_object_id?.trim()
-                          ? objectByIdForC1Compare.get(s.committed_object_id.trim()) ?? null
-                          : null
-                      )
-                    : null
-                }
-                onPatch={(patch) => patchStagingRow(s.id, patch)}
-                onComputeMatch={() => computeMatchForRow(s.id)}
-                onRecomputeRow={() => recomputeOneRow(s.id)}
-                onCommitRow={
-                  isAltberichtStagingRowCommitEligible(s) && !s.committed_at
-                    ? () => commitOneRow(s)
-                    : undefined
-                }
-                onCommitC2Defects={
-                  isAltberichtStagingRowC2Eligible(s)
-                    ? (items) => commitC2ForRow(s, items)
-                    : undefined
-                }
-              />
+              (() => {
+                const c1CompareObjectId = getC1CompareObjectId(s)
+                const c1CompareObject = c1CompareObjectId
+                  ? objectByIdForC1Compare.get(c1CompareObjectId) ?? null
+                  : null
+                const rowEmbedded = listEmbeddedImagesForStagingRow(s, staging, embeddedImages)
+                const rowEmbeddedFile = files.find((f) => f.id === s.file_id) ?? null
+                const fileEmbAll = embeddedImages.filter(
+                  (im) => im.file_id === s.file_id && shouldCountAltberichtEmbeddedImageForFileStats(im)
+                )
+                const fileEmbeddedImageTotal = fileEmbAll.length
+                const fileLikelyLogoCount = fileEmbAll.filter((im) => isEmbeddedImageLikelyLogo(im)).length
+                return (
+                  <AltberichtStagingReviewRowEditor
+                    key={s.id}
+                    row={s}
+                    customers={customers}
+                    allBvs={allBvs}
+                    allObjects={allObjects}
+                    busy={busy}
+                    fileExtractedText={files.find((f) => f.id === s.file_id)?.extracted_text ?? null}
+                    c1PositionCompare={
+                      viewMode === 'expert' ? buildC1PositionCompare(s, c1CompareObject) : null
+                    }
+                    c1ProductiveObjectLoaded={Boolean(c1CompareObjectId && c1CompareObject)}
+                    rowEmbeddedImages={rowEmbedded}
+                    rowEmbeddedFile={rowEmbeddedFile}
+                    allJobEmbeddedImages={embeddedImages}
+                    fileEmbeddedImageTotal={fileEmbeddedImageTotal}
+                    fileLikelyLogoCount={fileLikelyLogoCount}
+                    fileSkippedPages={
+                      rowEmbeddedFile ? skippedPagesByFile.get(rowEmbeddedFile.id) ?? [] : []
+                    }
+                    stagingScrollIntersectionRoot={stagingReviewScrollIntersectRoot}
+                    onOpenPagePreview={(f, p) => void handleOpenPagePreview(f, p)}
+                    onEmbeddedImagesChanged={
+                      selectedJobId ? () => void loadEmbeddedImages(selectedJobId) : undefined
+                    }
+                    onPatch={(patch) => patchStagingRow(s.id, patch)}
+                    onComputeMatch={() => computeMatchForRow(s.id)}
+                    onRecomputeRow={() => recomputeOneRow(s.id)}
+                    onCommitRow={
+                      canRunAltberichtActions &&
+                      isAltberichtStagingRowCommitEligible(s, { allowMissingDetails: true }) &&
+                      !(s.committed_at && s.committed_object_id?.trim())
+                        ? () => commitOneRow(s)
+                        : undefined
+                    }
+                    onCommitC2Defects={
+                      canRunAltberichtActions && isAltberichtStagingRowC2Eligible(s)
+                        ? (items) => commitC2ForRow(s, items)
+                        : undefined
+                    }
+                  />
+                )
+              })()
             ))}
           </ul>
         )}
       </section>
 
+      <PdfPreviewOverlay state={pdfPreview} onClose={handleClosePdfPreview} />
     </div>
   )
 }

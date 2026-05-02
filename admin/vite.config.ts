@@ -50,6 +50,7 @@ export default defineConfig(({ mode }) => {
     __APP_RELEASE_LABEL__: JSON.stringify(appReleaseLabel),
     'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),
     'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(env.VITE_SUPABASE_ANON_KEY ?? ''),
+    'import.meta.env.VITE_GITHUB_ACTIONS_URL': JSON.stringify(env.VITE_GITHUB_ACTIONS_URL ?? ''),
   },
   build: {
     rollupOptions: {

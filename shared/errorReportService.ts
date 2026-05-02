@@ -1,4 +1,4 @@
-/** Gemeinsamer Fehler-Report-Service für alle Vico-Apps */
+/** Gemeinsamer Fehler-Report-Service für Mandanten-Apps */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 

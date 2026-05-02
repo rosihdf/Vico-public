@@ -80,18 +80,99 @@ export {
 } from './altberichtImportQueryService'
 export type { AltberichtImportStagingObjectRow } from './altberichtImportQueryService'
 export { runAltberichtImportParseForFile, runAltberichtImportParseJobSequential } from './altberichtImportParseService'
-export { patchAltberichtEmbeddedImage } from './altberichtImportEmbeddedImageService'
+export {
+  patchAltberichtEmbeddedImage,
+  runAltberichtEmbeddedImageScanForFileById,
+} from './altberichtImportEmbeddedImageService'
+export {
+  fetchAltberichtSkippedPagesByFileForJob,
+  getStagingRowSkippedPages,
+} from './altberichtImportSkippedPages'
+export type { AltberichtSkippedPagesByFile } from './altberichtImportSkippedPages'
+export {
+  collectPagesMentionedOnStagingRow,
+  resolveStagingRowPageHints,
+} from './altberichtEmbeddedImageSuggest'
+export {
+  altberichtBulkResultToastType,
+  altberichtToastTypeForCode,
+} from './altberichtImportToastMap'
+export type {
+  StagingRowPageHintSource,
+  StagingRowPageHints,
+} from './altberichtEmbeddedImageSuggest'
 export {
   importAllEmbeddedImagesPendingForJob,
   importEmbeddedImageProductive,
 } from './altberichtImportEmbeddedImageProductiveService'
 export type { ImportEmbeddedImageResult } from './altberichtImportEmbeddedImageProductiveService'
+export { importAltberichtPageAsObjectPhoto } from './altberichtImportPageAsPhotoService'
+export type {
+  ImportAltberichtPageAsObjectPhotoParams,
+  ImportAltberichtPageAsPhotoCode,
+  ImportAltberichtPageAsPhotoResult,
+} from './altberichtImportPageAsPhotoService'
 export { resolveStammdatenDefectEntryIdForC2Key } from './altberichtImportEmbeddedDefectResolve'
+export {
+  buildAltberichtPositionBlockBoxLookup,
+  buildAltberichtPositionBlockBoxes,
+} from './altberichtPositionBlockGeometry'
+export type { AltberichtPositionBlockBox } from './altberichtPositionBlockGeometry'
+export {
+  clearAltberichtPositionBlockGeometryCache,
+  computeAltberichtPositionBlockBoxesFromPdfBytes,
+  getCachedAltberichtPositionBlockLookup,
+  renderAltberichtPositionBlockToBlob,
+  setCachedAltberichtPositionBlockLookup,
+} from './altberichtPositionBlockRender'
 export {
   collectEmbeddedImageDraftsFromFnArray,
   finalizeDraftsPerPage,
   classifyImagePaintOp,
 } from './altberichtPdfImageScan'
+export {
+  ALTBERICHT_RASTER_BLOCKS_PER_PAGE,
+  ALTBERICHT_RASTER_OP_KIND_BLOCK_CROP,
+  ALTBERICHT_RASTER_SCAN_VERSION,
+  assignAltberichtRasterBlockIndex,
+  computeAllAltberichtRasterBlockBoundsForPage,
+  computeAltberichtGlobalRowIndex,
+  computeAltberichtRasterBlockBounds,
+  computeAltberichtRasterImageIndex,
+  formatAltberichtLogicalPhotoKey,
+  isAltberichtRasterImageIndex,
+  parseAltberichtLogicalPhotoKey,
+  splitAltberichtGlobalRowIndex,
+} from './altberichtRasterGrid'
+export type { AltberichtRasterBlockBounds } from './altberichtRasterGrid'
+export {
+  ALTBERICHT_RASTER_FINDING_SOURCE_ACCEPT,
+  ALTBERICHT_RASTER_FINDING_SOURCE_SUSPECT,
+  filterAltberichtRasterBlockStatusText,
+  isAltberichtRasterFindingSource,
+} from './altberichtRasterStatusFilter'
+export type { AltberichtRasterStatusFilterResult } from './altberichtRasterStatusFilter'
+export {
+  countAltberichtRasterNonEmptyBlocksPerPage,
+  flattenAltberichtRasterBlocks,
+  matchAltberichtRasterBlocksToStagingRows,
+  runAltberichtRasterScanForPdf,
+} from './altberichtRasterScan'
+export type {
+  AltberichtRasterBlockData,
+  AltberichtRasterPageData,
+  AltberichtRasterScanOptions,
+  AltberichtRasterScanProgress,
+} from './altberichtRasterScan'
+export {
+  mergeAltberichtBlockStatusFindings,
+  runAltberichtRasterAnalysisForFile,
+  runAltberichtRasterAnalysisForFileById,
+} from './altberichtRasterFindingsService'
+export type {
+  AltberichtRasterAnalysisResult,
+  RunAltberichtRasterAnalysisOptions,
+} from './altberichtRasterFindingsService'
 export type { RunAltberichtImportParseForFileResult } from './altberichtImportParseService'
 export type {
   AltberichtImportEmbeddedImageImportStatus,

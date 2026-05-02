@@ -667,15 +667,15 @@ const Einstellungen = () => {
         doorStammdatenListsEnabled={isEnabled(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL)}
         doorStammdatenCheckboxDisabled={updatingKey === COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL}
         onDoorStammdatenCheckboxChange={async (e) => {
-          setComponentError(null)
-          const checked = e.target.checked
-          setUpdatingKey(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL)
-          const result = await updateSetting(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL, checked)
-          setUpdatingKey(null)
-          if (!result.ok) {
-            setComponentError(result.error ?? 'Speichern fehlgeschlagen')
-          }
-        }}
+                setComponentError(null)
+                const checked = e.target.checked
+                setUpdatingKey(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL)
+                const result = await updateSetting(COMPONENT_KEY_DOOR_STAMMDATEN_AUSWAHL, checked)
+                setUpdatingKey(null)
+                if (!result.ok) {
+                  setComponentError(result.error ?? 'Speichern fehlgeschlagen')
+                }
+              }}
       />
 
       <DashboardLayoutSettingsSection
@@ -733,9 +733,9 @@ const Einstellungen = () => {
           <MaintenanceReminderEmailSettingsBlock
             emailEnabled={maintEmailEnabled}
             onEmailEnabledChange={(on) => {
-              setMaintEmailEnabled(on)
-              if (!on) setMaintDigestConsentChecked(false)
-            }}
+                  setMaintEmailEnabled(on)
+                  if (!on) setMaintDigestConsentChecked(false)
+                }}
             digestConsentChecked={maintDigestConsentChecked}
             onDigestConsentCheckedChange={setMaintDigestConsentChecked}
             reminderEmailConsentAt={myProfile?.maintenance_reminder_email_consent_at}
@@ -750,7 +750,7 @@ const Einstellungen = () => {
           <MandantPingSettingsBlock
             visible={userRole === 'admin'}
             enabled={mandantPingEnabled}
-            onChange={handleMandantPingChange}
+                  onChange={handleMandantPingChange}
           />
 
           <MaintenanceDigestAdminSettingsBlock

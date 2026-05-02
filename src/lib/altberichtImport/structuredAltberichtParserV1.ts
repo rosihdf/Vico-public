@@ -8,8 +8,18 @@ import type {
   AltberichtParserResultV1,
   AltberichtParserStagingObjectV1,
 } from './parserContractV1'
+import {
+  isAltberichtC2DocumentHeaderOnlyToken,
+  normalizeAltberichtC2FindingText,
+  stripLeadingAltberichtDocumentHeaderForC2,
+  textShouldBeExcludedFromAltberichtC2Import,
+} from './altberichtImportC2FindingFilter'
 
-export const STRUCTURED_ALTBERICHT_PARSER_VERSION = 'vico-altbericht-structured/1.2.8'
+export const STRUCTURED_ALTBERICHT_PARSER_VERSION = 'vico-altbericht-structured/1.3.5'
+
+/** Einfachmodus / C2: prüfpflichtig, kein automatischer Produktiv-Import ohne Nutzeraktion. */
+export const ALTBERICHT_STATUS_REVIEW_PLACEHOLDER_TEXT =
+  'Mangel laut Bericht vorhanden – bitte Text prüfen'
 
 const norm = (s: string): string => s.replace(/\s+/g, ' ').trim()
 
@@ -28,7 +38,7 @@ const isFloorToken = (token: string): boolean => {
 }
 
 /**
- * Wette-Center u. a.: eine Datenzeile „<Pos. 2–4 Ziffern> <Etage> <Rest Raum>“ in einer gescannten Zeile
+ * Bekanntes Positionslayout (PDF gescannt): eine Datenzeile „<Pos. 2–4 Ziffern> <Etage> <Rest Raum>“ in einer Zeile
  * (nicht: Erste Zahl = Etage). Z. B. 302 2 Mschinenraum, 54 -1 TG, 104 0 Laden EG
  */
 const isWettePosEtageRoomTripletLine = (line: string): boolean => {
@@ -123,7 +133,7 @@ const isWegFloorBlockStartLine = (line: string): boolean => {
   if (!raw) return false
   const tokens = raw.split(/\s+/).filter(Boolean)
   if (tokens.length < 2) return false
-  /** Blockgrenze wie classische Etagenzeile, inkl. Wette „302 2 …“-Positionszeile */
+  /** Blockgrenze wie classische Etagenzeile, inkl. „302 2 …“-Positionszeile (typ. Layout) */
   if (isWettePosEtageRoomTripletLine(raw)) return true
   const a = tokens[0]!
   if (/^(eg|ug|og|kg|dg)$/i.test(a)) return true
@@ -265,7 +275,7 @@ const extractArtDataLineAfterWegHeader = (block: string): string | undefined => 
   const headerIdx = lines.findIndex((l) => /\bArt\s+Fl\.\s*Anforderung\s+Hersteller\b/i.test(l))
   if (headerIdx >= 0) {
     const headerLine = lines[headerIdx]!
-    /** Wette-Center u. a.: Kolumnentitel und Daten in einer (!) gescannten Zeile. */
+    /** Kolumnentitel und Daten in einer (!) gescannten Zeile (typ. Positionslayout). */
     const sameLineM = headerLine.match(
       /\bArt\s+Fl\.\s*Anforderung\s+Hersteller\s+(.+?)(?=\s+(?:Schließ|Schliess)mittel\b|weiteres\s+Zubeh\b|\s+Art\s+Fl\.\s+Anforderung|$)/i
     )
@@ -668,11 +678,161 @@ const extractWegZubehörStatusValue = (b: string): string | undefined => {
   return undefined
 }
 
+/** Schnitt vor Folge-/Kopfzeilen und Dokumentfragmenten (Status nicht mit nächstem Block zusammenziehen). */
+const STATUS_VALUE_CUT_MARKERS: RegExp[] = [
+  /\b(?:Pos\.\s*)?(?:Pos\.\s*)?intern\s+Etage\s+Raum\b/i,
+  /\bPos\.\s+Pos\.\s+intern\b/i,
+  /\bArt\s+Fl\.\s*Anforderung\s+Hersteller\b/i,
+  /\b(?:Schließ|Schliess)mittel\b/i,
+  /\bweiteres\s+Zubeh[öo]r\s*Status\b/i,
+  /\bWartung\s+20\d{2}\b/i,
+  /\bNovember\b/i,
+  /\bBV\s*:/i,
+  /\bBearbeitete\s+Person\b/i,
+]
+
+const cutStatusValueAtMarkers = (value: string): string => {
+  let cut = value.length
+  for (const re of STATUS_VALUE_CUT_MARKERS) {
+    const m = re.exec(value)
+    /** Index 0 nicht abschneiden: wäre leerer String; führende Kopffragmente entfernt stripLeadingDocumentNoiseFromStatus */
+    if (m && m.index > 0 && m.index < cut) cut = m.index
+  }
+  return norm(value.slice(0, cut))
+}
+
+const stripLeadingDocumentNoiseFromStatus = stripLeadingAltberichtDocumentHeaderForC2
+
+/**
+ * Kein C2-Kandidat: reine Maße, Zahlenangaben, kurze reine Positionsnummern.
+ */
+const isHarmlessMeasureOrNumericStatus = (value: string): boolean => {
+  const t = norm(value)
+  if (!t) return true
+  if (/^\d{1,2}$/.test(t)) {
+    const n = parseInt(t, 10)
+    if (n >= 1 && n <= 50) return true
+  }
+  if (/^\d{2,4}\s*[x×]\s*\d{2,4}(\s*mm)?\.?$/i.test(t)) return true
+  if (/^[\d\s.,x×]{3,24}$/i.test(t) && /[x×]/.test(t) && !/[a-zäöüß]/i.test(t)) return true
+  if (/^\d+([.,]\d+)?\s*(mm|cm|m)\b\.?$/i.test(t)) return true
+  if (/^\d+([.,]\d+)?$/i.test(t) && t.replace(/[.,]/g, '').length <= 5) return true
+  return false
+}
+
+const STATUS_CANDIDATE_MAX_LEN = 320
+
+const cleanInlineStatusValue = (raw: string): string | undefined => refineParsedStatusText(raw)
+
+/** Einheitliche Nachbearbeitung für alle Status-Quellen (Zeile, Inline, Regex-Fallback). */
+const refineParsedStatusText = (raw: string | undefined): string | undefined => {
+  if (!raw?.trim()) return undefined
+  let value = norm(raw)
+  value = stripLeadingDocumentNoiseFromStatus(value)
+  value = cutStatusValueAtMarkers(value)
+  value = stripLeadingDocumentNoiseFromStatus(value)
+  value = norm(value.replace(/^\d{1,3}\s+/, ''))
+  value = stripLeadingDocumentNoiseFromStatus(value)
+  if (!value || /^Status$/i.test(value)) return undefined
+  if (isAltberichtC2DocumentHeaderOnlyToken(value)) return undefined
+  if (isHarmlessMeasureOrNumericStatus(value)) return undefined
+  if (value.length > STATUS_CANDIDATE_MAX_LEN) value = `${value.slice(0, STATUS_CANDIDATE_MAX_LEN).trim()}…`
+  return value
+}
+
+const extractWegStatusValueInline = (b: string): string | undefined => {
+  const collapsed = norm(b.replace(/\r?\n/g, ' '))
+  const marker = /weiteres\s+Zubeh[öo]r\s*Status\b/i.exec(collapsed)
+  if (marker?.index != null) {
+    return cleanInlineStatusValue(collapsed.slice(marker.index + marker[0].length))
+  }
+  const statusMarker = /\bStatus\s*[:\-]?\s+/i.exec(collapsed)
+  if (statusMarker?.index != null) {
+    return cleanInlineStatusValue(collapsed.slice(statusMarker.index + statusMarker[0].length))
+  }
+  return undefined
+}
+
+const extractStatusDebugSnippet = (block: string): string | null => {
+  const compact = norm(block.replace(/\r?\n/g, ' '))
+  const marker = /\bStatus\b/i.exec(compact)
+  if (!marker?.index && marker?.index !== 0) return null
+  const start = Math.max(0, marker.index - 140)
+  const end = Math.min(compact.length, marker.index + 420)
+  return compact.slice(start, end)
+}
+
+const blockDebugPreview = (block: string): string => {
+  const compact = norm(block.replace(/\r?\n/g, ' '))
+  return compact.length > 900 ? `${compact.slice(0, 900)}…` : compact
+}
+
+const statusCandidateRejectReason = (candidate: string | undefined): string | null => {
+  if (!candidate?.trim()) return 'no_candidate_after_status'
+  const value = norm(candidate)
+  if (isWegInOrdnungOrTrivialStatus(value)) return 'trivial_ok_status'
+  if (isHarmlessMeasureOrNumericStatus(value)) return 'harmless_measure_or_numeric'
+  const n = normalizeAltberichtC2FindingText(value)
+  if (!n || isAltberichtC2DocumentHeaderOnlyToken(n)) return 'document_header_only'
+  if (value.length >= 500) return 'candidate_too_long'
+  return null
+}
+
+/** Text nach „weiteres Zubehör Status“ bzw. „Status …“ (eine Zeile / kollabiert). */
+const extractPostStatusTextTailRaw = (block: string): string | null => {
+  const collapsed = norm(block.replace(/\r?\n/g, ' '))
+  let idx = -1
+  const wz = /weiteres\s+Zubeh[öo]r\s*Status\b/i.exec(collapsed)
+  if (wz?.index != null) idx = wz.index + wz[0].length
+  else {
+    const st = /\bStatus\s*[:\-]?\s*/i.exec(collapsed)
+    if (st?.index != null) idx = st.index + st[0].length
+  }
+  if (idx < 0) return null
+  const tail = collapsed.slice(idx).trim()
+  return tail || null
+}
+
+/**
+ * Wenn refineParsedStatusText wegen Kopf/BV:-Schnitt leer bleibt: im Post-Status-Rest ab erstem Mangelanker lesen.
+ * Kein erneutes cutStatusValueAtMarkers (würde nach „BV:“ den Befund verwerfen).
+ */
+const RE_DEFECT_ANCHOR_IN_WEG_BLOCK =
+  /\b(Mörtelhinterfüllung|Mörtel|Laschen|Brandgefahr|ohne\s+Zulassung|fehlt|fehlen|beschädigt|defekt|Stromzähler|Brandschutztür|Tür\b|\bmuss\b)\b/i
+
+const primaryStatusTextHasDefectSignal = (s: string): boolean => {
+  const t = norm(s)
+  if (!t) return false
+  if (RE_DEFECT_ANCHOR_IN_WEG_BLOCK.test(t)) return true
+  return /\b(undicht|dichtung|riss|mängel|mangel|korros|schließ|schlies|eingeriss|verzogen)\b/i.test(t)
+}
+
+const extractStatusFromDefectAnchorInPostStatusTail = (block: string): string | undefined => {
+  const tail = extractPostStatusTextTailRaw(block)
+  if (!tail) return undefined
+  const m = RE_DEFECT_ANCHOR_IN_WEG_BLOCK.exec(tail)
+  if (!m || m.index == null) return undefined
+  let segment = norm(tail.slice(m.index))
+  const nextHeader = /\b(?:Pos\.\s*){1,2}intern\s+Etage\s+Raum\b/i.exec(segment)
+  if (nextHeader && nextHeader.index > 12) segment = norm(segment.slice(0, nextHeader.index))
+  if (segment.length > STATUS_CANDIDATE_MAX_LEN) segment = `${segment.slice(0, STATUS_CANDIDATE_MAX_LEN).trim()}…`
+  if (!segment || isHarmlessMeasureOrNumericStatus(segment)) return undefined
+  if (/^i\.?\s*o\.?$/i.test(segment) || /^o\.?k\.?$/i.test(segment) || /^in\s*ordnung\.?$/i.test(segment)) {
+    return undefined
+  }
+  const refined = normalizeAltberichtC2FindingText(segment) ?? segment
+  if (!refined || isAltberichtC2DocumentHeaderOnlyToken(refined)) return undefined
+  if (textShouldBeExcludedFromAltberichtC2Import(refined)) return undefined
+  return refined
+}
+
 const parseWegBlockFields = (block: string): {
   artDataLine?: string
   artParts: ReturnType<typeof parseWegArtAnforderungHersteller>
   schliessRow?: string
+  /** Nach Schnitt/Filter für Findings/Katalog; `statusTextCoarse` ist der Rohkandidat davor (Debug/Reject-Grund). */
   statusText?: string
+  statusTextCoarse?: string
   catalog: AltberichtParserCatalogCandidateV1[]
   /** Nur gesetzt, wenn FSA-Mehrfeld-Zeile (nach FTT) erkannt wurde. */
   complexFsa: ReturnType<typeof tryParseComplexFsaBlock> | null
@@ -714,16 +874,23 @@ const parseWegBlockFields = (block: string): {
       catalog.push({ field: 'rauchmelder', raw: fsa.rauchmelder, confidence: 0.45 })
     }
   }
-  let statusText: string | undefined
-  const z = extractWegZubehörStatusValue(b)
-  if (z) statusText = norm(z)
+  let statusTextCoarse: string | undefined
+  const z = extractWegZubehörStatusValue(b) ?? extractWegStatusValueInline(b)
+  if (z) statusTextCoarse = norm(z)
   else {
     const st = b.match(/Status[\s:]*\n*([^\n]+)/i)
-    if (st) statusText = norm(st[1] ?? '')
+    if (st) statusTextCoarse = norm(st[1] ?? '')
   }
-  if (statusText && statusText.length > 2000) statusText = statusText.slice(0, 2000)
+  if (statusTextCoarse && statusTextCoarse.length > 2000) {
+    statusTextCoarse = statusTextCoarse.slice(0, 2000)
+  }
+  let statusText = refineParsedStatusText(statusTextCoarse)
+  const fromDefectAnchor = extractStatusFromDefectAnchorInPostStatusTail(b)
+  if (fromDefectAnchor && (!statusText || !primaryStatusTextHasDefectSignal(statusText))) {
+    statusText = fromDefectAnchor
+  }
   if (statusText) catalog.push({ field: 'status', raw: statusText.slice(0, 400), confidence: 0.4 })
-  return { artDataLine, artParts, schliessRow, statusText, catalog, complexFsa: fsa }
+  return { artDataLine, artParts, schliessRow, statusText, statusTextCoarse, catalog, complexFsa: fsa }
 }
 
 const isWegInOrdnungOrTrivialStatus = (s: string): boolean => {
@@ -762,15 +929,234 @@ const wegBulletIsNoiseOrStammdaten = (line: string): boolean => {
 const isWegInOrdnungTextRaw = (s: string): boolean =>
   isWegInOrdnungOrTrivialStatus(s.replace(/^[–—-]\s*/, '').trim())
 
+const dedupeIntsPreserveOrder = (nums: number[]): number[] => {
+  const seen = new Set<number>()
+  const out: number[] = []
+  for (const n of nums) {
+    if (seen.has(n)) continue
+    seen.add(n)
+    out.push(n)
+  }
+  return out
+}
+
+const parseIndexLinePositions = (line: string): number[] => {
+  const parts = line.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+  const out: number[] = []
+  for (const p of parts) {
+    if (!/^\d{1,2}$/.test(p)) continue
+    const n = parseInt(p, 10)
+    if (n >= 1 && n <= 99) out.push(n)
+  }
+  return dedupeIntsPreserveOrder(out)
+}
+
+const isLikelyPositionIndexLine = (line: string): boolean => {
+  const parts = line.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean)
+  if (parts.length < 5) return false
+  let numTok = 0
+  for (const p of parts) {
+    if (!/^\d{1,2}$/.test(p)) continue
+    const n = parseInt(p, 10)
+    if (n >= 1 && n <= 50) numTok += 1
+  }
+  return numTok >= 5 && numTok >= Math.ceil(parts.length * 0.65)
+}
+
+const shouldStopDefectListParagraphScan = (line: string): boolean => {
+  const L = line.trim()
+  if (/^(Pos\.|Pos\.\s*intern)/i.test(L) && /Etage|Raum/i.test(L)) return true
+  if (/^Wartungs?bericht\b/i.test(L)) return true
+  if (/^Seite\s+\d+/i.test(L)) return true
+  return false
+}
+
+const collectParagraphsAfterIndexLine = (lines: string[], startIdx: number): string[] => {
+  const paras: string[] = []
+  let buf: string[] = []
+  for (let i = startIdx; i < lines.length; i += 1) {
+    const raw = lines[i] ?? ''
+    const L = raw.replace(/\s+/g, ' ').trim()
+    if (!L) {
+      if (buf.length) {
+        paras.push(norm(buf.join(' ')))
+        buf = []
+      }
+      continue
+    }
+    if (shouldStopDefectListParagraphScan(L)) break
+    if (isLikelyPositionIndexLine(L)) break
+    if (/^\d{1,2}[.)]\s+\S/.test(L) && buf.length > 0) {
+      paras.push(norm(buf.join(' ')))
+      buf = [L]
+      continue
+    }
+    buf.push(L)
+  }
+  if (buf.length) paras.push(norm(buf.join(' ')))
+  return paras.filter((p) => p.length > 0)
+}
+
+const tryBuildPosToDefectMapFromDocument = (fullText: string): Map<number, string> => {
+  const map = new Map<number, string>()
+  const lines = fullText.split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim())
+  const tailStart = Math.max(0, Math.floor(lines.length * 0.3))
+  let bestLineIdx = -1
+  let bestLen = 0
+  for (let i = tailStart; i < lines.length; i += 1) {
+    const L = lines[i]!
+    if (!isLikelyPositionIndexLine(L)) continue
+    const pos = parseIndexLinePositions(L)
+    if (pos.length <= bestLen) continue
+    bestLen = pos.length
+    bestLineIdx = i
+  }
+  if (bestLineIdx < 0 || bestLen < 5) return map
+
+  const positions = parseIndexLinePositions(lines[bestLineIdx]!)
+  const paras = collectParagraphsAfterIndexLine(lines, bestLineIdx + 1)
+  if (paras.length === positions.length && positions.length >= 5) {
+    for (let j = 0; j < positions.length; j += 1) {
+      const txt = paras[j]!
+      if (txt && !isWegInOrdnungTextRaw(txt)) map.set(positions[j]!, txt)
+    }
+    return map
+  }
+  for (const para of paras) {
+    const m = /^(\d{1,2})[.)]\s+(.+)$/.exec(para)
+    if (m) {
+      const n = parseInt(m[1]!, 10)
+      const rest = norm(m[2]!)
+      if (n >= 1 && n <= 99 && rest && !isWegInOrdnungTextRaw(rest)) map.set(n, rest)
+    }
+  }
+  return map
+}
+
+/**
+ * Nachgelagerte Mängelliste (z. B. Zeile „1 2 3 … 10“, danach Absätze) auf Staging-Positionen (parsedPos) mappen.
+ */
+const mergeDocumentTailPosNumberedFindings = (
+  fullText: string,
+  objects: AltberichtParserStagingObjectV1[]
+): void => {
+  if (objects.length === 0) return
+  const posMap = tryBuildPosToDefectMapFromDocument(fullText)
+  if (posMap.size === 0) return
+
+  for (const obj of objects) {
+    const trace = obj.analysisTrace as {
+      parsedPos?: number
+      documentDefectListMerge?: { matchedPos?: number; strategy?: string }
+    }
+    const pos = trace?.parsedPos ?? obj.sequence
+    const t = posMap.get(pos)
+    if (t === undefined) continue
+
+    const useText = normalizeAltberichtC2FindingText(t) ?? t.trim()
+    if (!useText || textShouldBeExcludedFromAltberichtC2Import(useText)) {
+      const hasPlaceholder = obj.findings.some(
+        (f) => f.text === ALTBERICHT_STATUS_REVIEW_PLACEHOLDER_TEXT
+      )
+      if (!hasPlaceholder) {
+        obj.findings.push({
+          text: ALTBERICHT_STATUS_REVIEW_PLACEHOLDER_TEXT,
+          source: 'document_defect_list_review_required',
+          confidence: 0.11,
+          sequence: pos,
+        })
+      }
+      if (trace) {
+        trace.documentDefectListMerge = { matchedPos: pos, strategy: 'placeholder_after_filter' }
+      }
+      continue
+    }
+
+    if (obj.findings.some((f) => f.text === useText)) continue
+    obj.findings.push({
+      text: useText,
+      source: 'document_defect_list',
+      confidence: 0.52,
+      sequence: pos,
+    })
+    if (trace) {
+      trace.documentDefectListMerge = { matchedPos: pos, strategy: 'index_zip_or_numbered' }
+    }
+  }
+}
+
+/** Starke Schadens-/Mangelindikatoren → höhere confidence; lange unsichere Reste → niedriger. */
+const RE_STATUS_STRONG_DEFECT = /mangel|defekt|undicht|fehlt|beschädig|riss|nicht\s+schlie|schließt\s+nicht|dichtung|korros|unzureichend|nacharbeit|ersetz|bruch|lose|locker|verschlei|eingeriss|verzogen|korrodiert|funktionsunfähig/i
+
+const confidenceForStatusFindingChunk = (chunk: string): number => {
+  const len = chunk.length
+  const strong = RE_STATUS_STRONG_DEFECT.test(chunk)
+  if (strong && len <= 120) return 0.78
+  if (strong && len <= 220) return 0.64
+  if (strong) return 0.52
+  if (len <= 72) return 0.42
+  if (len <= 160) return 0.32
+  return 0.24
+}
+
+const splitStatusIntoFindingTexts = (st: string): string[] => {
+  const normSt = norm(stripLeadingDocumentNoiseFromStatus(st))
+  if (
+    !normSt ||
+    isHarmlessMeasureOrNumericStatus(normSt) ||
+    isAltberichtC2DocumentHeaderOnlyToken(normSt)
+  ) {
+    return []
+  }
+  let pieces = normSt
+    .split(/\s*[.;]\s+/)
+    .flatMap((p) => (p.length > 100 && p.includes(',') ? p.split(',').map(norm) : [norm(p)]))
+    .map((p) => stripLeadingDocumentNoiseFromStatus(p))
+    .map(norm)
+    .filter(Boolean)
+
+  const filtered = pieces.filter(
+    (p) =>
+      p.length >= 6 &&
+      !isHarmlessMeasureOrNumericStatus(p) &&
+      !isAltberichtC2DocumentHeaderOnlyToken(p)
+  )
+  const normStClean = stripLeadingDocumentNoiseFromStatus(normSt)
+  const use =
+    filtered.length > 0
+      ? filtered
+      : !isHarmlessMeasureOrNumericStatus(normStClean) &&
+          !isAltberichtC2DocumentHeaderOnlyToken(normStClean)
+        ? [normStClean]
+        : []
+
+  const deduped: string[] = []
+  const seen = new Set<string>()
+  for (const p of use) {
+    if (seen.has(p)) continue
+    seen.add(p)
+    deduped.push(p)
+  }
+  const maxChunks = 8
+  return deduped.slice(0, maxChunks).map((p) => (p.length > 240 ? `${p.slice(0, 237).trim()}…` : p))
+}
+
 const buildWegDefectFindingsOnly = (
   block: string,
-  statusTextForBlock: string | undefined
+  statusTextForBlock: string | undefined,
+  sequence: number
 ): AltberichtParserFindingCandidateV1[] => {
   const out: AltberichtParserFindingCandidateV1[] = []
   if (statusTextForBlock) {
     const st = norm(statusTextForBlock)
     if (st && !isWegInOrdnungOrTrivialStatus(st) && st.length < 500) {
-      out.push({ text: st, confidence: 0.48 })
+      for (const chunk of splitStatusIntoFindingTexts(st)) {
+        if (!chunk || isHarmlessMeasureOrNumericStatus(chunk)) continue
+        if (textShouldBeExcludedFromAltberichtC2Import(chunk)) continue
+        const useText = normalizeAltberichtC2FindingText(chunk) ?? chunk
+        const conf = confidenceForStatusFindingChunk(useText)
+        out.push({ source: 'status', text: useText, confidence: conf, sequence })
+      }
     }
   }
   const b = block.replace(/\r\n/g, '\n')
@@ -779,8 +1165,14 @@ const buildWegDefectFindingsOnly = (
   )
   if (mBem) {
     const t = norm(mBem[1] ?? '')
-    if (t.length >= 3 && t.length < 800 && !wegBulletIsNoiseOrStammdaten(t)) {
-      if (!out.some((x) => x.text === t)) out.push({ text: t, confidence: 0.52 })
+    if (
+      t.length >= 3 &&
+      t.length < 800 &&
+      !wegBulletIsNoiseOrStammdaten(t) &&
+      !textShouldBeExcludedFromAltberichtC2Import(t)
+    ) {
+      const useText = normalizeAltberichtC2FindingText(t) ?? t
+      if (!out.some((x) => x.text === useText)) out.push({ text: useText, confidence: 0.52, sequence })
     }
   }
   const tailBefundLike =
@@ -790,8 +1182,10 @@ const buildWegDefectFindingsOnly = (
     if (wegBulletIsNoiseOrStammdaten(raw)) continue
     if (isWegInOrdnungTextRaw(raw)) continue
     if (!tailBefundLike.test(raw)) continue
-    if (!out.some((x) => x.text === raw) && out.length < 6) {
-      out.push({ text: raw, confidence: 0.4 })
+    if (textShouldBeExcludedFromAltberichtC2Import(raw)) continue
+    const bulletText = normalizeAltberichtC2FindingText(raw) ?? raw
+    if (!out.some((x) => x.text === bulletText) && out.length < 6) {
+      out.push({ text: bulletText, confidence: 0.4 })
     }
   }
   return out
@@ -830,13 +1224,36 @@ const buildWegStagingObjectsFromBlockStrings = (
     const fr = parseFloorRoomLineAfterWegHeader(block)
     const wettePos = parseWetteLeadingPosRefFromBlock(block)
     const posN = wettePos ?? pickPositionIndexForBlock(block, bi)
-    const { artParts, statusText, catalog: catExtra, schliessRow, complexFsa } = parseWegBlockFields(
-      block
-    )
+    const { artParts, statusText, statusTextCoarse, catalog: catExtra, schliessRow, complexFsa } =
+      parseWegBlockFields(block)
     const locationRule: 'floor' | 'room' | 'unknown' =
       fr && fr.floor && fr.room ? 'room' : fr?.floor ? 'floor' : 'unknown'
 
-    const findings: AltberichtParserFindingCandidateV1[] = buildWegDefectFindingsOnly(block, statusText)
+    let findings: AltberichtParserFindingCandidateV1[] = buildWegDefectFindingsOnly(block, statusText, bi + 1)
+    const statusRawAround = extractStatusDebugSnippet(block)
+    const statusRejectReason =
+      statusRawAround == null
+        ? 'no_status_marker'
+        : statusCandidateRejectReason(statusText ?? statusTextCoarse)
+    const statusFindingAccepted = findings.some((f) => f.source === 'status')
+    const statusCandidateForDebug = statusText ?? statusTextCoarse ?? null
+
+    let statusPlaceholderApplied = false
+    if (
+      findings.length === 0 &&
+      statusRawAround != null &&
+      (statusRejectReason === 'no_candidate_after_status' || statusRejectReason === 'candidate_too_long')
+    ) {
+      findings = [
+        {
+          text: ALTBERICHT_STATUS_REVIEW_PLACEHOLDER_TEXT,
+          source: 'status_review_required',
+          confidence: 0.12,
+          sequence: bi + 1,
+        },
+      ]
+      statusPlaceholderApplied = true
+    }
 
     const locBits = [fr ? `${fr.floor} · ${fr.room}` : null].filter(
       (x): x is string => Boolean(x && x.length > 0)
@@ -866,6 +1283,18 @@ const buildWegStagingObjectsFromBlockStrings = (
         wegWartung: wegTrace,
         blockIndex0: bi,
         parsedPos: posN,
+        statusFindingsDebug: {
+          sequence: bi + 1,
+          blockRawPreview: blockDebugPreview(block),
+          statusRawAround,
+          statusCandidate: statusCandidateForDebug,
+          rejectedReason:
+            statusFindingAccepted && !statusPlaceholderApplied ? null : statusRejectReason,
+          findingsFilled: findings.length > 0,
+          statusFindingAccepted,
+          findingsCount: findings.length,
+          statusPlaceholderApplied,
+        },
         schliessmittelDebug: {
           blockSnippet: extractSchliessmittelBlockContextSnippet(block, 8),
           schliessmittelHeaderLine: findFirstSchliessmittelLineInBlock(block) ?? null,
@@ -1016,6 +1445,7 @@ export const parseStructuredAltberichtPlainTextV1 = (
     originalFilename: opts?.originalFilename,
   })
   if (wegMaintenance && wegMaintenance.objects.length > 0) {
+    mergeDocumentTailPosNumberedFindings(text, wegMaintenance.objects)
     warnings.push(wegMaintenance.warning)
     return {
       parserVersion: STRUCTURED_ALTBERICHT_PARSER_VERSION,

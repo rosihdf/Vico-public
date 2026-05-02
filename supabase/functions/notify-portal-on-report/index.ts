@@ -33,31 +33,79 @@ type ReportWithObject = {
   objects: ObjectRow | ObjectRow[] | null
 }
 
-const toYearMonth = (value: Date): string => {
-  const y = value.getUTCFullYear()
-  const m = String(value.getUTCMonth() + 1).padStart(2, '0')
-  return `${y}-${m}`
-}
+const normalizeLpSupabaseBase = (raw: string): string => raw.trim().replace(/\/$/, '')
 
-const mirrorUsageToLicensePortal = async (status: 'ok' | 'failed'): Promise<void> => {
-  const lpUrl = (Deno.env.get('LP_SUPABASE_URL') ?? '').trim()
-  const lpServiceRole = (Deno.env.get('LP_SERVICE_ROLE_KEY') ?? '').trim()
-  const lpTenantId = (Deno.env.get('LP_TENANT_ID') ?? '').trim()
-  if (!lpUrl || !lpServiceRole || !lpTenantId) return
+/**
+ * Zentraler Versand über Lizenzportal `send-tenant-email` (SMTP/Resend dort konfiguriert).
+ * Nutzungszähler und LP-Mail-Logs erfolgen in der Function — kein `increment_tenant_email_monthly_usage` hier.
+ *
+ * Optional `MANDANT_APP_ORIGIN`: öffentliche Basis-URL der Monteur-App (z. B. https://….pages.dev),
+ * wenn im LP für den Mandanten `allowed_domains` gesetzt ist (Origin-/Referer-Prüfung).
+ */
+const sendTenantEmailViaLicensePortal = async (opts: {
+  lpSupabaseUrl: string
+  mandantJwt: string
+  mandantAnonKey: string
+  tenantId: string
+  to: string
+  callerOrigin: string
+  templateKey: string
+  context: Record<string, unknown>
+  locale?: string
+  /** Nur Fallback, wenn die Vorlage leer bleibt. */
+  fallbackSubject?: string
+  fallbackHtml?: string
+}): Promise<{ ok: true; messageId?: string | null } | { ok: false; error: string }> => {
+  const base = normalizeLpSupabaseBase(opts.lpSupabaseUrl)
+  const url = `${base}/functions/v1/send-tenant-email`
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    Authorization: `Bearer ${opts.mandantJwt}`,
+    'x-mandant-anon-key': opts.mandantAnonKey,
+  }
+  const origin = opts.callerOrigin.trim()
+  if (origin) {
+    try {
+      const u = new URL(origin.includes('://') ? origin : `https://${origin}`)
+      const o = `${u.protocol}//${u.host}`
+      headers.Origin = o
+      headers.Referer = `${o}/`
+    } catch {
+      /* ohne Origin: bei gesetztem allowed_domains liefert LP ggf. 403 */
+    }
+  }
 
-  await fetch(`${lpUrl}/rest/v1/rpc/increment_tenant_email_monthly_usage`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: lpServiceRole,
-      Authorization: `Bearer ${lpServiceRole}`,
-    },
-    body: JSON.stringify({
-      p_tenant_id: lpTenantId,
-      p_status: status,
-      p_year_month: toYearMonth(new Date()),
-    }),
-  })
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tenantId: opts.tenantId,
+        to: opts.to,
+        templateKey: opts.templateKey,
+        context: opts.context,
+        locale: opts.locale ?? 'de',
+        ...(opts.fallbackSubject ? { subject: opts.fallbackSubject } : {}),
+        ...(opts.fallbackHtml ? { html: opts.fallbackHtml } : {}),
+      }),
+    })
+    const bodyJson = (await res.json().catch(() => ({}))) as Record<string, unknown>
+    if (!res.ok) {
+      const err =
+        typeof bodyJson.error === 'string' && bodyJson.error.trim()
+          ? bodyJson.error.trim()
+          : `Lizenzportal Mail HTTP ${res.status}`
+      return { ok: false, error: err }
+    }
+    const mid = bodyJson.messageId
+    return {
+      ok: true,
+      messageId: mid === null || typeof mid === 'string' ? (mid as string | null) : null,
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 const normalizeObjectEmbed = (raw: ObjectRow | ObjectRow[] | null): ObjectRow | null => {
@@ -142,13 +190,21 @@ serve(async (req) => {
       return jsonResponse(403, { error: 'Keine Berechtigung für diese Aktion.' })
     }
 
-    const apiKey = Deno.env.get('RESEND_API_KEY')
-    if (!apiKey) {
-      return jsonResponse(500, { error: 'RESEND_API_KEY nicht konfiguriert.' })
+    const lpSupabaseUrl = (Deno.env.get('LP_SUPABASE_URL') ?? '').trim()
+    const lpTenantId = (Deno.env.get('LP_TENANT_ID') ?? '').trim()
+    if (!lpSupabaseUrl || !lpTenantId) {
+      return jsonResponse(500, {
+        error:
+          'Zentraler Mailversand: LP_SUPABASE_URL und LP_TENANT_ID müssen in den Edge-Function-Secrets gesetzt sein (Lizenzportal-Projekt).',
+      })
+    }
+    if (!UUID_RE.test(lpTenantId)) {
+      return jsonResponse(500, { error: 'LP_TENANT_ID ist keine gültige UUID.' })
     }
 
     const portalUrl = (Deno.env.get('PORTAL_URL') ?? '').trim()
-    const fromEmail = Deno.env.get('RESEND_FROM') || 'Vico Türen & Tore <onboarding@resend.dev>'
+    /** Für send-tenant-email Origin-Check (allowed_domains); oft gleiche Hostfamilie wie die Monteur-App. */
+    const mandantAppOrigin = (Deno.env.get('MANDANT_APP_ORIGIN') ?? '').trim()
 
     if (!portalUrl) {
       return jsonResponse(500, {
@@ -187,7 +243,7 @@ serve(async (req) => {
       errorText?: string
     ) => {
       await supabase.rpc('log_email_delivery_event', {
-        p_provider: 'resend',
+        p_provider: 'license_portal',
         p_channel: 'portal_notify',
         p_status: status,
         p_recipient_email: recipientEmail,
@@ -195,7 +251,6 @@ serve(async (req) => {
         p_error_code: null,
         p_error_text: errorText ?? null,
       })
-      await mirrorUsageToLicensePortal(status)
     }
 
     let customerId: string | null = null
@@ -268,10 +323,9 @@ serve(async (req) => {
 
     const objectLabel = object.internal_id ?? object.name ?? 'Objekt'
     const dateStr = String(report.maintenance_date).slice(0, 10)
-    const subject = `Neuer Wartungsbericht: ${objectLabel} – ${dateStr}`
-    const loginUrl = portalUrl.endsWith('/') ? portalUrl : `${portalUrl}/`
-
-    const html = `
+    const loginUrlRaw = portalUrl.endsWith('/') ? portalUrl.slice(0, -1) : portalUrl
+    const fallbackSubject = `Neuer Wartungsbericht: ${objectLabel} – ${dateStr}`
+    const fallbackHtml = `
       <p>Guten Tag,</p>
       <p>für Ihren Kunden wurde ein neuer Wartungsbericht erstellt:</p>
       <ul>
@@ -280,33 +334,38 @@ serve(async (req) => {
         <li><strong>Datum:</strong> ${dateStr}</li>
       </ul>
       <p>Sie können den Bericht im Kundenportal einsehen und das PDF herunterladen:</p>
-      <p><a href="${loginUrl}" style="color: #5b7895;">Zum Vico Türen & Tore Kundenportal</a></p>
-      <p>Mit freundlichen Grüßen<br>Vico Türen & Tore</p>
+      <p><a href="${loginUrlRaw}/" style="color: #5b7895;">Zum Kundenportal</a></p>
+      <p>Mit freundlichen Grüßen<br>ArioVan</p>
     `
 
     const emails = [...new Set(portalUsers.map((u) => u.email).filter(Boolean))]
     let sent = 0
+    const mandantJwt = authHeader.slice(7).trim()
 
     for (const email of emails) {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
+      const mailResult = await sendTenantEmailViaLicensePortal({
+        lpSupabaseUrl,
+        mandantJwt,
+        mandantAnonKey: anonKey,
+        tenantId: lpTenantId,
+        to: email,
+        callerOrigin: mandantAppOrigin,
+        templateKey: 'portal_report_notification',
+        locale: 'de',
+        context: {
+          objekt: { name: objectLabel },
+          bauvorhaben: { name: bvName },
+          bericht: { datum: dateStr, link: '' },
+          portal: { link: `${loginUrlRaw}/` },
         },
-        body: JSON.stringify({
-          from: fromEmail,
-          to: [email],
-          subject,
-          html,
-        }),
+        fallbackSubject,
+        fallbackHtml,
       })
-      const resendResult = await res.json().catch(() => ({}))
-      if (res.ok) {
+      if (mailResult.ok) {
         sent++
-        await logEvent('ok', email, resendResult?.id)
+        await logEvent('ok', email, mailResult.messageId ?? undefined)
       } else {
-        await logEvent('failed', email, undefined, resendResult?.message || resendResult?.detail || `HTTP ${res.status}`)
+        await logEvent('failed', email, undefined, mailResult.error)
       }
     }
 

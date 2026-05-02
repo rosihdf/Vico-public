@@ -30,7 +30,7 @@ const applyDesignToDom = (design: { app_name?: string; primary_color: string; fa
   if (displayName) {
     document.title = displayName
   } else {
-    document.title = 'Vico'
+    document.title = 'ArioVan'
   }
 
   installDocumentFavicon(design.favicon_url?.trim() ? design.favicon_url.trim() : null, '/favicon.svg')
@@ -41,7 +41,7 @@ const clearDesignFromDom = () => {
   root.style.removeProperty('--vico-primary')
   root.style.removeProperty('--vico-primary-hover')
 
-  document.title = 'Vico'
+  document.title = 'ArioVan'
 
   const themeColorMeta = document.querySelector('meta[name="theme-color"]')
   if (themeColorMeta) {

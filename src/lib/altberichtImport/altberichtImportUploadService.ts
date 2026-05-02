@@ -4,6 +4,11 @@ import { ALTBERICHT_IMPORT_PDF_BUCKET, altberichtImportOriginalPdfPath } from '.
 import { ALTBERICHT_IMPORT_EVENT } from './altberichtImportConstants'
 import { insertAltberichtImportEvent } from './altberichtImportEvents'
 import type { AltberichtImportFileRow, AltberichtImportJobRow, AltberichtImportUploadInputFile } from './altberichtImportTypes'
+import {
+  ALTBERICHT_IMPORT_UI_PHASE_TOTAL,
+  buildUploadProgressPayload,
+  type AltberichtImportUiProgressCallback,
+} from './altberichtImportUiProgress'
 
 export type CreateAltberichtImportJobParams = {
   title?: string | null
@@ -62,6 +67,7 @@ export type UploadPdfsToAltberichtImportJobParams = {
   files: AltberichtImportUploadInputFile[]
   /** MIME, Standard application/pdf */
   contentType?: string
+  onProgress?: AltberichtImportUiProgressCallback
 }
 
 export type UploadPdfsToAltberichtImportJobResult = {
@@ -81,7 +87,7 @@ export const uploadPdfsToAltberichtImportJob = async (
   params: UploadPdfsToAltberichtImportJobParams,
   client: SupabaseClient = supabase
 ): Promise<UploadPdfsToAltberichtImportJobResult> => {
-  const { jobId, files } = params
+  const { jobId, files, onProgress } = params
   const contentType = params.contentType ?? 'application/pdf'
   const uploaded: AltberichtImportFileRow[] = []
 
@@ -95,6 +101,16 @@ export const uploadPdfsToAltberichtImportJob = async (
     code: ALTBERICHT_IMPORT_EVENT.JOB_UPLOADS_STARTED,
     message: 'Upload der PDF-Dateien gestartet',
     payloadJson: { fileCount: files.length },
+  })
+
+  onProgress?.({
+    percent: 6,
+    statusLine:
+      files.length > 1
+        ? `Dateien werden hochgeladen (0 von ${files.length}) …`
+        : 'Datei wird hochgeladen …',
+    phaseIndex: 1,
+    phaseTotal: ALTBERICHT_IMPORT_UI_PHASE_TOTAL,
   })
 
   const startedAt = new Date().toISOString()
@@ -129,6 +145,8 @@ export const uploadPdfsToAltberichtImportJob = async (
       message: `Upload gestartet: ${originalFilename}`,
       payloadJson: { sequence, storagePath },
     })
+
+    onProgress?.(buildUploadProgressPayload({ fileIndex: i, fileTotal: files.length, fileLabel: originalFilename }))
 
     const { error: insErr, data: fileRow } = await client
       .from('altbericht_import_file')
@@ -232,6 +250,14 @@ export const uploadPdfsToAltberichtImportJob = async (
     })
     .eq('id', jobId)
 
+  onProgress?.({
+    percent: 96,
+    statusLine: 'Upload abgeschlossen, Dateien sind bereit.',
+    phaseIndex: 1,
+    phaseTotal: ALTBERICHT_IMPORT_UI_PHASE_TOTAL,
+    expertDetailLines: [`${uploaded.length} PDF-Datei(en) im Auftrag`],
+  })
+
   await insertAltberichtImportEvent(client, {
     jobId,
     level: 'info',
@@ -256,8 +282,15 @@ export const uploadPdfsToAltberichtImportJob = async (
 export const createAltberichtImportJobWithPdfUploads = async (
   jobParams: CreateAltberichtImportJobParams,
   files: AltberichtImportUploadInputFile[],
-  client: SupabaseClient = supabase
+  client: SupabaseClient = supabase,
+  onProgress?: AltberichtImportUiProgressCallback
 ): Promise<UploadPdfsToAltberichtImportJobResult> => {
+  onProgress?.({
+    percent: 2,
+    statusLine: 'Import-Auftrag wird angelegt …',
+    phaseIndex: 1,
+    phaseTotal: ALTBERICHT_IMPORT_UI_PHASE_TOTAL,
+  })
   const { job, error: jobErr } = await createAltberichtImportJob(jobParams, client)
   if (jobErr || !job) {
     return {
@@ -267,5 +300,5 @@ export const createAltberichtImportJobWithPdfUploads = async (
       failedAtIndex: null,
     }
   }
-  return uploadPdfsToAltberichtImportJob({ jobId: job.id, files }, client)
+  return uploadPdfsToAltberichtImportJob({ jobId: job.id, files, onProgress }, client)
 }

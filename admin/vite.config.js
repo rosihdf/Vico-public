@@ -10,7 +10,7 @@ var appVersion = getAppVersion(__dirname);
 var appReleaseLabel = getAppReleaseLabel(__dirname);
 /// <reference types="vitest" />
 export default defineConfig(function (_a) {
-    var _b, _c;
+    var _b, _c, _d;
     var mode = _a.mode;
     var env = loadEnv(mode, __dirname, '');
     return {
@@ -47,6 +47,7 @@ export default defineConfig(function (_a) {
             __APP_RELEASE_LABEL__: JSON.stringify(appReleaseLabel),
             'import.meta.env.VITE_SUPABASE_URL': JSON.stringify((_b = env.VITE_SUPABASE_URL) !== null && _b !== void 0 ? _b : ''),
             'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify((_c = env.VITE_SUPABASE_ANON_KEY) !== null && _c !== void 0 ? _c : ''),
+            'import.meta.env.VITE_GITHUB_ACTIONS_URL': JSON.stringify((_d = env.VITE_GITHUB_ACTIONS_URL) !== null && _d !== void 0 ? _d : ''),
         },
         build: {
             rollupOptions: {

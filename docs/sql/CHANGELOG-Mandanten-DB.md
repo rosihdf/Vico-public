@@ -4,6 +4,7 @@
 
 | Datum | SQL-Datei | Kurzbeschreibung | Bemerkung |
 |-------|-----------|------------------|-----------|
+| 2026-04-30 | — | Doku Phase 1: `docs/sql/SQL-Struktur-und-Paketkonvention.md`, erweiterte `README.md`, Workflow §1b/§3c (Pfad-Inventar, `rollout/`, Hub-Pakete). **Keine** Schemaänderung. | Nur Dokumentation / Pakettransparenz |
 | 2026-04-28 | mandanten-db-altbericht-import-complete.sql | Konsolidiertes Complete-SQL für den Altbericht-Import: Pakete A bis G + `objects.anforderung` in einer idempotenten Datei | Empfohlen für Sammel-Rollout über Lizenzadmin → „Mandanten aktualisieren". Einzelpakete bleiben für Historie / Reparatur erhalten. |
 | 2026-04-28 | mandanten-db-altbericht-import-paket-e-embedded-images.sql | Paket E idempotent für Re-Apply: `drop policy if exists` vor jeder RLS-Policy auf `altbericht_import_embedded_image` | Behebt 42710 beim Sammel-/Re-Rollout (Postgres < 17 kennt kein `create policy if not exists`) |
 | 2026-04-28 | mandanten-db-altbericht-import-paket-b-review.sql | Paket B daten-robust für Re-Apply: Constraint `review_status` erlaubt zusätzlich `committed` (synchron zu C1-Commit), NULL-Defensiv-Update vor Constraint | Behebt 23514 beim Sammel-/Re-Rollout, wenn bereits `committed`-Zeilen existieren |

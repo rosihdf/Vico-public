@@ -13,5 +13,5 @@ const triggerDownload = (blob: Blob, filename: string) => {
 
 export const downloadWebAppChecklist = () => {
   const blob = generateChecklistPdf(checklistDataWebApp as ChecklistData)
-  triggerDownload(blob, 'AMRtech-WebApp-Test-Checkliste.pdf')
+  triggerDownload(blob, 'ArioVan-WebApp-Test-Checkliste.pdf')
 }

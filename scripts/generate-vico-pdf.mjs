@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Generiert Vico-Dokumentation als PDF aus Vico.md
- * Ausgabe: public/Vico-Dokumentation.pdf
+ * Ausgabe: public/ArioVan-Dokumentation.pdf
  */
 import { existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -12,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
 const mdPath = join(root, 'Vico.md')
 const outDir = join(root, 'public')
-const outPath = join(outDir, 'Vico-Dokumentation.pdf')
+const outPath = join(outDir, 'ArioVan-Dokumentation.pdf')
 
 if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true })
 
@@ -27,4 +27,4 @@ await mdToPdf(
   }
 )
 
-console.log(`Vico-Dokumentation erstellt: ${outPath}`)
+console.log(`ArioVan-Dokumentation erstellt: ${outPath}`)

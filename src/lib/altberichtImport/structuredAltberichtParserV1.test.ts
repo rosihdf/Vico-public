@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { textShouldBeExcludedFromAltberichtC2Import } from './altberichtImportC2FindingFilter'
-import { parseStructuredAltberichtPlainTextV1 } from './structuredAltberichtParserV1'
+import {
+  ALTBERICHT_STATUS_REVIEW_PLACEHOLDER_TEXT,
+  parseStructuredAltberichtPlainTextV1,
+} from './structuredAltberichtParserV1'
 
 describe('parseStructuredAltberichtPlainTextV1 – WEG wiederholte Pos.-Blöcke', () => {
   it('erzeugt mehrere Staging-Objekte bei mehrfachem Pos./Etage/Raum-Header', () => {
@@ -78,6 +81,124 @@ i.O.
     expect(r.objects[1]!.findings.length).toBe(0)
     expect(textShouldBeExcludedFromAltberichtC2Import('Art: Tür')).toBe(true)
     expect(textShouldBeExcludedFromAltberichtC2Import('Dichtung fehlt am Blendrahmen')).toBe(false)
+  })
+
+  it('WEG: erkennt Mangeltext inline aus dem Status-Feld als C2-Kandidat', () => {
+    const r = parseStructuredAltberichtPlainTextV1(
+      `
+Kunde: W
+Pos. intern Etage Raum
+UG Technik Art Fl. Anforderung Hersteller Tür 1 T30 Teckentrupp Schließmittel FSA/Antrieb Anzahl RM FTT TS89 weiteres Zubehör Status 12 Dichtung beschädigt, Tür schließt nicht vollständig
+`,
+      { originalFilename: 'Wartung WEG Status rot.pdf' }
+    )
+
+    expect(r.objects.length).toBe(1)
+    const findings = r.objects[0]!.findings
+    expect(findings).toHaveLength(1)
+    expect(findings[0]).toMatchObject({
+      source: 'status',
+      sequence: 1,
+      text: 'Dichtung beschädigt, Tür schließt nicht vollständig',
+    })
+    expect(findings[0]!.confidence).toBeGreaterThanOrEqual(0.6)
+  })
+
+  it('WEG: reine Maßangabe im Status erzeugt kein Status-Finding', () => {
+    const r = parseStructuredAltberichtPlainTextV1(
+      `
+Kunde: W
+Pos. Pos. intern Etage Raum
+UG Keller
+Art Fl. Anforderung Hersteller
+Tür 1
+Schließmittel FSA
+weiteres Zubehör Status
+875x2010
+`,
+      { originalFilename: 'Wartung 2025 WEG x.pdf' }
+    )
+    expect(r.objects.length).toBe(1)
+    expect(r.objects[0]!.findings.filter((f) => f.source === 'status')).toHaveLength(0)
+    const dbg = r.objects[0]!.analysisTrace?.statusFindingsDebug
+    expect(dbg?.rejectedReason).toBe('harmless_measure_or_numeric')
+  })
+
+  it('WEG: nach Header+BV in erster Statuszeile Mangel in Folgezeile (Anker-Fallback)', () => {
+    const r = parseStructuredAltberichtPlainTextV1(
+      `
+Kunde: W
+Pos. Pos. intern Etage Raum
+EG Keller
+Art Fl. Anforderung Hersteller
+Tür 1
+Schließmittel FSA
+weiteres Zubehör Status
+Wartung 2025 November BV: Projekt X
+Mörtelhinterfüllung fehlt komplett Putz? Laschen nicht tragend
+`,
+      { originalFilename: 'WEG.pdf' }
+    )
+    expect(r.objects.length).toBe(1)
+    const statusFindings = r.objects[0]!.findings.filter((f) => f.source === 'status')
+    expect(
+      statusFindings.some((f) => f.text.includes('Mörtelhinterfüllung fehlt komplett Putz'))
+    ).toBe(true)
+    expect(statusFindings.some((f) => /Wartung\s*2025|November|^BV:/i.test(f.text))).toBe(false)
+  })
+
+  it('WEG: reiner Dokumenttitel „Wartung 2025“ im Status erzeugt kein Finding', () => {
+    const r = parseStructuredAltberichtPlainTextV1(
+      `
+Kunde: W
+Pos. Pos. intern Etage Raum
+EG Keller
+Art Fl. Anforderung Hersteller
+Tür 1
+Schließmittel FSA
+weiteres Zubehör Status
+Wartung 2025
+`,
+      { originalFilename: 'WEG.pdf' }
+    )
+    expect(r.objects.length).toBe(1)
+    expect(r.objects[0]!.findings.filter((f) => f.source === 'status')).toHaveLength(0)
+    const dbg = r.objects[0]!.analysisTrace?.statusFindingsDebug
+    expect(dbg?.rejectedReason).toBe('document_header_only')
+    expect(dbg?.statusCandidate).toBe('Wartung 2025')
+  })
+
+  it('WEG: nach Dokumentkopf nur echter Mangeltext als Status-Finding', () => {
+    const r = parseStructuredAltberichtPlainTextV1(
+      `
+Kunde: W
+Pos. intern Etage Raum
+EG X Art Fl. Anforderung Hersteller Tür Schließmittel FTT weiteres Zubehör Status Wartung 2025 Mörtelhinterfüllung fehlt komplett Laschen ohne Zulassung
+`,
+      { originalFilename: 'WEG.pdf' }
+    )
+    expect(r.objects.length).toBe(1)
+    const texts = r.objects[0]!.findings.filter((f) => f.source === 'status').map((f) => f.text)
+    expect(texts.some((t) => /Wartung\s*2025/i.test(t))).toBe(false)
+    expect(texts.some((t) => /Mörtelhinterfüllung|Laschen|Zulassung/i.test(t))).toBe(true)
+  })
+
+  it('WEG: Status wird an Dokument-Stoppmarken begrenzt und Mängel getrennt', () => {
+    const r = parseStructuredAltberichtPlainTextV1(
+      `
+Kunde: W
+Pos. intern Etage Raum
+EG Raum Art Fl. Anforderung Hersteller Glas Schließmittel FTT weiteres Zubehör Status Dichtung undicht. Mörtelhinterfüllung fehlt komplett Bearbeitete Person Mustermann Wartung 2025 Rest
+`,
+      { originalFilename: 'WEG.pdf' }
+    )
+    expect(r.objects.length).toBe(1)
+    const texts = r.objects[0]!.findings.filter((f) => f.source === 'status').map((f) => f.text)
+    expect(texts.some((t) => t.includes('Bearbeitete'))).toBe(false)
+    expect(texts.some((t) => t.includes('Wartung 2025'))).toBe(false)
+    expect(texts.length).toBeGreaterThanOrEqual(2)
+    expect(texts.some((t) => /Dichtung|undicht/i.test(t))).toBe(true)
+    expect(texts.some((t) => /Mörtelhinterfüllung/i.test(t))).toBe(true)
   })
 
   it('trennt WEG-Block intern (Etage/Raum, Art, Schließmittel) auch bei in einer Zeile verklebten Markern', () => {
@@ -258,11 +379,11 @@ i.O.
     })
   })
 
-  it('Wette-Center: kollabierte Zeile T30 RS + Hörmann, Schließmittel HDC 35', () => {
+  it('Beispiel-Baustelle: kollabierte Zeile T30 RS + Hörmann, Schließmittel HDC 35', () => {
     const oneLine = `302 2 Mschinenraum Art Fl. Anforderung Hersteller Tür 1 T30 RS Hörmann Schließmittel FSA/Antrib Anzahl RM FTT HDC 35 weiteres Zubehör Status`
     const r = parseStructuredAltberichtPlainTextV1(
       `Kunde: W\nPos. intern Etage Raum\n${oneLine}\n1\ni.O.\n`,
-      { originalFilename: 'Wette Center Wartung.pdf' }
+      { originalFilename: 'Beispielauftrag Wartung.pdf' }
     )
     expect(r.objects.length).toBe(1)
     const o = r.objects[0]!
@@ -279,7 +400,7 @@ i.O.
     expect(cat('schliessmittel_typ')?.replace(/\s+/g, ' ').trim()).toMatch(/^HDC 35$/i)
   })
 
-  it('Wette-Layout: 304/54/104 Positionszeilen — 1. Zahl = Pos, 2. = Etage, Rest = Raum', () => {
+  it('Layout dreistellige Positionsnummern: 304/54/104 Positionszeilen — 1. Zahl = Pos, 2. = Etage, Rest = Raum', () => {
     const r304 = parseStructuredAltberichtPlainTextV1(
       `Kunde: X\nPos. intern Etage Raum\n304 2 kita Zugang Art Fl. Anforderung Hersteller Tür 1 T30\n1\nok\n`
     )
@@ -325,5 +446,83 @@ i.O.
     const rSfr = parseStructuredAltberichtPlainTextV1(docSFR, { originalFilename: 'ts4000sfr.pdf' })
     const smSfr = rSfr.objects[0]!.catalogCandidates.find((c) => c.field === 'schliessmittel_typ')?.raw
     expect(smSfr?.replace(/\s+/g, ' ').trim()).toBe('TS4000 SFR')
+  })
+})
+
+describe('parseStructuredAltberichtPlainTextV1 – globale Mängelliste & Status-Platzhalter', () => {
+  it('nachgelagerte Indexzeile (1…5) + Absätze → Zuordnung zu Positionen', () => {
+    const doc = `
+Kunde: WEG
+Pos. Pos. intern Etage Raum
+UG A1
+Art Fl. Anforderung Hersteller
+Tür
+Schließmittel FSA
+weiteres Zubehör Status
+1
+
+EG B2
+Art Fl. Anforderung Hersteller
+Tür
+Schließmittel FSA
+weiteres Zubehör Status
+2
+
+EG C3
+Art Fl. Anforderung Hersteller
+Tür
+Schließmittel FSA
+weiteres Zubehör Status
+3
+
+EG D4
+Art Fl. Anforderung Hersteller
+Tür
+Schließmittel FSA
+weiteres Zubehör Status
+4
+
+EG E5
+Art Fl. Anforderung Hersteller
+Tür
+Schließmittel FSA
+weiteres Zubehör Status
+5
+
+Feststellungen
+
+1 2 3 4 5
+
+Dichtung undicht erste Tür
+
+Rahmen beschädigt zweite Position
+
+Schloss klemmt dritte Position
+
+Klinke lose vierte Position
+
+Anschlag fehlt fünfte Position
+`
+    const r = parseStructuredAltberichtPlainTextV1(doc, { originalFilename: 'weg-liste.pdf' })
+    expect(r.objects.length).toBe(5)
+    expect(r.objects[0]!.findings.some((f) => f.text.includes('Dichtung undicht'))).toBe(true)
+    expect(r.objects[1]!.findings.some((f) => f.text.includes('Rahmen beschädigt'))).toBe(true)
+    expect(r.objects[2]!.findings.some((f) => f.text.includes('Schloss klemmt'))).toBe(true)
+    const tr = r.objects[0]!.analysisTrace as { documentDefectListMerge?: { matchedPos?: number } }
+    expect(tr.documentDefectListMerge?.matchedPos).toBe(1)
+  })
+
+  it('Status-Marker am Zeilenende ohne Folgetext → Platzhalter-Finding (no_candidate_after_status)', () => {
+    const doc = `
+Kunde: W
+Pos. intern Etage Raum
+UG Keller Art Fl. Anforderung Hersteller Tür Schließmittel FTT weiteres Zubehör Status
+`
+    const r = parseStructuredAltberichtPlainTextV1(doc, { originalFilename: 'status-leer.pdf' })
+    expect(r.objects.length).toBe(1)
+    const o = r.objects[0]!
+    expect(o.findings.some((f) => f.text === ALTBERICHT_STATUS_REVIEW_PLACEHOLDER_TEXT)).toBe(true)
+    const dbg = o.analysisTrace?.statusFindingsDebug as { statusPlaceholderApplied?: boolean } | undefined
+    expect(dbg?.statusPlaceholderApplied).toBe(true)
   })
 })

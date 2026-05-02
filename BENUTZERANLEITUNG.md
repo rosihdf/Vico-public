@@ -1,12 +1,12 @@
-# Vico Web-App – Benutzeranleitung
+# ArioVan Web-App – Benutzeranleitung
 
-Anleitung für die Nutzung der Vico Web-App zur Wartungs- und Mängeldokumentation von Türen und Toren.
+Anleitung für die Nutzung der ArioVan Web-App zur Wartungs- und Mängeldokumentation von Türen und Toren.
 
 ---
 
 ## 1. Anmeldung
 
-- Öffnen Sie die Vico Web-App im Browser.
+- Öffnen Sie die ArioVan Web-App im Browser.
 - Geben Sie Ihre E-Mail-Adresse und Ihr Passwort ein.
 - Klicken Sie auf **Anmelden**.
 - Bei vergessenem Passwort: **Passwort vergessen** nutzen – Sie erhalten einen Link per E-Mail.
@@ -184,4 +184,4 @@ Nach dem Login sehen Sie die Startseite mit:
 
 - **Menü** – über das Hamburger-Icon öffnen Sie die Navigation.
 - **Update-Banner** – bei neuer Version erscheint ein Hinweis, die Seite neu zu laden.
-- **Checklisten, Benutzeranleitung, Dokumentation** – im Lizenz-Admin unter Einstellungen verfügbar (Web-App-Test-Checkliste, Benutzeranleitung, Vico-Dokumentation PDF).
+- **Checklisten, Benutzeranleitung, Dokumentation** – im **Lizenzportal** unter Einstellungen verfügbar (Web-App-Test-Checkliste, Benutzeranleitung, ArioVan-Dokumentation.pdf).

@@ -1,0 +1,2 @@
+-- Ersetzt durch **`LP-mandanten-db-rollout-v3.sql`** (Runs + Targets + Callback-RPC).
+-- Ältere Phase-2-Nutzer: Migration dort ausführen oder `supabase-license-portal.sql` Abschnitt 10b.

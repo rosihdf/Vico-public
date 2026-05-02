@@ -1,35 +1,33 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { supabase } from '../../supabase'
 import { useToast } from '../../ToastContext'
-import { renderAltberichtPdfPageToPngDataUrl } from '../../lib/altberichtImport/altberichtPdfPageThumb'
-import { patchAltberichtEmbeddedImage } from '../../lib/altberichtImport/altberichtImportEmbeddedImageService'
 import {
-  importAllEmbeddedImagesPendingForJob,
-  importEmbeddedImageProductive,
-} from '../../lib/altberichtImport/altberichtImportEmbeddedImageProductiveService'
+  patchAltberichtEmbeddedImage,
+  runAltberichtEmbeddedImageScanForFileById,
+} from '../../lib/altberichtImport/altberichtImportEmbeddedImageService'
+import { importEmbeddedImageProductive } from '../../lib/altberichtImport/altberichtImportEmbeddedImageProductiveService'
 import { listAltberichtC2FindingRows } from '../../lib/altberichtImport/altberichtImportC2DefectService'
+import { altberichtToastTypeForCode } from '../../lib/altberichtImport/altberichtImportToastMap'
 import type {
   AltberichtImportEmbeddedImageRow,
   AltberichtImportEmbeddedImageUserIntent,
   AltberichtImportFileRow,
 } from '../../lib/altberichtImport'
 import type { AltberichtImportStagingObjectRow } from '../../lib/altberichtImport/altberichtImportQueryService'
-
-const thumbInFlight = new Map<string, Promise<string | null>>()
-
-const getThumbDataUrl = (bucket: string, path: string, page: number) => {
-  const key = `${bucket}:${path}:${page}`
-  const existing = thumbInFlight.get(key)
-  if (existing) return existing
-  const p = (async () => {
-    const { data: blob, error: dl } = await supabase.storage.from(bucket).download(path)
-    if (dl || !blob) return null
-    const buf = await blob.arrayBuffer()
-    return renderAltberichtPdfPageToPngDataUrl(buf, page)
-  })()
-  thumbInFlight.set(key, p)
-  return p
-}
+import {
+  findDuplicateEmbeddedImportForTarget,
+  getAltberichtEmbeddedImagePrimaryKind,
+  getEmbeddedImageLogoLikelihood,
+  isAltberichtRasterRawCropSafetyRow,
+  primaryKindLabelDe,
+} from '../../lib/altberichtImport/altberichtImportEmbeddedImageRowUi'
+import {
+  downloadAltberichtRasterPhotosZipArchive,
+  filterAltberichtRasterPhotosZipEligibleRows,
+  isAltberichtRasterRawDebugZipRow,
+  isAltberichtRasterZipExportRow,
+} from '../../lib/altberichtImport/altberichtRasterDebugZipExport'
+import { AltberichtEmbeddedImagePreviewThumb } from './AltberichtEmbeddedImagePreviewThumb'
 
 type AltberichtExpertEmbeddedImagesPanelProps = {
   jobId: string
@@ -48,60 +46,6 @@ const intentLabels: { value: AltberichtImportEmbeddedImageUserIntent; label: str
   { value: 'defect_photo', label: 'Mögliches Mängelfoto' },
 ]
 
-const importStatusLabel = (im: AltberichtImportEmbeddedImageRow): string => {
-  const s = im.import_status ?? 'not_imported'
-  if (s === 'imported') return 'Übernommen'
-  if (s === 'failed') return 'Übernahme fehlgeschlagen'
-  return 'Noch nicht produktiv übernommen'
-}
-
-const PageThumb = ({
-  fileRow,
-  pageNumber,
-  cacheKey,
-}: {
-  fileRow: AltberichtImportFileRow
-  pageNumber: number
-  cacheKey: string
-}) => {
-  const [dataUrl, setDataUrl] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancel = false
-    setLoading(true)
-    setErr(null)
-    setDataUrl(null)
-    void (async () => {
-      const url = await getThumbDataUrl(fileRow.storage_bucket, fileRow.storage_path, pageNumber)
-      if (cancel) return
-      if (!url) {
-        setErr('Vorschau fehlgeschlagen')
-        setLoading(false)
-        return
-      }
-      setDataUrl(url)
-      setLoading(false)
-    })()
-    return () => {
-      cancel = true
-    }
-  }, [fileRow.storage_bucket, fileRow.storage_path, pageNumber, cacheKey])
-
-  if (loading) {
-    return <div className="h-20 w-28 shrink-0 rounded border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 animate-pulse" />
-  }
-  if (err || !dataUrl) {
-    return (
-      <div className="h-20 w-28 shrink-0 rounded border border-slate-200 dark:border-slate-600 text-[10px] p-1 text-slate-500">
-        {err ?? '—'}
-      </div>
-    )
-  }
-  return <img src={dataUrl} alt="" className="h-20 w-auto max-w-[7rem] object-contain rounded border border-slate-200 dark:border-slate-600" />
-}
-
 export const AltberichtExpertEmbeddedImagesPanel = ({
   jobId,
   files,
@@ -113,8 +57,72 @@ export const AltberichtExpertEmbeddedImagesPanel = ({
 }: AltberichtExpertEmbeddedImagesPanelProps) => {
   const { showToast, showError } = useToast()
   const [importBusy, setImportBusy] = useState(false)
+  const [previewSourceById, setPreviewSourceById] = useState<
+    Record<string, 'embedded_image' | 'page' | undefined>
+  >({})
+  const [pageFallbackOk, setPageFallbackOk] = useState<Record<string, boolean>>({})
+  const [scanBusyFileId, setScanBusyFileId] = useState<string | null>(null)
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null)
+  const [scanCurrentImage, setScanCurrentImage] = useState<{ page: number; image: number } | null>(
+    null
+  )
+  const [rasterZipBusy, setRasterZipBusy] = useState(false)
+  const [rasterZipHint, setRasterZipHint] = useState<string | null>(null)
+  const [zipIncludeRawRaster, setZipIncludeRawRaster] = useState(false)
+
+  const runScanForFile = useCallback(
+    async (fileId: string) => {
+      setScanBusyFileId(fileId)
+      setScanProgress(null)
+      setScanCurrentImage(null)
+      try {
+        const r = await runAltberichtEmbeddedImageScanForFileById(supabase, fileId, {
+          force: true,
+          onPageProgress: (done, total) => setScanProgress({ done, total }),
+          onImageProgress: (page, imagesOnPage) =>
+            setScanCurrentImage({ page, image: imagesOnPage }),
+        })
+        if (r.error) {
+          showError(`Bildanalyse fehlgeschlagen: ${r.error.message}`)
+        } else {
+          showToast(
+            `Bildanalyse abgeschlossen (${r.count} Bild(er) erfasst).`,
+            altberichtToastTypeForCode('imported')
+          )
+          if (r.rasterRedoErrorMessage) {
+            showToast(
+              `Raster-Nachlauf: ${r.rasterRedoErrorMessage}`,
+              'warning'
+            )
+          }
+          onPatched()
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        showError(`Bildanalyse abgebrochen: ${msg}`)
+      } finally {
+        setScanBusyFileId(null)
+        setScanProgress(null)
+        setScanCurrentImage(null)
+      }
+    },
+    [onPatched, showError, showToast]
+  )
+
   const stagingById = new Map(staging.map((s) => [s.id, s]))
-  const stagingForFile = (fileId: string) => staging.filter((s) => s.file_id === fileId).sort((a, b) => a.sequence - b.sequence)
+  const stagingForFile = (fileId: string) =>
+    staging.filter((s) => s.file_id === fileId).sort((a, b) => a.sequence - b.sequence)
+
+  const handlePreviewMeta = useCallback((imageId: string) => {
+    return (meta: { source: 'embedded_image' | 'page' } | null) => {
+      setPreviewSourceById((prev) => {
+        const next = { ...prev }
+        if (meta?.source) next[imageId] = meta.source
+        else delete next[imageId]
+        return next
+      })
+    }
+  }, [])
 
   const patchRow = useCallback(
     async (
@@ -169,33 +177,96 @@ export const AltberichtExpertEmbeddedImagesPanel = ({
       setImportBusy(true)
       try {
         const r = await importEmbeddedImageProductive(row.id)
-        if (r.ok && r.code === 'imported') showToast('Übernommen.')
-        else if (r.ok && r.code === 'already_imported') showToast('Bereits übernommen.')
-        else showError(r.message ?? 'Übernahme nicht möglich.')
+        if (r.ok && r.code === 'imported') {
+          showToast('Übernommen.', altberichtToastTypeForCode('imported'))
+        } else if (r.ok && r.code === 'already_imported') {
+          showToast('Bereits übernommen.', altberichtToastTypeForCode('already_imported'))
+        } else {
+          showError(r.message ?? 'Übernahme nicht möglich.')
+        }
       } finally {
         setImportBusy(false)
         onPatched()
       }
     },
-    [onPatched, showToast]
+    [onPatched, showToast, showError]
   )
 
-  const runAll = useCallback(async () => {
-    setImportBusy(true)
+  const locked = busy || importBusy
+
+  const zipEligibleStandardRows = useMemo(
+    () => filterAltberichtRasterPhotosZipEligibleRows(images, { includeRawDebugCrops: false }),
+    [images]
+  )
+  const zipEligibleWithRawRows = useMemo(
+    () => filterAltberichtRasterPhotosZipEligibleRows(images, { includeRawDebugCrops: true }),
+    [images]
+  )
+  const zipRawDebugExtraCount = Math.max(
+    0,
+    zipEligibleWithRawRows.length - zipEligibleStandardRows.length
+  )
+  const rasterDebugRowsInDb = useMemo(
+    () =>
+      images.filter((im) => isAltberichtRasterZipExportRow(im) && isAltberichtRasterRawDebugZipRow(im)).length,
+    [images]
+  )
+  const rasterBlockRowsTotal = useMemo(() => images.filter((im) => isAltberichtRasterZipExportRow(im)).length, [
+    images,
+  ])
+  const rasterZipExportRows = zipIncludeRawRaster ? zipEligibleWithRawRows : zipEligibleStandardRows
+  const rasterZipExportCount = rasterZipExportRows.length
+
+  const zipStdNeedsReviewCount = useMemo(
+    () =>
+      zipEligibleStandardRows.filter((im) => {
+        const raw = im.scan_meta_json
+        if (!raw || typeof raw !== 'object') return false
+        return (raw as { qualityStatus?: unknown }).qualityStatus === 'needs_review'
+      }).length,
+    [zipEligibleStandardRows]
+  )
+
+  const zipStdFallbackRasterCount = useMemo(
+    () =>
+      zipEligibleStandardRows.filter((im) => {
+        const raw = im.scan_meta_json
+        if (!raw || typeof raw !== 'object') return false
+        const m = raw as { blockAnalysisFinalStatus?: unknown; rasterPositionsFallback?: unknown }
+        return m.blockAnalysisFinalStatus === 'fallback_used' || m.rasterPositionsFallback === true
+      }).length,
+    [zipEligibleStandardRows]
+  )
+
+  const handleRasterZipExport = async () => {
+    if (typeof window === 'undefined') return
+    setRasterZipBusy(true)
+    setRasterZipHint(null)
     try {
-      const { ok, failed, skipped, results } = await importAllEmbeddedImagesPendingForJob(jobId)
-      const firstErr = results.find(
-        (x) => !x.result.ok && x.result.code !== 'already_imported' && x.result.code !== 'missing_intent'
-      )?.result.message
-      const lines = [`Neu übernommen: ${ok}`, `Übersprungen: ${skipped}`, `Fehler: ${failed}`]
-      showToast(
-        firstErr && failed > 0 ? `${lines.join(' · ')} — z. B.: ${firstErr}` : lines.join(' · ')
-      )
+      const r = await downloadAltberichtRasterPhotosZipArchive({
+        supabase,
+        jobId,
+        files,
+        staging,
+        images,
+        includeRawDebugCrops: zipIncludeRawRaster,
+        onProgress: (m) => setRasterZipHint(m),
+      })
+      if (!r.ok) {
+        showError(r.message)
+      } else {
+        showToast(
+          'ZIP mit Raster-Fotos erzeugt — Download sollte starten.',
+          altberichtToastTypeForCode('imported')
+        )
+        setRasterZipHint(null)
+      }
+    } catch (e) {
+      showError(e instanceof Error ? e.message : String(e))
     } finally {
-      setImportBusy(false)
-      onPatched()
+      setRasterZipBusy(false)
     }
-  }, [jobId, onPatched, showToast])
+  }
 
   if (images.length === 0) {
     return (
@@ -205,9 +276,41 @@ export const AltberichtExpertEmbeddedImagesPanel = ({
           <p className="text-sm text-red-600 dark:text-red-400 mt-1">Metadaten: {imageLoadError}</p>
         ) : (
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Keine Bildeinbettung per Operatorliste erkannt (Datei erneut parsen nach Paket E).
+            Bildanalyse ist im Standardimport übersprungen worden. Pro Datei kann die Analyse
+            optional gestartet werden – Text/Staging bleiben nutzbar, auch wenn der Scan abbricht.
           </p>
         )}
+        {files.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {files.map((f) => {
+              const running = scanBusyFileId === f.id
+              return (
+                <div
+                  key={f.id}
+                  className="flex flex-wrap items-center gap-2 rounded border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-900/40 px-2 py-1.5 text-xs"
+                >
+                  <span className="font-mono break-all flex-1 min-w-0">{f.original_filename}</span>
+                  {running && scanProgress ? (
+                    <span className="text-slate-500 dark:text-slate-400">
+                      Seite {scanProgress.done}/{scanProgress.total}
+                      {scanCurrentImage && scanCurrentImage.page === scanProgress.done
+                        ? ` · Bild ${scanCurrentImage.image}`
+                        : ''}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={busy || scanBusyFileId != null}
+                    className="rounded bg-slate-700 text-white px-2 py-1 text-xs font-medium disabled:opacity-50"
+                    onClick={() => void runScanForFile(f.id)}
+                  >
+                    {running ? 'Analyse läuft …' : 'Bildanalyse starten'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
       </section>
     )
   }
@@ -218,28 +321,67 @@ export const AltberichtExpertEmbeddedImagesPanel = ({
     byFile.get(im.file_id)!.push(im)
   }
 
-  const locked = busy || importBusy
-
   return (
-    <section className="mt-6 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/20 p-4">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-2">
-        <div>
-          <h3 className="font-semibold text-amber-950 dark:text-amber-100">Eingebettete PDF-Bilder — Übernahme (Experte)</h3>
-          <p className="text-xs text-amber-900/80 dark:text-amber-200/80 mt-1">
-            Erkennung per PDF-Operator; <strong>Übernahme</strong> speichert die gerenderte PDF-Seite als PNG (kein
-            Einzel-Crop). Objektfoto = Galerie (<span className="font-mono">object_photos</span>), nicht Profilbild.
-            Mängelfoto = Stammdaten-Mangel (<span className="font-mono">object_defect_photos</span>) nur mit C2-importiertem
-            Schlüssel <span className="font-mono">f:Index</span>.
-          </p>
+    <section className="mt-6 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50/70 dark:bg-slate-900/40 p-4">
+      <div className="mb-2">
+        <h3 className="font-semibold text-slate-800 dark:text-slate-100">Eingebettete PDF-Bilder — Korrektur (Experte)</h3>
+        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+          Normalerweise reicht der Block <strong>Fotos</strong> in jeder Staging-Zeile. Hier alle Bildeinträge
+          inkl. ausgeblendeter Logos/Kopfgrafiken; nur bei manueller Nachjustierung nötig. Übernahme weiterhin
+          nur einzeln per Klick.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={
+              locked || rasterZipBusy || rasterZipExportCount === 0 || scanBusyFileId != null
+            }
+            className="rounded bg-slate-800 text-white px-2.5 py-1 text-xs font-medium hover:bg-slate-900 disabled:opacity-50 dark:bg-slate-700 dark:hover:bg-slate-600"
+            onClick={() => void handleRasterZipExport()}
+          >
+            {rasterZipBusy ? 'ZIP wird erzeugt …' : 'Raster-Fotos als ZIP herunterladen'}
+          </button>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-[10px] text-slate-600 dark:text-slate-400 select-none">
+            <input
+              type="checkbox"
+              className="rounded border border-slate-400 dark:border-slate-600"
+              checked={zipIncludeRawRaster}
+              disabled={
+                rasterZipBusy || locked || zipRawDebugExtraCount === 0 || scanBusyFileId != null
+              }
+              onChange={(e) => setZipIncludeRawRaster(e.target.checked)}
+            />
+            Roh-Crops / Debug-Streifen einschließen
+          </label>
+          <span className="text-[10px] text-slate-500 dark:text-slate-400 max-w-xl leading-snug space-y-0.5 inline-block align-middle">
+            <span className="block">
+              <strong>{zipEligibleStandardRows.length}</strong> nutzbare Positionsfotos (Standard-ZIP, manifest.json)
+              {' · '}
+              <strong>{rasterDebugRowsInDb}</strong> Roh-/Debug-Zeilen gesamt
+              {zipRawDebugExtraCount > 0 ? (
+                <span>
+                  {' '}
+                  (davon <strong>{zipRawDebugExtraCount}</strong> ZIP-fähig mit Checkbox „Roh-Crops …“)
+                </span>
+              ) : null}
+              {' · '}
+              <span className="text-slate-400 dark:text-slate-500">
+                Raster-/Block-Zeilen gesamt (Metadaten): <strong>{rasterBlockRowsTotal}</strong>
+              </span>
+              {zipStdNeedsReviewCount > 0 ? (
+                <span>
+                  · <strong>{zipStdNeedsReviewCount}</strong> mit Prüfhinweis (needs_review)
+                </span>
+              ) : null}
+              {zipStdFallbackRasterCount > 0 ? (
+                <span>
+                  · <strong>{zipStdFallbackRasterCount}</strong> mit Raster-/Positions-Fallback
+                </span>
+              ) : null}
+            </span>
+            {rasterZipHint ? <span className="block text-slate-600 dark:text-slate-300">· {rasterZipHint}</span> : null}
+          </span>
         </div>
-        <button
-          type="button"
-          disabled={locked}
-          className="shrink-0 rounded bg-amber-800 text-white px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-          onClick={() => void runAll()}
-        >
-          Markierte Bilder übernehmen
-        </button>
       </div>
       {imageLoadError ? (
         <p className="text-sm text-red-600 dark:text-red-400 mb-2">Metadaten: {imageLoadError} (Migration E/F?)</p>
@@ -250,9 +392,29 @@ export const AltberichtExpertEmbeddedImagesPanel = ({
           const f = files.find((x) => x.id === fileId)
           const rows = stagingForFile(fileId)
           if (!f) return null
+          const running = scanBusyFileId === f.id
           return (
-            <div key={fileId} className="rounded border border-amber-200/80 dark:border-amber-900/50 bg-white/80 dark:bg-slate-900/50 p-3">
-              <div className="text-sm font-medium break-all mb-2">{f.original_filename}</div>
+            <div key={fileId} className="rounded border border-slate-200 dark:border-slate-600 bg-white/80 dark:bg-slate-900/50 p-3">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <div className="text-sm font-medium break-all flex-1 min-w-0">{f.original_filename}</div>
+                {running && scanProgress ? (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Seite {scanProgress.done}/{scanProgress.total}
+                    {scanCurrentImage && scanCurrentImage.page === scanProgress.done
+                      ? ` · Bild ${scanCurrentImage.image}`
+                      : ''}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={busy || scanBusyFileId != null}
+                  className="rounded border border-slate-300 dark:border-slate-600 px-2 py-1 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50"
+                  onClick={() => void runScanForFile(fileId)}
+                  title="Vollständigen Operator-Bildscan für diese Datei erneut starten"
+                >
+                  {running ? 'Analyse läuft …' : 'Bildanalyse erneut starten'}
+                </button>
+              </div>
               <ul className="space-y-3">
                 {list.map((im) => {
                   const sugg = im.suggested_staging_object_id ? stagingById.get(im.suggested_staging_object_id) : null
@@ -262,15 +424,49 @@ export const AltberichtExpertEmbeddedImagesPanel = ({
                   const c2Staging = linked ?? resolved
                   const c2Rows = c2Staging ? listAltberichtC2FindingRows(c2Staging).filter((x) => x.alreadyImported) : []
                   const imported = (im.import_status ?? 'not_imported') === 'imported'
+                  const failed = (im.import_status ?? 'not_imported') === 'failed'
+                  const primary = getAltberichtEmbeddedImagePrimaryKind(im)
+                  const previewSource = previewSourceById[im.id]
+                  const dup = findDuplicateEmbeddedImportForTarget(im, images, committed)
+                  const logoLv = getEmbeddedImageLogoLikelihood(im)
+                  const needsPageConfirm = previewSource === 'page' && !imported && !failed
+                  const pageOk = Boolean(pageFallbackOk[im.id])
+                  const rasterDebugRaw = isAltberichtRasterRawCropSafetyRow(im)
+
+                  const canObject =
+                    im.user_intent === 'object_photo' &&
+                    Boolean(committed) &&
+                    !imported &&
+                    !failed &&
+                    !dup &&
+                    previewSource != null &&
+                    !rasterDebugRaw &&
+                    (!needsPageConfirm || pageOk)
+
+                  const canDefect =
+                    im.user_intent === 'defect_photo' &&
+                    Boolean(committed) &&
+                    Boolean(im.c2_finding_key?.trim()) &&
+                    !imported &&
+                    !failed &&
+                    !dup &&
+                    previewSource != null &&
+                    !rasterDebugRaw &&
+                    (!needsPageConfirm || pageOk)
 
                   return (
                     <li
                       key={im.id}
                       className="flex flex-col sm:flex-row gap-3 p-2 rounded border border-slate-200 dark:border-slate-600"
                     >
-                      <div className="shrink-0">
-                        <PageThumb fileRow={f} pageNumber={im.page_number} cacheKey={im.id} />
-                      </div>
+                      <AltberichtEmbeddedImagePreviewThumb
+                        fileRow={f}
+                        embeddedRow={im}
+                        pageNumber={im.page_number}
+                        imageIndex={im.image_index}
+                        cacheBust={im.updated_at}
+                        onPreviewMeta={handlePreviewMeta(im.id)}
+                      />
                       <div className="flex-1 min-w-0 text-xs space-y-1">
                         <div>
                           <span className="text-slate-500">Seite / Index:</span>{' '}
@@ -285,10 +481,25 @@ export const AltberichtExpertEmbeddedImagesPanel = ({
                           ) : null}
                         </div>
                         <div>
-                          <span className="text-slate-500">Übernahmestatus:</span>{' '}
-                          <span className="font-medium">{importStatusLabel(im)}</span>
-                          {im.imported_at ? (
-                            <span className="text-slate-500"> · {new Date(im.imported_at).toLocaleString('de-DE')}</span>
+                          <span className="text-slate-500">Status:</span>{' '}
+                          <span className="font-medium">{primaryKindLabelDe(primary)}</span>
+                          {logoLv === 'likely' ? (
+                            <span className="text-slate-600 dark:text-slate-400"> · vermutlich Logo/Kopf (ausgeblendet)</span>
+                          ) : null}
+                          {logoLv === 'suspect' ? (
+                            <span className="text-amber-800 dark:text-amber-200"> · vermutlich Logo/Kopf (prüfen)</span>
+                          ) : null}
+                          {rasterDebugRaw ? (
+                            <span className="text-slate-500 dark:text-slate-400">
+                              {' '}
+                              · nur Debug/ZIP (keine Übernahme)
+                            </span>
+                          ) : null}
+                          {previewSource === 'page' && !failed ? (
+                            <span className="text-amber-800 dark:text-amber-200"> · Seitenbild-Fallback</span>
+                          ) : null}
+                          {dup ? (
+                            <span className="text-slate-600 dark:text-slate-400"> · Bereits übernommen (Duplikat)</span>
                           ) : null}
                         </div>
                         {im.import_error ? (
@@ -367,12 +578,33 @@ export const AltberichtExpertEmbeddedImagesPanel = ({
                               <option value="">{c2Rows.length === 0 ? '— (erst C2-Textimport)' : '— wählen'}</option>
                               {c2Rows.map((c) => (
                                 <option key={c.key} value={c.key}>
-                                  {c.key}: {c.originalText.slice(0, 60)}
-                                  {c.originalText.length > 60 ? '…' : ''}
+                                  {c.key}: {c.commitText.slice(0, 60)}
+                                  {c.commitText.length > 60 ? '…' : ''}
                                 </option>
                               ))}
                             </select>
                           </label>
+                        ) : null}
+                        {needsPageConfirm ? (
+                          <label className="flex items-start gap-2 text-[11px] text-amber-900 dark:text-amber-100 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={pageOk}
+                              disabled={locked || imported}
+                              onChange={(e) =>
+                                setPageFallbackOk((s) => ({ ...s, [im.id]: e.target.checked }))
+                              }
+                            />
+                            <span>
+                              Seitenbild-Übernahme bestätigen (gesamte Seite, kein Einzelbild-Ausschnitt).
+                            </span>
+                          </label>
+                        ) : null}
+                        {!committed && (im.user_intent === 'object_photo' || im.user_intent === 'defect_photo') ? (
+                          <p className="text-[11px] text-amber-800 dark:text-amber-200 m-0">
+                            Fotoübernahme erst nach C1 (committed_object_id) möglich.
+                          </p>
                         ) : null}
                         <div>
                           <button
@@ -382,17 +614,18 @@ export const AltberichtExpertEmbeddedImagesPanel = ({
                               imported ||
                               im.user_intent === 'unreviewed' ||
                               im.user_intent === 'ignore' ||
-                              (im.user_intent === 'defect_photo' && !im.c2_finding_key?.trim()) ||
-                              (im.user_intent === 'object_photo' && !committed)
+                              (!canObject && !canDefect)
                             }
                             className="rounded bg-slate-800 text-white px-2 py-1 text-xs disabled:opacity-50"
                             onClick={() => void runOne(im)}
                             title={
-                              !committed && im.user_intent === 'object_photo'
+                              !committed && (im.user_intent === 'object_photo' || im.user_intent === 'defect_photo')
                                 ? 'Zuerst C1-Commit (committed_object_id)'
                                 : im.user_intent === 'defect_photo' && !im.c2_finding_key
                                   ? 'C2-Schlüssel wählen'
-                                  : undefined
+                                  : dup
+                                    ? 'Duplikat'
+                                    : undefined
                             }
                           >
                             Jetzt übernehmen

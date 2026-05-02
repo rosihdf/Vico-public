@@ -34,7 +34,7 @@ const ObjectQRCodeModal = ({
 }: ObjectQRCodeModalProps) => {
   const { design } = useLicense()
   const brandLine = useMemo(
-    () => (design?.app_name ? `${design.app_name} Türen & Tore` : 'AMRtech Türen & Tore'),
+    () => (design?.app_name ? `${design.app_name} Türen & Tore` : 'ArioVan'),
     [design?.app_name]
   )
   const logoSrc = design?.logo_url?.trim() || ''

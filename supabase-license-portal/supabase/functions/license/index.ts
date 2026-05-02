@@ -153,6 +153,8 @@ const appVersionKeyForChannel = (ch: ReleaseChannel): (typeof APP_VERSION_KEYS)[
 
 type LicenseResponse = {
   license_number?: string
+  /** Lizenzportal-Mandanten-UUID; für zentralen Mailversand (`send-tenant-email`). */
+  tenant_id?: string
   license: {
     tier: string
     valid_until: string | null
@@ -551,7 +553,15 @@ serve(async (req) => {
     const licenseNumberRaw =
       licenseRow.license_number != null ? String(licenseRow.license_number).trim() : ''
 
+    const resolvedTenantId = (() => {
+      const col = licenseRow.tenant_id != null ? String(licenseRow.tenant_id).trim() : ''
+      if (col) return col
+      const embed = tenant?.id != null ? String(tenant.id).trim() : ''
+      return embed
+    })()
+
     const response: LicenseResponse = {
+      ...(resolvedTenantId ? { tenant_id: resolvedTenantId } : {}),
       ...(licenseNumberRaw ? { license_number: licenseNumberRaw } : {}),
       license: {
         tier: licenseRow.tier ?? 'professional',
@@ -569,7 +579,7 @@ serve(async (req) => {
         client_config_version: clientConfigVersion,
       },
       design: {
-        app_name: (tenant?.app_name as string) ?? 'AMRtech',
+        app_name: (tenant?.app_name as string) ?? 'ArioVan',
         tenant_name:
           tenant?.name != null && String(tenant.name).trim() ? String(tenant.name).trim() : null,
         logo_url: (tenant?.logo_url as string) ?? null,

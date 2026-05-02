@@ -11,8 +11,11 @@ type Listener = () => void
 let mandantDegraded = false
 const listeners = new Set<Listener>()
 
-/** §11.18#9 Lesen (RPC-POST zählt wie Lesen) */
-export const MANDANT_READ_TIMEOUT_MS = 6000
+/**
+ * §11.18#9 Lesen (RPC-POST zählt wie Lesen).
+ * Nach Login: `get_my_role` + Profil-Reads; 6s war auf langsamen Verbindungen zu knapp → AbortError „The operation was aborted.“
+ */
+export const MANDANT_READ_TIMEOUT_MS = 20_000
 
 /** §11.18#9 Schreiben: Erstversuch + 3 Retries = 4 Versuche insgesamt. */
 export const MANDANT_WRITE_ATTEMPT_COUNT = 4

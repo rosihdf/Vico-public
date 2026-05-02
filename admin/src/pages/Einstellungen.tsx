@@ -157,13 +157,13 @@ const Einstellungen = () => {
         </p>
         <div className="flex flex-wrap gap-2">
           <a
-            href="/Vico-Dokumentation.pdf"
+            href="/ArioVan-Dokumentation.pdf"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex px-4 py-2 rounded-lg text-sm font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors"
-            aria-label="Vico-Dokumentation als PDF öffnen"
+            aria-label="Technische Produktdokumentation der Haupt-App ArioVan als PDF öffnen"
           >
-            Vico-Dokumentation (PDF)
+            Haupt-App: Dokumentation (PDF, ArioVan)
           </a>
           <button
             type="button"

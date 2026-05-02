@@ -436,7 +436,7 @@ const buildLicenseJson = (licenseRow: Record<string, unknown>, globalAppCfg: { v
       client_config_version: clientConfigVersion,
     },
     design: {
-      app_name: (tenant?.app_name as string) ?? 'AMRtech',
+      app_name: (tenant?.app_name as string) ?? 'ArioVan',
       tenant_name:
         tenant?.name != null && String(tenant.name).trim() ? String(tenant.name).trim() : null,
       logo_url: (tenant?.logo_url as string) ?? null,

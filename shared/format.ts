@@ -1,4 +1,4 @@
-/** Gemeinsame Formatierungsfunktionen für alle Vico-Apps */
+/** Gemeinsame Formatierungsfunktionen für Mandanten-Apps */
 
 export const formatTime = (iso: string): string => {
   try {

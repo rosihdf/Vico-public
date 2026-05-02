@@ -13,6 +13,13 @@ Pro Mandant in der **Admin-App** (Lizenzportal) beim jeweiligen Mandanten:
 
 Damit ist klar, **welches** Projekt zu **welchem** Mandanten gehört (Skripte, Checklisten, Notfall).
 
+## 1b. SQL-Ordner, Complete-Dateien und Pakete
+
+Übersicht aller relevanten Pfade, Altbericht-Pakete A–G, Mandanten- vs. Lizenzportal-SQL und geplante **Zielordner** (`complete/`, `packages/`, `archive/`) ohne bestehende Pfade zu brechen:  
+[**SQL-Struktur-und-Paketkonvention.md**](./SQL-Struktur-und-Paketkonvention.md). **Modul-Matrix** (logische Zuordnung `core` / `maintenance` / `portal` / `time` / `full` / `altbericht_import`), **geplante Complete-SQLs** und **Namenskonvention:** dort **§11–§13**.
+
+Das Lizenzadmin listet nur **kuratierte** Rollout-Pakete (Datei `admin/src/lib/mandantenDbUpdatePackages.ts`, Status `ready`). Einzelpakete A–G und Hotfixes bleiben unter `docs/sql/` für manuelle Ausführung.
+
 ## 2. Lokale Kopie (optional, ohne Secrets)
 
 Vorlage: [`configs/mandanten-registry.example.json`](../../configs/mandanten-registry.example.json)
@@ -42,19 +49,29 @@ Entspricht: `node scripts/apply-mandanten-sql.mjs supabase-complete.sql --urls-f
 
 ### 3c. Optional: Button im Lizenzportal (GitHub Actions)
 
-Statt nur lokal `npm run …` kann ein **Admin** unter **Einstellungen** einen GitHub-Workflow starten: **Ziel** Staging oder Produktion, **SQL-Datei** (z. B. `supabase-complete.sql` oder `docs/sql/rollout/…`), **Trockenlauf** oder **Echtlauf**. Ablauf:
+Statt nur lokal `npm run …` kann ein **Admin** unter **„Mandanten aktualisieren“** einen GitHub-Workflow starten: **Ziel** Staging oder Produktion, **SQL-Datei** (über Dropdown → Pfad wie `supabase-complete.sql` oder `docs/sql/mandanten-db-altbericht-import-complete.sql`; optional später zusätzliche Dateien unter `docs/sql/rollout/`), **Trockenlauf** oder **Echtlauf**. Ablauf:
 
 1. **GitHub-Secrets** (Repository):
    - **`MANDANTEN_DB_URLS_STAGING`** – URI-Liste für Referenz-/Test-Mandant(en), eine Zeile pro DB.
    - **`MANDANTEN_DB_URLS_PRODUCTION`** – alle Produktions-Mandanten-DBs (eine URI pro Zeile).
    - **Legacy:** Ist `MANDANTEN_DB_URLS_PRODUCTION` leer, nutzt der Workflow für **production** weiterhin **`MANDANTEN_DB_URLS`**.
-2. Workflow **`.github/workflows/mandanten-db-apply-complete.yml`** (Name in Actions: **Mandanten-DB – Rollout (psql)**). Manuelle Inputs: **`target`**, **`sql_file`**, **`mode`** (dry_run/apply).
-3. **Supabase Lizenzportal** → Edge Function **`trigger-mandanten-db-rollout`** deployen (`supabase-license-portal/`), Secrets:
+2. Workflow **`.github/workflows/mandanten-db-apply-complete.yml`** (Name in Actions: **Mandanten-DB – Rollout (psql)**). Inputs: **`target`**, **`sql_file`**, **`mode`** (dry_run/apply), optional **`run_id`** (wird aus dem Lizenzportal gesetzt).
+3. **Supabase Lizenzportal** → Edge Functions **`trigger-mandanten-db-rollout`** und **`update-mandanten-db-rollout-status`** deployen (`supabase-license-portal/`), Secrets u.a.:
    - **`GITHUB_DISPATCH_TOKEN`** – PAT mit **Actions: Write** auf dem Repo.
    - **`GITHUB_REPO_OWNER`**, **`GITHUB_REPO_NAME`**
+   - **`MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET`** – zufälliger String; identischer Wert als Repository-Secret (siehe unten).
    - Optional: **`GITHUB_WORKFLOW_FILE`** (Default `mandanten-db-apply-complete.yml`), **`GITHUB_DEFAULT_BRANCH`** (Default `main`).
+4. **GitHub Repository Secrets** (zusätzlich zu den DB-URL-Secrets):
+   - **`LP_ROLLOUT_CALLBACK_URL`** – z.B. `https://<lp-ref>.supabase.co/functions/v1/update-mandanten-db-rollout-status`
+   - **`LP_ROLLOUT_CALLBACK_SECRET`** – gleicher Wert wie in Supabase (**`MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET`**). Fallback: älteres Secret **`MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET`** im Repo, falls **`LP_ROLLOUT_CALLBACK_SECRET`** nicht gesetzt ist.
 
-Die Function prüft die **Admin-Session**, validiert **`sql_file`** (nur `supabase-complete.sql` oder `docs/sql/…/*.sql`, kein `..`) und ruft **`workflow_dispatch`** auf. **Logs** in **GitHub → Actions**. Rollout-Pakete optional unter **`docs/sql/rollout/`** (nach Commit auf `main` in der UI wählbar).
+Pflicht ab Phase 3: Start aus dem Lizenzportal übergibt **`run_id`** an den Workflow; ohne die beiden Callback-Secrets schlägt der Job nach Checkout fehl (Absicherung). Manuelle Workflow-Starts ohne `run_id` protokollieren nicht ins Lizenzportal und nutzen beim Echtlauf weiterhin den klassischen „Abbruch beim ersten Fehler“ im Script.
+
+Die Function **`trigger-mandanten-db-rollout`** prüft die **Admin-Session**, validiert **`sql_file`** (nur `supabase-complete.sql` oder `docs/sql/…/*.sql`, kein `..`) und ruft **`workflow_dispatch`** auf. **`update-mandanten-db-rollout-status`** ist nur mit **`X-Rollout-Callback-Secret`** erreichbar und aktualisiert Runs/Targets aus GitHub Actions.
+
+**Logs** in **GitHub → Actions**. Der Ordner **`docs/sql/rollout/`** ist derzeit **reserviert** (ohne Pflicht-Skripte); neue gebündelte Dateien dort erst nach Freigabe und Aufnahme in **`mandantenDbUpdatePackages`** (oder manueller Pfad-Eingabe nur über bestehende erlaubte Mechanismen).
+
+Siehe auch **`docs/sql/README.md`** und **`SQL-Struktur-und-Paketkonvention.md`**.
 
 ## 4. SQL auf allen Mandanten-DBs ausführen
 

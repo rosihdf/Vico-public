@@ -20,6 +20,11 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
 
   const navItems: NavItem[] = [
     { to: '/', label: 'Mandanten', isActive: (p) => p === '/' || p.startsWith('/mandanten') },
+    {
+      to: '/mailvorlagen-global',
+      label: 'Mailvorlagen global',
+      isActive: (p) => p.startsWith('/mailvorlagen-global'),
+    },
     { to: '/globale-wartung', label: 'Globale Wartung', isActive: (p) => p.startsWith('/globale-wartung') },
     {
       to: '/mandanten-aktualisieren',
@@ -108,7 +113,7 @@ const Layout = ({ user, onLogout }: LayoutProps) => {
         </button>
 
         <div className="flex-1 min-w-0 flex justify-center items-center px-2">
-          <h1 className="text-base sm:text-lg font-bold text-white truncate">AMRtech Lizenzmodul</h1>
+          <h1 className="text-base sm:text-lg font-bold text-white truncate">Lizenzportal</h1>
         </div>
 
         <div className="flex-shrink-0 max-w-[45%] sm:max-w-[40%] min-w-0">

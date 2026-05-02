@@ -17,7 +17,8 @@ export const extractPdfPlainText = async (pdfBytes: ArrayBuffer): Promise<string
     throw new Error('PDF-Textextraktion nur im Browser möglich')
   }
   ensurePdfWorker()
-  const data = new Uint8Array(pdfBytes)
+  // pdf.js kann den übergebenen Buffer an den Worker transferieren; deshalb nie den Caller-Buffer verwenden.
+  const data = new Uint8Array(pdfBytes.slice(0))
   const loadingTask = pdfjs.getDocument({ data, disableRange: true, disableStream: true })
   const doc = await loadingTask.promise
   try {

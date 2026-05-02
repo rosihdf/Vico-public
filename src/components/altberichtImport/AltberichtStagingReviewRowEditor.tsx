@@ -4,6 +4,8 @@ import type { BV } from '../../types/bv'
 import type { Object as Obj } from '../../types/object'
 import type { AltberichtImportStagingObjectRow } from '../../lib/altberichtImport/altberichtImportQueryService'
 import type { AltberichtStagingReviewPatch } from '../../lib/altberichtImport/altberichtImportReviewTypes'
+import type { AltberichtImportEmbeddedImageRow, AltberichtImportFileRow } from '../../lib/altberichtImport'
+import { AltberichtStagingRowEmbeddedImages } from './AltberichtStagingRowEmbeddedImages'
 import {
   collectAltberichtNameSuggestions,
   isAltberichtMatchPayloadV1,
@@ -28,11 +30,29 @@ type SchliessmittelDebugTrace = {
   parsedTypSourceLine?: string | null
 }
 
+type StatusFindingsDebugTrace = {
+  sequence?: number
+  blockRawPreview?: string | null
+  statusRawAround?: string | null
+  statusCandidate?: string | null
+  rejectedReason?: string | null
+  findingsFilled?: boolean
+  statusFindingAccepted?: boolean
+  findingsCount?: number
+}
+
 const readSchliessmittelDebugFromTrace = (trace: unknown): SchliessmittelDebugTrace | null => {
   if (!trace || typeof trace !== 'object') return null
   const raw = (trace as { schliessmittelDebug?: unknown }).schliessmittelDebug
   if (!raw || typeof raw !== 'object') return null
   return raw as SchliessmittelDebugTrace
+}
+
+const readStatusFindingsDebugFromTrace = (trace: unknown): StatusFindingsDebugTrace | null => {
+  if (!trace || typeof trace !== 'object') return null
+  const raw = (trace as { statusFindingsDebug?: unknown }).statusFindingsDebug
+  if (!raw || typeof raw !== 'object') return null
+  return raw as StatusFindingsDebugTrace
 }
 
 const isWegStructuredTrace = (trace: unknown): boolean => {
@@ -86,6 +106,23 @@ export type AltberichtStagingReviewRowEditorProps = {
   fileExtractedText?: string | null
   /** Experte: C1 Staging ↔ Produktiv pro Zeile (null = ausblenden). */
   c1PositionCompare?: C1PositionCompare | null
+  /** Experte: Zielobjekt für committed/review-Objekt-ID wurde geladen. */
+  c1ProductiveObjectLoaded?: boolean
+  /** PDF-Bilder, die dieser Staging-Zeile zugeordnet sind (Review). */
+  rowEmbeddedImages?: AltberichtImportEmbeddedImageRow[]
+  rowEmbeddedFile?: AltberichtImportFileRow | null
+  allJobEmbeddedImages?: AltberichtImportEmbeddedImageRow[]
+  /** Alle Bildeinträge dieser Datei (gleiche file_id). */
+  fileEmbeddedImageTotal?: number
+  /** Als vermutliches Logo/Kopf ausgeblendete Einträge dieser Datei. */
+  fileLikelyLogoCount?: number
+  /** Übersprungene PDF-Seiten dieser Datei (Bildscan-Timeout). */
+  fileSkippedPages?: number[]
+  /** Scrollcontainer der Staging-Liste (IntersectionObserver für Foto-Thumbnails). */
+  stagingScrollIntersectionRoot?: HTMLElement | null
+  /** Öffnet die PDF-Vollvorschau auf einer bestimmten Seite (nutzt vorhandenes Overlay). */
+  onOpenPagePreview?: (fileRow: AltberichtImportFileRow, pageNumber: number) => void
+  onEmbeddedImagesChanged?: () => void
 }
 
 const validationEntries = (row: AltberichtImportStagingObjectRow): { code: string; message: string }[] => {
@@ -117,6 +154,16 @@ export function AltberichtStagingReviewRowEditor({
   onCommitC2Defects,
   fileExtractedText,
   c1PositionCompare,
+  c1ProductiveObjectLoaded,
+  rowEmbeddedImages,
+  rowEmbeddedFile,
+  allJobEmbeddedImages,
+  fileEmbeddedImageTotal,
+  fileLikelyLogoCount,
+  fileSkippedPages,
+  stagingScrollIntersectionRoot,
+  onOpenPagePreview,
+  onEmbeddedImagesChanged,
 }: AltberichtStagingReviewRowEditorProps) {
   const [reviewCustomerId, setReviewCustomerId] = useState(row.review_customer_id ?? '')
   const [reviewBvId, setReviewBvId] = useState(row.review_bv_id ?? '')
@@ -181,9 +228,17 @@ export function AltberichtStagingReviewRowEditor({
 
   const objectsForPicker = useMemo(() => {
     const bv = effectiveBvForObjects
-    if (!bv) return []
+    const customer = reviewCustomerId.trim() || row.review_customer_id?.trim() || ''
+    const customerBvIds = new Set(allBvs.filter((b) => b.customer_id === customer).map((b) => b.id))
     const q = objectLinkQuery.trim().toLowerCase()
-    let list = allObjects.filter((o) => o.bv_id === bv && !o.archived_at)
+    let list = allObjects.filter((o) => {
+      if (o.archived_at) return false
+      if (bv) return o.bv_id === bv
+      if (customer) {
+        return o.customer_id === customer || o.bv_id == null || (o.bv_id ? customerBvIds.has(o.bv_id) : false)
+      }
+      return false
+    })
     if (q) {
       list = list.filter((o) => {
         const label = formatObjectPickerLabel(o).toLowerCase()
@@ -202,7 +257,7 @@ export function AltberichtStagingReviewRowEditor({
     return [...list].sort((a, b) =>
       formatObjectPickerLabel(a).localeCompare(formatObjectPickerLabel(b), 'de')
     )
-  }, [allObjects, effectiveBvForObjects, objectLinkQuery, reviewObjectId])
+  }, [allBvs, allObjects, effectiveBvForObjects, objectLinkQuery, reviewCustomerId, row.review_customer_id, reviewObjectId])
 
   const applyReviewObjectLink = useCallback(
     async (id: string | null) => {
@@ -241,6 +296,19 @@ export function AltberichtStagingReviewRowEditor({
     }
   }, [row.analysis_trace_json, row.sequence, fileExtractedText])
 
+  const statusFindingsDebug = useMemo(
+    () => readStatusFindingsDebugFromTrace(row.analysis_trace_json),
+    [row.analysis_trace_json]
+  )
+
+  const findingsJsonPreview = useMemo(() => {
+    try {
+      return JSON.stringify(row.findings_json ?? [], null, 2)
+    } catch {
+      return String(row.findings_json ?? '')
+    }
+  }, [row.findings_json])
+
   const c2Candidates = useMemo(
     () => listAltberichtC2FindingRows(row),
     [row.id, row.updated_at, row.findings_json, row.c2_defects_imported_keys]
@@ -253,7 +321,7 @@ export function AltberichtStagingReviewRowEditor({
     const nextDraft: Record<string, string> = {}
     const nextSel: Record<string, boolean> = {}
     for (const c of listAltberichtC2FindingRows(row)) {
-      nextDraft[c.key] = c.originalText
+      nextDraft[c.key] = c.commitText
       nextSel[c.key] = false
     }
     setC2Draft(nextDraft)
@@ -277,16 +345,29 @@ export function AltberichtStagingReviewRowEditor({
   const matchPayload = isAltberichtMatchPayloadV1(row.match_candidates_json) ? row.match_candidates_json : null
   const valErrs = validationEntries(row)
   const rs = row.review_status ?? 'draft'
-  const isCommitted = Boolean(row.committed_at) || rs === 'committed'
-  const canTryCommit = Boolean(onCommitRow) && isAltberichtStagingRowCommitEligible(row) && !isCommitted
+  const hasCommittedObjectId = Boolean(row.committed_object_id?.trim())
+  const hasCommittedState = Boolean(row.committed_at) || rs === 'committed'
+  const committedObjectLoaded = c1ProductiveObjectLoaded ?? true
+  const isCommitted =
+    hasCommittedObjectId && hasCommittedState && committedObjectLoaded
+  const hasIncompleteCommit =
+    hasCommittedState && (!hasCommittedObjectId || !committedObjectLoaded)
+  const canTryCommit =
+    Boolean(onCommitRow) && isAltberichtStagingRowCommitEligible(row, { allowMissingDetails: true }) && !isCommitted
 
   const handleSave = useCallback(async () => {
     const effBv =
       reviewBvId.trim() || row.review_bv_id?.trim() || row.bv_id?.trim() || null
+    const effCustomer = reviewCustomerId.trim() || row.review_customer_id?.trim() || null
     let objectIdToSave: string | null = reviewObjectId.trim() || null
     if (objectIdToSave) {
       const o = allObjects.find((x) => x.id === objectIdToSave)
-      if (!o || o.archived_at || (effBv && o.bv_id !== effBv)) {
+      if (
+        !o ||
+        o.archived_at ||
+        (effBv && o.bv_id !== effBv) ||
+        (!effBv && effCustomer && o.customer_id != null && o.customer_id !== effCustomer)
+      ) {
         objectIdToSave = null
       }
     }
@@ -313,6 +394,7 @@ export function AltberichtStagingReviewRowEditor({
     reviewRoom,
     row.bv_id,
     row.review_bv_id,
+    row.review_customer_id,
   ])
 
   const applyBvCandidate = async (id: string) => {
@@ -453,6 +535,16 @@ export function AltberichtStagingReviewRowEditor({
         </div>
       ) : null}
 
+      {hasIncompleteCommit ? (
+        <div className="text-xs text-red-800 dark:text-red-200 bg-red-50 dark:bg-red-950/40 rounded px-2 py-1">
+          <span className="font-medium">Commit unvollständig:</span>{' '}
+          {!hasCommittedObjectId
+            ? 'Es wurde kein Produktiv-Objekt verifiziert.'
+            : 'Das Produktiv-Objekt konnte für den Rückabgleich nicht geladen werden.'}{' '}
+          Bitte Protokoll prüfen und Ansicht aktualisieren.
+        </div>
+      ) : null}
+
       {isCommitted ? (
         <div className="text-xs text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 rounded px-2 py-1">
           Produktiv übernommen
@@ -522,6 +614,53 @@ export function AltberichtStagingReviewRowEditor({
         </div>
       ) : null}
 
+      <div
+        className="rounded border border-sky-200/80 dark:border-sky-800/50 bg-sky-50/40 dark:bg-sky-950/20 px-2 py-1.5 text-[10px] leading-tight text-slate-700 dark:text-slate-300"
+        title="Nur Diagnose: C2-Mängelerkennung aus Status-Feld und gespeichertes findings_json"
+      >
+        <div className="font-medium text-sky-900 dark:text-sky-200/95 mb-0.5">C2 Status-Mängel (Parser-Debug)</div>
+        {statusFindingsDebug ? (
+          <div className="space-y-0.5">
+            <p>
+              <span className="text-slate-500">Sequence:</span>{' '}
+              <span className="font-mono">{statusFindingsDebug.sequence ?? row.sequence}</span>
+            </p>
+            <p>
+              <span className="text-slate-500">Status-Kandidat:</span>{' '}
+              <span className="font-mono break-all">{statusFindingsDebug.statusCandidate || '—'}</span>
+            </p>
+            <p>
+              <span className="text-slate-500">Verworfen:</span>{' '}
+              <span className="font-mono break-all">{statusFindingsDebug.rejectedReason || 'nein'}</span>
+            </p>
+            <p>
+              <span className="text-slate-500">findings_json befüllt:</span>{' '}
+              {statusFindingsDebug.findingsFilled ? 'ja' : 'nein'} · Status-Fund:{' '}
+              {statusFindingsDebug.statusFindingAccepted ? 'ja' : 'nein'} · Anzahl:{' '}
+              {statusFindingsDebug.findingsCount ?? c2Candidates.length}
+            </p>
+            <p className="text-slate-500 mb-0.5">Rohtext um Status:</p>
+            <pre className="whitespace-pre-wrap break-words font-mono text-[10px] bg-white/50 dark:bg-slate-900/40 border border-sky-100 dark:border-sky-900/40 rounded px-1.5 py-1 max-h-32 overflow-auto">
+              {statusFindingsDebug.statusRawAround || '— kein Status-Marker im Positionsblock erkannt'}
+            </pre>
+            <p className="text-slate-500 mb-0.5">Rohtext des Positionsblocks (gekürzt):</p>
+            <pre className="whitespace-pre-wrap break-words font-mono text-[10px] bg-white/50 dark:bg-slate-900/40 border border-sky-100 dark:border-sky-900/40 rounded px-1.5 py-1 max-h-32 overflow-auto">
+              {statusFindingsDebug.blockRawPreview || '— kein Block-Rohtext im Debug gespeichert'}
+            </pre>
+          </div>
+        ) : (
+          <p className="text-slate-500">
+            Kein Status-Debug in <code>analysis_trace_json</code>. Bitte Datei mit aktueller Parser-Version neu parsen.
+          </p>
+        )}
+        <details className="mt-1">
+          <summary className="cursor-pointer text-slate-600 dark:text-slate-300">findings_json Rohwert anzeigen</summary>
+          <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[10px] bg-white/50 dark:bg-slate-900/40 border border-sky-100 dark:border-sky-900/40 rounded px-1.5 py-1 max-h-36 overflow-auto">
+            {findingsJsonPreview}
+          </pre>
+        </details>
+      </div>
+
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="block text-xs">
           <span className="text-slate-600 dark:text-slate-400">Kunde</span>
@@ -571,13 +710,13 @@ export function AltberichtStagingReviewRowEditor({
         <div className="font-medium text-slate-700 dark:text-slate-200">
           Bestehendes Objekt (Produktiv, optional)
         </div>
-        {!effectiveBvForObjects ? (
-          <p className="text-amber-800 dark:text-amber-200">
-            Bitte zuerst ein Bauvorhaben im Review wählen oder speichern – die Objektliste bezieht sich
-            auf dieses BV.
+        {objectsForPicker.length === 0 && !reviewObjectId ? (
+          <p className="text-slate-500">
+            Keine passenden Produktiv-Objekte gefunden. Ohne BV wird nach Kunde gesucht; Commit legt bei
+            Bedarf ein neues Objekt an.
           </p>
-        ) : (
-          <>
+        ) : null}
+        <>
             {reviewObjectId ? (
               <div className="rounded bg-slate-50 dark:bg-slate-800/50 px-2 py-1 space-y-0.5">
                 <div>
@@ -642,8 +781,7 @@ export function AltberichtStagingReviewRowEditor({
                 Zuordnung entfernen
               </button>
             ) : null}
-          </>
-        )}
+        </>
       </div>
 
       <div className="grid gap-2 sm:grid-cols-2">
@@ -743,7 +881,15 @@ export function AltberichtStagingReviewRowEditor({
                   const o = allObjects.find((x) => x.id === c.id)
                   if (!o) return null
                   const canLinkToObject =
-                    Boolean(effectiveBvForObjects) && o.bv_id === effectiveBvForObjects && !o.archived_at
+                    !o.archived_at &&
+                    (effectiveBvForObjects
+                      ? o.bv_id === effectiveBvForObjects
+                      : Boolean(reviewCustomerId.trim()) &&
+                        (o.customer_id === reviewCustomerId.trim() ||
+                          o.bv_id == null ||
+                          (o.bv_id
+                            ? allBvs.some((b) => b.id === o.bv_id && b.customer_id === reviewCustomerId.trim())
+                            : false)))
                   return (
                     <li key={c.id} className="flex flex-wrap items-center gap-2">
                       <span>
@@ -756,10 +902,10 @@ export function AltberichtStagingReviewRowEditor({
                         type="button"
                         disabled={busy || isCommitted || !canLinkToObject}
                         title={
-                          !effectiveBvForObjects
-                            ? 'Zuerst BV wählen'
+                          !reviewCustomerId.trim() && !effectiveBvForObjects
+                            ? 'Zuerst Kunde wählen'
                             : !canLinkToObject
-                              ? 'Kandidat passt nicht zum gewählten BV oder ist archiviert'
+                              ? 'Kandidat passt nicht zur Auswahl oder ist archiviert'
                               : undefined
                         }
                         className="text-sky-700 dark:text-sky-300 underline disabled:opacity-40 disabled:no-underline"
@@ -784,13 +930,31 @@ export function AltberichtStagingReviewRowEditor({
         </div>
       ) : null}
 
+      {rowEmbeddedFile && onEmbeddedImagesChanged ? (
+        <AltberichtStagingRowEmbeddedImages
+          row={row}
+          fileRow={rowEmbeddedFile}
+          images={rowEmbeddedImages ?? []}
+          allJobEmbeddedImages={allJobEmbeddedImages ?? rowEmbeddedImages ?? []}
+          fileEmbeddedImageTotal={fileEmbeddedImageTotal ?? 0}
+          fileLikelyLogoCount={fileLikelyLogoCount ?? 0}
+          fileSkippedPages={fileSkippedPages ?? []}
+          stagingScrollIntersectionRoot={stagingScrollIntersectionRoot}
+          onOpenPagePreview={onOpenPagePreview}
+          allObjects={allObjects}
+          busy={busy}
+          onReload={onEmbeddedImagesChanged}
+        />
+      ) : null}
+
       {isCommitted && onCommitC2Defects && c2Eligible ? (
         <div className="rounded border border-violet-200 dark:border-violet-800 bg-violet-50/40 dark:bg-violet-950/30 p-2 space-y-2 text-xs">
           <div className="font-medium text-violet-900 dark:text-violet-100">Paket C2: Mängel (optional)</div>
           <p className="text-slate-600 dark:text-slate-400">
             Auswahl und Bearbeitung im Staging; Produktiv werden nur neue <strong>offene</strong> Einträge in
             den Stammdaten-Mängeln angehängt. Keine automatische Übernahme; PDF bleibt Quelle. Bereits
-            übernommene Kandidaten sind idempotent gesperrt.
+            übernommene Kandidaten sind idempotent gesperrt. Dokumentkopfzeilen (z. B. „Wartung 2025“) werden
+            nicht übernommen; erkannte Kopffragmente werden im Textfeld entfernt.
           </p>
           {row.c2_defects_last_import_at ? (
             <p className="text-emerald-800 dark:text-emerald-200 text-[11px]">
@@ -837,6 +1001,15 @@ export function AltberichtStagingReviewRowEditor({
                     value={c2Draft[c.key] ?? ''}
                     onChange={(e) => setC2Draft((d) => ({ ...d, [c.key]: e.target.value }))}
                   />
+                  {c.reviewHint ? (
+                    <p className="text-amber-800 dark:text-amber-200 text-[11px] leading-snug">{c.reviewHint}</p>
+                  ) : null}
+                  {c.commitText !== c.originalText.trim() ? (
+                    <p className="text-slate-500 dark:text-slate-400 text-[10px] leading-snug">
+                      Parser-Roh:{' '}
+                      {c.originalText.length > 160 ? `${c.originalText.slice(0, 160)}…` : c.originalText}
+                    </p>
+                  ) : null}
                 </li>
               ))}
             </ul>

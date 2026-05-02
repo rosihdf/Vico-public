@@ -1,4 +1,4 @@
-# # Vico Türen & Tore
+# ArioVan
 
 Web-App für Kunden-, BV- und Objektverwaltung mit Wartungsdokumentation.
 
@@ -7,7 +7,7 @@ Web-App für Kunden-, BV- und Objektverwaltung mit Wartungsdokumentation.
 ## Struktur
 
 ```
-Vico/
+./
 ├── src/              # Web-App (Vite + React)
 │   ├── components/   # AddressLookupFields, OrderCalendar
 │   ├── lib/          # dataService, offlineStorage, Utils
@@ -16,7 +16,7 @@ Vico/
 ├── scripts/          # generate-checklist-webapp-pdf.mjs
 ├── supabase/         # Edge Functions
 ├── supabase-complete.sql
-├── Vico.md           # Detaillierte Dokumentation
+├── Vico.md           # Detaillierte Dokumentation (interner Dateiname)
 └── BENUTZERANLEITUNG.md  # Benutzeranleitung
 ```
 

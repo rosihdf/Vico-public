@@ -1,6 +1,6 @@
 {
-  "title": "AMRtech Web App – Test-Checkliste",
-  "subtitle": "Umfassende Prüfliste für die AMRtech Web-App",
+  "title": "ArioVan Web App – Test-Checkliste",
+  "subtitle": "Umfassende Prüfliste für die ArioVan Web-App",
   "items": [
     { "id": "1", "label": "Login mit gültigen Zugangsdaten funktioniert", "category": "Login & Auth" },
     { "id": "2", "label": "Login mit ungültigen Daten zeigt Fehlermeldung", "category": "Login & Auth" },

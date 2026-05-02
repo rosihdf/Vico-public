@@ -1,5 +1,14 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
-import { serve } from 'npm:https://deno.land/std@0.168.0/http/server.ts'
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+
+/**
+ * LEGACY / NOTFALL-PFAD: Direkter PDF-Mailversand über Resend aus der Mandanten-Supabase (Edge Function).
+ *
+ * Produktiv (empfohlen): Mandanten-App ruft Lizenzportal `send-tenant-email` mit Session-JWT und PDF-Anhang auf —
+ * gleiche Logging-/Limitierung wie andere Mandanten-Mails.
+ *
+ * Diese Function bleibt als Fallback erhalten, bis alle Installationen den LP-Pfad nutzen.
+ */
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,6 +32,16 @@ const jsonResponse = (status: number, body: Record<string, unknown>) =>
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
+
+/** PDF → Base64: chunkweise, keine O(n²)-String-Verkettung (sonst oft WORKER_RESOURCE_LIMIT / HTTP 546). */
+const uint8ArrayToBase64Pdf = (bytes: Uint8Array): string => {
+  const chunkLen = 8192
+  const parts: string[] = []
+  for (let i = 0; i < bytes.length; i += chunkLen) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + chunkLen)))
+  }
+  return btoa(parts.join(''))
+}
 
 const normalizePdfStoragePath = (raw: string): string | null => {
   const t = raw.trim()
@@ -87,6 +106,18 @@ const toYearMonth = (value: Date): string => {
   const m = String(value.getUTCMonth() + 1).padStart(2, '0')
   return `${y}-${m}`
 }
+
+const extractEmailFromResendFromHeader = (fromRaw: string): string => {
+  const t = fromRaw.trim()
+  const m = t.match(/<([^>]+@[^>]+)>/)
+  const candidate = ((m ? m[1] : t).trim()).toLowerCase()
+  if (/^[^\s@]+@[^\s@]+$/.test(candidate)) return candidate
+  return ''
+}
+
+/** Nur echte Apex-Domain user@amrtech.de – nicht mail.amrtech.de. */
+const isUnverifiedStyleApexAmrtechFrom = (email: string): boolean =>
+  /^[^\s@]+@amrtech\.de$/i.test(email)
 
 const mirrorUsageToLicensePortal = async (status: 'ok' | 'failed'): Promise<void> => {
   const lpUrl = (Deno.env.get('LP_SUPABASE_URL') ?? '').trim()
@@ -204,11 +235,20 @@ serve(async (req) => {
 
     const arrayBuffer = await fileData.arrayBuffer()
     const bytes = new Uint8Array(arrayBuffer)
-    let binary = ''
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i])
+    const base64 = uint8ArrayToBase64Pdf(bytes)
+
+    const defaultFrom = 'ArioVan Wartung <onboarding@resend.dev>'
+    const resendFromRaw = (Deno.env.get('RESEND_FROM') ?? '').trim() || defaultFrom
+    const resendFromAddr = extractEmailFromResendFromHeader(resendFromRaw)
+    if (resendFromAddr && isUnverifiedStyleApexAmrtechFrom(resendFromAddr)) {
+      console.warn(
+        'send-maintenance-report: RESEND_FROM nutzt Apex-Domain (z. B. user@example.tld ohne Versand-Subdomain). Resend erwartet eine verifizierte Domain; empfohlen z. B. ArioVan <noreply@mail.example.de>. Alternativ zentralen Versand: App mit VITE_LICENSE_API_URL und tenant_id im Lizenz-Cache.'
+      )
     }
-    const base64 = btoa(binary)
+
+    console.warn(
+      '[LEGACY] send-maintenance-report: Versand über direkten Resend (Mandanten-Function). Empfohlen: zentral über Lizenzportal send-tenant-email mit Mandanten-Session.'
+    )
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -217,7 +257,7 @@ serve(async (req) => {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        from: Deno.env.get('RESEND_FROM') || 'Vico Wartung <onboarding@resend.dev>',
+        from: resendFromRaw,
         to: [toEmail],
         subject: subject || 'Wartungsprotokoll',
         html: '<p>Anbei erhalten Sie das Wartungsprotokoll.</p>',

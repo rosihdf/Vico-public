@@ -1,5 +1,155 @@
 import { supabase } from './supabase'
 
+export type TenantMailSecretFlags = {
+  smtp_password_set: boolean
+  resend_api_key_set: boolean
+}
+
+export const fetchTenantMailSecretFlags = async (
+  tenantId: string
+): Promise<TenantMailSecretFlags | null> => {
+  const { data, error } = await supabase.rpc('get_tenant_mail_secret_flags', {
+    p_tenant_id: tenantId,
+  })
+  if (error) return null
+  const raw = data as { smtp_password_set?: unknown; resend_api_key_set?: unknown } | null
+  if (!raw || typeof raw !== 'object') return null
+  return {
+    smtp_password_set: raw.smtp_password_set === true,
+    resend_api_key_set: raw.resend_api_key_set === true,
+  }
+}
+
+export type TenantMailTemplateKeyPresence = {
+  maintenance_report: boolean
+  portal_report_notification: boolean
+  maintenance_reminder_digest: boolean
+}
+
+type MailTplRow = {
+  tenant_id: string | null
+  template_key: string
+  enabled: boolean | null
+  subject_template: string | null
+  html_template: string | null
+}
+
+const mailTemplateRowUsable = (r: MailTplRow | undefined): boolean => {
+  if (!r || r.enabled === false) return false
+  return Boolean(String(r.subject_template ?? '').trim() && String(r.html_template ?? '').trim())
+}
+
+/** Effektive Vorlage: Mandanten-Zeile vor globale Zeile (locale `de`). */
+export const fetchTenantMailTemplateKeyPresence = async (
+  tenantId: string
+): Promise<TenantMailTemplateKeyPresence | null> => {
+  const { data, error } = await supabase
+    .from('tenant_mail_templates')
+    .select('tenant_id, template_key, enabled, subject_template, html_template')
+    .eq('locale', 'de')
+    .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+
+  if (error) return null
+  const rows = (data ?? []) as MailTplRow[]
+
+  const effective = (key: string): boolean => {
+    const tenantRow = rows.find((r) => r.tenant_id === tenantId && r.template_key === key)
+    const globalRow = rows.find((r) => r.tenant_id === null && r.template_key === key)
+    return mailTemplateRowUsable(tenantRow) || mailTemplateRowUsable(globalRow)
+  }
+
+  return {
+    maintenance_report: effective('maintenance_report'),
+    portal_report_notification: effective('portal_report_notification'),
+    maintenance_reminder_digest: effective('maintenance_reminder_digest'),
+  }
+}
+
+export const upsertTenantMailSecrets = async (opts: {
+  tenantId: string
+  setSmtpPassword: boolean
+  smtpPassword?: string | null
+  setResendApiKey: boolean
+  resendApiKey?: string | null
+}): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase.rpc('upsert_tenant_mail_secrets', {
+    p_tenant_id: opts.tenantId,
+    p_set_smtp_password: opts.setSmtpPassword,
+    p_smtp_password: opts.smtpPassword ?? null,
+    p_set_resend_api_key: opts.setResendApiKey,
+    p_resend_api_key: opts.resendApiKey ?? null,
+  })
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+export type AdminSendTestEmailOk = { success: true; provider: string; messageId?: string | null }
+
+export const invokeAdminSendTestEmail = async (body: {
+  tenantId: string
+  toEmail: string
+  templateKey?: string
+  locale?: string
+}): Promise<{ ok: true; data: AdminSendTestEmailOk } | { ok: false; error: string }> => {
+  const { data, error } = await supabase.functions.invoke<
+    AdminSendTestEmailOk | { success?: boolean; provider?: string; messageId?: string | null; error?: string }
+  >('admin-send-test-email', { body })
+  if (error) {
+    return { ok: false, error: error.message }
+  }
+  if (data && typeof data === 'object') {
+    if ('error' in data && typeof (data as { error?: unknown }).error === 'string') {
+      return { ok: false, error: (data as { error: string }).error }
+    }
+    if ('success' in data && (data as { success?: unknown }).success === true) {
+      return { ok: true, data: data as AdminSendTestEmailOk }
+    }
+  }
+  return { ok: false, error: 'Unerwartete Antwort der Testmail-Funktion.' }
+}
+
+export type AdminPreviewMailTemplateOk = {
+  success: true
+  subject: string
+  html: string
+  text: string
+  templateSource?: string
+}
+
+export const invokeAdminPreviewMailTemplate = async (body: {
+  tenantId?: string
+  globalOnly?: boolean
+  tenantDisplayName?: string
+  templateKey: string
+  locale?: string
+  draft?: { subject_template?: string; html_template?: string; text_template?: string }
+  context?: Record<string, unknown>
+}): Promise<{ ok: true; data: AdminPreviewMailTemplateOk } | { ok: false; error: string }> => {
+  const { data, error } = await supabase.functions.invoke<AdminPreviewMailTemplateOk | { error?: string }>(
+    'admin-preview-mail-template',
+    { body }
+  )
+  if (error) {
+    return { ok: false, error: error.message }
+  }
+  if (data && typeof data === 'object') {
+    if ('error' in data && typeof (data as { error?: unknown }).error === 'string') {
+      return { ok: false, error: (data as { error: string }).error }
+    }
+    if ('success' in data && (data as AdminPreviewMailTemplateOk).success === true) {
+      return { ok: true, data: data as AdminPreviewMailTemplateOk }
+    }
+  }
+  return { ok: false, error: 'Unerwartete Antwort der Vorlagen-Vorschau.' }
+}
+
+export const MAIL_TEMPLATE_KEYS = [
+  { key: 'maintenance_report', label: 'Wartungsprotokoll (PDF-Anhang)' },
+  { key: 'portal_report_notification', label: 'Hinweis: Neuer Bericht im Kundenportal' },
+  { key: 'maintenance_reminder_digest', label: 'Wartungs-Erinnerungen (Digest)' },
+  { key: 'generic', label: 'Allgemein / Test' },
+] as const
+
 export type License = {
   id: string
   tenant_id: string

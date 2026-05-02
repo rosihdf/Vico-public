@@ -1,4 +1,5 @@
 import type { LicenseModel } from '../../lib/licensePortalService'
+import { normalizeTenantMailProvider, tenantMailProviderLabelDe } from '../../lib/mailProviderUtils'
 
 /** Felder aus dem Mandanten-Formular, die nur für die Schritt-6-Zusammenfassung gelesen werden. */
 export type MandantFormWizardStep6Summary = {
@@ -9,7 +10,9 @@ export type MandantFormWizardStep6Summary = {
   arbeitszeitenportal_domain: string
   mail_provider: string
   mail_monthly_limit: string
+  mail_from_name: string
   mail_from_email: string
+  mail_reply_to: string
   supabase_url: string
   cf_preview_main_url: string
   cf_preview_portal_url: string
@@ -31,6 +34,17 @@ export function MandantFormWizardStep6Fertigstellen({
   wizardLicenseModelId,
   onWizardLicenseModelIdChange,
 }: MandantFormWizardStep6FertigstellenProps) {
+  const mailAbsenderLabel = (() => {
+    const name = summary.mail_from_name.trim()
+    const email = summary.mail_from_email.trim()
+    if (name && email) return `${name} (${email})`
+    if (email) return email
+    if (name) return name
+    return '–'
+  })()
+
+  const mailReplyLabel = summary.mail_reply_to.trim() || '–'
+
   return (
     <div className="rounded-xl border-2 border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
       <h3 className="text-sm font-semibold text-slate-800">Schritt 6: Fertigstellen</h3>
@@ -59,12 +73,22 @@ export function MandantFormWizardStep6Fertigstellen({
             </dd>
           </div>
           <div className="flex flex-wrap gap-x-2">
-            <dt className="text-slate-500 shrink-0">Mail</dt>
-            <dd className="break-words">
-              {summary.mail_provider} · Limit{' '}
-              {Math.max(1, parseInt(summary.mail_monthly_limit, 10) || 0)}
-              {summary.mail_from_email.trim() ? ` · Absender ${summary.mail_from_email.trim()}` : ''}
+            <dt className="text-slate-500 shrink-0">Mail · Provider</dt>
+            <dd className="font-medium break-words">
+              {tenantMailProviderLabelDe(normalizeTenantMailProvider(summary.mail_provider))}
             </dd>
+          </div>
+          <div className="flex flex-wrap gap-x-2">
+            <dt className="text-slate-500 shrink-0">Mail · Absender</dt>
+            <dd className="break-words">{mailAbsenderLabel}</dd>
+          </div>
+          <div className="flex flex-wrap gap-x-2">
+            <dt className="text-slate-500 shrink-0">Mail · Reply-To</dt>
+            <dd className="break-words">{mailReplyLabel}</dd>
+          </div>
+          <div className="flex flex-wrap gap-x-2">
+            <dt className="text-slate-500 shrink-0">Mail · Monatslimit</dt>
+            <dd className="font-medium">{Math.max(1, parseInt(summary.mail_monthly_limit, 10) || 0)}</dd>
           </div>
           <div className="flex flex-wrap gap-x-2">
             <dt className="text-slate-500 shrink-0">Supabase</dt>

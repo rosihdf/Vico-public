@@ -98,7 +98,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
       return { success: true }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Anmeldung fehlgeschlagen.'
+      const msg = getSupabaseErrorMessage(err)
       setLoginError(msg)
       return { success: false, message: msg }
     }

@@ -92,6 +92,8 @@ export type AltberichtImportEmbeddedImageRow = {
   import_defect_photo_id?: string | null
   target_object_id?: string | null
   c2_finding_key?: string | null
+  /** Migration Paket G: Logo-Heuristik, Maße, Fingerprint */
+  scan_meta_json?: unknown | null
   created_at: string
   updated_at: string
 }

@@ -127,7 +127,7 @@ const Startseite = () => {
   const welcomeAppName =
     (design?.tenant_name ?? '').trim() ||
     (design?.app_name ?? '').trim() ||
-    'AMRtech Türen & Tore'
+    'ArioVan'
   const { isEnabled } = useComponentSettings()
   const { showError, showToast } = useToast()
   const [profile, setProfile] = useState<Profile | null>(null)

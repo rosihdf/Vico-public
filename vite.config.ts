@@ -40,8 +40,8 @@ export default defineConfig(() => ({
           injectionPoint: undefined, // Kein Precache – stattdessen Runtime-Caching (NetworkFirst) + Prefetch
         },
         manifest: {
-          name: 'AMRtech Türen & Tore',
-          short_name: 'AMRtech',
+          name: 'ArioVan',
+          short_name: 'ArioVan',
           description: 'Wartungs- und Mängeldokumentation für Türen und Tore',
           theme_color: '#5b7895',
           background_color: '#5b7895',

@@ -6,6 +6,7 @@ const LAZY_IMPORTS = [
   () => import('../Startseite'),
   () => import('../Kunden'),
   () => import('../pages/Wartungsstatistik'),
+  () => import('../pages/WartungsprotokolleUebersicht'),
   () => import('../BVRedirect'),
   () => import('../ObjectRedirect'),
   () => import('../Wartungsprotokolle'),

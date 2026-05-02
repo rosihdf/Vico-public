@@ -60,7 +60,7 @@ import {
 } from './offlineStorage'
 import { fetchLicenseStatus } from './licenseService'
 import { doorChecklistFromReportPayload, upsertChecklistProtocolReplace } from './checklistProtocolService'
-import { uploadMaintenancePdf, sendMaintenanceReportEmail } from './dataService'
+import { uploadMaintenancePdf, sendMaintenanceReportEmail, updateMaintenanceReportPdfPath } from './dataService'
 import { compressImageBase64 } from './imageCompression'
 
 const OBJECT_PHOTOS_BUCKET = 'object-photos'
@@ -503,6 +503,8 @@ const processEmailOutbox = async (): Promise<SyncResult> => {
       const blob = new Blob([binary], { type: 'application/pdf' })
       const { path, error: uploadError } = await uploadMaintenancePdf(item.reportId, blob)
       if (uploadError || !path) throw new Error(uploadError?.message ?? 'PDF-Upload fehlgeschlagen')
+      const { error: pdfPathErr } = await updateMaintenanceReportPdfPath(item.reportId, path)
+      if (pdfPathErr) throw new Error(pdfPathErr.message)
       const { error: sendError } = await sendMaintenanceReportEmail(path, item.toEmail, item.subject, item.filename)
       if (sendError) throw new Error(sendError.message)
       removeEmailOutboxItem(item.id)

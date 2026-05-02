@@ -44,6 +44,7 @@ const Profil = lazy(() => import('./Profil'))
 const Arbeitszeit = lazy(() => import('./Arbeitszeit'))
 const Import = lazy(() => import('./Import'))
 const Wartungsstatistik = lazy(() => import('./pages/Wartungsstatistik'))
+const WartungsprotokolleUebersicht = lazy(() => import('./pages/WartungsprotokolleUebersicht'))
 const BuchhaltungExport = lazy(() => import('./pages/BuchhaltungExport'))
 const AktivierungsScreen = lazy(() => import('./pages/AktivierungsScreen'))
 const Impressum = lazy(() => import('./pages/Impressum'))
@@ -100,6 +101,20 @@ const App = () => {
                         <ComponentGuard componentKey="kunden">
                           <ProtectedRoute>
                             <Wartungsstatistik />
+                          </ProtectedRoute>
+                        </ComponentGuard>
+                      </LicenseFeatureGuard>
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="wartungsprotokolle"
+                  element={
+                    <Suspense fallback={<PageFallback />}>
+                      <LicenseFeatureGuard feature="wartungsprotokolle">
+                        <ComponentGuard componentKey="wartungsprotokolle">
+                          <ProtectedRoute>
+                            <WartungsprotokolleUebersicht />
                           </ProtectedRoute>
                         </ComponentGuard>
                       </LicenseFeatureGuard>

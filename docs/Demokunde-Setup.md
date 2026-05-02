@@ -2,15 +2,15 @@
 
 ## Übersicht
 
-Der Demokunde ist ein echter Mandant im Lizenzportal mit eigener Supabase + Netlify-Site (z.B. `demo.amrtech.de`).
+Der Demokunde ist ein echter Mandant im Lizenzportal mit eigener Supabase + Hosting-Site (z.B. `demo.app.example.de`).
 
 ## Schritte
 
 ### 1. Mandant im Lizenzportal anlegen
 
-1. Lizenzportal öffnen (http://localhost:5175 oder https://lizenz.amrtech.de)
-2. **Neuer Mandant** → Name z.B. „Demo“ oder „AMRtech Demo“
-3. Stammdaten: App-Domain `demo.amrtech.de`, Portal-Domain `portal.demo.amrtech.de` (oder ähnlich)
+1. Lizenzportal öffnen (http://localhost:5175 oder https://portal.example.de)
+2. **Neuer Mandant** → Name z.B. „Demo“ oder „Demo Mandant“
+3. Stammdaten: App-Domain `demo.app.example.de`, Portal-Domain `portal.demo.app.example.de` (oder ähnlich)
 4. Corporate Design: Logo, Farben nach Wunsch
 
 ### 2. Lizenz anlegen
@@ -26,14 +26,14 @@ Der Demokunde ist ein echter Mandant im Lizenzportal mit eigener Supabase + Netl
 
 1. Neues Supabase-Projekt anlegen (oder bestehendes Demo-Projekt nutzen)
 2. `supabase-complete.sql` ausführen (ohne Lizenz-Tabelle bei API-Modus)
-3. Auth: Site URL = `https://demo.amrtech.de`, Redirect URLs hinzufügen
+3. Auth: Site URL = `https://demo.app.example.de`, Redirect URLs hinzufügen
 
 ### 4. Netlify-Site
 
 1. Neue Netlify-Site aus Haupt-App-Build
 2. Env: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (Demo-Supabase)
-3. Env: `VITE_LICENSE_API_URL` = `https://ojryoosqwfbzlmdeywzs.supabase.co/functions/v1`
-4. Custom Domain: `demo.amrtech.de`
+3. Env: `VITE_LICENSE_API_URL` = `https://<lizenzportal-ref>.supabase.co/functions/v1`
+4. Custom Domain: `demo.app.example.de`
 
 ### 5. Demo-Benutzer
 

@@ -11,7 +11,8 @@
 -- Drift-Matrix (Kurz)
 --   • Lizenzportal-DB (`supabase-license-portal.sql`):
 --       tenants, licenses, license_models, platform_config, app_releases,
---       release_incoming_tenants, tenant_release_assignments, beta_feedback, roadmap_items
+--       release_incoming_tenants, tenant_release_assignments, beta_feedback, roadmap_items,
+--       mandanten_db_rollout_runs, mandanten_db_rollout_targets (DB-Rollout-Historie)
 --   • Haupt-App-DB (`supabase-complete.sql`):
 --       customers, bvs, objects, orders, maintenance_reports, customer_portal_users,
 --       admin_config, location_requests, push_subscriptions, app_maintenance_mode, monteur_report_settings
@@ -1001,7 +1002,284 @@ begin
   if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='mail_monthly_limit') then
     alter table public.tenants add column mail_monthly_limit integer not null default 3000;
   end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='smtp_host') then
+    alter table public.tenants add column smtp_host text;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='smtp_port') then
+    alter table public.tenants add column smtp_port integer not null default 587;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='smtp_implicit_tls') then
+    alter table public.tenants add column smtp_implicit_tls boolean not null default false;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='tenants' and column_name='smtp_username') then
+    alter table public.tenants add column smtp_username text;
+  end if;
 end $$;
+
+update public.tenants set mail_provider = 'smtp' where mail_provider = 'custom';
+
+create table if not exists public.tenant_mail_secrets (
+  tenant_id uuid primary key references public.tenants(id) on delete cascade,
+  smtp_password text,
+  resend_api_key text,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.tenant_mail_secrets enable row level security;
+
+do $$
+declare r record;
+begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'tenant_mail_secrets' loop
+    execute format('drop policy if exists %I on public.tenant_mail_secrets', r.policyname);
+  end loop;
+end $$;
+
+create policy "No direct access tenant_mail_secrets"
+  on public.tenant_mail_secrets
+  for all
+  using (false);
+
+create table if not exists public.tenant_mail_delivery_log (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  channel text not null default 'admin_test',
+  provider text not null,
+  status text not null check (status in ('ok', 'failed')),
+  recipient_email text,
+  error_text text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.tenant_mail_delivery_log enable row level security;
+
+do $$
+declare r record;
+begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'tenant_mail_delivery_log' loop
+    execute format('drop policy if exists %I on public.tenant_mail_delivery_log', r.policyname);
+  end loop;
+end $$;
+
+create policy "Admins read tenant_mail_delivery_log"
+  on public.tenant_mail_delivery_log
+  for select
+  using (public.is_admin());
+
+create index if not exists idx_tenant_mail_delivery_log_tenant_created
+  on public.tenant_mail_delivery_log(tenant_id, created_at desc);
+
+drop function if exists public.get_tenant_mail_secret_flags(uuid);
+create or replace function public.get_tenant_mail_secret_flags(p_tenant_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  smtp_len integer := 0;
+  resend_len integer := 0;
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  select
+    coalesce(length(trim(coalesce(s.smtp_password, ''))), 0),
+    coalesce(length(trim(coalesce(s.resend_api_key, ''))), 0)
+  into smtp_len, resend_len
+  from public.tenant_mail_secrets s
+  where s.tenant_id = p_tenant_id;
+  if not found then
+    smtp_len := 0;
+    resend_len := 0;
+  end if;
+  return jsonb_build_object(
+    'smtp_password_set', smtp_len > 0,
+    'resend_api_key_set', resend_len > 0
+  );
+end;
+$$;
+
+grant execute on function public.get_tenant_mail_secret_flags(uuid) to authenticated;
+
+drop function if exists public.upsert_tenant_mail_secrets(uuid, boolean, text, boolean, text);
+create or replace function public.upsert_tenant_mail_secrets(
+  p_tenant_id uuid,
+  p_set_smtp_password boolean default false,
+  p_smtp_password text default null,
+  p_set_resend_api_key boolean default false,
+  p_resend_api_key text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+
+  insert into public.tenant_mail_secrets (tenant_id, smtp_password, resend_api_key, updated_at)
+  values (
+    p_tenant_id,
+    case
+      when p_set_smtp_password then nullif(trim(coalesce(p_smtp_password, '')), '')
+      else null
+    end,
+    case
+      when p_set_resend_api_key then nullif(trim(coalesce(p_resend_api_key, '')), '')
+      else null
+    end,
+    now()
+  )
+  on conflict (tenant_id) do update set
+    smtp_password = case
+      when p_set_smtp_password then nullif(trim(coalesce(p_smtp_password, '')), '')
+      else tenant_mail_secrets.smtp_password
+    end,
+    resend_api_key = case
+      when p_set_resend_api_key then nullif(trim(coalesce(p_resend_api_key, '')), '')
+      else tenant_mail_secrets.resend_api_key
+    end,
+    updated_at = now();
+end;
+$$;
+
+grant execute on function public.upsert_tenant_mail_secrets(uuid, boolean, text, boolean, text) to authenticated;
+
+drop function if exists public.log_tenant_mail_delivery(uuid, text, text, text, text, text);
+create or replace function public.log_tenant_mail_delivery(
+  p_tenant_id uuid,
+  p_channel text,
+  p_provider text,
+  p_status text,
+  p_recipient_email text,
+  p_error_text text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.role() is distinct from 'service_role' then
+    raise exception 'forbidden';
+  end if;
+  insert into public.tenant_mail_delivery_log (
+    tenant_id, channel, provider, status, recipient_email, error_text
+  )
+  values (
+    p_tenant_id,
+    coalesce(nullif(trim(p_channel), ''), 'unknown'),
+    coalesce(nullif(trim(p_provider), ''), 'unknown'),
+    case when lower(coalesce(p_status, '')) = 'ok' then 'ok' else 'failed' end,
+    nullif(trim(p_recipient_email), ''),
+    nullif(trim(coalesce(p_error_text, '')), '')
+  );
+end;
+$$;
+
+grant execute on function public.log_tenant_mail_delivery(uuid, text, text, text, text, text) to service_role;
+
+-- -----------------------------------------------------------------------------
+-- Mailvorlagen (global + mandantenspezifisch), Pflege nur Lizenzportal-Admins
+-- -----------------------------------------------------------------------------
+create table if not exists public.tenant_mail_templates (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references public.tenants(id) on delete cascade,
+  template_key text not null,
+  name text not null default '',
+  subject_template text not null default '',
+  html_template text not null default '',
+  text_template text not null default '',
+  enabled boolean not null default true,
+  locale text not null default 'de',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint tenant_mail_templates_locale_trim check (length(trim(locale)) > 0),
+  constraint tenant_mail_templates_key_trim check (length(trim(template_key)) > 0)
+);
+
+create unique index if not exists ux_tenant_mail_templates_global_key_locale
+  on public.tenant_mail_templates (template_key, locale)
+  where tenant_id is null;
+
+create unique index if not exists ux_tenant_mail_templates_tenant_key_locale
+  on public.tenant_mail_templates (tenant_id, template_key, locale)
+  where tenant_id is not null;
+
+create index if not exists idx_tenant_mail_templates_tenant_locale
+  on public.tenant_mail_templates (tenant_id, locale);
+
+alter table public.tenant_mail_templates enable row level security;
+
+do $$
+declare r record;
+begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'tenant_mail_templates' loop
+    execute format('drop policy if exists %I on public.tenant_mail_templates', r.policyname);
+  end loop;
+end $$;
+
+create policy "Admins manage tenant_mail_templates"
+  on public.tenant_mail_templates
+  for all
+  using (public.is_admin())
+  with check (public.is_admin());
+
+-- Globale Standardvorlagen (de): nur anlegen, wenn noch keine Zeile existiert
+insert into public.tenant_mail_templates (
+  tenant_id, template_key, name, subject_template, html_template, text_template, enabled, locale
+)
+select null, 'maintenance_report', 'Standard Wartungsprotokoll (PDF)',
+  'Wartungsprotokoll {{bericht.datum}} – {{bauvorhaben.name}}',
+  '<p>Guten Tag,</p><p>anbei erhalten Sie das Wartungsprotokoll für <strong>{{bauvorhaben.name}}</strong> vom <strong>{{bericht.datum}}</strong>.</p><p>Mit freundlichen Grüßen<br>{{app.name}}</p>',
+  '',
+  true, 'de'
+where not exists (
+  select 1 from public.tenant_mail_templates g
+  where g.tenant_id is null and g.template_key = 'maintenance_report' and g.locale = 'de'
+);
+
+insert into public.tenant_mail_templates (
+  tenant_id, template_key, name, subject_template, html_template, text_template, enabled, locale
+)
+select null, 'portal_report_notification', 'Hinweis: Neuer Bericht im Kundenportal',
+  'Neuer Wartungsbericht: {{objekt.name}} – {{bericht.datum}}',
+  '<p>Guten Tag,</p><p>es liegt ein neuer Wartungsbericht vor.</p><ul><li><strong>Objekt:</strong> {{objekt.name}}</li><li><strong>BV:</strong> {{bauvorhaben.name}}</li><li><strong>Datum:</strong> {{bericht.datum}}</li></ul><p><a href="{{portal.link}}">Zum Kundenportal</a></p><p>{{app.name}}</p>',
+  '',
+  true, 'de'
+where not exists (
+  select 1 from public.tenant_mail_templates g
+  where g.tenant_id is null and g.template_key = 'portal_report_notification' and g.locale = 'de'
+);
+
+insert into public.tenant_mail_templates (
+  tenant_id, template_key, name, subject_template, html_template, text_template, enabled, locale
+)
+select null, 'maintenance_reminder_digest', 'Wartungs-Erinnerungen',
+  'Wartungserinnerung: {{digest.anzahl}} Objekt(e) — {{datum}} ({{mandant.name}})',
+  '<p>Guten Tag,</p><p>folgende Wartungen sind <strong>überfällig</strong> oder stehen in den <strong>nächsten 30 Tagen</strong> an ({{datum}}, {{app.name}}):</p>{{digest.tabellen_html}}<p><a href="{{portal.link}}">Zur App</a></p><p style="color:#64748b;font-size:12px;">Sie erhalten diese Nachricht, weil Sie E-Mail-Erinnerungen zur Wartungsplanung aktiviert haben.</p>',
+  '',
+  true, 'de'
+where not exists (
+  select 1 from public.tenant_mail_templates g
+  where g.tenant_id is null and g.template_key = 'maintenance_reminder_digest' and g.locale = 'de'
+);
+
+insert into public.tenant_mail_templates (
+  tenant_id, template_key, name, subject_template, html_template, text_template, enabled, locale
+)
+select null, 'generic', 'Allgemein / Testmail',
+  'Nachricht von {{mandant.name}}',
+  '<p>Guten Tag,</p><p>{{bericht.link}}</p><p>{{app.name}}</p>',
+  '',
+  true, 'de'
+where not exists (
+  select 1 from public.tenant_mail_templates g
+  where g.tenant_id is null and g.template_key = 'generic' and g.locale = 'de'
+);
 
 create table if not exists public.tenant_email_monthly_usage (
   tenant_id uuid not null references public.tenants(id) on delete cascade,
@@ -1061,6 +1339,140 @@ begin
     updated_at = now();
 end;
 $$;
+
+-- -----------------------------------------------------------------------------
+-- 10b. MANDANTEN-DB-ROLLOUT-HISTORIE (Runs + Targets, Phase 3)
+-- -----------------------------------------------------------------------------
+-- Runs: Edge trigger legt queued an; GitHub/Apply-Script meldet running → partial/success/error.
+-- Targets: je URL aus der Secret-Liste (maskiert, kein Passwort in Klartext).
+
+create table if not exists public.mandanten_db_rollout_runs (
+  id uuid primary key default gen_random_uuid(),
+  started_by text,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  product_key text,
+  module_key text,
+  package_id text,
+  sql_file text not null,
+  target text not null,
+  mode text not null,
+  status text not null,
+  github_run_url text,
+  summary_json jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Migration aus Phase 2 (triggered_by / tenant_id / response_message)
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'mandanten_db_rollout_runs' and column_name = 'triggered_by'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'mandanten_db_rollout_runs' and column_name = 'started_by'
+  ) then
+    alter table public.mandanten_db_rollout_runs rename column triggered_by to started_by;
+  end if;
+end $$;
+
+alter table public.mandanten_db_rollout_runs add column if not exists finished_at timestamptz;
+alter table public.mandanten_db_rollout_runs add column if not exists package_id text;
+alter table public.mandanten_db_rollout_runs add column if not exists summary_json jsonb;
+alter table public.mandanten_db_rollout_runs add column if not exists created_at timestamptz default now();
+alter table public.mandanten_db_rollout_runs add column if not exists updated_at timestamptz default now();
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'mandanten_db_rollout_runs' and column_name = 'response_message'
+  ) then
+    update public.mandanten_db_rollout_runs
+    set summary_json = coalesce(summary_json, '{}'::jsonb) || jsonb_build_object(
+      'legacy_response_message',
+      response_message
+    )
+    where response_message is not null and trim(response_message) <> '';
+    alter table public.mandanten_db_rollout_runs drop column response_message;
+  end if;
+end $$;
+
+alter table public.mandanten_db_rollout_runs drop column if exists tenant_id;
+
+update public.mandanten_db_rollout_runs set status = 'queued' where status = 'started';
+
+alter table public.mandanten_db_rollout_runs alter column created_at set default now();
+alter table public.mandanten_db_rollout_runs alter column updated_at set default now();
+
+create table if not exists public.mandanten_db_rollout_targets (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null references public.mandanten_db_rollout_runs(id) on delete cascade,
+  target_index int not null,
+  tenant_id uuid,
+  project_ref text,
+  db_host_masked text not null,
+  status text not null,
+  started_at timestamptz,
+  finished_at timestamptz,
+  psql_exit_code int,
+  error_excerpt text,
+  stdout_excerpt text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (run_id, target_index)
+);
+
+create index if not exists mandanten_db_rollout_targets_run_idx
+  on public.mandanten_db_rollout_targets (run_id);
+
+create index if not exists mandanten_db_rollout_runs_started_at_idx
+  on public.mandanten_db_rollout_runs (started_at desc);
+
+alter table public.mandanten_db_rollout_runs enable row level security;
+alter table public.mandanten_db_rollout_targets enable row level security;
+
+do $$
+declare r record;
+begin
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'mandanten_db_rollout_runs' loop
+    execute format('drop policy if exists %I on public.mandanten_db_rollout_runs', r.policyname);
+  end loop;
+  for r in select policyname from pg_policies where schemaname = 'public' and tablename = 'mandanten_db_rollout_targets' loop
+    execute format('drop policy if exists %I on public.mandanten_db_rollout_targets', r.policyname);
+  end loop;
+end $$;
+
+create policy "Admins read mandanten_db_rollout_runs"
+  on public.mandanten_db_rollout_runs
+  for select
+  using (public.is_admin());
+
+create policy "Admins read mandanten_db_rollout_targets"
+  on public.mandanten_db_rollout_targets
+  for select
+  using (public.is_admin());
+
+-- SERVICE_ROLE / Edge: keine JWT-Policies nötig.
+
+create or replace function public.enrich_mandanten_db_rollout_targets(p_run_id uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.mandanten_db_rollout_targets t
+  set tenant_id = tn.id
+  from public.tenants tn
+  where t.run_id = p_run_id
+    and tn.supabase_project_ref is not null
+    and tn.supabase_project_ref <> ''
+    and tn.supabase_project_ref = t.project_ref;
+$$;
+
+grant execute on function public.enrich_mandanten_db_rollout_targets(uuid) to service_role;
 
 -- -----------------------------------------------------------------------------
 -- 11. DEPLOYMENT: OPTIONALE CF-PREVIEW-URLS (Assistent / Dokumentation)

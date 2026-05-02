@@ -39,7 +39,10 @@ export const getCachedLicenseWithMeta = (
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw) as CachedLicense
-    if (!parsed?.data?.license || parsed.licenseNumber !== licenseNumber) return null
+    if (!parsed?.data?.license) return null
+    const want = normalizeLicenseNumber(licenseNumber)
+    const cachedLn = normalizeLicenseNumber(parsed.licenseNumber ?? '')
+    if (!want || cachedLn !== want) return null
     return { data: parsed.data, ts: parsed.ts ?? 0 }
   } catch {
     return null
@@ -53,8 +56,21 @@ export const setCachedLicenseResponse = (
   if (typeof window !== 'undefined') {
     localStorage.setItem(
       STORAGE_CACHE,
-      JSON.stringify({ data, ts: Date.now(), licenseNumber })
+      JSON.stringify({
+        data,
+        ts: Date.now(),
+        licenseNumber: normalizeLicenseNumber(licenseNumber),
+      })
     )
+    const tid = data?.tenant_id
+    const hasTenantId = typeof tid === 'string' && tid.trim().length > 0
+    if (!hasTenantId) {
+      const tail = licenseNumber.replace(/\s/g, '').replace(/-/g, '').slice(-4).toUpperCase()
+      const lnHint = tail.length >= 2 ? `Endung …${tail}` : 'Lizenznummer'
+      console.warn(
+        `[Lizenz-Cache] tenant_id fehlt (${lnHint}). PDF-Mail nutzt bis zur Korrektur den Fallback send-maintenance-report. Portal: licenses.tenant_id setzen; App neu laden oder Lizenz aktualisieren.`
+      )
+    }
   }
 }
 
@@ -95,6 +111,15 @@ export const getStoredLicenseNumber = (): string | null => {
   return localStorage.getItem(STORAGE_KEY)
 }
 
+/** Mandanten-UUID aus zwischengespeicherter Lizenz-API-Antwort **für die aktuell gespeicherte Lizenznummer** (nach erneutem Lizenzabruf mit aktuellem Portal). */
+export const getCachedLicenseTenantId = (): string | null => {
+  const ln = getStoredLicenseNumber()?.trim()
+  if (!ln) return null
+  const cached = getCachedLicenseResponse(ln)
+  const tid = cached?.tenant_id
+  return typeof tid === 'string' && tid.trim() ? tid.trim() : null
+}
+
 /** Formatiert Lizenznummer-Eingabe mit automatischen Trennern (VIC-XXXX-XXXX). */
 export const formatLicenseNumberInput = (raw: string): string => {
   const cleaned = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 11)
@@ -128,6 +153,8 @@ export const clearStoredLicenseNumber = (): void => {
 }
 
 export type LicenseApiResponse = {
+  /** Lizenzportal-Mandanten-UUID (z. B. für `send-tenant-email`). */
+  tenant_id?: string
   /** Aus Lizenz-API (Host-Lookup); zum Speichern wenn Mandanten-DB noch keine Nummer hat */
   license_number?: string
   license: {
@@ -190,7 +217,7 @@ export type LicenseApiResponse = {
 }
 
 const DEFAULT_DESIGN: LicenseApiResponse['design'] = {
-  app_name: 'AMRtech',
+  app_name: 'ArioVan',
   logo_url: null,
   kundenportal_url: null,
   primary_color: '#5b7895',
@@ -208,12 +235,16 @@ const parseLicenseApiPayload = (
   const licNumRaw = data.license_number
   const licNum =
     typeof licNumRaw === 'string' && licNumRaw.trim() ? licNumRaw.trim() : undefined
+  const tidRaw = (data as { tenant_id?: unknown }).tenant_id
+  const tenant_id =
+    typeof tidRaw === 'string' && tidRaw.trim() ? tidRaw.trim() : undefined
   const rawMr = (data as { mandantenReleases?: unknown }).mandantenReleases
   const mandantenReleases =
     rawMr !== undefined ? parseMandantenReleasesPayload(rawMr) : undefined
   return {
     ...data,
     ...(licNum ? { license_number: licNum } : {}),
+    ...(tenant_id ? { tenant_id } : {}),
     license: { ...data.license, client_config_version: ccv },
     design: { ...DEFAULT_DESIGN, ...data.design },
     ...(appVersions ? { appVersions } : {}),
@@ -382,6 +413,74 @@ export const updateImpressum = async (
       return { ok: false, error: err.error ?? `Fehler ${res.status}` }
     }
     return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Netzwerkfehler' }
+  }
+}
+
+export type SendTenantEmailPayload = {
+  tenantId: string
+  to: string
+  /** Ohne templateKey erforderlich (Fallback nach Template-Resolve). */
+  subject?: string
+  html?: string
+  text?: string
+  type?: 'maintenance_report' | 'reminder' | 'generic' | 'portal_report_notification'
+  templateKey?: string
+  context?: Record<string, unknown>
+  locale?: string
+  attachments?: Array<{ filename: string; contentBase64: string }>
+}
+
+/**
+ * Zentraler Mailversand über Lizenzportal (`send-tenant-email`).
+ * Erfordert gültige Mandanten-Session und `tenant_id` aus der Lizenz-API (Cache).
+ */
+export const sendTenantEmailViaLicensePortal = async (
+  payload: SendTenantEmailPayload
+): Promise<{ ok: boolean; error?: string; messageId?: string | null }> => {
+  const apiUrl = (import.meta.env.VITE_LICENSE_API_URL ?? '').trim()
+  if (!apiUrl) return { ok: false, error: 'Lizenz-API nicht konfiguriert' }
+
+  const base = apiUrl.replace(/\/$/, '')
+  const url = `${base}/send-tenant-email`
+
+  const apiKey = (import.meta.env.VITE_LICENSE_API_KEY ?? '').trim()
+  const mandantAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? '').trim()
+  if (!mandantAnon) return { ok: false, error: 'Mandanten-Anon-Key nicht konfiguriert.' }
+
+  const { supabase } = await import('../supabase')
+  const { data: sessionData } = await supabase.auth.getSession()
+  const accessToken = sessionData.session?.access_token?.trim()
+  if (!accessToken) return { ok: false, error: 'Nicht angemeldet.' }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    Authorization: `Bearer ${accessToken}`,
+    'x-mandant-anon-key': mandantAnon,
+  }
+  if (apiKey) headers.apikey = apiKey
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    })
+    const bodyJson = (await res.json().catch(() => ({}))) as Record<string, unknown>
+    if (!res.ok) {
+      const err =
+        typeof bodyJson.error === 'string' && bodyJson.error.trim()
+          ? bodyJson.error.trim()
+          : `Fehler ${res.status}`
+      return { ok: false, error: err }
+    }
+    const mid = bodyJson.messageId
+    return {
+      ok: true,
+      messageId: mid === null || typeof mid === 'string' ? (mid as string | null) : null,
+    }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Netzwerkfehler' }
   }

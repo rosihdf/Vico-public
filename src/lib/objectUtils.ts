@@ -1,11 +1,18 @@
 import type { Object as Obj } from '../types'
 
+let objectInternalIdCounter = 0
+
 /**
  * Sichtbare/fachliche Objekt-ID für neu angelegte Türen/Tore (nicht die UUID-Primärschlüssel).
- * Gleiche Logik wie in der manuellen Objektanlage (Formular-Vorbelegung).
+ * Millisekunden allein reichen bei Bulk-Importen nicht, weil mehrere Staging-Zeilen im selben Tick
+ * entstehen können.
  */
-export const generateNewObjectInternalId = (): string =>
-  `OBJ-${Date.now().toString(36).toUpperCase()}`
+export const generateNewObjectInternalId = (): string => {
+  objectInternalIdCounter = (objectInternalIdCounter + 1) % 1296
+  const timePart = Date.now().toString(36).toUpperCase()
+  const counterPart = objectInternalIdCounter.toString(36).toUpperCase().padStart(2, '0')
+  return `OBJ-${timePart}${counterPart}`
+}
 
 type ObjectDisplayInput = {
   name?: string | null

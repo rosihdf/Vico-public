@@ -2,7 +2,7 @@
 /**
  * Generiert Komponenten-und-Funktionen-Dokument als PDF.
  * Quelle: docs/Komponenten-und-Funktionen.md
- * Ausgabe: public/Vico-Komponenten-Funktionen.pdf
+ * Ausgabe: public/ArioVan-Komponenten-Funktionen.pdf
  *
  * Wird beim Admin-Build ausgeführt. Bei neuen Features docs/Komponenten-und-Funktionen.md ergänzen.
  */
@@ -15,7 +15,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
 const mdPath = join(root, 'docs', 'Komponenten-und-Funktionen.md')
 const outDir = join(root, 'public')
-const outPath = join(outDir, 'Vico-Komponenten-Funktionen.pdf')
+const outPath = join(outDir, 'ArioVan-Komponenten-Funktionen.pdf')
 
 if (!existsSync(mdPath)) {
   console.warn(`Hinweis: ${mdPath} nicht gefunden – PDF wird nicht erstellt`)

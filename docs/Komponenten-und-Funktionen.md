@@ -1,11 +1,11 @@
-# Vico – Komponenten und Funktionen
+# ArioVan – Komponenten und Funktionen
 
 **Stand:** Wird bei jedem Admin-Build als PDF neu generiert.  
 **Hinweis:** Bei neuen Features diese Liste in `docs/Komponenten-und-Funktionen.md` ergänzen – das PDF aktualisiert sich beim nächsten Build automatisch.
 
 ---
 
-## 1. Haupt-App (Vico Web-App)
+## 1. Haupt-App (ArioVan Web-App)
 
 ### 1.1 Startseite (Dashboard)
 - **Route:** `/`
@@ -89,7 +89,7 @@
 
 ### 2.4 Einstellungen
 - **Route:** `/einstellungen`
-- **Funktionen:** Benutzeranleitung öffnen, Vico-Dokumentation (PDF), Web-App-Test-Checkliste, **Komponenten & Funktionen (PDF)**
+- **Funktionen:** Benutzeranleitung öffnen, ArioVan-Dokumentation (PDF), Web-App-Test-Checkliste, **Komponenten & Funktionen (PDF)**
 
 ---
 

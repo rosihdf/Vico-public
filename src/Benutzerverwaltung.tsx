@@ -653,7 +653,7 @@ const Benutzerverwaltung = () => {
                     App-Benutzer ({appProfiles.length})
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    Zugriff auf die AMRtech Web-App (Admin, Mitarbeiter, Operator, Leser, Demo).
+                    Zugriff auf die ArioVan Web-App (Admin, Mitarbeiter, Operator, Leser, Demo).
                     {teamFeatureEnabled ? ' Team-Zuordnung für Teamleiter und Mitarbeiter.' : ''}
                   </p>
                   {renderUserList(appProfiles, APP_ROLES, true)}

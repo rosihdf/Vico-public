@@ -1,4 +1,4 @@
-/** Gemeinsame EmptyState-Komponente für alle Vico-Apps */
+/** Gemeinsame EmptyState-Komponente für Mandanten-Apps */
 
 import type { ReactNode } from 'react'
 

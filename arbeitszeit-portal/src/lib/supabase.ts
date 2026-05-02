@@ -10,7 +10,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const warmUpConnection = (): void => doWarmUp(supabaseUrl, supabaseAnonKey)
 
-/** Gleiches Supabase-Projekt wie die Vico-Haupt-App (Zeiterfassungs-Daten). */
+/** Gleiches Supabase-Projekt wie die ArioVan-Haupt-App (Zeiterfassungs-Daten). */
 export const supabase = createSupabaseClient({
   url: supabaseUrl,
   anonKey: supabaseAnonKey,

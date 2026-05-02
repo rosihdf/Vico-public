@@ -4,7 +4,7 @@ import type { ZebraPrintPayloadV1 } from './types'
 
 const samplePayload = (): ZebraPrintPayloadV1 => ({
   qrContent: 'https://example.com/obj/1',
-  titleLine: 'AMRtech Türen & Tore',
+  titleLine: 'ArioVan',
   objectLabel: 'Haupteingang',
   customerName: 'Muster GmbH',
   siteName: 'BV Nord',

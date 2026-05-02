@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate, useParams, useMatch, useLocation } from 'react-router-dom'
+import { useNavigate, useParams, useMatch, useLocation, useSearchParams } from 'react-router-dom'
 import { fetchTenant, createTenant, updateTenant } from '../lib/tenantService'
 import {
   fetchLicensesByTenant,
@@ -11,13 +11,19 @@ import {
   fetchLicenseModels,
   fetchStorageSummary,
   fetchTenantEmailMonthlyUsage,
+  fetchTenantMailSecretFlags,
+  fetchTenantMailTemplateKeyPresence,
   invokeInfrastructurePing,
+  invokeAdminSendTestEmail,
+  upsertTenantMailSecrets,
   type InfrastructurePingResponse,
   type License,
   type LicenseUpdate,
   type LicenseModel,
   type LicenseWithModel,
   type TenantEmailMonthlyUsage,
+  type TenantMailSecretFlags,
+  type TenantMailTemplateKeyPresence,
 } from '../lib/licensePortalService'
 import {
   LICENSE_FEATURE_KEYS,
@@ -40,6 +46,8 @@ import { MandantFormWizardStep5Hosting } from '../components/mandanten/MandantFo
 import { MandantFormWizardStep6Fertigstellen } from '../components/mandanten/MandantFormWizardStep6Fertigstellen'
 import { MandantFormEditHostingSection } from '../components/mandanten/MandantFormEditHostingSection'
 import { MandantFormEditMailSection } from '../components/mandanten/MandantFormEditMailSection'
+import { MandantMailTemplatesSection } from '../components/mandanten/MandantMailTemplatesSection'
+import { MandantEditSectionNavBar } from '../components/mandanten/MandantEditSectionNavBar'
 import { MandantFormEditBrandingBasicsSection } from '../components/mandanten/MandantFormEditBrandingBasicsSection'
 import { MandantFormEditLegalSection } from '../components/mandanten/MandantFormEditLegalSection'
 import {
@@ -66,6 +74,7 @@ import {
   validateWizardStep,
   type WizardFormSlice,
 } from '../lib/mandantFormPure'
+import { normalizeTenantMailProvider } from '../lib/mailProviderUtils'
 
 type LocationState = { editLicenseId?: string; openCreateLicense?: boolean } | null
 
@@ -73,6 +82,7 @@ const MandantForm = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const locationState = location.state as LocationState
   const isNewRoute = useMatch('/mandanten/neu')
   const isNew = isNewRoute !== null || id === 'neu'
@@ -97,7 +107,7 @@ const MandantForm = () => {
     kundenportal_url: '',
     arbeitszeitenportal_domain: '',
     primary_color: '#5b7895',
-    app_name: 'AMRtech',
+    app_name: 'ArioVan',
     /** Öffentliche Logo-URL (HTTPS), z. B. CDN oder Storage – wie in der Lizenz-API unter design.logo_url */
     logo_url: '',
     /** Optional: Mandanten-Favicon (wird als design.favicon_url ausgeliefert). */
@@ -112,6 +122,10 @@ const MandantForm = () => {
     mail_from_email: '',
     mail_reply_to: '',
     mail_monthly_limit: '3000',
+    smtp_host: '',
+    smtp_port: '587',
+    smtp_implicit_tls: false,
+    smtp_username: '',
     allowed_domains: '',
     /** Kurzref aus Dashboard-URL (neues Mandanten-Supabase-Projekt) */
     supabase_project_ref: '',
@@ -151,6 +165,19 @@ const MandantForm = () => {
   const [infrastructurePingLoading, setInfrastructurePingLoading] = useState(false)
   const [infrastructurePingResult, setInfrastructurePingResult] = useState<InfrastructurePingResponse | null>(null)
 
+  const [mailSecretFlags, setMailSecretFlags] = useState<TenantMailSecretFlags | null>(null)
+  const [mailSmtpPasswordDraft, setMailSmtpPasswordDraft] = useState('')
+  const [mailResendKeyDraft, setMailResendKeyDraft] = useState('')
+  const [mailSmtpPasswordDirty, setMailSmtpPasswordDirty] = useState(false)
+  const [mailResendKeyDirty, setMailResendKeyDirty] = useState(false)
+  const [testMailTo, setTestMailTo] = useState('')
+  const [testMailLoading, setTestMailLoading] = useState(false)
+  const [testMailOk, setTestMailOk] = useState<string | null>(null)
+  const [testMailErr, setTestMailErr] = useState<string | null>(null)
+  const [mailTemplatePresence, setMailTemplatePresence] = useState<TenantMailTemplateKeyPresence | null>(null)
+  const [mailTemplatesFetchFailed, setMailTemplatesFetchFailed] = useState(false)
+  const [mailSetupRefreshLoading, setMailSetupRefreshLoading] = useState(false)
+
   const loadLicenses = useCallback(async (tenantId: string) => {
     try {
       const data = await fetchLicensesByTenant(tenantId)
@@ -185,14 +212,25 @@ const MandantForm = () => {
       setError(null)
       const loadStart = performance.now()
       try {
-        const [t, licensesData, modelsData] = await Promise.all([
+        const [t, licensesData, modelsData, secretFlags, templatePresence] = await Promise.all([
           fetchTenant(id),
           fetchLicensesByTenant(id),
           fetchLicenseModels(),
+          fetchTenantMailSecretFlags(id),
+          fetchTenantMailTemplateKeyPresence(id),
         ])
         if (t) {
           setLogoFilePending(null)
           setFaviconFilePending(null)
+          setMailSecretFlags(secretFlags ?? { smtp_password_set: false, resend_api_key_set: false })
+          setMailTemplatePresence(templatePresence)
+          setMailTemplatesFetchFailed(templatePresence === null)
+          setMailSmtpPasswordDraft('')
+          setMailResendKeyDraft('')
+          setMailSmtpPasswordDirty(false)
+          setMailResendKeyDirty(false)
+          setTestMailOk(null)
+          setTestMailErr(null)
           setForm({
             name: t.name ?? '',
             app_domain: t.app_domain ?? '',
@@ -200,7 +238,7 @@ const MandantForm = () => {
             kundenportal_url: t.kundenportal_url ?? '',
             arbeitszeitenportal_domain: t.arbeitszeitenportal_domain ?? '',
             primary_color: t.primary_color ?? '#5b7895',
-            app_name: t.app_name ?? 'AMRtech',
+            app_name: t.app_name ?? 'ArioVan',
             logo_url: t.logo_url ?? '',
             favicon_url: t.favicon_url ?? '',
             impressum_company_name: t.impressum_company_name ?? '',
@@ -208,11 +246,15 @@ const MandantForm = () => {
             impressum_contact: t.impressum_contact ?? '',
             datenschutz_responsible: t.datenschutz_responsible ?? '',
             datenschutz_contact_email: t.datenschutz_contact_email ?? '',
-            mail_provider: t.mail_provider ?? 'resend',
+            mail_provider: normalizeTenantMailProvider(t.mail_provider),
             mail_from_name: t.mail_from_name ?? '',
             mail_from_email: t.mail_from_email ?? '',
             mail_reply_to: t.mail_reply_to ?? '',
             mail_monthly_limit: t.mail_monthly_limit != null ? String(t.mail_monthly_limit) : '3000',
+            smtp_host: t.smtp_host ?? '',
+            smtp_port: t.smtp_port != null ? String(t.smtp_port) : '587',
+            smtp_implicit_tls: Boolean(t.smtp_implicit_tls),
+            smtp_username: t.smtp_username ?? '',
             allowed_domains: Array.isArray(t.allowed_domains)
               ? t.allowed_domains.join('\n')
               : (t.allowed_domains ? String(t.allowed_domains) : ''),
@@ -248,6 +290,8 @@ const MandantForm = () => {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Laden fehlgeschlagen')
         setTenantLicenses([])
+        setMailTemplatePresence(null)
+        setMailTemplatesFetchFailed(true)
       } finally {
         setIsLoading(false)
       }
@@ -336,178 +380,6 @@ const MandantForm = () => {
     }
     setForm((prev) => ({ ...prev, favicon_url: '' }))
     setFaviconFilePending(null)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    setSuccessMessage(null)
-    setIsSaving(true)
-    try {
-      if (isNew) {
-        const result = await createTenant({
-          name: form.name,
-          app_domain: form.app_domain || null,
-          portal_domain: form.portal_domain || null,
-          kundenportal_url: form.kundenportal_url.trim() || null,
-          arbeitszeitenportal_domain: form.arbeitszeitenportal_domain || null,
-          allowed_domains: form.allowed_domains
-            ? form.allowed_domains
-                .split(/[\n,]/)
-                .map((d) => d.trim().toLowerCase())
-                .filter(Boolean)
-            : [],
-          primary_color: form.primary_color,
-          app_name: form.app_name,
-          logo_url: form.logo_url.trim() || null,
-          favicon_url: form.favicon_url.trim() || null,
-          impressum_company_name: form.impressum_company_name || null,
-          impressum_address: form.impressum_address || null,
-          impressum_contact: form.impressum_contact || null,
-          datenschutz_responsible: form.datenschutz_responsible || null,
-          datenschutz_contact_email: form.datenschutz_contact_email || null,
-          mail_provider: form.mail_provider || 'resend',
-          mail_from_name: form.mail_from_name.trim() || null,
-          mail_from_email: form.mail_from_email.trim() || null,
-          mail_reply_to: form.mail_reply_to.trim() || null,
-          mail_monthly_limit: Math.max(1, parseInt(form.mail_monthly_limit, 10) || 3000),
-          supabase_project_ref: form.supabase_project_ref.trim() || null,
-          supabase_url: form.supabase_url.trim() || null,
-          cf_preview_main_url: form.cf_preview_main_url.trim() || null,
-          cf_preview_portal_url: form.cf_preview_portal_url.trim() || null,
-          cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url.trim() || null,
-          maintenance_mode_enabled: form.maintenance_mode_enabled,
-          maintenance_mode_message: form.maintenance_mode_message.trim() || null,
-          maintenance_mode_duration_min: form.maintenance_mode_duration_min
-            ? Math.max(1, parseInt(form.maintenance_mode_duration_min, 10) || 0)
-            : null,
-          maintenance_mode_started_at: fromDatetimeLocal(form.maintenance_mode_started_at),
-          maintenance_mode_ends_at: fromDatetimeLocal(form.maintenance_mode_ends_at),
-          maintenance_mode_auto_end: form.maintenance_mode_auto_end,
-          maintenance_mode_apply_main_app: form.maintenance_mode_apply_main_app,
-          maintenance_mode_apply_arbeitszeit_portal: form.maintenance_mode_apply_arbeitszeit_portal,
-          maintenance_mode_apply_customer_portal: form.maintenance_mode_apply_customer_portal,
-          maintenance_announcement_enabled: form.maintenance_announcement_enabled,
-          maintenance_announcement_message: form.maintenance_announcement_message.trim() || null,
-          maintenance_announcement_from: fromDatetimeLocal(form.maintenance_announcement_from),
-          maintenance_announcement_until: fromDatetimeLocal(form.maintenance_announcement_until),
-          app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
-          is_test_mandant: form.is_test_mandant,
-        })
-        if ('id' in result) {
-          let logoUrl = form.logo_url.trim() || null
-          let faviconUrl = form.favicon_url.trim() || null
-          if (logoFilePending) {
-            const up = await uploadTenantLogoWebP(result.id, logoFilePending)
-            if (up.error) {
-              setError(up.error)
-              return
-            }
-            if (up.publicUrl) {
-              logoUrl = up.publicUrl
-              const upd = await updateTenant(result.id, { logo_url: logoUrl })
-              if (!upd.ok) {
-                setError(upd.error ?? 'Logo-URL konnte nicht gespeichert werden.')
-                return
-              }
-            }
-          }
-          if (faviconFilePending) {
-            const upFav = await uploadTenantFaviconWebP(result.id, faviconFilePending)
-            if (upFav.error) {
-              setError(upFav.error)
-              return
-            }
-            if (upFav.publicUrl) {
-              faviconUrl = upFav.publicUrl
-              const updFav = await updateTenant(result.id, { favicon_url: faviconUrl })
-              if (!updFav.ok) {
-                setError(updFav.error ?? 'Favicon-URL konnte nicht gespeichert werden.')
-                return
-              }
-            }
-          }
-          navigate('/mandanten')
-        } else {
-          setError(result.error ?? 'Speichern fehlgeschlagen')
-        }
-      } else if (id) {
-        let logoUrl = form.logo_url.trim() || null
-        let faviconUrl = form.favicon_url.trim() || null
-        if (logoFilePending) {
-          const up = await uploadTenantLogoWebP(id, logoFilePending)
-          if (up.error) {
-            setError(up.error)
-            return
-          }
-          if (up.publicUrl) logoUrl = up.publicUrl
-        }
-        if (faviconFilePending) {
-          const upFav = await uploadTenantFaviconWebP(id, faviconFilePending)
-          if (upFav.error) {
-            setError(upFav.error)
-            return
-          }
-          if (upFav.publicUrl) faviconUrl = upFav.publicUrl
-        }
-        const result = await updateTenant(id, {
-          name: form.name,
-          app_domain: form.app_domain || null,
-          portal_domain: form.portal_domain || null,
-          kundenportal_url: form.kundenportal_url.trim() || null,
-          arbeitszeitenportal_domain: form.arbeitszeitenportal_domain || null,
-          allowed_domains: form.allowed_domains
-            ? form.allowed_domains
-                .split(/[\n,]/)
-                .map((d) => d.trim().toLowerCase())
-                .filter(Boolean)
-            : [],
-          primary_color: form.primary_color,
-          app_name: form.app_name,
-          logo_url: logoUrl || null,
-          favicon_url: faviconUrl || null,
-          impressum_company_name: form.impressum_company_name || null,
-          impressum_address: form.impressum_address || null,
-          impressum_contact: form.impressum_contact || null,
-          datenschutz_responsible: form.datenschutz_responsible || null,
-          datenschutz_contact_email: form.datenschutz_contact_email || null,
-          mail_provider: form.mail_provider || 'resend',
-          mail_from_name: form.mail_from_name.trim() || null,
-          mail_from_email: form.mail_from_email.trim() || null,
-          mail_reply_to: form.mail_reply_to.trim() || null,
-          mail_monthly_limit: Math.max(1, parseInt(form.mail_monthly_limit, 10) || 3000),
-          supabase_project_ref: form.supabase_project_ref.trim() || null,
-          supabase_url: form.supabase_url.trim() || null,
-          cf_preview_main_url: form.cf_preview_main_url.trim() || null,
-          cf_preview_portal_url: form.cf_preview_portal_url.trim() || null,
-          cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url.trim() || null,
-          maintenance_mode_enabled: form.maintenance_mode_enabled,
-          maintenance_mode_message: form.maintenance_mode_message.trim() || null,
-          maintenance_mode_duration_min: form.maintenance_mode_duration_min
-            ? Math.max(1, parseInt(form.maintenance_mode_duration_min, 10) || 0)
-            : null,
-          maintenance_mode_started_at: fromDatetimeLocal(form.maintenance_mode_started_at),
-          maintenance_mode_ends_at: fromDatetimeLocal(form.maintenance_mode_ends_at),
-          maintenance_mode_auto_end: form.maintenance_mode_auto_end,
-          maintenance_mode_apply_main_app: form.maintenance_mode_apply_main_app,
-          maintenance_mode_apply_arbeitszeit_portal: form.maintenance_mode_apply_arbeitszeit_portal,
-          maintenance_mode_apply_customer_portal: form.maintenance_mode_apply_customer_portal,
-          maintenance_announcement_enabled: form.maintenance_announcement_enabled,
-          maintenance_announcement_message: form.maintenance_announcement_message.trim() || null,
-          maintenance_announcement_from: fromDatetimeLocal(form.maintenance_announcement_from),
-          maintenance_announcement_until: fromDatetimeLocal(form.maintenance_announcement_until),
-          app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
-          is_test_mandant: form.is_test_mandant,
-        })
-        if (result.ok) {
-          navigate('/mandanten')
-        } else {
-          setError(result.error ?? 'Speichern fehlgeschlagen')
-        }
-      }
-    } finally {
-      setIsSaving(false)
-    }
   }
 
   const handleCreateLicense = async (e: React.FormEvent) => {
@@ -690,57 +562,225 @@ const MandantForm = () => {
     setForm((f) => ({ ...f, maintenance_mode_ends_at: local }))
   }
 
-  const buildTenantPayload = useCallback(() => {
-    return {
-      name: form.name,
-      app_domain: form.app_domain || null,
-      portal_domain: form.portal_domain || null,
-      kundenportal_url: form.kundenportal_url.trim() || null,
-      arbeitszeitenportal_domain: form.arbeitszeitenportal_domain || null,
-      allowed_domains: form.allowed_domains
-        ? form.allowed_domains
-            .split(/[\n,]/)
-            .map((d) => d.trim().toLowerCase())
-            .filter(Boolean)
-        : [],
-      primary_color: form.primary_color,
-      app_name: form.app_name,
-      logo_url: form.logo_url.trim() || null,
-      favicon_url: form.favicon_url.trim() || null,
-      impressum_company_name: form.impressum_company_name || null,
-      impressum_address: form.impressum_address || null,
-      impressum_contact: form.impressum_contact || null,
-      datenschutz_responsible: form.datenschutz_responsible || null,
-      datenschutz_contact_email: form.datenschutz_contact_email || null,
-      mail_provider: form.mail_provider || 'resend',
-      mail_from_name: form.mail_from_name.trim() || null,
-      mail_from_email: form.mail_from_email.trim() || null,
-      mail_reply_to: form.mail_reply_to.trim() || null,
-      mail_monthly_limit: Math.max(1, parseInt(form.mail_monthly_limit, 10) || 3000),
-      supabase_project_ref: form.supabase_project_ref.trim() || null,
-      supabase_url: form.supabase_url.trim() || null,
-      cf_preview_main_url: form.cf_preview_main_url.trim() || null,
-      cf_preview_portal_url: form.cf_preview_portal_url.trim() || null,
-      cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url.trim() || null,
-      maintenance_mode_enabled: form.maintenance_mode_enabled,
-      maintenance_mode_message: form.maintenance_mode_message.trim() || null,
-      maintenance_mode_duration_min: form.maintenance_mode_duration_min
-        ? Math.max(1, parseInt(form.maintenance_mode_duration_min, 10) || 0)
-        : null,
-      maintenance_mode_started_at: fromDatetimeLocal(form.maintenance_mode_started_at),
-      maintenance_mode_ends_at: fromDatetimeLocal(form.maintenance_mode_ends_at),
-      maintenance_mode_auto_end: form.maintenance_mode_auto_end,
-      maintenance_mode_apply_main_app: form.maintenance_mode_apply_main_app,
-      maintenance_mode_apply_arbeitszeit_portal: form.maintenance_mode_apply_arbeitszeit_portal,
-      maintenance_mode_apply_customer_portal: form.maintenance_mode_apply_customer_portal,
-      maintenance_announcement_enabled: form.maintenance_announcement_enabled,
-      maintenance_announcement_message: form.maintenance_announcement_message.trim() || null,
-      maintenance_announcement_from: fromDatetimeLocal(form.maintenance_announcement_from),
-      maintenance_announcement_until: fromDatetimeLocal(form.maintenance_announcement_until),
-      app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
-      is_test_mandant: form.is_test_mandant,
+  const buildTenantPayload = useCallback(
+    (overrides?: { logo_url?: string | null; favicon_url?: string | null }) => {
+      const logo_url =
+        overrides?.logo_url !== undefined ? overrides.logo_url : form.logo_url.trim() || null
+      const favicon_url =
+        overrides?.favicon_url !== undefined ? overrides.favicon_url : form.favicon_url.trim() || null
+      const mp = normalizeTenantMailProvider(form.mail_provider)
+      return {
+        name: form.name,
+        app_domain: form.app_domain || null,
+        portal_domain: form.portal_domain || null,
+        kundenportal_url: form.kundenportal_url.trim() || null,
+        arbeitszeitenportal_domain: form.arbeitszeitenportal_domain || null,
+        allowed_domains: form.allowed_domains
+          ? form.allowed_domains
+              .split(/[\n,]/)
+              .map((d) => d.trim().toLowerCase())
+              .filter(Boolean)
+          : [],
+        primary_color: form.primary_color,
+        app_name: form.app_name,
+        logo_url,
+        favicon_url,
+        impressum_company_name: form.impressum_company_name || null,
+        impressum_address: form.impressum_address || null,
+        impressum_contact: form.impressum_contact || null,
+        datenschutz_responsible: form.datenschutz_responsible || null,
+        datenschutz_contact_email: form.datenschutz_contact_email || null,
+        mail_provider: mp,
+        mail_from_name: form.mail_from_name.trim() || null,
+        mail_from_email: form.mail_from_email.trim() || null,
+        mail_reply_to: form.mail_reply_to.trim() || null,
+        mail_monthly_limit: Math.max(1, parseInt(form.mail_monthly_limit, 10) || 3000),
+        smtp_host: form.smtp_host.trim() || null,
+        smtp_port: Math.max(1, parseInt(form.smtp_port, 10) || 587),
+        smtp_implicit_tls: form.smtp_implicit_tls,
+        smtp_username: form.smtp_username.trim() || null,
+        supabase_project_ref: form.supabase_project_ref.trim() || null,
+        supabase_url: form.supabase_url.trim() || null,
+        cf_preview_main_url: form.cf_preview_main_url.trim() || null,
+        cf_preview_portal_url: form.cf_preview_portal_url.trim() || null,
+        cf_preview_arbeitszeit_url: form.cf_preview_arbeitszeit_url.trim() || null,
+        maintenance_mode_enabled: form.maintenance_mode_enabled,
+        maintenance_mode_message: form.maintenance_mode_message.trim() || null,
+        maintenance_mode_duration_min: form.maintenance_mode_duration_min
+          ? Math.max(1, parseInt(form.maintenance_mode_duration_min, 10) || 0)
+          : null,
+        maintenance_mode_started_at: fromDatetimeLocal(form.maintenance_mode_started_at),
+        maintenance_mode_ends_at: fromDatetimeLocal(form.maintenance_mode_ends_at),
+        maintenance_mode_auto_end: form.maintenance_mode_auto_end,
+        maintenance_mode_apply_main_app: form.maintenance_mode_apply_main_app,
+        maintenance_mode_apply_arbeitszeit_portal: form.maintenance_mode_apply_arbeitszeit_portal,
+        maintenance_mode_apply_customer_portal: form.maintenance_mode_apply_customer_portal,
+        maintenance_announcement_enabled: form.maintenance_announcement_enabled,
+        maintenance_announcement_message: form.maintenance_announcement_message.trim() || null,
+        maintenance_announcement_from: fromDatetimeLocal(form.maintenance_announcement_from),
+        maintenance_announcement_until: fromDatetimeLocal(form.maintenance_announcement_until),
+        app_versions: appVersionRowsToPayload(appVersionRows) ?? {},
+        is_test_mandant: form.is_test_mandant,
+      }
+    },
+    [appVersionRows, form]
+  )
+
+  const handleRefreshMailSetup = useCallback(async () => {
+    if (!id || isNew) return
+    setMailSetupRefreshLoading(true)
+    try {
+      const [secretFlags, templatePresence] = await Promise.all([
+        fetchTenantMailSecretFlags(id),
+        fetchTenantMailTemplateKeyPresence(id),
+      ])
+      setMailSecretFlags(secretFlags ?? { smtp_password_set: false, resend_api_key_set: false })
+      setMailTemplatePresence(templatePresence)
+      setMailTemplatesFetchFailed(templatePresence === null)
+      await loadLicenses(id)
+    } finally {
+      setMailSetupRefreshLoading(false)
     }
-  }, [appVersionRows, form])
+  }, [id, isNew, loadLicenses])
+
+  const handleSendTestMail = useCallback(async () => {
+    if (!id) return
+    const to = testMailTo.trim()
+    if (!to) return
+    setTestMailLoading(true)
+    setTestMailOk(null)
+    setTestMailErr(null)
+    try {
+      const r = await invokeAdminSendTestEmail({ tenantId: id, toEmail: to })
+      if (!r.ok) {
+        setTestMailErr(r.error)
+        return
+      }
+      setTestMailOk(
+        r.data.messageId
+          ? `Testmail gesendet (${r.data.provider}, Id: ${r.data.messageId}).`
+          : `Testmail gesendet (${r.data.provider}).`
+      )
+    } finally {
+      setTestMailLoading(false)
+    }
+  }, [id, testMailTo])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setSuccessMessage(null)
+    setIsSaving(true)
+    try {
+      if (isNew) {
+        const result = await createTenant(buildTenantPayload())
+        if ('id' in result) {
+          let logoUrl = form.logo_url.trim() || null
+          let faviconUrl = form.favicon_url.trim() || null
+          if (logoFilePending) {
+            const up = await uploadTenantLogoWebP(result.id, logoFilePending)
+            if (up.error) {
+              setError(up.error)
+              return
+            }
+            if (up.publicUrl) {
+              logoUrl = up.publicUrl
+              const upd = await updateTenant(result.id, { logo_url: logoUrl })
+              if (!upd.ok) {
+                setError(upd.error ?? 'Logo-URL konnte nicht gespeichert werden.')
+                return
+              }
+            }
+          }
+          if (faviconFilePending) {
+            const upFav = await uploadTenantFaviconWebP(result.id, faviconFilePending)
+            if (upFav.error) {
+              setError(upFav.error)
+              return
+            }
+            if (upFav.publicUrl) {
+              faviconUrl = upFav.publicUrl
+              const updFav = await updateTenant(result.id, { favicon_url: faviconUrl })
+              if (!updFav.ok) {
+                setError(updFav.error ?? 'Favicon-URL konnte nicht gespeichert werden.')
+                return
+              }
+            }
+          }
+          if (mailSmtpPasswordDirty || mailResendKeyDirty) {
+            const ur = await upsertTenantMailSecrets({
+              tenantId: result.id,
+              setSmtpPassword: mailSmtpPasswordDirty,
+              smtpPassword: mailSmtpPasswordDraft,
+              setResendApiKey: mailResendKeyDirty,
+              resendApiKey: mailResendKeyDraft,
+            })
+            if (!ur.ok) {
+              setError(ur.error ?? 'Mail-Geheimnisse konnten nicht gespeichert werden.')
+              return
+            }
+            setMailSmtpPasswordDirty(false)
+            setMailResendKeyDirty(false)
+            setMailSmtpPasswordDraft('')
+            setMailResendKeyDraft('')
+          }
+          navigate('/mandanten')
+        } else {
+          setError(result.error ?? 'Speichern fehlgeschlagen')
+        }
+      } else if (id) {
+        let logoUrl = form.logo_url.trim() || null
+        let faviconUrl = form.favicon_url.trim() || null
+        if (logoFilePending) {
+          const up = await uploadTenantLogoWebP(id, logoFilePending)
+          if (up.error) {
+            setError(up.error)
+            return
+          }
+          if (up.publicUrl) logoUrl = up.publicUrl
+        }
+        if (faviconFilePending) {
+          const upFav = await uploadTenantFaviconWebP(id, faviconFilePending)
+          if (upFav.error) {
+            setError(upFav.error)
+            return
+          }
+          if (upFav.publicUrl) faviconUrl = upFav.publicUrl
+        }
+        const result = await updateTenant(
+          id,
+          buildTenantPayload({
+            logo_url: logoUrl || null,
+            favicon_url: faviconUrl || null,
+          })
+        )
+        if (result.ok) {
+          if (mailSmtpPasswordDirty || mailResendKeyDirty) {
+            const ur = await upsertTenantMailSecrets({
+              tenantId: id,
+              setSmtpPassword: mailSmtpPasswordDirty,
+              smtpPassword: mailSmtpPasswordDraft,
+              setResendApiKey: mailResendKeyDirty,
+              resendApiKey: mailResendKeyDraft,
+            })
+            if (!ur.ok) {
+              setError(ur.error ?? 'Mail-Geheimnisse konnten nicht gespeichert werden.')
+              return
+            }
+            setMailSmtpPasswordDirty(false)
+            setMailResendKeyDirty(false)
+            setMailSmtpPasswordDraft('')
+            setMailResendKeyDraft('')
+          }
+          navigate('/mandanten')
+        } else {
+          setError(result.error ?? 'Speichern fehlgeschlagen')
+        }
+      }
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   const handleInfrastructurePing = useCallback(async () => {
     setInfrastructurePingLoading(true)
@@ -809,6 +849,7 @@ const MandantForm = () => {
       datenschutz_contact_email: form.datenschutz_contact_email,
       mail_monthly_limit: form.mail_monthly_limit,
       mail_from_email: form.mail_from_email,
+      mail_reply_to: form.mail_reply_to,
       supabase_url: form.supabase_url,
       cf_preview_main_url: form.cf_preview_main_url,
       cf_preview_portal_url: form.cf_preview_portal_url,
@@ -829,6 +870,7 @@ const MandantForm = () => {
     form.datenschutz_contact_email,
     form.mail_monthly_limit,
     form.mail_from_email,
+    form.mail_reply_to,
     form.supabase_url,
     form.cf_preview_main_url,
     form.cf_preview_portal_url,
@@ -845,6 +887,7 @@ const MandantForm = () => {
       datenschutz_contact_email: form.datenschutz_contact_email,
       mail_monthly_limit: form.mail_monthly_limit,
       mail_from_email: form.mail_from_email,
+      mail_reply_to: form.mail_reply_to,
       supabase_url: form.supabase_url,
       cf_preview_main_url: form.cf_preview_main_url,
       cf_preview_portal_url: form.cf_preview_portal_url,
@@ -871,6 +914,7 @@ const MandantForm = () => {
       datenschutz_contact_email: form.datenschutz_contact_email,
       mail_monthly_limit: form.mail_monthly_limit,
       mail_from_email: form.mail_from_email,
+      mail_reply_to: form.mail_reply_to,
       supabase_url: form.supabase_url,
       cf_preview_main_url: form.cf_preview_main_url,
       cf_preview_portal_url: form.cf_preview_portal_url,
@@ -1056,14 +1100,16 @@ const MandantForm = () => {
 
           {wizardStep === 4 && (
             <MandantFormWizardStep4Mailversand
-              mailProvider={form.mail_provider}
+              mailProvider={normalizeTenantMailProvider(form.mail_provider)}
               mailMonthlyLimit={form.mail_monthly_limit}
               mailFromName={form.mail_from_name}
               mailFromEmail={form.mail_from_email}
+              mailReplyTo={form.mail_reply_to}
               onMailProviderChange={(value) => setForm((f) => ({ ...f, mail_provider: value }))}
               onMailMonthlyLimitChange={(value) => setForm((f) => ({ ...f, mail_monthly_limit: value }))}
               onMailFromNameChange={(value) => setForm((f) => ({ ...f, mail_from_name: value }))}
               onMailFromEmailChange={(value) => setForm((f) => ({ ...f, mail_from_email: value }))}
+              onMailReplyToChange={(value) => setForm((f) => ({ ...f, mail_reply_to: value }))}
             />
           )}
 
@@ -1105,7 +1151,9 @@ const MandantForm = () => {
                 arbeitszeitenportal_domain: form.arbeitszeitenportal_domain,
                 mail_provider: form.mail_provider,
                 mail_monthly_limit: form.mail_monthly_limit,
+                mail_from_name: form.mail_from_name,
                 mail_from_email: form.mail_from_email,
+                mail_reply_to: form.mail_reply_to,
                 supabase_url: form.supabase_url,
                 cf_preview_main_url: form.cf_preview_main_url,
                 cf_preview_portal_url: form.cf_preview_portal_url,
@@ -1151,24 +1199,33 @@ const MandantForm = () => {
   }
 
   return (
-    <div className="w-full max-w-2xl min-w-0">
+    <div className="w-full max-w-5xl min-w-0">
       <h2 className="text-xl font-bold text-slate-800 mb-6">
         {isNew ? 'Neuer Mandant' : 'Mandant bearbeiten'}
       </h2>
       {!isNew && (
-        <div className="mb-4 flex flex-wrap items-center gap-2" role="status" aria-label="Wartungsstatus">
-          <span className={`${statusChipBase} ${modeActive ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
-            Wartungsmodus: {modeActive ? 'Aktiv' : 'Inaktiv'}
-          </span>
-          <span className={`${statusChipBase} ${announcementActive ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-700'}`}>
-            Ankündigung: {announcementActive ? 'Aktiv' : 'Inaktiv'}
-          </span>
-          {showMaintenanceEndSoonHint && (
-            <span className={`${statusChipBase} bg-red-100 text-red-700`}>
-              Läuft bald ab ({maintenanceMinutesLeft} Min)
+        <section
+          id="mandant-section-uebersicht"
+          className="scroll-mt-28 mb-4"
+          aria-labelledby="mandant-edit-overview-heading"
+        >
+          <h3 id="mandant-edit-overview-heading" className="sr-only">
+            Übersicht
+          </h3>
+          <div className="flex flex-wrap items-center gap-2" role="status" aria-label="Wartungsstatus">
+            <span className={`${statusChipBase} ${modeActive ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
+              Wartungsmodus: {modeActive ? 'Aktiv' : 'Inaktiv'}
             </span>
-          )}
-        </div>
+            <span className={`${statusChipBase} ${announcementActive ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-700'}`}>
+              Ankündigung: {announcementActive ? 'Aktiv' : 'Inaktiv'}
+            </span>
+            {showMaintenanceEndSoonHint && (
+              <span className={`${statusChipBase} bg-red-100 text-red-700`}>
+                Läuft bald ab ({maintenanceMinutesLeft} Min)
+              </span>
+            )}
+          </div>
+        </section>
       )}
 
       {error && (
@@ -1183,8 +1240,18 @@ const MandantForm = () => {
         </div>
       )}
 
+      <MandantEditSectionNavBar
+        enabled={!isNew && Boolean(id)}
+        tenantKey={id ?? ''}
+        showDeploymentChip={tenantLicenses.length > 0}
+        searchParams={searchParams}
+        setSearchParams={setSearchParams}
+      />
+
+      <div className="min-w-0 max-w-3xl space-y-0">
+
       {!isNew && id && (
-        <div className="mb-8">
+        <div id="mandant-section-lizenz" className="mb-8 scroll-mt-28">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 mb-4">
             <h3 className="text-sm font-semibold text-slate-700 shrink-0">Lizenzen & Lizenzstatus</h3>
             <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end">
@@ -1593,8 +1660,9 @@ const MandantForm = () => {
 
       <form
         onSubmit={handleSubmit}
-        className="space-y-4 [&>div]:rounded-xl [&>div]:border [&>div]:border-slate-200 [&>div]:bg-white [&>div]:p-4"
+        className="space-y-4 [&>div:not([data-mandant-nav-anchor])]:rounded-xl [&>div:not([data-mandant-nav-anchor])]:border [&>div:not([data-mandant-nav-anchor])]:border-slate-200 [&>div:not([data-mandant-nav-anchor])]:bg-white [&>div:not([data-mandant-nav-anchor])]:p-4"
       >
+        <div id="mandant-section-stammdaten" className="scroll-mt-28 space-y-4">
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
           <input
@@ -1613,7 +1681,7 @@ const MandantForm = () => {
             type="text"
             value={form.app_domain}
             onChange={(e) => setForm((f) => ({ ...f, app_domain: e.target.value }))}
-            placeholder="app.amrtech.de"
+            placeholder="app.example.de"
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
           />
         </div>
@@ -1624,7 +1692,7 @@ const MandantForm = () => {
             type="text"
             value={form.portal_domain}
             onChange={(e) => setForm((f) => ({ ...f, portal_domain: e.target.value }))}
-            placeholder="portal.amrtech.de"
+            placeholder="portal.example.de"
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
           />
         </div>
@@ -1638,7 +1706,7 @@ const MandantForm = () => {
             inputMode="url"
             value={form.kundenportal_url}
             onChange={(e) => setForm((f) => ({ ...f, kundenportal_url: e.target.value }))}
-            placeholder="https://portal.amrtech.de"
+            placeholder="https://portal.example.de"
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
           />
           <p className="mt-1 text-xs text-slate-500">
@@ -1652,7 +1720,7 @@ const MandantForm = () => {
             type="text"
             value={form.arbeitszeitenportal_domain}
             onChange={(e) => setForm((f) => ({ ...f, arbeitszeitenportal_domain: e.target.value }))}
-            placeholder="arbeitszeit.amrtech.de"
+            placeholder="arbeitszeit.example.de"
             className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-800 focus:ring-2 focus:ring-vico-primary"
           />
         </div>
@@ -1686,7 +1754,14 @@ const MandantForm = () => {
             Kennzeichnung für Pilot-Mandanten; steuert u. a. die Zuordnung zu Incoming-Releases (siehe App-Releases).
           </p>
         </div>
+        </div>
         <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <div
+          data-mandant-nav-anchor
+          aria-hidden
+          id="mandant-section-supabase"
+          className="h-0 overflow-hidden scroll-mt-28"
+        />
         <MandantFormEditHostingSection
           supabaseProjectRef={form.supabase_project_ref}
           supabaseUrl={form.supabase_url}
@@ -1713,23 +1788,77 @@ const MandantForm = () => {
           infrastructurePingResult={infrastructurePingResult}
         />
         <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <div
+          data-mandant-nav-anchor
+          aria-hidden
+          id="mandant-section-mail"
+          className="h-0 overflow-hidden scroll-mt-28"
+        />
         <MandantFormEditMailSection
+          tenantId={id ?? null}
+          supabaseUrl={form.supabase_url}
+          licenseLinked={tenantLicenses.length > 0}
+          mailTemplatePresence={mailTemplatePresence}
+          mailTemplatesFetchFailed={mailTemplatesFetchFailed}
+          onRefreshMailSetup={() => void handleRefreshMailSetup()}
+          mailSetupRefreshLoading={mailSetupRefreshLoading}
           showEmailUsageBanner={!isNew}
           emailUsageMonth={emailUsageMonth}
           emailSentOk={emailUsage?.sent_ok ?? 0}
           emailSentFailed={emailUsage?.sent_failed ?? 0}
           mailMonthlyLimit={form.mail_monthly_limit}
-          mailProvider={form.mail_provider}
+          mailProvider={normalizeTenantMailProvider(form.mail_provider)}
           mailFromName={form.mail_from_name}
           mailFromEmail={form.mail_from_email}
           mailReplyTo={form.mail_reply_to}
+          smtpHost={form.smtp_host}
+          smtpPort={form.smtp_port}
+          smtpImplicitTls={form.smtp_implicit_tls}
+          smtpUsername={form.smtp_username}
+          smtpPasswordDraft={mailSmtpPasswordDraft}
+          resendApiKeyDraft={mailResendKeyDraft}
+          mailSecretFlags={mailSecretFlags}
+          mailSmtpPasswordDirty={mailSmtpPasswordDirty}
+          mailResendKeyDirty={mailResendKeyDirty}
+          testMailTo={testMailTo}
+          testMailLoading={testMailLoading}
+          testMailOk={testMailOk}
+          testMailErr={testMailErr}
           onMailProviderChange={(value) => setForm((f) => ({ ...f, mail_provider: value }))}
           onMailMonthlyLimitChange={(value) => setForm((f) => ({ ...f, mail_monthly_limit: value }))}
           onMailFromNameChange={(value) => setForm((f) => ({ ...f, mail_from_name: value }))}
           onMailFromEmailChange={(value) => setForm((f) => ({ ...f, mail_from_email: value }))}
           onMailReplyToChange={(value) => setForm((f) => ({ ...f, mail_reply_to: value }))}
+          onSmtpHostChange={(value) => setForm((f) => ({ ...f, smtp_host: value }))}
+          onSmtpPortChange={(value) => setForm((f) => ({ ...f, smtp_port: value }))}
+          onSmtpImplicitTlsChange={(value) => setForm((f) => ({ ...f, smtp_implicit_tls: value }))}
+          onSmtpUsernameChange={(value) => setForm((f) => ({ ...f, smtp_username: value }))}
+          onSmtpPasswordDraftChange={(value) => {
+            setMailSmtpPasswordDraft(value)
+            setMailSmtpPasswordDirty(true)
+          }}
+          onResendApiKeyDraftChange={(value) => {
+            setMailResendKeyDraft(value)
+            setMailResendKeyDirty(true)
+          }}
+          onTestMailToChange={(value) => setTestMailTo(value)}
+          onSendTestMail={() => void handleSendTestMail()}
         />
+        <div id="mandant-section-mailvorlagen" className="mt-4 scroll-mt-28">
+          <MandantMailTemplatesSection
+            tenantId={id ?? null}
+            tenantName={form.name.trim() || 'Mandant'}
+            testMailTo={testMailTo}
+            onTestMailToChange={setTestMailTo}
+          />
+        </div>
         <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <div
+          data-mandant-nav-anchor
+          aria-hidden
+          id="mandant-section-branding"
+          className="h-0 overflow-hidden scroll-mt-28"
+        />
         <MandantFormEditBrandingBasicsSection
           primaryColor={form.primary_color}
           appName={form.app_name}
@@ -1752,7 +1881,8 @@ const MandantForm = () => {
           onRemoveStoredFavicon={handleRemoveStoredFavicon}
         />
         <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
-        <div className="pt-4 border-t border-slate-200">
+        <div id="mandant-section-app" className="pt-4 border-t border-slate-200 scroll-mt-28 space-y-4">
+          <div>
           <h3 className="text-sm font-semibold text-slate-700 mb-2">App-Versionen (optional, Mandant)</h3>
           <p className="text-xs text-slate-500 mb-4">
             Überschreibt die <strong>globalen Standardwerte</strong> unter Einstellungen pro App. Leere Felder
@@ -1760,14 +1890,16 @@ const MandantForm = () => {
             <code className="bg-slate-100 px-1 rounded">appVersions</code> ausgeliefert.
           </p>
           <AppVersionRowsEditor rows={appVersionRows} setRows={setAppVersionRows} idPrefix="mandant" />
-        </div>
+          </div>
         {!isNew && id ? (
           <div className="pt-4 border-t border-slate-200">
             <MandantReleaseAssignmentsSection tenantId={id} />
           </div>
         ) : null}
+        </div>
         <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
-        <div className="pt-4 border-t border-slate-200 space-y-3">
+        <div id="mandant-section-wartung" className="scroll-mt-28 space-y-6">
+          <div className="pt-4 border-t border-slate-200 space-y-3">
           <h3 className="text-sm font-semibold text-slate-700">Wartungsmodus (Mandanten-App)</h3>
           <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
             <input
@@ -1893,7 +2025,7 @@ const MandantForm = () => {
               </div>
             </div>
           )}
-        </div>
+          </div>
         <div className="pt-4 border-t border-slate-200 space-y-3">
           <h3 className="text-sm font-semibold text-slate-700">Wartungsankündigung (nur Hinweis)</h3>
           <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
@@ -1936,7 +2068,14 @@ const MandantForm = () => {
             </div>
           </div>
         </div>
+        </div>
         <MandantFormSectionActionRow isSaving={isSaving} onCancel={() => navigate('/mandanten')} />
+        <div
+          data-mandant-nav-anchor
+          aria-hidden
+          id="mandant-section-rechtliches"
+          className="h-0 overflow-hidden scroll-mt-28"
+        />
         <MandantFormEditLegalSection
           impressumCompanyName={form.impressum_company_name}
           impressumAddress={form.impressum_address}
@@ -1959,7 +2098,7 @@ const MandantForm = () => {
       </form>
 
       {!isNew && tenantLicenses.length > 0 && (
-        <div className="mt-8">
+        <div id="mandant-section-deployment" className="mt-8 scroll-mt-28">
           <TenantDeploymentPanel
             licenses={tenantLicenses.map((l) => ({
               id: l.id,
@@ -1976,6 +2115,7 @@ const MandantForm = () => {
           />
         </div>
       )}
+      </div>
     </div>
   )
 }

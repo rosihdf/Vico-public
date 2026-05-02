@@ -111,7 +111,7 @@ export const generateQrBatchA4Pdf = async (options: GenerateQrBatchA4PdfOptions)
 
   doc.setProperties({
     title: brandLine ? `${brandLine} – QR-Etiketten` : 'QR-Etiketten',
-    subject: `Vico A4 QR-Batch (${PRESET_MM[preset].description})`,
+    subject: `ArioVan A4 QR-Batch (${PRESET_MM[preset].description})`,
   })
 
   return doc.output('blob')

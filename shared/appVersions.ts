@@ -24,7 +24,7 @@ export const APP_VERSION_LABELS: Record<AppVersionKey, string> = {
   main: 'Haupt-App',
   kundenportal: 'Kundenportal',
   arbeitszeit_portal: 'Arbeitszeitenportal',
-  admin: 'Lizenzmodul (Admin)',
+  admin: 'Lizenzportal',
 }
 
 const normalizeNotes = (v: unknown): string[] | undefined => {

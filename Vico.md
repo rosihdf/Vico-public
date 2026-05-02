@@ -194,11 +194,24 @@ Start: `npm run dev` im Root (Haupt-App), `cd admin && npm run dev`, `cd portal 
 - **Zielbild Update (einfach):** Vier-Schritte-Wunsch vs. IST + eine technische Grenze (CF-Build): **`docs/Update-fuer-Betrieb-in-vier-Schritten.md`**.
 - **Beta-Feedback (Live-Test):** Lizenz-Feature **`beta_feedback`**; schwebender Button in **Haupt-App**, **Kundenportal**, **Arbeitszeit-Portal** (nur eingeloggt, Lizenz-API konfiguriert). Submit über Edge **`submit-beta-feedback`** (Mandanten-JWT per JWKS). Auswertung im Admin unter **`/beta-feedback`** (Status, Priorität, interne Notiz) plus **Archiv-Funktion** (archivieren / aus Archiv holen, Ansicht aktiv/archiv/alle). Schema: **`beta_feedback`** in `supabase-license-portal.sql` (inkl. `archived_at`); deploy Function + SQL auf Lizenzportal-Supabase. **Smoke-Test & Kategorie-Mapping:** `docs/Beta-Feedback-Smoke-Test-und-Mapping.md`.
 - **Mandanten-Neuanlage (Assistent) & Hosting-Check:** Der Assistent enthält einen Schritt **Hosting** (Mandanten-Supabase-Ref/URL, optionale **CF-Pages-Preview-URLs** `cf_preview_*` in `tenants`). **Verbindungsprüfung** per Edge-Function **`infrastructure-ping`** (Supabase Auth-Health, optional REST mit **Anon-Key** nur im Formular, ohne Speicherung; öffentliche URLs per HEAD/GET). Gleiche Prüfung im Formular **Mandant bearbeiten** unter Mandanten-Supabase. Code: **`invokeInfrastructurePing`** in **`licensePortalService.ts`**, **`MandantForm.tsx`**, Function unter **`supabase-license-portal/supabase/functions/infrastructure-ping/`**; SQL-Ergänzung in **`supabase-license-portal.sql`** und Delta **`docs/sql/LP-tenants-cf-preview-urls.sql`** (SQL Editor). Function-Deploy: **`npm run lp:deploy:infrastructure-ping`**.
+- **Mandant bearbeiten – Bereichsnavigation (✅ Apr. 2026):** Horizontale Chip-Leiste bleibt beim Scrollen sichtbar (**`fixed`** unter Admin-Header; **`main#main-content`** nutzt **`overflow-auto`** → `sticky` war unzuverlässig). Platzhalter per **`ResizeObserver`**; Desktop **`flex-wrap`** ohne Pflicht-Horizontal-Scrollbar, Mobil horizontal scrollbar; **`?section=`**, Scroll-Spy, conditional Deployment-Chip. **`admin/src/components/mandanten/MandantEditSectionNavBar.tsx`**, **`Layout.tsx`**.
 - **Hauptapp Checklisten-Assistent (Konzept):** Aktivierung über **LP-Feature** plus **Komponenten-Einstellung**, optionaler Einstieg (Assistent oder klassisch), vorbereiteter **Strict-Mode**, Gating-Matrix, Mermaid-Flows und QA-/Testprotokoll in **`docs/Concept-Checklisten-Assistent-Hauptapp.md`**.
 - **Hauptapp Checklisten-Assistent (Phase 0 umgesetzt):** Neue Feature-Flags **`checklist_assistant`** und **`checklist_assistant_strict_mode`** (Lizenz-Features), Komponenten-Schalter **`wartung_checklist_assistant`** in den Einstellungen und erste UI-Umschaltung im Prüfbericht-Formular (**Assistent Preview** <-> **klassische Ansicht**) ohne Datenmodell-Änderung.
 - **Hauptapp Auftrags-Assistent (Final-Spezifikation v2):** Konsolidierte Zieldefinition für den End-to-End-Flow in Aufträgen (Button **`Assistent (beta)`**, Startdialog *ausführen/bearbeiten*, LP-ähnlicher Fortschritt, Punkt-für-Punkt-Checkliste, Mehrtür/QR, Teilabschluss mit Folgeauftrag, `billing_status`-Zielbild, adaptiver Monteursbericht, Resume/Autosave/Konflikt-Handling) in **`docs/Concept-Auftrags-Assistent-v2.md`**.
 - **Hauptapp Auftrags-Assistent (Block 1-7 lokal umgesetzt):** Route **`/auftrag/:orderId/assistent`**, Einstieg über **`Assistent (beta)`** in der Auftragsliste, Start-/Resume-Dialog, Fortschrittsbalken + Save-Badge, Mehrtür-Hilfen (**Nächste offene Tür**, **QR-Scan**, **Tür hinzufügen**), Billing-Fallbacklogik (`resolveOrderBillingStatus`) und Hinweis „Automatisch ausgefüllt - weiter“ im Monteursbericht. QA-Protokoll: **`docs/QA-Auftrags-Assistent-Blockprotokoll.md`**.
 - **Hauptapp Auftrags-Assistent (UI-Feinschliff mobil + dark):** Zusätzliche Politur für mobile Assistenten-Steuerleisten (Wrap/Spaltenlayout), bessere Umbruchsicherheit im Fortschrittstext, präzisere ARIA-Labels bei Mehrtür-Aktionen sowie höherer Dark-Theme-Kontrast beim Button **`Assistent (beta)`**. QA-Protokoll: **`docs/QA-Auftrags-Assistent-UI-Feinschliff.md`**.
+
+### Altbericht-Import (Haupt-App)
+
+**Zweck:** Bestands-WEG-/Brandschutz-PDFs strukturiert einlesen, Review, später Produktiv-Commit (Kunde/BV/Tür, Mängel C2). Route **`/altbericht-import`** (`AltberichtImportPage.tsx`), Logik unter **`src/lib/altberichtImport/`**.
+
+**Umgesetzt (Ist):**
+
+- **Staging:** Parser (Positionsblöcke, globale Zeilenindizes), Validierung, Review-UI, eingebettete PDF-Bilder (**Experte**), Produktiv-Pfad für Fotos/C2 je nach SQL-Paketen.
+- **Raster-Fotos („Positions-Spalte“):** Rendering der rechten Bildspalte je Positionsband, vertikale Segmentierung + horizontale Trennung, persisted **`scan_meta_json`** (Viewport-Crops). Standard-ZIP ohne Rohstreifen; **`globalRowIndex`** stabil.
+- **Raster-Feinschliff (✅ Apr. 2026):** Stärkere Erkennung **roter PDF-Status** in Kopf- und Fußband (auch bei großen Crops); **keine Review-Rettung** bei dominantem Rot im Band; **Mini-/Kantenfragmente** und kleine Kandidaten neben großen **strong**-Segmenten verworfen; **max. 4** Block-Crops; etwas feinere horizontale Spaltenerkennung; **`lowConfidence`** für alle nicht-„strong“-Zeilen zur klaren Manifest-Trennung. Kern **`altberichtRasterBlockPhotoScan.ts`**, Tests **`altberichtRasterBlockPhotoScan.test.ts`**.
+
+**Offen / nicht Ziel dieser Doku:** C1/C2-Fachlogik ändern, Roh-ZIP im Standard – siehe Pakete **`docs/sql/mandanten-db-altbericht-import-paket-*.sql`**.
 
 ---
 
@@ -330,6 +343,8 @@ Rolle "demo", RPC `cleanup_demo_customers_older_than_24h()`, GitHub Actions täg
 - Adressuche (OpenPLZ), Fehlerbehandlung (ToastContext)
 - Types, Indizes, Code-Splitting
 - Unit-Tests, ESLint, CI/CD, PWA
+- **Altbericht-Import** (Route `/altbericht-import`, Raster-Blockfotos, eingebettete Bilder/Experte) – siehe **§3** *Altbericht-Import*
+- **Lizenzportal:** Mandantenformular – Bereichsnavigation fixiert – siehe **§3** *Lizenzportal & Mandanten-Releases* (Bullet Mandant bearbeiten)
 
 ---
 
@@ -384,6 +399,8 @@ Für **kleinteilige Abarbeitung** (Reihenfolge, Schätzung pro Paket): **`docs/R
 
 **Abgleich Code ↔ Roadmap (2026-04-04):** In **`docs/Roadmap-Offene-Punkte.md`** sind die Pakete **WP-MANG-01–05**, **WP-NET-01–05**, **WP-NET-10**, **WP-PORTAL-01–03**, **WP-ORD-02**, **WP-REL-00**–**WP-REL-02** und **WP-REL-04** als **Kern umgesetzt (✅)** markiert; weiterhin **offen** u. a. **WP-REL-03**, **WP-J6-***, **WP-J7-***, **WP-T1**, **WP-CF1**, **Teil C/D**, sowie **WP-MANG-00** / **WP-ORD-01** (Rollout bzw. manuelle Datenbereinigung).
 
+**Ergänzung Apr. 2026 (Doku vollständig in §3 / §7.3 / §11.27):** **Altbericht Raster-Fotos** Feinschliff (rote Bänder, Fragment-Auswahl, Cap 4, Manifest-Flags); **Lizenzportal** fixe Mandanten-Bereichsnavigation – keine neuen **WP-IDs** in `Roadmap-Offene-Punkte.md` nötig, sofern nicht als eigenes Ticket geführt.
+
 ---
 
 ### 7.3 Erledigte Meilensteine (Archiv)
@@ -413,6 +430,8 @@ Für **kleinteilige Abarbeitung** (Reihenfolge, Schätzung pro Paket): **`docs/R
 | **L4** | **Logo-Upload Lizenzportal:** Bucket `tenant_logos` (**supabase-license-portal.sql**), `uploadTenantLogo.ts`, `MandantForm.tsx` |
 | **I2** | **Etikett-Preset (UI):** `etikettPreset.ts`, Anzeige in **Einstellungen**; natives Druck weiter **Capacitor-Plugin** – **§11.4** |
 | **J10** | **Bug-Erfassung (MVP):** `Fehlerberichte.tsx`, `app_errors`, `shared/errorReportService`, Feature `fehlerberichte` |
+| **ALT-RASTER** | **Altbericht Raster-Fotos (Apr. 2026):** rote Status in Kopf-/Fußband, Fragment-Pruning bei starken Nachbarn, max. 4 Bilder/Block, horizontale Trennung etwas feiner, `lowConfidence` für nicht-starke Segmente (`altberichtRasterBlockPhotoScan.ts`) |
+| **LP-MAND-NAV** | **Lizenzportal Mandant bearbeiten (Apr. 2026):** fixe Bereichsleiste, ResizeObserver-Abstand, Desktop Wrap / Mobil Scroll-Leiste (`MandantEditSectionNavBar.tsx`, `Layout.tsx` Scroll-Kontext dokumentiert) |
 
 ---
 
@@ -2166,3 +2185,26 @@ Grober **Mehraufwand** gegenüber **nur manuell (A):** ca. **1,5–3 T** zusätz
 - Beim Fertigstellen wird automatisch eine **Initial-Lizenz** für den neuen Mandanten angelegt.
 - Bestehende Mandanten-Bearbeitung intern grafisch stärker abgegrenzt (klarere Blockdarstellung).
 - Assistent: **Validierung je Schritt**, Fortschrittsbalken **„x von 5 Schritte vollständig“**, Schritt-Chips mit **Häkchen** bei erfüllten Pflichten, **Kurzüberblick** vor Lizenzwahl; vor **Fertigstellen** werden alle Schritte erneut geprüft (bei Fehler Sprung zum betroffenen Schritt).
+
+### 11.27 Altbericht Raster-Fotos + LP Mandanten-Navigation (✅ Apr. 2026)
+
+**Altbericht (Haupt-App):**
+
+| Thema | Erledigt |
+|--------|-----------|
+| Rote PDF-Statuszeilen (oben/unten) | ✅ Messung Anteil Rot unter Nicht-Weiß im Kopf-/Fußband; Ablehnung auch bei großen Flächen; Review-Tier rettet bei dominantem Rot im Band nicht |
+| Mini-/Randfragmente | ✅ Zusätzliche Heuristik schmale Streifen relativ Streifenbreite; Block-Pruning wenn bereits große **strong**-Kandidaten existieren |
+| Mehrere Bilder / ein Crop | ⚠️ Nur indirekt: feinere horizontale Lücke (`MIN_GAP_COLUMNS`), weniger Kandidaten (Cap 4), aggressiveres Verwerfen – **kein** separates Bild-Insel-Splitting im Pixelbaum |
+| Manifest / Qualität | ✅ `lowConfidence` für alle nicht-**strong** gespeicherten Raster-Zeilen → Block-**needs_review** wenn gemischt; **`ok`** wenn nur starke Segmente |
+| Tests / Build | ✅ Vitest Raster-Suite, `npm run build` |
+
+**Lizenzportal:**
+
+| Thema | Erledigt |
+|--------|-----------|
+| Bereichsleiste klebt zuverlässig | ✅ `fixed` unter Header (Scrollcontainer **`#main-content`** mit `overflow-auto` verhinderte zuverlässiges `sticky`) |
+| Layout-Offset | ✅ ResizeObserver auf **`nav`** → Platzhalterhöhe |
+| Sidebar | ✅ Keine persistente Sidebar; Drawer bleibt über der Leiste (`z-index`) |
+| Responsive ohne Desktop-Scrollbar | ✅ `sm+` Wrap / `max-sm` horizontal scroll |
+
+Verweise: **§3** *Altbericht-Import* und Bullet **Mandant bearbeiten – Bereichsnavigation** unter *Lizenzportal & Mandanten-Releases*; **§7.3** Pakete **ALT-RASTER**, **LP-MAND-NAV**.

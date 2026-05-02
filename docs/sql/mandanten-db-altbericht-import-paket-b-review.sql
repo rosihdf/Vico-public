@@ -9,9 +9,19 @@ alter table public.altbericht_import_staging_object
 
 alter table public.altbericht_import_staging_object
   drop constraint if exists altbericht_import_staging_object_review_status_check;
+
+-- Defensiv vor Re-Apply: alte Mandanten-DBs hatten die Spalte ggf. ohne `not null default 'draft'`
+-- angelegt. NULL-Werte werden vor dem neuen Check auf 'draft' normalisiert, sonst scheitert das
+-- ALTER ... ADD CONSTRAINT mit 23514 ("check constraint violated by some row").
+update public.altbericht_import_staging_object
+set review_status = 'draft'
+where review_status is null;
+
+-- Liste muss synchron zu mandanten-db-altbericht-import-paket-c1-commit.sql gehalten werden.
+-- 'committed' wird dort nachgezogen und ist produktiv: setzt der C1-Commit-Service.
 alter table public.altbericht_import_staging_object
   add constraint altbericht_import_staging_object_review_status_check check (
-    review_status in ('draft', 'needs_input', 'ready', 'blocked', 'skipped')
+    review_status in ('draft', 'needs_input', 'ready', 'blocked', 'skipped', 'committed')
   );
 
 -- Auflösung / manuelle Review-Felder (kein Write nach customers/bvs/objects in Paket B)

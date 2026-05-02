@@ -6,9 +6,13 @@
  *   mode: "dry_run" | "apply"
  *   target: "staging" | "production" (optional, Default production)
  *   sql_file: relativer Repo-Pfad (optional, Default supabase-complete.sql)
+ *   product_key, module_key, package_id: optional (Historie / Multi-App)
  *
  * Secrets (Lizenzportal → Edge): GITHUB_DISPATCH_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME
  * Optional: GITHUB_WORKFLOW_FILE, GITHUB_DEFAULT_BRANCH
+ *
+ * Workflow-Input run_id (UUID) verknüpft mit mandanten_db_rollout_runs; Apply-Script meldet Status per
+ * update-mandanten-db-rollout-status (Secret MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET).
  */
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -25,7 +29,13 @@ const json = (status: number, body: Record<string, unknown>) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 
-/** Erlaubt: supabase-complete.sql oder docs/sql/…/*.sql (keine Pfad-Traversal). */
+const sanitizeOptText = (v: unknown, max: number): string | null => {
+  if (typeof v !== 'string') return null
+  const t = v.trim()
+  if (!t) return null
+  return t.slice(0, max)
+}
+
 const isValidSqlFile = (s: string): boolean => {
   const t = s.trim()
   if (!t || t.length > 220) return false
@@ -72,14 +82,23 @@ serve(async (req) => {
   let mode: string
   let target: string
   let sqlFile: string
+  let productKey: string | null
+  let moduleKey: string | null
+  let packageId: string | null
   try {
     const body = (await req.json()) as {
       mode?: string
       target?: string
       sql_file?: string
+      product_key?: string
+      module_key?: string
+      package_id?: string
     }
     mode = body.mode === 'apply' ? 'apply' : 'dry_run'
     target = body.target === 'staging' ? 'staging' : 'production'
+    productKey = sanitizeOptText(body.product_key, 64)
+    moduleKey = sanitizeOptText(body.module_key, 64)
+    packageId = sanitizeOptText(body.package_id, 128)
     const rawFile =
       typeof body.sql_file === 'string' && body.sql_file.trim()
         ? body.sql_file.trim()
@@ -94,7 +113,7 @@ serve(async (req) => {
   } catch {
     return json(400, {
       error:
-        'Ungültiger JSON-Body. Erwartet: { "mode": "dry_run"|"apply", "target"?: "staging"|"production", "sql_file"?: string }',
+        'Ungültiger JSON-Body. Erwartet: { "mode": "dry_run"|"apply", "target"?, "sql_file"?, "product_key"?, "module_key"?, "package_id"? }',
     })
   }
 
@@ -114,48 +133,110 @@ serve(async (req) => {
     return json(403, { error: 'Nur Administratoren dürfen diesen Workflow starten.' })
   }
 
+  const startedAt = new Date().toISOString()
+
+  const { data: inserted, error: insertErr } = await admin
+    .from('mandanten_db_rollout_runs')
+    .insert({
+      started_by: userData.user.id,
+      started_at: startedAt,
+      finished_at: null,
+      product_key: productKey,
+      module_key: moduleKey,
+      package_id: packageId,
+      sql_file: sqlFile,
+      target,
+      mode,
+      status: 'queued',
+      github_run_url: null,
+      summary_json: null,
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (insertErr || !inserted?.id) {
+    return json(503, {
+      error: `Rollout-Historie konnte nicht geschrieben werden: ${insertErr?.message ?? 'keine Zeilen-ID'}`,
+    })
+  }
+
+  const runId = inserted.id as string
+
   const dispatchUrl = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(
     workflowFile
   )}/dispatches`
 
-  const ghRes = await fetch(dispatchUrl, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${ghToken}`,
-      'X-GitHub-Api-Version': '2022-11-28',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      ref: branch,
-      inputs: {
+  try {
+    const ghRes = await fetch(dispatchUrl, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${ghToken}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ref: branch,
+        inputs: {
+          mode,
+          target,
+          sql_file: sqlFile,
+          run_id: runId,
+        },
+      }),
+    })
+
+    if (ghRes.status === 204) {
+      return json(200, {
+        ok: true,
+        message: `Workflow gestartet (${target}, ${mode}, ${sqlFile}). Logs in GitHub → Actions.`,
         mode,
         target,
         sql_file: sqlFile,
-      },
-    }),
-  })
+        run_id: runId,
+        rollout_run_id: runId,
+      })
+    }
 
-  if (ghRes.status === 204) {
-    return json(200, {
-      ok: true,
-      message: `Workflow gestartet (${target}, ${mode}, ${sqlFile}). Logs in GitHub → Actions.`,
-      mode,
-      target,
-      sql_file: sqlFile,
+    const errText = await ghRes.text()
+    let detail = errText
+    try {
+      const o = JSON.parse(errText) as { message?: string }
+      if (o.message) detail = o.message
+    } catch {
+      /* ignore */
+    }
+
+    const excerpt = detail.slice(0, 4000)
+    const finishedAt = new Date().toISOString()
+    await admin
+      .from('mandanten_db_rollout_runs')
+      .update({
+        status: 'error',
+        finished_at: finishedAt,
+        summary_json: { dispatch_error: excerpt },
+        updated_at: finishedAt,
+      })
+      .eq('id', runId)
+
+    return json(502, {
+      error: `GitHub-API: ${ghRes.status} – ${detail}`,
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const finishedAt = new Date().toISOString()
+    await admin
+      .from('mandanten_db_rollout_runs')
+      .update({
+        status: 'error',
+        finished_at: finishedAt,
+        summary_json: { dispatch_exception: msg.slice(0, 4000) },
+        updated_at: finishedAt,
+      })
+      .eq('id', runId)
+
+    return json(502, {
+      error: `GitHub-Dispatch fehlgeschlagen: ${msg}`,
     })
   }
-
-  const errText = await ghRes.text()
-  let detail = errText
-  try {
-    const o = JSON.parse(errText) as { message?: string }
-    if (o.message) detail = o.message
-  } catch {
-    /* ignore */
-  }
-
-  return json(502, {
-    error: `GitHub-API: ${ghRes.status} – ${detail}`,
-  })
 })

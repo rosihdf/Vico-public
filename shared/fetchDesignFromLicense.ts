@@ -18,7 +18,7 @@ export type DesignFromLicense = {
   favicon_url?: string | null
 }
 
-const DEFAULT_APP_NAME = 'AMRtech'
+const DEFAULT_APP_NAME = 'ArioVan'
 
 export const fetchDesignFromLicense = async (
   apiUrl: string,

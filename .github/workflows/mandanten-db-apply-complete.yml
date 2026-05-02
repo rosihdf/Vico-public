@@ -1,6 +1,8 @@
 # Wird vom Lizenzportal (Edge trigger-mandanten-db-rollout) oder manuell gestartet.
 # Secrets: MANDANTEN_DB_URLS_STAGING / MANDANTEN_DB_URLS_PRODUCTION (je eine URI pro Zeile).
 # Fallback Produktion: wenn PRODUCTION leer, wird MANDANTEN_DB_URLS (Legacy) genutzt.
+#
+# Optional (Portal-Protokoll Phase 3): run_id + LP_ROLLOUT_CALLBACK_URL + LP_ROLLOUT_CALLBACK_SECRET (Fallback: MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET)
 name: Mandanten-DB – Rollout (psql)
 
 on:
@@ -27,10 +29,19 @@ on:
         options:
           - dry_run
           - apply
+      run_id:
+        description: 'Lizenzportal mandanten_db_rollout_runs.id (leer = ohne Portal-Callback)'
+        type: string
+        required: false
+        default: ''
 
 jobs:
   rollout:
     runs-on: ubuntu-latest
+    env:
+      ROLLOUT_RUN_ID: ${{ github.event.inputs.run_id }}
+      ROLLOUT_CALLBACK_URL: ${{ secrets.LP_ROLLOUT_CALLBACK_URL }}
+      ROLLOUT_CALLBACK_SECRET: ${{ secrets.LP_ROLLOUT_CALLBACK_SECRET || secrets.MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -82,6 +93,28 @@ jobs:
             exit 1
           fi
           echo "$DATA" > mandanten-db-urls.txt
+
+      - name: Portal-Callback Secrets (bei run_id Pflicht)
+        if: ${{ github.event.inputs.run_id != '' }}
+        run: |
+          if [ -z "$ROLLOUT_CALLBACK_URL" ] || [ -z "$ROLLOUT_CALLBACK_SECRET" ]; then
+            echo "::error::run_id gesetzt: Repository-Secrets LP_ROLLOUT_CALLBACK_URL und LP_ROLLOUT_CALLBACK_SECRET (oder Legacy MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET) müssen konfiguriert sein."
+            exit 1
+          fi
+
+      - name: Lizenzportal Rollout als „running“ melden
+        if: ${{ github.event.inputs.run_id != '' }}
+        env:
+          GITHUB_RUN_HTML_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          jq -n \
+            --arg rid "$ROLLOUT_RUN_ID" \
+            --arg url "$GITHUB_RUN_HTML_URL" \
+            '{op:"run_mark_running",run_id:$rid,github_run_url:$url}' \
+            | curl -fsS -X POST "$ROLLOUT_CALLBACK_URL" \
+              -H "Content-Type: application/json" \
+              -H "X-Rollout-Callback-Secret: $ROLLOUT_CALLBACK_SECRET" \
+              -d @-
 
       - name: Trockenlauf
         if: github.event.inputs.mode == 'dry_run'

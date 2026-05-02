@@ -15,7 +15,7 @@ type EnrollData = {
   secret: string
 } | null
 
-const MfaEnroll = ({ onEnrolled, onCancelled, friendlyName = 'Vico' }: MfaEnrollProps) => {
+const MfaEnroll = ({ onEnrolled, onCancelled, friendlyName = 'ArioVan' }: MfaEnrollProps) => {
   const [enrollData, setEnrollData] = useState<EnrollData>(null)
   const [verifyCode, setVerifyCode] = useState('')
   const [error, setError] = useState<string | null>(null)

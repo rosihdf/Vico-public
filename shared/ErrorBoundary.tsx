@@ -1,4 +1,4 @@
-/** Gemeinsame ErrorBoundary für alle Vico-Apps */
+/** Gemeinsame ErrorBoundary für Mandanten-Apps */
 
 import { Component, type ReactNode, type ErrorInfo } from 'react'
 

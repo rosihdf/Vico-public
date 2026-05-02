@@ -87,6 +87,7 @@ export type WizardFormSlice = {
   datenschutz_contact_email: string
   mail_monthly_limit: string
   mail_from_email: string
+  mail_reply_to: string
   supabase_url: string
   cf_preview_main_url: string
   cf_preview_portal_url: string
@@ -114,6 +115,8 @@ export const getWizardStepComplete = (
       if (Number.isNaN(lim) || lim < 1) return false
       const fe = f.mail_from_email.trim()
       if (fe.length > 0 && !isPlausibleEmail(fe)) return false
+      const rt = f.mail_reply_to.trim()
+      if (rt.length > 0 && !isPlausibleEmail(rt)) return false
       return true
     }
     case 5:
@@ -156,6 +159,9 @@ export const validateWizardStep = (
       const fe = f.mail_from_email.trim()
       if (fe.length > 0 && !isPlausibleEmail(fe))
         return 'Bitte eine gültige Absender-E-Mail eingeben oder leer lassen.'
+      const rt = f.mail_reply_to.trim()
+      if (rt.length > 0 && !isPlausibleEmail(rt))
+        return 'Bitte eine gültige Reply-To-E-Mail eingeben oder leer lassen.'
       return null
     }
     case 5: {

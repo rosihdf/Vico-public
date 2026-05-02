@@ -20,16 +20,11 @@ export const getEffectiveRoom = (row: AltberichtStagingRowInput): string =>
   (row.review_room_text?.trim() || row.room_text?.trim() || '').trim()
 
 /**
- * Pflicht: BV. Ohne explizites Produktiv-Objekt zusätzlich: Objektname, Typ, Etage **oder** Raum.
+ * Pflicht ohne explizites Produktiv-Objekt: Objektname, Typ, Etage **oder** Raum.
+ * BV ist bewusst optional; C1 kann Objekte direkt unter einem Kunden anlegen.
  */
 export const validateAltberichtStagingRow = (row: AltberichtStagingRowInput): AltberichtStagingValidationError[] => {
   const errors: AltberichtStagingValidationError[] = []
-  if (!getEffectiveBvId(row)) {
-    errors.push({
-      code: ALTBERICHT_STAGING_VALIDATION_CODES.MISSING_BV,
-      message: 'Bauvorhaben (BV) fehlt – bitte zuordnen oder im Review-Feld setzen.',
-    })
-  }
   const linkedObjectId = row.review_object_id?.trim()
   if (linkedObjectId) {
     return errors

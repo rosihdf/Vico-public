@@ -54,7 +54,7 @@ export const MaintenanceReminderEmailSettingsBlock = ({
           className="mt-1 w-5 h-5 rounded border-slate-300 text-vico-primary focus:ring-vico-primary"
         />
         <span className="text-sm text-slate-700 dark:text-slate-200">
-          Ich willige ein, dass mir Vico zum genannten Zweck Erinnerungs-E-Mails an meine hinterlegte Adresse
+          Ich willige ein, dass mir ArioVan zum genannten Zweck Erinnerungs-E-Mails an meine hinterlegte Adresse
           sendet (betriebliche Verarbeitung; Widerruf durch Deaktivieren der Option).
         </span>
       </label>

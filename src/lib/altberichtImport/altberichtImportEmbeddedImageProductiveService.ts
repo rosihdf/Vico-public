@@ -5,10 +5,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { isOnline } from '../../../shared/networkUtils'
 import { supabase } from '../../supabase'
 import { fetchObject, uploadObjectDefectPhoto, uploadObjectPhoto, notifyDataChange } from '../dataService'
-import { renderAltberichtPdfPageToPngDataUrl } from './altberichtPdfPageThumb'
+import {
+  renderAltberichtPdfCropViewportToPngDataUrl,
+  renderAltberichtPdfImageOrPageToPngDataUrl,
+  type AltberichtPdfImageRenderResult,
+} from './altberichtPdfPageThumb'
 import { insertAltberichtImportEvent } from './altberichtImportEvents'
 import { ALTBERICHT_IMPORT_EVENT } from './altberichtImportConstants'
 import { resolveStammdatenDefectEntryIdForC2Key } from './altberichtImportEmbeddedDefectResolve'
+import { ALTBERICHT_RASTER_OP_KIND_BLOCK_CROP } from './altberichtRasterGrid'
+import type { AltberichtRasterPhotoCropViewportPx } from './altberichtRasterBlockPhotoScan'
 import type { AltberichtImportEmbeddedImageRow } from './altberichtImportTypes'
 import type { AltberichtImportFileRow } from './altberichtImportTypes'
 import type { AltberichtImportStagingObjectRow } from './altberichtImportQueryService'
@@ -72,11 +78,39 @@ const resolveObjectId = (s: AltberichtImportStagingObjectRow): string | null => 
   return null
 }
 
-const buildPngDataUrl = async (file: AltberichtImportFileRow, pageNumber: number): Promise<string | null> => {
+const buildPngDataUrl = async (
+  file: AltberichtImportFileRow,
+  embedded: AltberichtImportEmbeddedImageRow
+): Promise<AltberichtPdfImageRenderResult | null> => {
   const { data: blob, error: dl } = await supabase.storage.from(file.storage_bucket).download(file.storage_path)
   if (dl || !blob) return null
   const buf = await blob.arrayBuffer()
-  return renderAltberichtPdfPageToPngDataUrl(buf, pageNumber)
+  const pk = `${file.storage_bucket}:${file.storage_path}`
+  if (embedded.op_kind === ALTBERICHT_RASTER_OP_KIND_BLOCK_CROP) {
+    const raw = embedded.scan_meta_json
+    if (raw && typeof raw === 'object') {
+      const m = raw as {
+        photoAnalysis?: unknown
+        viewportScaleUsed?: unknown
+        cropViewportPx?: unknown
+      }
+      if (
+        m.photoAnalysis === 'viewport_crop_v2' &&
+        typeof m.viewportScaleUsed === 'number' &&
+        m.cropViewportPx &&
+        typeof m.cropViewportPx === 'object'
+      ) {
+        const cr = m.cropViewportPx as AltberichtRasterPhotoCropViewportPx
+        const u = await renderAltberichtPdfCropViewportToPngDataUrl(buf, embedded.page_number, m.viewportScaleUsed, cr, {
+          pdfCacheKey: pk,
+        })
+        if (u) return { dataUrl: u, source: 'embedded_image' }
+      }
+    }
+  }
+  return renderAltberichtPdfImageOrPageToPngDataUrl(buf, embedded.page_number, embedded.image_index, undefined, {
+    pdfCacheKey: pk,
+  })
 }
 
 export type ImportEmbeddedImageResult = {
@@ -132,6 +166,20 @@ export const importEmbeddedImageProductive = async (
     return { ok: false, code: 'load_failed', message: ctx.error }
   }
   const { embedded, fileRow } = ctx
+
+  const rawMeta = embedded.scan_meta_json
+  if (
+    rawMeta &&
+    typeof rawMeta === 'object' &&
+    (rawMeta as { rasterSource?: unknown }).rasterSource === 'block_raw_crop'
+  ) {
+    return {
+      ok: false,
+      code: 'bad_intent',
+      message: 'Dieser Eintrag ist nur Debug/ZIP-Rohstreifen und kann nicht übernommen werden.',
+    }
+  }
+
   if ((embedded.import_status ?? 'not_imported') === 'imported') {
     return { ok: true, code: 'already_imported', message: 'Bereits übernommen.' }
   }
@@ -148,7 +196,6 @@ export const importEmbeddedImageProductive = async (
   const objectId = resolveObjectId(staging)
   if (!objectId) {
     const msg = 'Zielobjekt: C1 noch nicht abgeschlossen (kein committed_object_id).'
-    await markFailed(client, embeddedId, msg)
     return { ok: false, code: 'no_object', message: msg }
   }
 
@@ -164,23 +211,25 @@ export const importEmbeddedImageProductive = async (
     return { ok: false, code: 'no_object', message: msg }
   }
 
-  const dataUrl = await buildPngDataUrl(fileRow, embedded.page_number)
-  if (!dataUrl) {
-    const msg = 'PDF-Seite für Übernahme nicht renderbar (Download/Render).'
+  const renderResult = await buildPngDataUrl(fileRow, embedded)
+  if (!renderResult) {
+    const msg = 'PDF-Bild/Seite für Übernahme nicht renderbar (Download/Render).'
     await markFailed(client, embeddedId, msg)
     return { ok: false, code: 'load_failed', message: msg }
   }
+  const { dataUrl, source } = renderResult
 
   const file = await dataUrlToPngFile(
     dataUrl,
-    `altbericht-embedded-s${embedded.page_number}-i${embedded.image_index}.png`
+    `altbericht-${source === 'embedded_image' ? 'bild' : 'seite'}-s${embedded.page_number}-i${embedded.image_index}.png`
   )
+  const imageSourceLabel = source === 'embedded_image' ? 'Einzelbild' : 'Seitenbild, kein Einzelbild'
 
   if (embedded.user_intent === 'object_photo') {
     const up = await uploadObjectPhoto(
       objectId,
       file,
-      `Altbericht-Import, Seite ${embedded.page_number}`
+      `Altbericht-Import, Seite ${embedded.page_number} (${imageSourceLabel})`
     )
     if (up.error || !up.data?.id) {
       const msg = up.error?.message ?? 'Galerie-Upload fehlgeschlagen.'
@@ -206,7 +255,7 @@ export const importEmbeddedImageProductive = async (
       level: 'info',
       code: ALTBERICHT_IMPORT_EVENT.EMBEDDED_IMAGE_IMPORT_OK,
       message: 'Eingebettetes Bild in Objekt-Galerie übernommen',
-      payloadJson: { embeddedId, objectId, objectPhotoId: photoId, kind: 'object_gallery' },
+      payloadJson: { embeddedId, objectId, objectPhotoId: photoId, kind: 'object_gallery', imageSource: source },
     })
     notifyDataChange()
     return { ok: true, code: 'imported', objectPhotoId: photoId }
@@ -256,6 +305,7 @@ export const importEmbeddedImageProductive = async (
         defectEntryId: res.defectEntryId,
         c2Key: c2k.trim(),
         kind: 'defect_stammdaten',
+        imageSource: source,
       },
     })
     notifyDataChange()

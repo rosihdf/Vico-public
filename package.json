@@ -40,7 +40,12 @@
     "db:apply-mandanten-complete:dry": "node scripts/apply-mandanten-sql.mjs supabase-complete.sql --urls-file configs/mandanten-db-urls.local.txt --dry-run",
     "db:apply-mandanten-complete": "node scripts/apply-mandanten-sql.mjs supabase-complete.sql --urls-file configs/mandanten-db-urls.local.txt",
     "lp:deploy:mandanten-update": "node scripts/deploy-license-portal-mandanten-update-functions.mjs",
-    "lp:deploy:infrastructure-ping": "node scripts/deploy-license-portal-infrastructure-ping.mjs"
+    "lp:deploy:infrastructure-ping": "node scripts/deploy-license-portal-infrastructure-ping.mjs",
+    "lp:deploy:send-tenant-email": "node scripts/deploy-license-portal-send-tenant-email.mjs",
+    "lp:deploy:send-tenant-email-server": "node scripts/deploy-license-portal-send-tenant-email-server.mjs",
+    "lp:deploy:admin-mail": "node scripts/deploy-license-portal-admin-mail-tools.mjs",
+    "lp:deploy:mail-stack": "node scripts/deploy-license-portal-mail-stack.mjs",
+    "mandant:deploy:mail-functions": "node scripts/deploy-mandant-mail-functions.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.2.0",
@@ -50,6 +55,7 @@
     "@point-of-sale/receipt-printer-encoder": "^3.0.3",
     "@point-of-sale/webbluetooth-receipt-printer": "^2.0.0",
     "@supabase/supabase-js": "^2.39.0",
+    "fflate": "^0.8.2",
     "html5-qrcode": "^2.3.8",
     "jspdf": "^4.1.0",
     "pdfjs-dist": "^4.10.38",

@@ -26,14 +26,24 @@ npm run lp:deploy:mandanten-update -- --project-ref ojryoosqwfbzlmdeywzs
 cd supabase-license-portal
 supabase link --project-ref ojryoosqwfbzlmdeywzs
 supabase functions deploy license
+supabase functions deploy admin-send-test-email
+```
+
+## Admin: Testmail (Resend / SMTP)
+
+Nach Schema-Deploy (`supabase-license-portal.sql` Abschnitt Mail: `tenant_mail_secrets`, RPCs) die Function **`admin-send-test-email`** deployen (JWT-Pflicht, nur LP-Admin-Session):
+
+```bash
+cd supabase-license-portal && supabase functions deploy admin-send-test-email
 ```
 
 ## Mandanten-DB-Sammelupdate (Button in Admin „Einstellungen“)
 
-Function: **`trigger-mandanten-db-rollout`** – startet den GitHub-Workflow **`mandanten-db-apply-complete.yml`** (Anzeige: **Mandanten-DB – Rollout (psql)**) mit **target** (staging/production), **sql_file** und **mode** (dry_run/apply).
+Function **`trigger-mandanten-db-rollout`** – startet den Workflow **`mandanten-db-apply-complete.yml`** (Inputs inkl. **`run_id`**). Function **`update-mandanten-db-rollout-status`** – nur mit Header **`X-Rollout-Callback-Secret`** (gleicher Wert wie GitHub-Secret **`LP_ROLLOUT_CALLBACK_SECRET`** bzw. **`MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET`**, identisch zu Supabase **`MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET`**).
 
 ```bash
 supabase functions deploy trigger-mandanten-db-rollout
+supabase functions deploy update-mandanten-db-rollout-status
 ```
 
 **Secrets** (Dashboard → Project Settings → Edge Functions → Secrets, Namen exakt):
@@ -45,8 +55,9 @@ supabase functions deploy trigger-mandanten-db-rollout
 | `GITHUB_REPO_NAME` | Repo-Name ohne `.git` |
 | `GITHUB_WORKFLOW_FILE` | optional, Default `mandanten-db-apply-complete.yml` |
 | `GITHUB_DEFAULT_BRANCH` | optional, Default `main` |
+| `MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET` | Shared Secret für Callback aus GitHub Actions |
 
-Im **GitHub-Repo** zusätzlich: **`MANDANTEN_DB_URLS_STAGING`** und **`MANDANTEN_DB_URLS_PRODUCTION`** (je eine DB-URI pro Zeile). Fallback: wenn PRODUCTION fehlt, nutzt der Workflow **`MANDANTEN_DB_URLS`** (Legacy). Siehe `docs/sql/Mandanten-DB-Workflow.md` §3c.
+Im **GitHub-Repo** zusätzlich: **`MANDANTEN_DB_URLS_STAGING`** und **`MANDANTEN_DB_URLS_PRODUCTION`** sowie **`LP_ROLLOUT_CALLBACK_URL`** (volle URL der Callback-Function) und **`LP_ROLLOUT_CALLBACK_SECRET`** (identisch zu Supabase **`MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET`**). Optional als Fallback: **`MANDANTEN_DB_ROLLOUT_CALLBACK_SECRET`**, falls das neuere Secret noch nicht angelegt wurde. Fallback DB: wenn PRODUCTION fehlt, nutzt der Workflow **`MANDANTEN_DB_URLS`** (Legacy). Siehe `docs/sql/Mandanten-DB-Workflow.md` §3c.
 
 ## Hinweise
 

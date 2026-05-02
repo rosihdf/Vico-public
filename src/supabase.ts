@@ -30,7 +30,7 @@ const customStorage = {
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim()
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? '').trim()
 
-/** True, wenn Mandanten-Supabase aus .env nutzbar ist (nicht Platzhalter / leer). */
+/** True, wenn Mandanten-Supabase aus .env nutzbar ist (nicht leer / nicht Vorlagen-Projekt). */
 export const isMandantSupabaseEnvConfigured = (): boolean =>
   Boolean(
     supabaseUrl &&

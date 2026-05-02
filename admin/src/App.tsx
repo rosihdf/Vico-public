@@ -22,6 +22,7 @@ const ReleaseRollout = lazy(() => import('./pages/ReleaseRollout'))
 const ReleaseAudit = lazy(() => import('./pages/ReleaseAudit'))
 const Roadmap = lazy(() => import('./pages/Roadmap'))
 const BetaFeedback = lazy(() => import('./pages/BetaFeedback'))
+const GlobalMailTemplatesPage = lazy(() => import('./pages/GlobalMailTemplatesPage'))
 
 const PageFallback = () => (
   <div className="flex flex-col items-center justify-center py-12 gap-4">
@@ -166,7 +167,7 @@ const App = () => {
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-vico-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-slate-500">Lade Lizenz-Admin…</p>
+          <p className="text-sm text-slate-500">Lade Lizenzportal…</p>
           {loadingHint && (
             <p className="text-xs text-slate-400 mt-2 max-w-xs" role="status">
               {loadingHint}
@@ -245,6 +246,11 @@ const App = () => {
           <Route path="mandanten/:id" element={
             <Suspense fallback={<PageFallback />}>
               <MandantForm />
+            </Suspense>
+          } />
+          <Route path="mailvorlagen-global" element={
+            <Suspense fallback={<PageFallback />}>
+              <GlobalMailTemplatesPage />
             </Suspense>
           } />
           <Route path="grenzueberschreitungen" element={

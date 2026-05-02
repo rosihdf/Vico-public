@@ -55,4 +55,9 @@ export type AltberichtStagingReviewPatch = {
   /** Explizite Review-Transitions (z. B. blockieren, überspringen, entblocken). */
   review_status?: AltberichtImportReviewStatus
   review_blocked_reason?: string | null
+  /**
+   * Parser-Mängel (findings_json). Nach C1-Commit nur als findings-only-Patch erlaubt.
+   * Änderungen setzen C2-Import-Markierungen zurück, wenn sich der Inhalt gegenüber der Zeile ändert.
+   */
+  findings_json?: unknown
 }

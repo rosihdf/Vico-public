@@ -21,14 +21,14 @@ const Impressum = () => (
         <div>
           <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Angaben gemäß § 5 DDG</h2>
           <p>
-            AMRtech Türen &amp; Tore GmbH<br />
-            Malmsheimer Straße 57–59<br />
-            71263 Weil der Stadt
+            Kunde GmbH<br />
+            Beispielstraße 1<br />
+            12345 Musterstadt
           </p>
         </div>
         <div>
           <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">Kontakt</h2>
-          <p>E-Mail: info@vico-tueren.de</p>
+          <p>E-Mail: kontakt@example.de</p>
         </div>
       </section>
     </article>

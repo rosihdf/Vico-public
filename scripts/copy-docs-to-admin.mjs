@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Kopiert Dokumentation (Vico-Dokumentation.pdf, BENUTZERANLEITUNG.md)
+ * Kopiert Dokumentation (ArioVan-Dokumentation.pdf, BENUTZERANLEITUNG.md)
  * von public/ nach admin/public/ für den Lizenz-Admin.
  */
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
@@ -16,7 +16,7 @@ if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
 
 const files = [
   ['BENUTZERANLEITUNG.md', 'BENUTZERANLEITUNG.md'],
-  ['Vico-Dokumentation.pdf', 'Vico-Dokumentation.pdf'],
+  ['ArioVan-Dokumentation.pdf', 'ArioVan-Dokumentation.pdf'],
 ]
 
 for (const [srcName, destName] of files) {

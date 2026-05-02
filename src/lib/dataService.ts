@@ -13,7 +13,8 @@ import {
 export { isOrderActivePerObjectError, type OrderActivePerObjectError } from './orderUtils'
 export { ORDER_ACTIVE_PER_OBJECT_CONFLICT_MESSAGE } from './orderUtils'
 
-export type OrderMutationError = OrderActivePerObjectError | { message: string }
+export type DataServiceError = { message: string; code?: string; details?: string; hint?: string }
+export type OrderMutationError = OrderActivePerObjectError | DataServiceError
 
 import {
   buildAuthoritativeChecklistSnapshotsByObjectId,
@@ -83,6 +84,12 @@ import {
 
 import { notifyDataChange } from './dataService/dataChange'
 export { notifyDataChange, subscribeToDataChange } from './dataService/dataChange'
+
+import {
+  getCachedLicenseTenantId,
+  isLicenseApiConfigured,
+  sendTenantEmailViaLicensePortal,
+} from './licensePortalApi'
 
 import {
   OBJECT_PHOTOS_BUCKET,
@@ -415,7 +422,7 @@ export const deleteBv = async (id: string): Promise<{ error: { message: string }
 
 export const createObject = async (
   payload: ObjectPayload
-): Promise<{ data: Obj | null; error: { message: string } | null }> => {
+): Promise<{ data: Obj | null; error: DataServiceError | null }> => {
   const full = { ...payload, updated_at: new Date().toISOString() }
   if (isOnline()) {
     const { data, error } = await supabase.from('objects').insert(full).select(OBJECT_COLUMNS).single()
@@ -424,7 +431,17 @@ export const createObject = async (
       const all = getCachedObjects() as Obj[]
       setCachedObjects([...all, obj])
     }
-    return { data: data ? (data as unknown as Obj) : null, error: error ? { message: error.message } : null }
+    return {
+      data: data ? (data as unknown as Obj) : null,
+      error: error
+        ? {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+          }
+        : null,
+    }
   }
   const id = crypto.randomUUID()
   addToOutbox({ table: 'objects', action: 'insert', payload: { ...full, id }, tempId: id })
@@ -586,6 +603,13 @@ export {
   fetchMaintenanceReports,
   fetchMaintenanceReportSmokeDetectors,
 } from './dataService/maintenanceReportsRead'
+
+export {
+  fetchMaintenanceReportsCentralList,
+  resolveMaintenanceReportRecipientEmail,
+  type MaintenanceReportCentralRow,
+  type MaintenanceReportsCentralListResult,
+} from './dataService/maintenanceReportsCentralRead'
 
 export {
   fetchMaintenanceReportIdByOrderObject,
@@ -1856,19 +1880,50 @@ export const updateMaintenanceReportPruefprotokollPdfPath = async (
   return { error: error ? { message: error.message } : null }
 }
 
-export const sendMaintenanceReportEmail = async (
-  pdfStoragePath: string,
-  toEmail: string,
-  subject: string,
-  filename: string
-): Promise<{ error: { message: string } | null }> => {
-  const { data, error } = await supabase.functions.invoke('send-maintenance-report', {
-    body: { pdfStoragePath, toEmail, subject, filename },
-  })
-  if (error) return { error: { message: error.message } }
-  const bodyError = (data as { error?: string })?.error
-  if (bodyError) return { error: { message: bodyError } }
-  return { error: null }
+/** Response wie von `fetch` — `instanceof Response` scheitert bei manchen Bundles. */
+const asFetchResponse = (v: unknown): Response | null =>
+  v &&
+  typeof v === 'object' &&
+  'clone' in v &&
+  typeof (v as Response).clone === 'function' &&
+  'status' in v &&
+  typeof (v as Response).status === 'number'
+    ? (v as Response)
+    : null
+
+/** JSON/Text-Body bei FunctionsHttpError (non-2xx), plus optional HTTP-Status-Zusatz. */
+const formatEdgeFunctionInvokeError = async (invokeError: unknown): Promise<string> => {
+  const base = invokeError instanceof Error ? invokeError.message : String(invokeError)
+  if (!invokeError || typeof invokeError !== 'object') return base
+  const ctx = asFetchResponse((invokeError as { context?: unknown }).context)
+  if (!ctx) return base
+  const statusPart = Number.isFinite(ctx.status) ? ` (HTTP ${ctx.status})` : ''
+  try {
+    const raw = (await ctx.clone().text()).trim()
+    if (!raw) return `${base}${statusPart}`
+    let msg: string | null = null
+    if (raw.startsWith('{')) {
+      try {
+        const j = JSON.parse(raw) as Record<string, unknown>
+        const e = j.error
+        if (typeof e === 'string' && e.trim()) msg = e.trim()
+      } catch {
+        /* nutze raw unten */
+      }
+    }
+    if (msg) return `${msg}${statusPart}`
+    if (raw.length > 0 && raw.length < 400) return `${raw}${statusPart}`
+    return `${base}${statusPart}`
+  } catch {
+    return `${base}${statusPart}`
+  }
+}
+
+/** Pfad relativ zum Bucket `maintenance-photos` (ohne führenden Slash, ohne ..). */
+const normalizeMaintenancePdfStoragePathForEmail = (raw: string): string | null => {
+  const t = raw.trim()
+  if (!t || t.includes('..') || t.startsWith('/')) return null
+  return t
 }
 
 const blobToBase64 = (blob: Blob): Promise<string> =>
@@ -1882,6 +1937,90 @@ const blobToBase64 = (blob: Blob): Promise<string> =>
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(blob)
   })
+
+export const sendMaintenanceReportEmail = async (
+  pdfStoragePath: string,
+  toEmail: string,
+  subject: string,
+  filename: string
+): Promise<{ error: { message: string } | null }> => {
+  const normalizedPath = normalizeMaintenancePdfStoragePathForEmail(pdfStoragePath)
+  if (!normalizedPath) {
+    return { error: { message: 'Ungültiger pdfStoragePath.' } }
+  }
+
+  const tenantId = getCachedLicenseTenantId()?.trim()
+  const viteLicenseApiConfigured = isLicenseApiConfigured()
+  const useLicensePortalMail = viteLicenseApiConfigured && Boolean(tenantId)
+  const chosenPath =
+    useLicensePortalMail && tenantId ? 'license_portal' : 'legacy_send_maintenance_report'
+
+  if (typeof window !== 'undefined') {
+    // warn: nicht info – in manchen Konfigurationen wird „Verbose/Info“ ausgeblendet.
+    console.warn(
+      `[PDF-Mail] path=${chosenPath} useLicensePortalMail=${useLicensePortalMail} vite_license_api_configured=${viteLicenseApiConfigured} tenant_id_present=${Boolean(tenantId)}`
+    )
+    if (chosenPath === 'legacy_send_maintenance_report') {
+      if (!viteLicenseApiConfigured) {
+        console.warn(
+          '[PDF-Mail] Fallback legacy_send_maintenance_report: VITE_LICENSE_API_URL nicht gesetzt.'
+        )
+      } else if (!tenantId) {
+        console.warn(
+          '[PDF-Mail] Fallback legacy_send_maintenance_report: tenant_id fehlt im Lizenz-Cache.'
+        )
+      }
+    }
+  }
+
+  if (useLicensePortalMail && tenantId) {
+    const { data: fileBlob, error: downloadError } = await supabase.storage
+      .from('maintenance-photos')
+      .download(normalizedPath)
+    if (downloadError || !fileBlob) {
+      return {
+        error: {
+          message:
+            downloadError?.message ??
+            'PDF konnte nicht geladen werden (Speicherzugriff). Bitte Administrator kontaktieren.',
+        },
+      }
+    }
+    const contentBase64 = await blobToBase64(fileBlob)
+    if (!contentBase64) {
+      return { error: { message: 'PDF konnte nicht kodiert werden.' } }
+    }
+    const pdfLabel = filename.replace(/\.pdf$/i, '').trim() || filename
+    const lpResult = await sendTenantEmailViaLicensePortal({
+      tenantId,
+      to: toEmail,
+      type: 'maintenance_report',
+      templateKey: 'maintenance_report',
+      locale: 'de',
+      context: {
+        bauvorhaben: { name: pdfLabel },
+        bericht: { datum: new Date().toISOString().slice(0, 10) },
+      },
+      subject,
+      html: '<p>Anbei erhalten Sie das Wartungsprotokoll.</p>',
+      attachments: [{ filename, contentBase64 }],
+    })
+    if (!lpResult.ok) {
+      return { error: { message: lpResult.error ?? 'E-Mail konnte nicht gesendet werden.' } }
+    }
+    return { error: null }
+  }
+
+  const { data, error } = await supabase.functions.invoke('send-maintenance-report', {
+    body: { pdfStoragePath: normalizedPath, toEmail, subject, filename },
+  })
+  if (error) {
+    return { error: { message: await formatEdgeFunctionInvokeError(error) } }
+  }
+  const bodyError = (data as { error?: string })?.error
+  if (bodyError) return { error: { message: bodyError } }
+  return { error: null }
+}
 
 export const sendMaintenanceReportEmailOrQueue = async (
   pdfBlob: Blob,
@@ -1898,6 +2037,8 @@ export const sendMaintenanceReportEmailOrQueue = async (
   }
   const { path, error: uploadError } = await uploadMaintenancePdf(reportId, pdfBlob)
   if (uploadError || !path) return { error: uploadError ?? { message: 'PDF-Upload fehlgeschlagen' } }
+  const { error: pdfPathErr } = await updateMaintenanceReportPdfPath(reportId, path)
+  if (pdfPathErr) return { error: pdfPathErr }
   return sendMaintenanceReportEmail(path, toEmail, subject, filename)
 }
 

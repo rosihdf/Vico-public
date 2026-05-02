@@ -245,7 +245,7 @@ const TenantDeploymentPanel = ({
   const envBundleText = useMemo(
     () =>
       [
-        '### Vico – Haupt-App (Root, publish: dist)',
+        '### Haupt-App (Repo-Root, publish: dist)',
         mainAppEnv,
         '',
         '### Kundenportal (Base: portal, publish: portal/dist)',

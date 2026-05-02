@@ -17,7 +17,7 @@ export type MfaSettingsProps = {
   enrollFriendlyName?: string
 }
 
-const MfaSettings = ({ enrollFriendlyName = 'Vico' }: MfaSettingsProps) => {
+const MfaSettings = ({ enrollFriendlyName = 'ArioVan' }: MfaSettingsProps) => {
   const [factors, setFactors] = useState<MfaFactor[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showEnroll, setShowEnroll] = useState(false)

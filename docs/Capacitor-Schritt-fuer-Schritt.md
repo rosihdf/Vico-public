@@ -9,7 +9,7 @@ Voraussetzung: Das Repo enthält bereits `capacitor.config.ts`, `android/` und `
 |-------------|------------|
 | Web-Build-Ordner | `dist/` (`webDir` in `capacitor.config.ts`) |
 | Bundle-ID / Paketname | `de.vico.app` (Android `applicationId`, iOS `PRODUCT_BUNDLE_IDENTIFIER`) |
-| App-Name (Capacitor) | `AMRtech` (`appName` in `capacitor.config.ts`) |
+| App-Name (Capacitor) | `ArioVan` (`appName` in `capacitor.config.ts`) |
 
 ---
 

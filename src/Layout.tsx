@@ -128,8 +128,9 @@ const Layout = () => {
 
   const showWartungsstatistik =
     Boolean(license && hasFeature(license, 'wartungsprotokolle'))
-  const showOffeneMaengel =
+  const showWartungsprotokolleHub =
     Boolean(license && hasFeature(license, 'wartungsprotokolle') && isEnabled('wartungsprotokolle'))
+  const showOffeneMaengel = showWartungsprotokolleHub
 
   const menuLinks = [
     ...(isEnabled('dashboard') ? [{ to: '/', label: 'Dashboard' }] : []),
@@ -137,6 +138,7 @@ const Layout = () => {
       ? [
           { to: '/kunden', label: 'Kunden' },
           ...(showWartungsstatistik ? [{ to: '/wartungsstatistik', label: 'Wartungsstatistik' }] : []),
+          ...(showWartungsprotokolleHub ? [{ to: '/wartungsprotokolle', label: 'Wartungsprotokolle' }] : []),
         ]
       : []),
     ...(showOffeneMaengel ? [{ to: '/offene-maengel', label: 'Offene Mängel' }] : []),

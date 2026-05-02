@@ -32,6 +32,8 @@ export type AltberichtParserCatalogCandidateV1 = {
 
 export type AltberichtParserFindingCandidateV1 = {
   text: string
+  source?: string
+  sequence?: number
   confidence?: number
   sourceRefs?: AltberichtParserSourceRefV1[]
 }

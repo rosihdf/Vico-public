@@ -3,6 +3,8 @@ import {
   collectEmbeddedImageDraftsFromFnArray,
   finalizeDraftsPerPage,
   classifyImagePaintOp,
+  classifyEmbeddedImageLogoLikelihood,
+  __testDeriveMetricsFromArgs,
 } from './altberichtPdfImageScan'
 import { suggestStagingObjectIdForPage } from './altberichtEmbeddedImageSuggest'
 
@@ -37,6 +39,74 @@ describe('collect + finalize (Seitenweise)', () => {
       { pageNumber: 1, imageIndex: 1, opKind: 'paintImageXObject' },
       { pageNumber: 2, imageIndex: 0, opKind: 'paintInlineImageXObject' },
     ])
+  })
+})
+
+describe('classifyEmbeddedImageLogoLikelihood', () => {
+  it('klassifiziert wiederkehrende kleine Grafik als likely', () => {
+    const r = classifyEmbeddedImageLogoLikelihood({
+      width: 180,
+      height: 48,
+      pageWidth: 595,
+      pageHeight: 842,
+      fingerprintPageCount: 3,
+    })
+    expect(r.likelihood).toBe('likely')
+    expect(r.reasons.length).toBeGreaterThan(0)
+  })
+  it('klassifiziert große einmalige Fläche als none', () => {
+    const r = classifyEmbeddedImageLogoLikelihood({
+      width: 1200,
+      height: 900,
+      pageWidth: 1200,
+      pageHeight: 900,
+      fingerprintPageCount: 1,
+    })
+    expect(r.likelihood).toBe('none')
+  })
+  it('klassifiziert breiten Streifen als likely', () => {
+    const r = classifyEmbeddedImageLogoLikelihood({
+      width: 320,
+      height: 72,
+      pageWidth: 595,
+      pageHeight: 842,
+      fingerprintPageCount: 1,
+    })
+    expect(r.likelihood).toBe('likely')
+  })
+})
+
+describe('deriveMetricsFromArgs (args-first, kein objs.get nötig)', () => {
+  it('liest paintImageXObject-Maße direkt aus args [objId, w, h]', () => {
+    const r = __testDeriveMetricsFromArgs('paintImageXObject', ['img_42', 320, 240])
+    expect(r).toEqual({ width: 320, height: 240, inlineImage: null, objId: 'img_42' })
+  })
+  it('liest paintImageXObjectRepeat-Maße direkt aus args', () => {
+    const r = __testDeriveMetricsFromArgs('paintImageXObjectRepeat', ['img_7', 16, 16, []])
+    expect(r.width).toBe(16)
+    expect(r.height).toBe(16)
+    expect(r.objId).toBe('img_7')
+  })
+  it('Inline-Image: liest width/height aus args[0] und liefert imgData mit', () => {
+    const inline = { width: 64, height: 48, data: new Uint8Array(64 * 48 * 4) }
+    const r = __testDeriveMetricsFromArgs('paintInlineImageXObject', [inline])
+    expect(r.width).toBe(64)
+    expect(r.height).toBe(48)
+    expect(r.inlineImage).toBe(inline)
+    expect(r.objId).toBeNull()
+  })
+  it('liefert leere Maße bei fehlenden args', () => {
+    expect(__testDeriveMetricsFromArgs('paintImageXObject', undefined)).toEqual({
+      width: 0,
+      height: 0,
+      inlineImage: null,
+      objId: null,
+    })
+  })
+  it('rundet kommazahlige Maße in args sauber', () => {
+    const r = __testDeriveMetricsFromArgs('paintImageXObject', ['img_x', 199.6, 100.4])
+    expect(r.width).toBe(200)
+    expect(r.height).toBe(100)
   })
 })
 

@@ -1,6 +1,6 @@
 # Lizenzportal Supabase – Projekt ojryoosqwfbzlmdeywzs
-# Repo-Root: npm run lp:deploy:mandanten-update (license) · npm run lp:deploy:infrastructure-ping
-# Alle Functions: cd supabase-license-portal && supabase link --project-ref … && supabase functions deploy
+# Repo-Root: npm run lp:deploy:mandanten-update · lp:deploy:infrastructure-ping · lp:deploy:mail-stack · lp:deploy:send-tenant-email · …
+# Link: cd supabase-license-portal && supabase link --project-ref …
 
 [api]
 enabled = true
@@ -17,6 +17,9 @@ verify_jwt = false
 [functions.trigger-mandanten-db-rollout]
 verify_jwt = false
 
+[functions.update-mandanten-db-rollout-status]
+verify_jwt = false
+
 [functions.trigger-github-deploy]
 verify_jwt = false
 
@@ -25,3 +28,15 @@ verify_jwt = false
 
 [functions.infrastructure-ping]
 verify_jwt = true
+
+[functions.admin-send-test-email]
+verify_jwt = true
+
+[functions.admin-preview-mail-template]
+verify_jwt = true
+
+[functions.send-tenant-email]
+verify_jwt = false
+
+[functions.send-tenant-email-server]
+verify_jwt = false

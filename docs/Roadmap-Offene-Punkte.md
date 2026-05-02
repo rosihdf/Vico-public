@@ -136,4 +136,5 @@ Neue Tickets für die Serien **WP-MANG-…** und **WP-NET-…** bei Bedarf mit V
 
 - **2026-04:** Neuaufbau in **Arbeitspaketen**; Aufnahme **§11.17**–**§11.20**; **WP-REL-…**; Verweis **§7.2.2** in `Vico.md`. **WP-PORTAL-01–03** und **WP-MANG-00** an **§11.17** / **§11.19** + Ist-Code angeglichen. **WP-PORTAL-03:** Banner-Dismiss mit Timeline-Fingerprint.
 - **2026-04-04:** Status **✅** für **WP-MANG-01–05**, **WP-NET-01–05**, **WP-NET-10**, **WP-PORTAL-01–03**, **WP-ORD-02** (Kern im Repo); Klarstellung „was wirklich noch offen ist“ (REL, J6, J7, T1, CF1, Teil C/D, MANG-00, ORD-01 Altbestand).
+- **2026-04-30:** `Vico.md` ergänzt: **§3** *Altbericht-Import* (inkl. Raster-Feinschliff Apr. 2026), Lizenzportal-Bullet **Mandant bearbeiten – Bereichsnavigation**; **§7.3** Archiv-Einträge **ALT-RASTER**, **LP-MAND-NAV**; **§11.27** mit Erledigt-/Teilweise-Tabelle; **§7.2.2** Kurzverweis. Keine neuen **WP-IDs** (Feinschliff außerhalb Roadmap-Paketliste).
 - **2026-03:** Vorversion: monolithischer Überblick ohne WP-IDs.

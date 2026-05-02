@@ -7,7 +7,7 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 const RELEASE_LABEL = typeof __APP_RELEASE_LABEL__ !== 'undefined' ? __APP_RELEASE_LABEL__ : ''
 
 export type AppInfoContentProps = {
-  /** Kurzbezeichnung in der Infobox, z. B. „AMRtech Lizenzmodul“, „Kundenportal“ */
+  /** Kurzbezeichnung in der Infobox, z. B. „Lizenzportal (Admin)“, „ArioVan“, „Kundenportal“ */
   appLabel: string
   /** Optional: mandantenweise gepflegte Anzeige aus dem Lizenzportal (ersetzt nicht den Build). */
   licenseAppInfo?: AppVersionEntry | null

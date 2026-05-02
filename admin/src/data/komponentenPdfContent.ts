@@ -2,12 +2,12 @@
  * Inhalt für „Komponenten & Funktionen“ PDF.
  * Bei neuen Features hier ergänzen – entspricht docs/Komponenten-und-Funktionen.md
  */
-export const komponentenPdfContent = `Vico – Komponenten und Funktionen
+export const komponentenPdfContent = `ArioVan – Komponenten und Funktionen
 
 Stand: Wird bei jedem Abruf aus dieser Quelle generiert.
 Bei neuen Features: admin/src/data/komponentenPdfContent.ts und docs/Komponenten-und-Funktionen.md ergänzen.
 
-1. Haupt-App (Vico Web-App)
+1. Haupt-App (ArioVan Web-App)
 
 1.1 Startseite (Dashboard)
 Route: /
@@ -89,7 +89,7 @@ Funktionen: Lizenzmodelle anlegen/bearbeiten, Features pro Modell (arbeitszeiter
 
 2.4 Einstellungen
 Route: /einstellungen
-Funktionen: Benutzeranleitung öffnen, Vico-Dokumentation (PDF), Web-App-Test-Checkliste, Komponenten & Funktionen (PDF)
+Funktionen: Benutzeranleitung öffnen, ArioVan-Dokumentation (PDF), Web-App-Test-Checkliste, Komponenten & Funktionen (PDF)
 
 3. Kundenportal
 

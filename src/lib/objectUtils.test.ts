@@ -1,3 +1,16 @@
+import { describe, expect, it, vi } from 'vitest'
+import { generateNewObjectInternalId } from './objectUtils'
+
+describe('generateNewObjectInternalId', () => {
+  it('erzeugt auch im selben Millisekunden-Tick eindeutige interne Kennungen', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_777_777_777_777)
+
+    const ids = Array.from({ length: 5 }, () => generateNewObjectInternalId())
+
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids.every((id) => /^OBJ-[0-9A-Z]+$/.test(id))).toBe(true)
+  })
+})
 import { describe, it, expect } from 'vitest'
 import { getObjectDisplayName, formatObjectRoomFloor } from './objectUtils'
 

@@ -42,7 +42,9 @@ const AppReleases = () => {
         <div>
           <h1 className="text-xl font-bold text-slate-800">App-Releases (Mandanten)</h1>
           <p className="text-sm text-slate-500 mt-1">
-            §11.20: Entwürfe, Incoming, Go-Live pro Kanal. Zuweisung je Mandant unter Mandant bearbeiten.
+            §11.20: Entwürfe, Incoming, Go-Live pro <strong className="font-medium text-slate-600">Kanal</strong> (deploybare
+            App im Monorepo). Zuweisung je Mandant unter Mandant bearbeiten. Später optional nach Produkt filterbar – siehe{' '}
+            <code className="text-[11px]">docs/Lizenzportal-Multi-App-Leitlinie.md</code>.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

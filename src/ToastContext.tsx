@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo } from 'react'
 
-export type ToastType = 'error' | 'success' | 'info'
+export type ToastType = 'error' | 'success' | 'info' | 'warning'
 
 type Toast = {
   id: number
@@ -25,8 +25,14 @@ export const ToastProvider = ({ children }: { children: React.ReactNode }) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
+  /**
+   * Default ist `'info'` (neutral), nicht `'error'`. Frühere Versionen hatten den Default auf
+   * `'error'` gesetzt, wodurch reine Hinweis-/Erfolgs-Aufrufe ohne expliziten Typ rot dargestellt
+   * wurden (z. B. „Foto übernommen."). Aufrufer sollen den Typ explizit setzen, der sichere Default
+   * ist aber neutral-grau.
+   */
   const showToast = useCallback(
-    (message: string, type: ToastType = 'error') => {
+    (message: string, type: ToastType = 'info') => {
       const id = ++nextId
       setToasts((prev) => [...prev, { id, message, type }])
       setTimeout(() => removeToast(id), AUTO_DISMISS_MS)
@@ -57,7 +63,9 @@ export const ToastProvider = ({ children }: { children: React.ReactNode }) => {
                 ? 'bg-red-600 text-white'
                 : t.type === 'success'
                   ? 'bg-green-600 text-white'
-                  : 'bg-slate-700 text-white'
+                  : t.type === 'warning'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-slate-700 text-white'
             }`}
           >
             {t.message}

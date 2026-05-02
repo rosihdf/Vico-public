@@ -74,7 +74,7 @@ type LicenseContextType = {
 const LicenseContext = createContext<LicenseContextType | null>(null)
 
 const DEFAULT_DESIGN: DesignConfig = {
-  app_name: 'AMRtech',
+  app_name: 'ArioVan',
   logo_url: null,
   kundenportal_url: null,
   primary_color: '#5b7895',
